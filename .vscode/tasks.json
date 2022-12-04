@@ -1,0 +1,17 @@
+{
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // for the documentation about the tasks.json format
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "create mage_output_file.go and run code to debug",
+      "type": "shell",
+      "command": "mage -d .mage --keep runPreCommit"
+    },
+    {
+      "label": "delete mage_output_file.go",
+      "type": "shell",
+      "command": "rm -f .mage/mage_output_file.go"
+    }
+  ]
+}
