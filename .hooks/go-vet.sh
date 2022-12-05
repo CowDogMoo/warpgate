@@ -4,13 +4,16 @@ set -ex
 pkg=$(go list ./...)
 for dir in */; do
     if [[ "${dir}" != ".mage" ]] \
+                              && [[ "${dir}" != ".hooks/" ]] \
                               && [[ "${dir}" != "config/" ]] \
-                              && [[ "${dir}" != "bin/" ]] \
                               && [[ "${dir}" != "magefiles/" ]] \
-                           && [[ "${dir}" != "resources/" ]] \
-                                 && [[ "${dir}" != "docs/" ]] \
-                            && [[ "${dir}" != "files/" ]] \
-                             && [[ "${dir}" != "logs/" ]]; then
+                              && [[ "${dir}" != "blueprints/" ]] \
+                              && [[ "${dir}" != "cmd/" ]] \
+                              && [[ "${dir}" != "bin/" ]] \
+                              && [[ "${dir}" != "images/" ]] \
+                              && [[ "${dir}" != "resources/" ]] \
+                              && [[ "${dir}" != "files/" ]] \
+                              && [[ "${dir}" != "logs/" ]]; then
         go vet "${pkg}/${dir}"
     fi
 done

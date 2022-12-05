@@ -1,11 +1,13 @@
 # File created for debugging with vscode
 mage_output_file.go
 
-# mage binary
-magefile
-
 # Code coverage output file
 coverage-all.out
 
 # Distribution directory for binaries
 dist/
+
+# Generated logs
+logs/
+
+wg-*

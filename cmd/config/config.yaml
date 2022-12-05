@@ -1,0 +1,6 @@
+---
+debug: false
+
+log:
+  format: text
+  level: info

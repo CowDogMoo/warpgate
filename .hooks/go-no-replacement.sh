@@ -1,5 +1,4 @@
 #!/bin/bash
-set -ex
 
 REPO=$(grep "url" .git/config)
 

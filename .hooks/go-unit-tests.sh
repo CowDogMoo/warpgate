@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -ex
+set -x
 
 TESTS_TO_RUN=$1
 RETURN_CODE=0
@@ -17,15 +17,15 @@ if [[ "${TESTS_TO_RUN}" == 'coverage' ]]; then
         -tags=integration -coverprofile=coverage-all.out ./...
     RETURN_CODE=$?
 elif [[ "${TESTS_TO_RUN}" == 'all' ]]; then
-    go test -v -count=1 -race ./...
+    go test -v -race -failfast ./...
     RETURN_CODE=$?
 elif [[ "${TESTS_TO_RUN}" == 'short' ]] \
                                         && [[ "${GITHUB_ACTIONS}" != "true" ]]; then
-    go test -v -count=1 -short -race ./...
+    go test -v -short -failfast -race ./...
     RETURN_CODE=$?
 else
     if [[ "${GITHUB_ACTIONS}" != 'true' ]]; then
-        go test -v -count=1 -race "./.../${TESTS_TO_RUN}"
+        go test -v -race -failfast "./.../${TESTS_TO_RUN}"
         RETURN_CODE=$?
     fi
 fi

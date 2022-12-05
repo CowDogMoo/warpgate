@@ -122,7 +122,6 @@ func UpdateMirror(tag string) error {
 // # windows, linux, darwin
 // ./magefile compile all
 // ```
-//
 func Compile(ctx context.Context, osCli string, binName string) error {
 	var operatingSystems []string
 	binDir := "."

@@ -1,0 +1,13 @@
+---
+debug: false
+
+log:
+  format: text
+  level: info
+
+blueprint_name: ansible-vnc-zsh
+blueprint_path: blueprints/ansible-vnc-zsh
+
+packer_templates:
+  - ubuntu-vnc.pkr.hcl
+  - ubuntu-systemd-vnc.pkr.hcl
