@@ -5,9 +5,25 @@ log:
   format: text
   level: info
 
-blueprint_name: ansible-vnc-zsh
-blueprint_path: blueprints/ansible-vnc-zsh
+blueprint:
+  name: ansible-vnc-zsh
+  path: blueprints/ansible-vnc-zsh
 
 packer_templates:
-  - ubuntu-vnc.pkr.hcl
-  - ubuntu-systemd-vnc.pkr.hcl
+  - name: ubuntu-vnc.pkr.hcl
+    base:
+      name: ubuntu
+      version: latest
+    systemd: false
+    tag:
+      name: ghcr.io/cowdogmoo/ansible-vnc
+      version: latest
+
+  - name: ubuntu-systemd-vnc.pkr.hcl
+    base:
+      name: geerlingguy/docker-ubuntu2204-ansible
+      version: latest
+    systemd: true
+    tag:
+      name: ghcr.io/cowdogmoo/ansible-systemd-vnc
+      version: latest

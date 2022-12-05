@@ -17,60 +17,6 @@ packer {
   }
 }
 
-variable "base_image" {
-  type    = string
-  description = "Base image."
-  default = "geerlingguy/docker-ubuntu2204-ansible"
-}
-
-variable "base_image_version" {
-  type    = string
-  description = "Version of the base image."
-  default = "${env("BASE_IMAGE_VERSION")}"
-}
-
-variable "container_user" {
-  type    = string
-  description = "Default user for a new container."
-  default = "ubuntu"
-}
-
-variable "image_tag" {
-  type    = string
-  description = "Tag for the created image."
-  default = "${env("IMAGE_TAG")}"
-}
-
-variable "new_image_version" {
-  type = string
-  description = "Version for the created image."
-  default = "${env("NEW_IMAGE_VERSION")}"
-}
-
-variable "pkr_build_dir" {
-  type    = string
-  description = "Directory that packer will execute the transferred provisioning logic from."
-  default = "/ansible-vnc"
-}
-
-variable "provision_repo_path" {
-  type    = string
-  description = "Path to the repo that contains the provisioning code to build the container image."
-  default = "${env("PROVISION_DIR")}"
-}
-
-variable "setup_systemd" {
-  type    = string
-  description = "Setup vnc service with systemd."
-  default = true
-}
-
-variable "workdir" {
-  type    = string
-  description = "Working directory for a new container."
-  default = "/home/ubuntu"
-}
-
 source "docker" "systemd-vnc" {
   commit      = true
   image   = "${var.base_image}:${var.base_image_version}"
@@ -105,7 +51,7 @@ build {
 
   post-processors {
     post-processor "docker-tag" {
-      repository = "${var.image_tag}"
+      repository = "${var.new_image_tag}"
       tag = ["${var.new_image_version}"]
     }
   }

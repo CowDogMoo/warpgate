@@ -11,13 +11,9 @@
       "args": [
         "--config",
         "blueprints/ansible-vnc-zsh/config.yaml",
-        "imageBuilder",
-        "-b",
-        "latest",
-        "-n",
-        "cowdogmoo/ansible-vnc",
-        "-v",
-        "latest"
+        "-p",
+        "~/cowdogmoo/ansible-vnc",
+        "imageBuilder"
       ],
       "host": "127.0.0.1"
     }
