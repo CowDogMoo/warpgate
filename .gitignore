@@ -1,13 +1,12 @@
-# File created for debugging with vscode
-mage_output_file.go
-
 # Code coverage output file
 coverage-all.out
 
 # Distribution directory for binaries
 dist/
 
+# Generated binaries
+wg-*
+warpgate
+
 # Generated logs
 logs/
-
-wg-*

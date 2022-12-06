@@ -3,11 +3,13 @@
 package main
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
+	"github.com/bitfield/script"
 	"github.com/fatih/color"
 	goutils "github.com/l50/goutils"
 
@@ -111,53 +113,33 @@ func UpdateMirror(tag string) error {
 	return nil
 }
 
-// Compile Generates a binary (for the input OS if `osCli` is set)
-// or set of binaries associated with the project.
-//
-// Examples:
-//
-// ```bash
-// # macOS
-// ./magefile compile darwin
-// # windows, linux, darwin
-// ./magefile compile all
-// ```
-func Compile(ctx context.Context, osCli string, binName string) error {
-	var operatingSystems []string
-	binDir := "."
+// CommandExists checks $PATH for
+// for the input `cmd`.
+// It returns true if the command is found,
+// otherwise it returns false.
+// TODO: Move to goutils
+func CommandExists(cmd string) bool {
+	_, err := exec.LookPath(cmd)
+	return err == nil
+}
 
-	if osCli == "all" {
-		operatingSystems = []string{"windows", "linux", "darwin"}
+// GoReleaser Runs goreleaser to generate all of the supported binaries
+// specified in `.goreleaser`.
+// TODO: Move to goutils
+func GoReleaser() error {
+	if goutils.FileExists(".goreleaser.yaml") {
+		if CommandExists("goreleaser") {
+			if _, err := script.Exec("goreleaser --snapshot --rm-dist").Stdout(); err != nil {
+				return fmt.Errorf(color.RedString(
+					"failed to run goreleaser: %v", err))
+			}
+		} else {
+			return errors.New(color.RedString(
+				"goreleaser not found in $PATH"))
+		}
 	} else {
-		operatingSystems = []string{osCli}
-	}
-
-	if binName == "" {
-		return fmt.Errorf(color.RedString(
-			"failed to input binName! The current value is %s. "+
-				"Try again using this format: ./magefile compile darwin myBin", binName))
-	}
-
-	// Create bin/ if it doesn't already exist
-	if _, err := os.Stat(binDir); os.IsNotExist(err) {
-		if err := os.Mkdir(binDir, os.ModePerm); err != nil {
-			return fmt.Errorf(color.RedString(
-				"failed to create bin dir: %v", err))
-		}
-	}
-
-	for _, os := range operatingSystems {
-		fmt.Printf(color.YellowString("Compiling %s bin for %s OS, please wait.\n", binName, os))
-		env := map[string]string{
-			"GOOS":   os,
-			"GOARCH": "amd64",
-		}
-
-		binPath := filepath.Join(binDir, fmt.Sprintf("%s-%s", binName, os))
-
-		if err := sh.RunWith(env, "go", "build", "-o", binPath); err != nil {
-			return fmt.Errorf(color.RedString("failed to create %s bin: %v", binPath, err))
-		}
+		return errors.New(color.RedString(
+			"no .goreleaser file found"))
 	}
 
 	return nil

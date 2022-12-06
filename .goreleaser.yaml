@@ -1,13 +1,12 @@
 ---
 builds:
-  - id: "PROJECT_NAME"
+  - id: "warpgate"
 
-    binary: BIN_NAME
+    binary: wg
 
     goos:
       - linux
       - darwin
-      - windows
 
     goarch:
       - amd64
