@@ -54,7 +54,8 @@ build {
   post-processors {
     post-processor "docker-tag" {
       repository = "${var.new_image_tag}"
-      tag = ["${var.new_image_version}"]
+      tags = ["${var.new_image_version}"]
     }
+    post-processor "docker-push" {}
   }
 }
