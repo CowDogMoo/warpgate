@@ -1,5 +1,15 @@
 ---
+# Set the debug level, which affects
+# the output verbosity.
+# Required to be present in any config.yaml.
 debug: false
+
+# Set the log level, which affects
+# the output verbosity.
+# Required to be present in any config.yaml.
+log:
+  format: text
+  level: info
 
 blueprint:
   name: ansible-vnc-zsh
