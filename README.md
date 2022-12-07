@@ -13,15 +13,16 @@ you would to provision a VM.
 An image is represented as a blueprint, which Warp Gate consumes
 to create it.
 
-Feel free to peruse existing `blueprints/` and modify one to fit
+Feel free to peruse existing `blueprints` and modify one to fit
 your needs.
 
 ---
 
 ## Table of Contents
 
-- [Developer Environment Setup](docs/dev.md)
 - [Usage](#usage)
+- [Developer Environment Setup](docs/dev.md)
+- [Debugging](docs/debug.md)
 
 ---
 
@@ -32,6 +33,7 @@ Warp in container image from blueprint:
 ```bash
 # Path to the blueprint configuration from the repo root
 BLUEPRINT_CFG=blueprints/ansible-vnc-zsh/config.yaml
+
 # Path on disk to the provisioning repo
 PROVISIONING_REPO="${HOME}/cowdogmoo/ansible-vnc"
 ./wg --config "${BLUEPRINT_CFG}" imageBuilder -p "${PROVISIONING_REPO}"
