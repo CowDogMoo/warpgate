@@ -34,6 +34,7 @@ import (
 	"github.com/bitfield/script"
 	"github.com/fatih/color"
 	goutils "github.com/l50/goutils"
+	cp "github.com/otiai10/copy"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -142,16 +143,11 @@ var imageBuilderCmd = &cobra.Command{
 				"failed to unmarshal blueprint path from config file: %v", err)
 			os.Exit(1)
 		}
+
 		// Change into the blueprint directory
 		if err := goutils.Cd(blueprint.Path); err != nil {
 			log.WithError(err).Errorf(
 				"failed to change into the %s directory: %v", blueprint.Path, err)
-			os.Exit(1)
-		}
-
-		// Create builds directory
-		if err := goutils.CreateDirectory("builds"); err != nil {
-			log.WithError(err)
 			os.Exit(1)
 		}
 
@@ -224,7 +220,6 @@ func Cp(src string, dst string) error {
 }
 
 func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
-
 	// Create random name for the build directory
 	dirName, err := goutils.RandomString(8)
 	if err != nil {
@@ -233,38 +228,50 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 		return dirName, err
 	}
 
-	buildDir := filepath.Join("builds", dirName)
-
-	if err := goutils.CreateDirectory(buildDir); err != nil {
+	cwd, err := os.Getwd()
+	if err != nil {
 		log.WithError(err).Errorf(
-			"failed to create %s to build container image: %v", buildDir, err)
-		return buildDir, err
+			"failed to get working directory: %v", err)
+		return dirName, err
 	}
 
-	// Copy packer variables file into build dir
-	src := "variables.pkr.hcl"
-	dst := filepath.Join(buildDir, src)
-	if err := Cp(src, dst); err != nil {
+	// Create buildDir
+	buildDir := filepath.Join("builds", dirName)
+	if err := goutils.CreateDirectory(buildDir); err != nil {
 		log.WithError(err).Errorf(
-			"failed to transfer packer vars file to %s: %v", buildDir, err)
-		return buildDir, err
+			"failed to create %s build directory for image building: %v", dirName, err)
+		return dirName, err
+	}
+
+	files, err := os.ReadDir(cwd)
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to read files from %s: %v", cwd, err)
+		return dirName, err
+	}
+
+	// Copy blueprint to build dir
+	for _, file := range files {
+		if file.Name() != "builds" &&
+			file.Name() != "packer_templates" &&
+			file.Name() != "config.yaml" &&
+			file.Name() != ".gitignore" &&
+			file.Name() != "README.md" {
+			dst := filepath.Join(buildDir, file.Name())
+			if err := cp.Copy(file.Name(), dst); err != nil {
+				log.WithError(err).Errorf(
+					"failed to copy %s to %s: %v", file.Name(), buildDir, err)
+				return buildDir, err
+			}
+		}
 	}
 
 	// Copy packer template into build dir
-	src = filepath.Join("packer_templates", pTmpl.Name)
-	dst = filepath.Join(buildDir, pTmpl.Name)
-	if err := Cp(src, dst); err != nil {
+	src := filepath.Join("packer_templates", pTmpl.Name)
+	dst := filepath.Join(buildDir, pTmpl.Name)
+	if err := cp.Copy(src, dst); err != nil {
 		log.WithError(err).Errorf(
 			"failed to transfer packer template to %s: %v", buildDir, err)
-		return buildDir, err
-	}
-
-	// Copy scripts directory into build dir
-	src = "scripts"
-	dst = filepath.Join(buildDir, src)
-	if _, err := script.Exec(fmt.Sprintf("cp -r %s %s", src, dst)).Stdout(); err != nil {
-		log.WithError(err).Errorf(
-			"failed to copy scripts directory to %s: %v", buildDir, err)
 		return buildDir, err
 	}
 
