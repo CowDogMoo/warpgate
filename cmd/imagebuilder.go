@@ -24,7 +24,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -35,7 +34,6 @@ import (
 	"github.com/fatih/color"
 	goutils "github.com/l50/goutils"
 	cp "github.com/otiai10/copy"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -168,10 +166,6 @@ var imageBuilderCmd = &cobra.Command{
 			}(pTmpl, blueprint)
 		}
 		wg.Wait()
-		if err := cleanup(); err != nil {
-			log.WithError(err)
-			os.Exit(1)
-		}
 
 		s := "All packer templates in the " + blueprint.Name + " blueprint were built successfully!"
 		fmt.Print(color.GreenString(s))
@@ -183,40 +177,6 @@ func init() {
 
 	imageBuilderCmd.Flags().StringP(
 		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
-}
-
-func cleanup() error {
-	// Delete builds directory
-	if err := goutils.RmRf("builds"); err != nil {
-		log.WithError(err).Errorf(
-			"failed to clean up the builds directory: %v", err)
-		return err
-	}
-
-	return nil
-}
-
-// Cp is used to copy a file from `src` to `dst`.
-func Cp(src string, dst string) error {
-	from, err := os.Open(src)
-	if err != nil {
-		log.WithError(err)
-		return errors.Errorf("failed to open %s: %v", src, err)
-	}
-	defer from.Close()
-
-	to, err := os.Create(dst)
-	if err != nil {
-		return errors.Errorf("failed to create %s: %v", src, err)
-	}
-	defer to.Close()
-
-	_, err = io.Copy(to, from)
-	if err != nil {
-		return errors.Errorf("failed to copy %s to %s: %v", src, dst, err)
-	}
-
-	return nil
 }
 
 func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
@@ -236,7 +196,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	}
 
 	// Create buildDir
-	buildDir := filepath.Join("builds", dirName)
+	buildDir := filepath.Join("/tmp", "builds", dirName)
 	if err := goutils.CreateDirectory(buildDir); err != nil {
 		log.WithError(err).Errorf(
 			"failed to create %s build directory for image building: %v", dirName, err)
@@ -267,7 +227,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	}
 
 	// Copy packer template into build dir
-	src := filepath.Join("packer_templates", pTmpl.Name)
+	src := filepath.Join(cwd, "packer_templates", pTmpl.Name)
 	dst := filepath.Join(buildDir, pTmpl.Name)
 	if err := cp.Copy(src, dst); err != nil {
 		log.WithError(err).Errorf(
