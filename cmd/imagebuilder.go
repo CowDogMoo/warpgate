@@ -93,15 +93,6 @@ var imageBuilderCmd = &cobra.Command{
 
 		/* Retrieve CLI args */
 
-		// Get current user's home directory
-		usr, err := user.Current()
-		if err != nil {
-			log.WithError(err).Errorf(
-				"failed to get current user's home directory: %v", err)
-			os.Exit(1)
-		}
-		homedir := usr.HomeDir
-
 		// Get local path to provision repo from CLI args
 		inputPath, err := cmd.Flags().GetString("provisionPath")
 		if err != nil {
@@ -110,17 +101,8 @@ var imageBuilderCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Resource: https://stackoverflow.com/questions/17609732/expand-tilde-to-home-directory
-		// Account for ~ being passed in by itself
-		if inputPath == "~" {
-			blueprint.ProvisioningRepo = homedir
-		} else if strings.HasPrefix(inputPath, "~/") {
-			// Use strings.HasPrefix so we don't match paths like
-			// "/something/~/something/"
-			blueprint.ProvisioningRepo = filepath.Join(homedir, inputPath[2:])
-		}
-
 		/* Unmarshal viper values */
+
 		// Get packer templates
 		if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
 			log.WithError(err).Errorf(
@@ -147,6 +129,25 @@ var imageBuilderCmd = &cobra.Command{
 			log.WithError(err).Errorf(
 				"failed to change into the %s directory: %v", blueprint.Path, err)
 			os.Exit(1)
+		}
+
+		// Get current user's home directory
+		usr, err := user.Current()
+		if err != nil {
+			log.WithError(err).Errorf(
+				"failed to get current user's home directory: %v", err)
+			os.Exit(1)
+		}
+
+		homedir := usr.HomeDir
+		// Resource: https://stackoverflow.com/questions/17609732/expand-tilde-to-home-directory
+		// Account for ~ being passed in by itself
+		if inputPath == "~" {
+			blueprint.ProvisioningRepo = homedir
+		} else if strings.HasPrefix(inputPath, "~/") {
+			// Use strings.HasPrefix so we don't match paths like
+			// "/something/~/something/"
+			blueprint.ProvisioningRepo = filepath.Join(homedir, inputPath[2:])
 		}
 
 		var wg sync.WaitGroup
@@ -239,24 +240,6 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 }
 
 func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
-	// Create the provision command for the input packer template
-	provisionCmd := fmt.Sprintf(
-		"packer build "+
-			"-var 'base_image=%s' "+
-			"-var 'base_image_version=%s' "+
-			"-var 'new_image_tag=%s' "+
-			"-var 'new_image_version=%s' "+
-			"-var 'provision_repo_path=%s' "+
-			"-var 'setup_systemd=%t' "+
-			"-var 'registry_cred=%s' .",
-		pTmpl.Base.Name,
-		pTmpl.Base.Version,
-		pTmpl.Tag.Name,
-		pTmpl.Tag.Version,
-		blueprint.ProvisioningRepo,
-		pTmpl.Systemd,
-		os.Getenv("PAT"))
-
 	buildDir, err := createBuildDir(pTmpl, blueprint)
 	if err != nil {
 		log.WithError(err).Errorf(
@@ -277,6 +260,24 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 			"failed to change into the %s directory: %v", buildDir, err)
 		return err
 	}
+
+	// Create the provision command for the input packer template
+	provisionCmd := fmt.Sprintf(
+		"packer build "+
+			"-var 'base_image=%s' "+
+			"-var 'base_image_version=%s' "+
+			"-var 'new_image_tag=%s' "+
+			"-var 'new_image_version=%s' "+
+			"-var 'provision_repo_path=%s' "+
+			"-var 'setup_systemd=%t' "+
+			"-var 'registry_cred=%s' .",
+		pTmpl.Base.Name,
+		pTmpl.Base.Version,
+		pTmpl.Tag.Name,
+		pTmpl.Tag.Version,
+		blueprint.ProvisioningRepo,
+		pTmpl.Systemd,
+		os.Getenv("PAT"))
 
 	if _, err := script.Exec(provisionCmd).Stdout(); err != nil {
 		log.WithError(err).Errorf(

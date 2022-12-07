@@ -35,6 +35,6 @@ Warp in container image from blueprint:
 BLUEPRINT_CFG=blueprints/ansible-vnc-zsh/config.yaml
 
 # Path on disk to the provisioning repo
-PROVISIONING_REPO="${HOME}/cowdogmoo/ansible-vnc"
+PROVISIONING_REPO="~/cowdogmoo/ansible-vnc"
 ./wg --config "${BLUEPRINT_CFG}" imageBuilder -p "${PROVISIONING_REPO}"
 ```
