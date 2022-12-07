@@ -263,7 +263,15 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 			"failed to copy scripts directory to %s: %v", buildDir, err)
 		return buildDir, err
 	}
-	return buildDir, nil
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to get current working directory: %v", err)
+		return buildDir, err
+	}
+
+	return filepath.Join(cwd, buildDir), nil
 }
 
 func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
