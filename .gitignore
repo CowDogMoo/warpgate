@@ -9,5 +9,8 @@ wg
 wg-*
 warpgate
 
+# Generated directories
+builds/
+
 # Generated logs
 logs/

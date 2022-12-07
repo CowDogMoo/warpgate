@@ -26,7 +26,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/bitfield/script"
@@ -91,12 +93,32 @@ var imageBuilderCmd = &cobra.Command{
 		packerTemplatesKey := "packer_templates"
 
 		/* Retrieve CLI args */
+
+		// Get current user's home directory
+		usr, err := user.Current()
+		if err != nil {
+			log.WithError(err).Errorf(
+				"failed to get current user's home directory: %v", err)
+			os.Exit(1)
+		}
+		homedir := usr.HomeDir
+
 		// Get local path to provision repo from CLI args
-		blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
+		inputPath, err := cmd.Flags().GetString("provisionPath")
 		if err != nil {
 			log.WithError(err).Errorf(
 				"failed to get provisionPath from CLI input: %v", err)
 			os.Exit(1)
+		}
+
+		// Resource: https://stackoverflow.com/questions/17609732/expand-tilde-to-home-directory
+		// Account for ~ being passed in by itself
+		if inputPath == "~" {
+			blueprint.ProvisioningRepo = homedir
+		} else if strings.HasPrefix(inputPath, "~/") {
+			// Use strings.HasPrefix so we don't match paths like
+			// "/something/~/something/"
+			blueprint.ProvisioningRepo = filepath.Join(homedir, inputPath[2:])
 		}
 
 		/* Unmarshal viper values */
@@ -128,6 +150,13 @@ var imageBuilderCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// Create builds directory
+		if err := goutils.CreateDirectory("builds"); err != nil {
+			log.WithError(err).Errorf(
+				"failed to change into the %s directory: %v", blueprint.Path, err)
+			os.Exit(1)
+		}
+
 		var wg sync.WaitGroup
 		// Build each template listed in the blueprint's config.yaml
 		for _, pTmpl := range packerTemplates {
@@ -145,6 +174,7 @@ var imageBuilderCmd = &cobra.Command{
 			}(pTmpl, blueprint)
 		}
 		wg.Wait()
+		cleanup()
 		s := "All packer templates in the " + blueprint.Name + " blueprint were built successfully!"
 		fmt.Print(color.GreenString(s))
 	},
@@ -155,6 +185,15 @@ func init() {
 
 	imageBuilderCmd.Flags().StringP(
 		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
+}
+
+func cleanup() {
+	// Delete builds directory
+	if err := goutils.RmRf("builds"); err != nil {
+		log.WithError(err).Errorf(
+			"failed to delete builds directory: %v", err)
+		os.Exit(1)
+	}
 }
 
 // Cp is used to copy a file from `src` to `dst`.
@@ -179,6 +218,54 @@ func Cp(src string, dst string) error {
 	return nil
 }
 
+func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
+
+	// Create random name for the build directory
+	dirName, err := goutils.RandomString(8)
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to get random string for buildDir: %v", err)
+		return dirName, err
+	}
+
+	buildDir := filepath.Join("builds", dirName)
+
+	// Create build dir
+	if err := goutils.CreateDirectory(buildDir); err != nil {
+		log.WithError(err).Errorf(
+			"failed to create %s to build container image: %v", buildDir, err)
+		return buildDir, err
+	}
+
+	// Copy packer variables file into build dir
+	src := "variables.pkr.hcl"
+	dst := filepath.Join(buildDir, src)
+	if err := Cp(src, dst); err != nil {
+		log.WithError(err).Errorf(
+			"failed to transfer packer vars file to %s: %v", buildDir, err)
+		return buildDir, err
+	}
+
+	// Copy packer template into build dir
+	src = filepath.Join("packer_templates", pTmpl.Name)
+	dst = filepath.Join(buildDir, pTmpl.Name)
+	if err := Cp(src, dst); err != nil {
+		log.WithError(err).Errorf(
+			"failed to transfer packer template to %s: %v", buildDir, err)
+		return buildDir, err
+	}
+
+	// Copy scripts directory into build dir
+	src = "scripts"
+	dst = filepath.Join(buildDir, src)
+	if _, err := script.Exec(fmt.Sprintf("cp -r %s %s", src, dst)).Stdout(); err != nil {
+		log.WithError(err).Errorf(
+			"failed to copy scripts directory to %s: %v", buildDir, err)
+		return buildDir, err
+	}
+	return buildDir, nil
+}
+
 func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 	// Create the provision command for the input packer template
 	provisionCmd := fmt.Sprintf(
@@ -198,12 +285,17 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		pTmpl.Systemd,
 		os.Getenv("PAT"))
 
-	// Get packer template
-	if err := Cp(filepath.Join("packer_templates", pTmpl.Name),
-		pTmpl.Name); err != nil {
+	buildDir, err := createBuildDir(pTmpl, blueprint)
+	if err != nil {
+		log.WithError(err)
+		os.Exit(1)
+	}
+
+	// Change into the build dir
+	if err := goutils.Cd(buildDir); err != nil {
 		log.WithError(err).Errorf(
-			"failed to transfer packer template from %s to %s: %v", pTmpl.Name, blueprint.Path, err)
-		return err
+			"failed to change into the %s directory: %v", buildDir, err)
+		os.Exit(1)
 	}
 
 	if _, err := script.Exec(provisionCmd).Stdout(); err != nil {
