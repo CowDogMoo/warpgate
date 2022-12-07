@@ -27,6 +27,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/bitfield/script"
 	"github.com/fatih/color"
@@ -127,18 +128,23 @@ var imageBuilderCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		var wg sync.WaitGroup
 		// Build each template listed in the blueprint's config.yaml
 		for _, pTmpl := range packerTemplates {
+			wg.Add(1)
+			go func(pTmpl PackerTemplate, blueprint Blueprint) {
+				defer wg.Done()
+				fmt.Print(color.YellowString(
+					"Now building the %s template as part of the %s blueprint, please wait.\n",
+					pTmpl.Name, blueprint.Name))
 
-			fmt.Print(color.YellowString(
-				"Now building the %s template as part of the %s blueprint, please wait.\n",
-				pTmpl.Name, blueprint.Name))
-
-			if err := buildPackerImage(pTmpl, blueprint); err != nil {
-				log.WithError(err)
-				os.Exit(1)
-			}
+				if err := buildPackerImage(pTmpl, blueprint); err != nil {
+					log.WithError(err)
+					os.Exit(1)
+				}
+			}(pTmpl, blueprint)
 		}
+		wg.Wait()
 		s := "All packer templates in the " + blueprint.Name + " blueprint were built successfully!"
 		fmt.Print(color.GreenString(s))
 	},
