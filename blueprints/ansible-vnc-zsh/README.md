@@ -50,3 +50,9 @@ docker push ghcr.io/cowdogmoo/ansible-vnc:latest
 ```
 
 Built images can be found [here](https://github.com/orgs/CowDogMoo/packages).
+
+## Manual build
+
+```bash
+packer build -var 'base_image=ubuntu' -var 'base_image_version=latest' -var 'new_image_tag=cowdogmoo/ansible-vnc' -var 'new_image_version=latest' -var 'provision_repo_path=~/cowdogmoo/ubuntu-vnc' -var 'setup_systemd=false' -var "registry_cred=$PAT" .
+```

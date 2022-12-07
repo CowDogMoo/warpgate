@@ -182,13 +182,15 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 			"-var 'new_image_tag=%s' "+
 			"-var 'new_image_version=%s' "+
 			"-var 'provision_repo_path=%s' "+
-			"-var 'setup_systemd=%t' .",
+			"-var 'setup_systemd=%t' "+
+			"-var 'registry_cred=%s' .",
 		pTmpl.Base.Name,
 		pTmpl.Base.Version,
 		pTmpl.Tag.Name,
 		pTmpl.Tag.Version,
 		blueprint.ProvisioningRepo,
-		pTmpl.Systemd)
+		pTmpl.Systemd,
+		os.Getenv("PAT"))
 
 	// Get packer template
 	if err := Cp(filepath.Join("packer_templates", pTmpl.Name),

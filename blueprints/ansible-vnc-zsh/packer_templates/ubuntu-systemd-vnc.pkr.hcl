@@ -51,9 +51,12 @@ build {
 
   post-processors {
     post-processor "docker-tag" {
-      repository = "${var.new_image_tag}"
+      repository = "${var.registry_server}/${var.new_image_tag}"
       tags = ["${var.new_image_version}"]
     }
-    post-processor "docker-push" {}
+    post-processor "docker-push" {
+      login_username = "${var.registry_username}"
+      login_password = "${var.registry_cred}"
+    }
   }
 }

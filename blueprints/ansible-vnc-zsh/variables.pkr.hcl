@@ -35,14 +35,31 @@ variable "provision_repo_path" {
   description = "Path to the repo that contains the provisioning code to build the container image."
 }
 
-variable "workdir" {
+variable "registry_server" {
   type    = string
-  description = "Working directory for a new container."
-  default = "/home/ubuntu"
+  description = "Container registry to push to."
+  default = "ghcr.io"
+}
+
+variable "registry_username" {
+  type    = string
+  description = "Username to connect to registry with."
+  default = "CowDogMoo"
+}
+
+variable "registry_cred" {
+  type    = string
+  description = "Token or credential to authenticate to registry with."
 }
 
 variable "setup_systemd" {
   type    = bool
   description = "Setup vnc service with systemd."
   default = false
+}
+
+variable "workdir" {
+  type    = string
+  description = "Working directory for a new container."
+  default = "/home/ubuntu"
 }

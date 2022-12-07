@@ -5,6 +5,7 @@ coverage-all.out
 dist/
 
 # Generated binaries
+wg
 wg-*
 warpgate
 
