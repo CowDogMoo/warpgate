@@ -142,7 +142,6 @@ var imageBuilderCmd = &cobra.Command{
 				"failed to unmarshal blueprint path from config file: %v", err)
 			os.Exit(1)
 		}
-
 		// Change into the blueprint directory
 		if err := goutils.Cd(blueprint.Path); err != nil {
 			log.WithError(err).Errorf(
@@ -152,8 +151,7 @@ var imageBuilderCmd = &cobra.Command{
 
 		// Create builds directory
 		if err := goutils.CreateDirectory("builds"); err != nil {
-			log.WithError(err).Errorf(
-				"failed to change into the %s directory: %v", blueprint.Path, err)
+			log.WithError(err)
 			os.Exit(1)
 		}
 
@@ -174,7 +172,11 @@ var imageBuilderCmd = &cobra.Command{
 			}(pTmpl, blueprint)
 		}
 		wg.Wait()
-		cleanup()
+		if err := cleanup(); err != nil {
+			log.WithError(err)
+			os.Exit(1)
+		}
+
 		s := "All packer templates in the " + blueprint.Name + " blueprint were built successfully!"
 		fmt.Print(color.GreenString(s))
 	},
@@ -187,19 +189,22 @@ func init() {
 		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
 }
 
-func cleanup() {
+func cleanup() error {
 	// Delete builds directory
 	if err := goutils.RmRf("builds"); err != nil {
 		log.WithError(err).Errorf(
-			"failed to delete builds directory: %v", err)
-		os.Exit(1)
+			"failed to clean up the builds directory: %v", err)
+		return err
 	}
+
+	return nil
 }
 
 // Cp is used to copy a file from `src` to `dst`.
 func Cp(src string, dst string) error {
 	from, err := os.Open(src)
 	if err != nil {
+		log.WithError(err)
 		return errors.Errorf("failed to open %s: %v", src, err)
 	}
 	defer from.Close()
@@ -230,7 +235,6 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 
 	buildDir := filepath.Join("builds", dirName)
 
-	// Create build dir
 	if err := goutils.CreateDirectory(buildDir); err != nil {
 		log.WithError(err).Errorf(
 			"failed to create %s to build container image: %v", buildDir, err)
@@ -264,14 +268,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 		return buildDir, err
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to get current working directory: %v", err)
-		return buildDir, err
-	}
-
-	return filepath.Join(cwd, buildDir), nil
+	return buildDir, nil
 }
 
 func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
@@ -295,15 +292,23 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 
 	buildDir, err := createBuildDir(pTmpl, blueprint)
 	if err != nil {
-		log.WithError(err)
-		os.Exit(1)
+		log.WithError(err).Errorf(
+			"failed to create build directory: %v", err)
+		return err
+	}
+
+	blueprintDir, err := os.Getwd()
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to get the current working directory: %v", err)
+		return err
 	}
 
 	// Change into the build dir
 	if err := goutils.Cd(buildDir); err != nil {
 		log.WithError(err).Errorf(
 			"failed to change into the %s directory: %v", buildDir, err)
-		os.Exit(1)
+		return err
 	}
 
 	if _, err := script.Exec(provisionCmd).Stdout(); err != nil {
@@ -314,10 +319,10 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		return err
 	}
 
-	// Delete packer template
-	if err := os.Remove(pTmpl.Name); err != nil {
+	// Change back into the blueprintDir
+	if err := goutils.Cd(blueprintDir); err != nil {
 		log.WithError(err).Errorf(
-			"failed to delete %s packer template used for the build: %v", pTmpl.Name, err)
+			"failed to change into the %s directory: %v", blueprintDir, err)
 		return err
 	}
 
