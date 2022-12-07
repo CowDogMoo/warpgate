@@ -3,7 +3,7 @@ module github.com/cowdogmoo/warpgate
 go 1.19
 
 require (
-	github.com/bitfield/script v0.21.3
+	github.com/bitfield/script v0.21.4
 	github.com/fatih/color v1.13.0
 	github.com/l50/goutils v1.1.3
 	github.com/mitchellh/go-homedir v1.1.0
