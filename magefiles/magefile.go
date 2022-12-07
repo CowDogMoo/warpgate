@@ -113,22 +113,16 @@ func UpdateMirror(tag string) error {
 	return nil
 }
 
-// CommandExists checks $PATH for
-// for the input `cmd`.
-// It returns true if the command is found,
-// otherwise it returns false.
-// TODO: Move to goutils
-func CommandExists(cmd string) bool {
+func cmdExists(cmd string) bool {
 	_, err := exec.LookPath(cmd)
 	return err == nil
 }
 
 // GoReleaser Runs goreleaser to generate all of the supported binaries
 // specified in `.goreleaser`.
-// TODO: Move to goutils
 func GoReleaser() error {
 	if goutils.FileExists(".goreleaser.yaml") {
-		if CommandExists("goreleaser") {
+		if cmdExists("goreleaser") {
 			if _, err := script.Exec("goreleaser --snapshot --rm-dist").Stdout(); err != nil {
 				return fmt.Errorf(color.RedString(
 					"failed to run goreleaser: %v", err))

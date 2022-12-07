@@ -23,13 +23,13 @@ wg --config blueprints/ansible-vnc-zsh/config.yaml imageBuilder -p ~/cowdogmoo/a
 
 ```bash
 # Without systemd
-docker run -dit --rm -p 5901:5901 cowdogmoo/ansible-vnc \
-&& CONTAINER=$(docker ps | awk -F '  ' '{print $7}' | xargs) \
+docker run -dit --rm -p 5901:5901 ghcr.io/cowdogmoo/ansible-vnc \
+&& CONTAINER=$(docker ps | awk -F '  ' '{print $8}' | xargs) \
 && echo $CONTAINER && docker exec -it $CONTAINER zsh
 
 # With systemd
 docker run -d --privileged -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-  --rm -it -p 5901:5901 --cgroupns=host cowdogmoo/ansible-systemd-vnc \
+  --rm -it -p 5901:5901 --cgroupns=host ghcr.io/cowdogmoo/ansible-systemd-vnc \
 && CONTAINER=$(docker ps | awk -F '  ' '{print $7}' | xargs) \
 && echo $CONTAINER && docker exec -it $CONTAINER zsh
 ```
