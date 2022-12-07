@@ -24,8 +24,10 @@ package cmd
 
 import (
 	"embed"
+	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/fatih/color"
@@ -42,7 +44,6 @@ const (
 )
 
 var (
-	//go:embed config/*
 	configContentsFs embed.FS
 
 	cfgFile string
@@ -127,20 +128,42 @@ func getConfigFile() ([]byte, error) {
 	return configFileData, nil
 }
 
+func cmdExists(cmd string) bool {
+	_, err := exec.LookPath(cmd)
+	return err == nil
+}
+
+func depCheck() error {
+	if !cmdExists("packer") || !cmdExists("docker") {
+		errMsg := "missing dependencies: please install packer and docker"
+		return errors.New(errMsg)
+	}
+	return nil
+}
+
 func createConfigFile(cfgPath string) error {
 	err := os.MkdirAll(filepath.Dir(cfgPath), os.ModePerm)
 	if err != nil {
 		log.WithError(err).Errorf("cannot create dir %s: %s", cfgPath, err)
+		return err
 	}
 
 	configFileData, err := getConfigFile()
 	if err != nil {
 		log.WithError(err).Errorf("cannot get lines of config file: %v", err)
+		return err
 	}
 
 	err = os.WriteFile(cfgPath, configFileData, os.ModePerm)
 	if err != nil {
 		log.WithError(err).Errorf("cannot write to file %s: %s", cfgPath, err)
+		return err
+	}
+
+	err = depCheck()
+	if err != nil {
+		log.WithError(err)
+		return err
 	}
 
 	return nil
