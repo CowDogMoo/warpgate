@@ -3,13 +3,9 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 
-	"github.com/bitfield/script"
 	"github.com/fatih/color"
 	goutils "github.com/l50/goutils"
 
@@ -79,18 +75,6 @@ func RunPreCommit() error {
 	return nil
 }
 
-// RunTests runs all of the unit tests
-func RunTests() error {
-	mg.Deps(InstallDeps)
-
-	fmt.Println(color.YellowString("Running unit tests."))
-	if err := sh.RunV(filepath.Join(".hooks", "go-unit-tests.sh")); err != nil {
-		return fmt.Errorf(color.RedString("failed to run unit tests: %v", err))
-	}
-
-	return nil
-}
-
 // UpdateMirror updates pkg.go.dev with the release associated with the input tag
 func UpdateMirror(tag string) error {
 	var err error
@@ -108,32 +92,6 @@ func UpdateMirror(tag string) error {
 		tag))
 	if err != nil {
 		return fmt.Errorf(color.RedString("failed to update pkg.go.dev: %w", err))
-	}
-
-	return nil
-}
-
-func cmdExists(cmd string) bool {
-	_, err := exec.LookPath(cmd)
-	return err == nil
-}
-
-// GoReleaser Runs goreleaser to generate all of the supported binaries
-// specified in `.goreleaser`.
-func GoReleaser() error {
-	if goutils.FileExists(".goreleaser.yaml") {
-		if cmdExists("goreleaser") {
-			if _, err := script.Exec("goreleaser --snapshot --rm-dist").Stdout(); err != nil {
-				return fmt.Errorf(color.RedString(
-					"failed to run goreleaser: %v", err))
-			}
-		} else {
-			return errors.New(color.RedString(
-				"goreleaser not found in $PATH"))
-		}
-	} else {
-		return errors.New(color.RedString(
-			"no .goreleaser file found"))
 	}
 
 	return nil
