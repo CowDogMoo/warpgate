@@ -25,7 +25,7 @@ run_provision_logic()
         --connection=local \
         --inventory 127.0.0.1, \
         -e "setup_systemd=${SETUP_SYSTEMD}", \
-        --limit 127.0.0.1 playbook.yaml
+        --limit 127.0.0.1 examples/playbook.yaml
     popd
 
     # Wait for ansible to finish running
