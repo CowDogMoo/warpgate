@@ -78,13 +78,8 @@ and follow along.
    mage runPreCommit
    ```
 
-1. Compile and install warpgate:
+1. Compile warpgate:
 
    ```bash
-   # Compile:
-   mage goreleaser
-
-   # Install:
-   export OS="$(uname | python3 -c 'print(open(0).read().lower().strip())')"
-   cp "dist/warpgate_${OS}_arm64/wg" /usr/local/bin
+   go build -o wg
    ```

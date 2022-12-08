@@ -110,13 +110,6 @@ var imageBuilderCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Get packer templates
-		if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
-			log.WithError(err).Errorf(
-				"failed to unmarshal packer templates from config file: %v", err)
-			os.Exit(1)
-		}
-
 		// Get blueprint information
 		if err = viper.UnmarshalKey(blueprintKey, &blueprint); err != nil {
 			log.WithError(err).Errorf(

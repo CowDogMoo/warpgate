@@ -28,13 +28,13 @@ your needs.
 
 ## Usage
 
-Warp in container image from blueprint:
+Warp in container image from existing blueprint:
 
 ```bash
 # Path to the blueprint configuration from the repo root
 BLUEPRINT_CFG=blueprints/ansible-vnc-zsh/config.yaml
 
 # Path on disk to the provisioning repo
-PROVISIONING_REPO="~/cowdogmoo/ansible-vnc"
+PROVISIONING_REPO="~/cowdogmoo/ansible-vnc-zsh"
 ./wg --config "${BLUEPRINT_CFG}" imageBuilder -p "${PROVISIONING_REPO}"
 ```

@@ -24,7 +24,7 @@ wg --config blueprints/ansible-vnc-zsh/config.yaml imageBuilder -p ~/cowdogmoo/a
 ```bash
 # Without systemd
 docker run -dit --rm -p 5901:5901 ghcr.io/cowdogmoo/ansible-vnc \
-&& CONTAINER=$(docker ps | awk -F '  ' '{print $8}' | xargs) \
+&& CONTAINER=$(docker ps | awk -F '  ' '{print $7}' | xargs) \
 && echo $CONTAINER && docker exec -it $CONTAINER zsh
 
 # With systemd
