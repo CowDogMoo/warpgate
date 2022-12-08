@@ -143,8 +143,8 @@ var imageBuilderCmd = &cobra.Command{
 			blueprint.ProvisioningRepo = filepath.Join(homedir, inputPath[2:])
 		}
 
-		var wg sync.WaitGroup
 		// Build each template listed in the blueprint's config.yaml
+		var wg sync.WaitGroup
 		for _, pTmpl := range packerTemplates {
 			wg.Add(1)
 			go func(pTmpl PackerTemplate, blueprint Blueprint) {
@@ -240,20 +240,6 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		return err
 	}
 
-	blueprintDir, err := os.Getwd()
-	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to get the current working directory: %v", err)
-		return err
-	}
-
-	// Change into the build dir
-	if err := goutils.Cd(buildDir); err != nil {
-		log.WithError(err).Errorf(
-			"failed to change into the %s directory: %v", buildDir, err)
-		return err
-	}
-
 	// Create the provision command for the input packer template
 	provisionCmd := fmt.Sprintf(
 		"packer build "+
@@ -263,28 +249,26 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 			"-var 'new_image_version=%s' "+
 			"-var 'provision_repo_path=%s' "+
 			"-var 'setup_systemd=%t' "+
-			"-var 'registry_cred=%s' .",
+			"-var 'registry_cred=%s' %s",
 		pTmpl.Base.Name,
 		pTmpl.Base.Version,
 		pTmpl.Tag.Name,
 		pTmpl.Tag.Version,
 		blueprint.ProvisioningRepo,
 		pTmpl.Systemd,
-		os.Getenv("PAT"))
+		os.Getenv("PAT"),
+		buildDir)
+
+	log.Debug(provisionCmd)
 
 	if _, err := script.Exec(provisionCmd).Stdout(); err != nil {
-		log.WithError(err).Errorf(
-			"failed to build container image from the %s "+
-				"packer template that's part of the %s blueprint: %v",
-			pTmpl.Name, blueprint.Name, err)
-		return err
-	}
-
-	// Change back into the blueprintDir
-	if err := goutils.Cd(blueprintDir); err != nil {
-		log.WithError(err).Errorf(
-			"failed to change into the %s directory: %v", blueprintDir, err)
-		return err
+		if err != nil {
+			log.WithError(err).Errorf(
+				"failed to build container image from the %s "+
+					"packer template that's part of the %s blueprint: %v",
+				pTmpl.Name, blueprint.Name, err)
+			return err
+		}
 	}
 
 	return nil

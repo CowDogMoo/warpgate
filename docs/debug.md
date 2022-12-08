@@ -12,7 +12,7 @@ you've got everything right. For example:
 packer build -debug \
     -var 'base_image=ubuntu' \
     -var 'base_image_version=latest' \
-    -var 'new_image_tag=cowdogmoo/ansible-vnc' \
+    -var 'new_image_tag=CowDogMoo/ansible-vnc' \
     -var 'new_image_version=latest' \
     -var 'provision_repo_path=~/cowdogmoo/ansible-vnc-zsh' \
     -var 'setup_systemd=false' \
