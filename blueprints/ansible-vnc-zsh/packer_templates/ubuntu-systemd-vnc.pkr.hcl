@@ -3,9 +3,8 @@
 # Author: Jayson Grace <Jayson Grace <jayson.e.grace@gmail.com>
 #
 # Description: Create a systemd-based docker image
-# that installs vnc and xfce on Ubuntu.
+# provisioned with https://github.com/CowDogMoo/ansible-vnc-zsh on Ubuntu.
 #
-# Expected build time: ~10 minutes
 
 # Define the plugin(s) used by Packer.
 packer {
