@@ -22,7 +22,7 @@ packer_templates:
       version: latest
     systemd: false
     tag:
-      name: cowdogmoo/ansible-vnc
+      name: cowdogmoo/vnc_zsh
       version: latest
 
   - name: ubuntu-systemd-vnc.pkr.hcl
@@ -31,5 +31,5 @@ packer_templates:
       version: latest
     systemd: true
     tag:
-      name: cowdogmoo/ansible-systemd-vnc
+      name: cowdogmoo/systemd_vnc_zsh
       version: latest
