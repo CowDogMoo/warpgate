@@ -16,7 +16,7 @@ packer {
   }
 }
 
-source "docker" "systemd-vnc" {
+source "docker" "systemd-vnc-zsh" {
   commit      = true
   image   = "${var.base_image}:${var.base_image_version}"
   privileged = true
@@ -30,7 +30,7 @@ source "docker" "systemd-vnc" {
 }
 
 build {
-  sources = ["source.docker.systemd-vnc"]
+  sources = ["source.docker.systemd-vnc-zsh"]
 
   // Transfer the code found at the input provision_repo_path
   // to the pkr_build_dir, which is used by packer

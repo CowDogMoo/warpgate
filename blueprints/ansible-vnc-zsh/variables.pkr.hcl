@@ -27,7 +27,7 @@ variable "new_image_version" {
 variable "pkr_build_dir" {
   type    = string
   description = "Directory that packer will execute the transferred provisioning logic from."
-  default = "/ansible-vnc"
+  default = "/ansible-vnc-zsh"
 }
 
 variable "provision_repo_path" {

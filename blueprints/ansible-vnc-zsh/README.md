@@ -11,13 +11,12 @@ Ansible role. One container runs with systemd and the other without.
 From the root of the repo:
 
 ```bash
-export OS="$(uname | python3 -c 'print(open(0).read().lower().strip())')"
-export ARCH="$(uname -a | awk '{ print $NF }')"
+# Path to the blueprint configuration from the repo root
+export BLUEPRINT_CFG=blueprints/ansible-vnc-zsh/config.yaml
 # Path on local disk to the provisioning repo
-export PROVISION_REPO_PATH="$HOME/git/ansible-vnc-zsh"
+export PROVISION_REPO_PATH="${HOME}/git/ansible-vnc-zsh"
 
-cp "dist/warpgate_${OS}_${ARCH}/wg" .
-wg --config blueprints/ansible-vnc-zsh/config.yaml imageBuilder -p $PROVISION_REPO_PATH
+wg --config "${BLUEPRINT_CFG}" imageBuilder -p "${PROVISION_REPO_PATH}"
 ```
 
 ---
