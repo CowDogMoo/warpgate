@@ -21,6 +21,11 @@ run_provision_logic()
     ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/roles/cowdogmoo.vnc"
 
     pushd "${PKR_BUILD_DIR}"
+
+    # Install galaxy dependencies
+    ansible-galaxy install collections -r requirements.yaml
+    ansible-galaxy install -r requirements.yaml
+
     ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
