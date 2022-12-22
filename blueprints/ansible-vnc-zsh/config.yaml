@@ -16,7 +16,7 @@ blueprint:
   path: blueprints/ansible-vnc-zsh
 
 packer_templates:
-  - name: ubuntu-vnc.pkr.hcl
+  - name: ubuntu-vnc-zsh.pkr.hcl
     base:
       name: ubuntu
       version: latest
@@ -25,7 +25,7 @@ packer_templates:
       name: cowdogmoo/ansible-vnc-zsh
       version: latest
 
-  - name: ubuntu-systemd-vnc.pkr.hcl
+  - name: ubuntu-systemd-vnc-zsh.pkr.hcl
     base:
       name: geerlingguy/docker-ubuntu2204-ansible
       version: latest
