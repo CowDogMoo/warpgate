@@ -14,11 +14,6 @@ From the root of the repo:
 # Path to the blueprint configuration from the repo root
 export BLUEPRINT_CFG=blueprints/ansible-vnc-zsh/config.yaml
 
-# On ARM-based macOS systems, run the following command:
-if [[ "$(uname -a | awk '{ print $NF }')" == "arm64" ]]; then
-  export DOCKER_DEFAULT_PLATFORM=linux/amd64
-fi
-
 # Be sure to put quotes around the path string or it
 # will not be processed properly!
 wg --config "${BLUEPRINT_CFG}" imageBuilder -p "~/cowdogmoo/ansible-vnc-zsh"

@@ -22,10 +22,7 @@ run_provision_logic()
 
     pushd "${PKR_BUILD_DIR}"
 
-    # Install galaxy dependencies
-    ansible-galaxy install -r requirements.yaml
-
-    ansible-playbook -vvvv \
+    ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
         -e "setup_systemd=${SETUP_SYSTEMD}", \
