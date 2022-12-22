@@ -135,12 +135,12 @@ var imageBuilderCmd = &cobra.Command{
 		homedir := usr.HomeDir
 		// Resource: https://stackoverflow.com/questions/17609732/expand-tilde-to-home-directory
 		// Account for ~ being passed in by itself
-		if inputPath == "~" {
-			blueprint.ProvisioningRepo = homedir
-		} else if strings.HasPrefix(inputPath, "~/") {
+		if strings.HasPrefix(inputPath, "~/") {
 			// Use strings.HasPrefix so we don't match paths like
 			// "/something/~/something/"
 			blueprint.ProvisioningRepo = filepath.Join(homedir, inputPath[2:])
+		} else if inputPath == "~" {
+			blueprint.ProvisioningRepo = homedir
 		}
 
 		// Build each template listed in the blueprint's config.yaml

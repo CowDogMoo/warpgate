@@ -7,15 +7,14 @@
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceRoot}",
-      "env": {},
       "args": [
+        "--debug",
         "--config",
         "blueprints/ansible-vnc-zsh/config.yaml",
+        "imageBuilder",
         "-p",
-        "~/cowdogmoo/ansible-vnc",
-        "imageBuilder"
-      ],
-      "host": "127.0.0.1"
+        "~/cowdogmoo/ansible-vnc-zsh"
+      ]
     }
   ]
 }

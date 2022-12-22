@@ -13,10 +13,15 @@ From the root of the repo:
 ```bash
 # Path to the blueprint configuration from the repo root
 export BLUEPRINT_CFG=blueprints/ansible-vnc-zsh/config.yaml
-# Path on local disk to the provisioning repo
-export PROVISION_REPO_PATH="${HOME}/git/ansible-vnc-zsh"
 
-wg --config "${BLUEPRINT_CFG}" imageBuilder -p "${PROVISION_REPO_PATH}"
+# On ARM-based macOS systems, run the following command:
+if [[ "$(uname -a | awk '{ print $NF }')" == "arm64" ]]; then
+  export DOCKER_DEFAULT_PLATFORM=linux/amd64
+fi
+
+# Be sure to put quotes around the path string or it
+# will not be processed properly!
+wg --config "${BLUEPRINT_CFG}" imageBuilder -p "~/cowdogmoo/ansible-vnc-zsh"
 ```
 
 ---

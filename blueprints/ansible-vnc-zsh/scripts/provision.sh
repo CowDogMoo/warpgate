@@ -10,7 +10,7 @@ install_dependencies()
     apt install -y aptitude 2> /dev/null | grep packages | cut -d '.' -f 1
 
     # Install ansible and associated pre-requisites
-    aptitude install -y bash python3 python3-pip
+    aptitude install -y bash gpg-agent python3 python3-pip
     python3 -m pip install --upgrade pip wheel setuptools ansible
 }
 
@@ -18,15 +18,14 @@ install_dependencies()
 run_provision_logic()
                       {
     mkdir -p "${HOME}/.ansible/roles"
-    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/roles/cowdogmoo.vnc"
+    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/roles/cowdogmoo.vnc_zsh"
 
     pushd "${PKR_BUILD_DIR}"
 
     # Install galaxy dependencies
-    ansible-galaxy install collections -r requirements.yaml
     ansible-galaxy install -r requirements.yaml
 
-    ansible-playbook \
+    ansible-playbook -vvvv \
         --connection=local \
         --inventory 127.0.0.1, \
         -e "setup_systemd=${SETUP_SYSTEMD}", \
