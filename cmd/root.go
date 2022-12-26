@@ -39,7 +39,7 @@ import (
 )
 
 const (
-	defaultConfigName = "config.yaml"
+	defaultConfigName = "wg-config.yaml"
 	defaultConfigType = "yaml"
 )
 
@@ -55,7 +55,7 @@ var (
 	}
 
 	home, _          = homedir.Dir()
-	defaultConfigDir = filepath.Join(home, ".wg")
+	defaultConfigDir = filepath.Join(home, ".warp")
 )
 
 // Execute runs the root cobra command
@@ -68,7 +68,7 @@ func init() {
 
 	pf := rootCmd.PersistentFlags()
 	pf.StringVar(
-		&cfgFile, "config", "", "config file (default is $HOME/.wg/config.yaml)")
+		&cfgFile, "config", "", "config file (default is $HOME/.warp/wg-config.yaml)")
 	pf.BoolVarP(
 		&debug, "debug", "", false, "Show debug messages.")
 
