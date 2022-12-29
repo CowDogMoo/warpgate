@@ -27,10 +27,8 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 
-	"github.com/fatih/color"
 	goutils "github.com/l50/goutils"
 	homedir "github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
@@ -44,14 +42,16 @@ const (
 )
 
 var (
+	//go:embed config/*
 	configContentsFs embed.FS
 
 	cfgFile string
 	debug   bool
+	err     error
 
 	rootCmd = &cobra.Command{
 		Use:   "wg",
-		Short: "Warp new container images into existence using a repo with provisioning code.",
+		Short: "Create new container images with existing provisioning code.",
 	}
 
 	home, _          = homedir.Dir()
@@ -65,6 +65,11 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+
+	home, err = homedir.Dir()
+	if err != nil {
+		os.Exit(1)
+	}
 
 	pf := rootCmd.PersistentFlags()
 	pf.StringVar(
@@ -128,13 +133,8 @@ func getConfigFile() ([]byte, error) {
 	return configFileData, nil
 }
 
-func cmdExists(cmd string) bool {
-	_, err := exec.LookPath(cmd)
-	return err == nil
-}
-
 func depCheck() error {
-	if !cmdExists("packer") || !cmdExists("docker") {
+	if !goutils.CmdExists("packer") || !goutils.CmdExists("docker") {
 		errMsg := "missing dependencies: please install packer and docker"
 		return errors.New(errMsg)
 	}
@@ -184,11 +184,6 @@ func initConfig() {
 	viper.AutomaticEnv() // read in environment variables that match
 
 	if err := viper.ReadInConfig(); err != nil {
-		log.Info(color.BlueString(
-			"No config file found - creating " +
-				filepath.Join(defaultConfigDir,
-					defaultConfigName) +
-				" with default values"))
 
 		err = createConfigFile(
 			filepath.Join(defaultConfigDir, defaultConfigName))

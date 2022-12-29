@@ -39,16 +39,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Blueprint represents the contents of an input Blueprint.
-type Blueprint struct {
-	// Name of the Blueprint
-	Name string `yaml:"name"`
-	// Path to the Blueprint from the root of the repo.
-	Path string `yaml:"path"`
-	// Path to the provisioning repo
-	ProvisioningRepo string
-}
-
 // PackerTemplate is used to hold the information used
 // with a blueprint's packer templates.
 type PackerTemplate struct {
@@ -64,11 +54,10 @@ type PackerTemplate struct {
 		Version string `yaml:"version"`
 	} `yaml:"base"`
 
-	// Systemd dictates if a systemd container image is used for the base
+	// Systemd dictates creation of a container with systemd.
 	Systemd bool `yaml:"systemd"`
 
-	// Tag represents the new tag for the
-	// image built by Packer.
+	// Tag represents the new tag for the image built by Packer.
 	Tag struct {
 		// Name of the new image
 		Name string `yaml:"name"`
@@ -82,13 +71,9 @@ var imageBuilderCmd = &cobra.Command{
 	Use:   "imageBuilder",
 	Short: "Build a container image using packer and a provisoning repo",
 	Run: func(cmd *cobra.Command, args []string) {
-		// Local vars
-		var err error
-		var blueprint Blueprint
 		var packerTemplates []PackerTemplate
 
-		// Viper keys
-		blueprintKey := "blueprint"
+		// Viper key
 		packerTemplatesKey := "packer_templates"
 
 		/* Retrieve CLI args */
@@ -111,7 +96,7 @@ var imageBuilderCmd = &cobra.Command{
 		}
 
 		// Get blueprint information
-		if err = viper.UnmarshalKey(blueprintKey, &blueprint); err != nil {
+		if err = viper.UnmarshalKey(blueprint.Key, &blueprint); err != nil {
 			log.WithError(err).Errorf(
 				"failed to unmarshal blueprint path from config file: %v", err)
 			os.Exit(1)
@@ -171,6 +156,10 @@ func init() {
 
 	imageBuilderCmd.Flags().StringP(
 		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
+	if err := imageBuilderCmd.MarkFlagRequired("provisionPath"); err != nil {
+		log.WithError(err)
+		os.Exit(1)
+	}
 }
 
 func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
@@ -179,14 +168,14 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	if err != nil {
 		log.WithError(err).Errorf(
 			"failed to get random string for buildDir: %v", err)
-		return dirName, err
+		return "", err
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
 		log.WithError(err).Errorf(
 			"failed to get working directory: %v", err)
-		return dirName, err
+		return "", err
 	}
 
 	// Create buildDir
@@ -194,28 +183,30 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	if err := goutils.CreateDirectory(buildDir); err != nil {
 		log.WithError(err).Errorf(
 			"failed to create %s build directory for image building: %v", dirName, err)
-		return dirName, err
+		return "", err
 	}
 
 	files, err := os.ReadDir(cwd)
 	if err != nil {
 		log.WithError(err).Errorf(
 			"failed to read files from %s: %v", cwd, err)
-		return dirName, err
+		return "", err
 	}
+
+	// packer_templates is excluded here since we need
+	// to get the specific packer template specified
+	// in `pTmpl.Name`
+	excludedFiles := []string{"builds", "packer_templates",
+		"config.yaml", ".gitignore", "README.md"}
 
 	// Copy blueprint to build dir
 	for _, file := range files {
-		if file.Name() != "builds" &&
-			file.Name() != "packer_templates" &&
-			file.Name() != "config.yaml" &&
-			file.Name() != ".gitignore" &&
-			file.Name() != "README.md" {
+		if !goutils.StringInSlice(file.Name(), excludedFiles) {
 			dst := filepath.Join(buildDir, file.Name())
 			if err := cp.Copy(file.Name(), dst); err != nil {
 				log.WithError(err).Errorf(
 					"failed to copy %s to %s: %v", file.Name(), buildDir, err)
-				return buildDir, err
+				return "", err
 			}
 		}
 	}
@@ -226,7 +217,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	if err := cp.Copy(src, dst); err != nil {
 		log.WithError(err).Errorf(
 			"failed to transfer packer template to %s: %v", buildDir, err)
-		return buildDir, err
+		return "", err
 	}
 
 	return buildDir, nil
