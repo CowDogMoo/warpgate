@@ -34,38 +34,41 @@ import (
 type Blueprint struct {
 	// Name of the Blueprint
 	Name string `yaml:"name"`
-	// Path to the Blueprint from the root of the repo.
-	Path string `yaml:"path"`
 	// Path to the provisioning repo
 	ProvisioningRepo string
 	Key              string
 }
 
-var (
-	// Viper key
-	blueprint = Blueprint{
-		Key: "blueprint",
-	}
+var blueprintCmd = &cobra.Command{
+	Use:   "blueprint",
+	Short: "All blueprint oriented operations for Warp Gate.",
+	Run: func(cmd *cobra.Command, args []string) {
+		listBlueprints(cmd)
+		createBlueprint(cmd)
 
-	blueprintCmd = &cobra.Command{
-		Use:   "blueprint",
-		Short: "All blueprint oriented operations for Warp Gate.",
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := listBlueprints(cmd); err != nil {
-				os.Exit(1)
-			}
-
-		},
-	}
-)
+	},
+}
 
 func init() {
 	rootCmd.AddCommand(blueprintCmd)
 	blueprintCmd.Flags().BoolP(
-		"list", "l", false, "List all blueprints")
+		"create", "c", false, "Create a blueprint.")
+	blueprintCmd.Flags().BoolP(
+		"list", "l", false, "List all blueprints.")
 }
 
-func listBlueprints(cmd *cobra.Command) error {
+func createBlueprint(cmd *cobra.Command) {
+	newBlueprint, err := cmd.Flags().GetString("create")
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to retrieve blueprint to create from CLI input: %v", err)
+		os.Exit(1)
+	}
+	fmt.Println(newBlueprint)
+	os.Exit(0)
+}
+
+func listBlueprints(cmd *cobra.Command) {
 	ls, err := cmd.Flags().GetBool("list")
 	if err != nil {
 		log.WithError(err).Errorf(
@@ -82,6 +85,6 @@ func listBlueprints(cmd *cobra.Command) error {
 		for _, f := range files {
 			fmt.Println(f.Name())
 		}
+		os.Exit(0)
 	}
-	return nil
 }

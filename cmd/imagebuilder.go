@@ -71,13 +71,6 @@ var imageBuilderCmd = &cobra.Command{
 	Use:   "imageBuilder",
 	Short: "Build a container image using packer and a provisoning repo",
 	Run: func(cmd *cobra.Command, args []string) {
-		var packerTemplates []PackerTemplate
-
-		// Viper key
-		packerTemplatesKey := "packer_templates"
-
-		/* Retrieve CLI args */
-
 		// Get local path to provision repo from CLI args
 		inputPath, err := cmd.Flags().GetString("provisionPath")
 		if err != nil {
@@ -86,12 +79,11 @@ var imageBuilderCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		/* Unmarshal viper values */
-
-		// Get packer templates
-		if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
+		// Get the blueprint to build.
+		blueprint.Name, err = cmd.Flags().GetString("blueprint")
+		if err != nil {
 			log.WithError(err).Errorf(
-				"failed to unmarshal packer templates from config file: %v", err)
+				"failed to retrieve blueprint to build from CLI input: %v", err)
 			os.Exit(1)
 		}
 
@@ -103,9 +95,9 @@ var imageBuilderCmd = &cobra.Command{
 		}
 
 		// Change into the blueprint directory
-		if err := goutils.Cd(blueprint.Path); err != nil {
+		if err := goutils.Cd(filepath.Join("blueprints", blueprint.Name)); err != nil {
 			log.WithError(err).Errorf(
-				"failed to change into the %s directory: %v", blueprint.Path, err)
+				"failed to change into the %s directory: %v", blueprint.Name, err)
 			os.Exit(1)
 		}
 
@@ -127,6 +119,26 @@ var imageBuilderCmd = &cobra.Command{
 		} else if inputPath == "~" {
 			blueprint.ProvisioningRepo = homedir
 		}
+
+		viper.AddConfigPath(".")
+		viper.SetConfigName("config.yaml")
+		if err := viper.MergeInConfig(); err != nil {
+			log.WithError(err).Errorf(
+				"failed to merge %s blueprint config into the existing config: %v", blueprint.Name, err)
+			os.Exit(1)
+		}
+
+		var packerTemplates []PackerTemplate
+		packerTemplatesKey := "packer_templates"
+
+		// Get packer templates
+		if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
+			log.WithError(err).Errorf(
+				"failed to unmarshal packer templates from config file: %v", err)
+			os.Exit(1)
+		}
+
+		log.Debug(viper.Get("blueprint.name"))
 
 		// Build each template listed in the blueprint's config.yaml
 		var wg sync.WaitGroup
@@ -157,6 +169,13 @@ func init() {
 	imageBuilderCmd.Flags().StringP(
 		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
 	if err := imageBuilderCmd.MarkFlagRequired("provisionPath"); err != nil {
+		log.WithError(err)
+		os.Exit(1)
+	}
+
+	imageBuilderCmd.Flags().StringP(
+		"blueprint", "b", "", "The blueprint to use for image building.")
+	if err := imageBuilderCmd.MarkFlagRequired("blueprint"); err != nil {
 		log.WithError(err)
 		os.Exit(1)
 	}

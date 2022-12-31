@@ -45,6 +45,10 @@ var (
 	//go:embed config/*
 	configContentsFs embed.FS
 
+	blueprint = Blueprint{
+		Key: "blueprint",
+	}
+
 	cfgFile string
 	debug   bool
 	err     error
