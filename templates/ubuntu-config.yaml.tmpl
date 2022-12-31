@@ -1,0 +1,14 @@
+---
+blueprint:
+  name: {{ .Blueprint.Name }}
+
+packer_templates:
+  {{ range .PackerTemplates }}- name: {{ .Name }}
+    base:
+      name: ubuntu
+      version: latest
+    systemd: false
+    tag:
+      name: {{ .Tag.Name }}
+      version: {{ .Tag.Version }}
+  {{ end }}

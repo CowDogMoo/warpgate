@@ -9,6 +9,7 @@ for dir in */; do
                               && [[ "${dir}" != "magefiles/" ]] \
                               && [[ "${dir}" != "blueprints/" ]] \
                               && [[ "${dir}" != "cmd/" ]] \
+                              && [[ "${dir}" != "templates/" ]] \
                               && [[ "${dir}" != "docs/" ]] \
                               && [[ "${dir}" != "dist/" ]] \
                               && [[ "${dir}" != "images/" ]] \

@@ -129,7 +129,6 @@ var imageBuilderCmd = &cobra.Command{
 		}
 
 		var packerTemplates []PackerTemplate
-		packerTemplatesKey := "packer_templates"
 
 		// Get packer templates
 		if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {

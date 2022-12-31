@@ -48,10 +48,11 @@ var (
 	blueprint = Blueprint{
 		Key: "blueprint",
 	}
-
-	cfgFile string
-	debug   bool
-	err     error
+	cfgFile            string
+	debug              bool
+	err                error
+	packerTemplates    = []PackerTemplate{}
+	packerTemplatesKey = "packer_templates"
 
 	rootCmd = &cobra.Command{
 		Use:   "wg",

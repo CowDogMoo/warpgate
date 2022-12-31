@@ -25,7 +25,11 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"text/template"
 
+	"github.com/fatih/color"
+	goutils "github.com/l50/goutils"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +41,12 @@ type Blueprint struct {
 	// Path to the provisioning repo
 	ProvisioningRepo string
 	Key              string
+}
+
+// Data holds a blueprint and its associated packer templates.
+type Data struct {
+	Blueprint       Blueprint
+	PackerTemplates []PackerTemplate
 }
 
 var blueprintCmd = &cobra.Command{
@@ -51,20 +61,143 @@ var blueprintCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(blueprintCmd)
-	blueprintCmd.Flags().BoolP(
-		"create", "c", false, "Create a blueprint.")
+	blueprintCmd.Flags().StringP(
+		"create", "c", "", "Create a blueprint.")
 	blueprintCmd.Flags().BoolP(
 		"list", "l", false, "List all blueprints.")
+	blueprintCmd.Flags().IntP(
+		"numImages", "n", 2, "Number of images in the target blueprint.")
+	blueprintCmd.Flags().BoolP(
+		"systemd", "", true, "Blueprint contains a systemd image")
+	blueprintCmd.Flags().StringP(
+		"tag-name", "", "", "Name of the created container image.")
+	blueprintCmd.Flags().StringP(
+		"tag-version", "", "", "Version of the created container image.")
+}
+
+func genBPDirs(newBlueprint string) error {
+	if newBlueprint != "" {
+		bpDirs := []string{"packer_templates", "scripts"}
+		for _, d := range bpDirs {
+			if err := goutils.CreateDirectory(filepath.Join("blueprints", newBlueprint, d)); err != nil {
+				log.WithError(err).Errorf(
+					"failed to create %s directory for new %s blueprint: %v", d, newBlueprint, err)
+				return err
+			}
+		}
+	}
+
+	return nil
+
+}
+
+func genPkrTmpl(cmd *cobra.Command) error {
+	tagName, err := cmd.Flags().GetString("tag-name")
+	if err != nil {
+		log.WithError(err).Error()
+		os.Exit(1)
+	}
+
+	tagVersion, err := cmd.Flags().GetString("tag-version")
+	if err != nil {
+		log.WithError(err).Error()
+		os.Exit(1)
+	}
+
+	systemd, err := cmd.Flags().GetBool("systemd")
+	if err != nil {
+		log.WithError(err).Error()
+		os.Exit(1)
+	}
+
+	var tagNames []string
+	var tmplNames []string
+
+	if systemd {
+		tagNames = []string{tagName, tagName + "-systemd"}
+		tmplNames = []string{blueprint.Name + ".pkr.hcl",
+			blueprint.Name + "-systemd.pkr.hcl"}
+	} else {
+		tagNames = []string{tagName}
+		tmplNames = []string{blueprint.Name + ".pkr.hcl"}
+	}
+
+	for i, n := range tagNames {
+		packerTemplates = append(packerTemplates, PackerTemplate{
+			Name: tmplNames[i],
+			Tag: struct {
+				Name    string `yaml:"name"`
+				Version string `yaml:"version"`
+			}{
+				Name:    n,
+				Version: tagVersion,
+			},
+		})
+	}
+
+	log.Debugf("Packer templates: %#v\n", packerTemplates)
+
+	return nil
+}
+
+func createCfg(data Data) error {
+	// TODO: this should be an input param
+	tmplName := "ubuntu-config"
+
+	// TODO: The base image and version should be input params
+	// i.e. ./wg blueprint -c fucks --base-image ubuntu --base-image-version latest --tag-name cowdogmoo/fucks --tag-version latest
+
+	// Parse the input config template
+	tmpl := template.Must(
+		template.ParseFiles(filepath.Join("templates", tmplName+".yaml.tmpl")))
+
+	// Create the templated config file for the new blueprint
+	cfgFile := filepath.Join("blueprints", data.Blueprint.Name, "config.yaml")
+	f, err := os.Create(cfgFile)
+	if err != nil {
+		return fmt.Errorf(color.RedString("failed to create config.yaml: %v", err))
+	}
+
+	defer f.Close()
+
+	if err := tmpl.Execute(f, data); err != nil {
+		return fmt.Errorf(color.RedString("failed to populate config.yaml: %v", err))
+	}
+
+	return nil
 }
 
 func createBlueprint(cmd *cobra.Command) {
-	newBlueprint, err := cmd.Flags().GetString("create")
+	blueprint.Name, err = cmd.Flags().GetString("create")
 	if err != nil {
 		log.WithError(err).Errorf(
 			"failed to retrieve blueprint to create from CLI input: %v", err)
 		os.Exit(1)
 	}
-	fmt.Println(newBlueprint)
+
+	// Create blueprint directories
+	if err := genBPDirs(blueprint.Name); err != nil {
+		log.WithError(err).Error()
+		os.Exit(1)
+	}
+
+	// Get packer template contents from input
+	if err := genPkrTmpl(cmd); err != nil {
+		log.WithError(err).Error()
+		os.Exit(1)
+	}
+
+	data := Data{
+		Blueprint:       blueprint,
+		PackerTemplates: packerTemplates,
+	}
+
+	if err := createCfg(data); err != nil {
+		log.WithError(err).Error(err)
+		os.Exit(1)
+	}
+
+	fmt.Print(color.GreenString("Successfully created %s blueprint!", blueprint.Name))
 	os.Exit(0)
 }
 
