@@ -49,9 +49,7 @@ repos:
       - id: go-imports
       - id: go-cyclo
         args: [-over=15]
-      - id: golangci-lint
       - id: go-critic
-      - id: go-build
       - id: go-mod-tidy
 
   - repo: local
@@ -61,15 +59,3 @@ repos:
         entry: .hooks/go-no-replacement.sh
         language: script
         files: go.mod
-
-      - id: go-unit-tests
-        name: Go unit tests
-        language: script
-        entry: .hooks/go-unit-tests.sh short
-        files: '\.go$'
-
-      - id: go-vet
-        name: Run go vet
-        language: script
-        entry: .hooks/go-vet.sh
-        files: '\.go$'

@@ -72,7 +72,7 @@ and follow along.
    mage installPreCommitHooks
    ```
 
-1. Update and run pre-commit hooks locally:
+1. Run pre-commit hooks locally:
 
    ```bash
    mage runPreCommit

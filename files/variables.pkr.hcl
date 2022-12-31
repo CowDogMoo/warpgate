@@ -30,13 +30,13 @@ variable "new_image_version" {
 
 variable "pkr_build_dir" {
   type    = string
-  description = "Directory that packer will execute the transferred provisioning logic from."
+  description = "Directory that packer will execute the transferred provisioning logic from within the container."
   default = "/provision"
 }
 
 variable "provision_repo_path" {
   type    = string
-  description = "Path to the repo that contains the provisioning code to build the container image."
+  description = "Path on disk to the repo that contains the provisioning code to build the container image."
 }
 
 variable "registry_server" {
@@ -52,12 +52,6 @@ variable "registry_username" {
 variable "registry_cred" {
   type    = string
   description = "Token or credential to authenticate to registry with."
-}
-
-variable "setup_systemd" {
-  type    = bool
-  description = "Setup vnc service with systemd."
-  default = false
 }
 
 variable "workdir" {

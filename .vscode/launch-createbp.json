@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceRoot}",
+      "args": [
+        "--debug",
+        "blueprint",
+        "-c",
+        "ansible-attack-box",
+        "--base",
+        "kalilinux/kali-rolling:latest,cisagov/docker-kali-ansible:latest",
+        "--tag",
+        "l50/ansible-attack-box:latest",
+        "--systemd"
+      ],
+      "postDebugTask": "Delete blueprint"
+    }
+  ]
+}

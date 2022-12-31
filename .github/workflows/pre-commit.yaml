@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up git repository
-        uses: actions/checkout@v3.1.0
+        uses: actions/checkout@v3.2.0
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
-          go-version: 1.19.2
+          go-version: "1.19.2"
 
       - name: Install homebrew
         uses: homebrew/actions/setup-homebrew@master
@@ -53,8 +53,7 @@ jobs:
       - name: Create Pull Request with updates
         uses: peter-evans/create-pull-request@v4
         with:
-          token: ${{ secrets.PAT }}
-          # Avoids failures with dependabot PRs
+          token: ${{ secrets.BOT_TOKEN }}
           base: main
           branch: update/pre-commit-hooks
           title: Update pre-commit hooks

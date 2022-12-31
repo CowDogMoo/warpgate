@@ -1,0 +1,30 @@
+---
+blueprint:
+  name: ansible-attack-box
+
+packer_templates:
+  - name: ansible-attack-box.pkr.hcl
+    base:
+      name: kalilinux/kali-rolling
+      version: latest
+    systemd: false
+    tag:
+      name: l50/ansible-attack-box
+      version: latest
+
+  - name: ansible-attack-box-systemd.pkr.hcl
+    base:
+      name: cisagov/docker-kali-ansible
+      version: latest
+    systemd: true
+    tag:
+      name: l50/ansible-attack-box-systemd
+      version: latest
+
+container:
+  workdir: /home/kali
+  entrypoint: "/run/docker-entrypoint.sh ; zsh"
+  user: kali
+  registry:
+    server: ghcr.io
+    username: l50

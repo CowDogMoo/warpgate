@@ -18,7 +18,7 @@ install_dependencies()
 run_provision_logic()
                       {
     mkdir -p "${HOME}/.ansible/roles"
-    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/roles/cowdogmoo.vnc_zsh"
+    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/roles/l50.attack_box"
 
     pushd "${PKR_BUILD_DIR}"
 
@@ -28,8 +28,7 @@ run_provision_logic()
     ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
-        -e "setup_systemd=${SETUP_SYSTEMD}", \
-        --limit 127.0.0.1 examples/playbook.yaml
+        --limit 127.0.0.1 attack-box.yaml
     popd
 
     # Wait for ansible to finish running

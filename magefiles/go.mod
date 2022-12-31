@@ -3,7 +3,6 @@ module magefile
 go 1.18
 
 require (
-	github.com/bitfield/script v0.20.2
 	github.com/fatih/color v1.13.0
 	github.com/l50/goutils v1.1.2
 	github.com/magefile/mage v1.13.0
@@ -14,6 +13,7 @@ require (
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20220714114130-e85cedf506cd // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
+	github.com/bitfield/script v0.20.2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/glendc/go-external-ip v0.1.0 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect

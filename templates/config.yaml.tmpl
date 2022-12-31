@@ -1,0 +1,25 @@
+---
+blueprint:
+  name: {{ .Blueprint.Name }}
+
+packer_templates:
+  {{ range .PackerTemplates }}- name: {{ .Name }}
+    base:
+      name: {{ .Base.Name }}
+      version: {{ .Base.Version }}
+    systemd: {{ .Systemd }}
+    tag:
+      name: {{ .Tag.Name }}
+      version: {{ .Tag.Version }}
+  {{ end }}
+container:
+  # The container's working directory (optional - delete if unnecessary).
+  workdir: TODO
+  # Entrypoint script for container (optional - delete if unnecessary).
+  entrypoint: TODO
+  # Container user (optional - delete if unnecessary).
+  user: TODO
+  # Container registry to commit container image.
+  registry:
+    server: TODO
+    username: TODO

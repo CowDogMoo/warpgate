@@ -18,5 +18,13 @@ packer_templates:
       version: latest
     systemd: true
     tag:
-      name: cowdogmoo/ansible-systemd-vnc-zsh
+      name: cowdogmoo/ansible-vnc-zsh-systemd
       version: latest
+
+container:
+  workdir: /home/ubuntu
+  entrypoint: "/run/docker-entrypoint.sh ; zsh"
+  user: ubuntu
+  registry:
+    server: ghcr.io
+    username: CowDogMoo

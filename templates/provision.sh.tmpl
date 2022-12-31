@@ -1,0 +1,21 @@
+# Kick off provisioning logic to create container image(s).
+set -ex
+
+# Dependencies required for blueprint.
+install_dependencies() {
+	echo "TODO: Install dependencies required for your blueprint."
+}
+
+# Provision logic run by packer.
+run_provision_logic() {
+	echo "TODO: Write whatever is required to kick off your provisioning logic."
+}
+
+# Cleanup leftover artifacts from provisioning.
+cleanup() {
+	echo "TODO: Write whatever is required to clean up artifacts from your provisioning logic."
+}
+
+install_dependencies
+run_provision_logic
+cleanup

@@ -25,15 +25,12 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/bitfield/script"
 	"github.com/fatih/color"
 	goutils "github.com/l50/goutils"
-	cp "github.com/otiai10/copy"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -43,27 +40,49 @@ import (
 // with a blueprint's packer templates.
 type PackerTemplate struct {
 	// Name of the Packer template
-	Name string `yaml:"name"`
-
-	// Base represents the base image used
-	// by Packer for image building.
-	Base struct {
-		// Base image to use
-		Name string `yaml:"name"`
-		// Base image version to use
-		Version string `yaml:"version"`
-	} `yaml:"base"`
-
+	Name      string    `yaml:"name"`
+	Container Container `yaml:"container"`
+	Base      Base      `yaml:"base"`
+	Tag       Tag       `yaml:"tag"`
 	// Systemd dictates creation of a container with systemd.
 	Systemd bool `yaml:"systemd"`
+}
 
-	// Tag represents the new tag for the image built by Packer.
-	Tag struct {
-		// Name of the new image
-		Name string `yaml:"name"`
-		// Version of the new image
-		Version string `yaml:"version"`
-	} `yaml:"tag"`
+// Base represents the base image used
+// by Packer for image building.
+type Base struct {
+	// Base image(s) to use
+	Name string `yaml:"name"`
+	// Base image version(s) to use
+	Version string `yaml:"version"`
+}
+
+// Tag represents the new tag for the image built by Packer.
+type Tag struct {
+	// Name of the new image
+	Name string `yaml:"name"`
+	// Version of the new image
+	Version string `yaml:"version"`
+}
+
+// Container stores information that is used for
+// the container build process.
+type Container struct {
+	Workdir    string `yaml:"container.workdir"`
+	User       string `yaml:"container.user"`
+	Entrypoint string `yaml:"container.entrypoint"`
+	Registry   Registry
+}
+
+// Registry stores container registry information that is
+// used after image building to commit the image.
+type Registry struct {
+	// Registry server to connect to.
+	Server string `yaml:"registry.server"`
+	// Username to authenticate to the registry server.
+	Username string `yaml:"registry.username"`
+	// Credential to authenticate to the registry server.
+	Credential string
 }
 
 // imageBuilderCmd represents the imageBuilder command
@@ -72,7 +91,7 @@ var imageBuilderCmd = &cobra.Command{
 	Short: "Build a container image using packer and a provisoning repo",
 	Run: func(cmd *cobra.Command, args []string) {
 		// Get local path to provision repo from CLI args
-		inputPath, err := cmd.Flags().GetString("provisionPath")
+		blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
 		if err != nil {
 			log.WithError(err).Errorf(
 				"failed to get provisionPath from CLI input: %v", err)
@@ -101,25 +120,13 @@ var imageBuilderCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Get current user's home directory
-		usr, err := user.Current()
-		if err != nil {
-			log.WithError(err).Errorf(
-				"failed to get current user's home directory: %v", err)
+		// Validate input provisioning repo.
+		if _, err := os.Stat(blueprint.ProvisioningRepo); err != nil {
+			log.WithError(err).Errorf("invalid provisionPath %s input: %v", blueprint.ProvisioningRepo, err)
 			os.Exit(1)
 		}
 
-		homedir := usr.HomeDir
-		// Resource: https://stackoverflow.com/questions/17609732/expand-tilde-to-home-directory
-		// Account for ~ being passed in by itself
-		if strings.HasPrefix(inputPath, "~/") {
-			// Use strings.HasPrefix so we don't match paths like
-			// "/something/~/something/"
-			blueprint.ProvisioningRepo = filepath.Join(homedir, inputPath[2:])
-		} else if inputPath == "~" {
-			blueprint.ProvisioningRepo = homedir
-		}
-
+		// Merge blueprint config file.
 		viper.AddConfigPath(".")
 		viper.SetConfigName("config.yaml")
 		if err := viper.MergeInConfig(); err != nil {
@@ -221,7 +228,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	for _, file := range files {
 		if !goutils.StringInSlice(file.Name(), excludedFiles) {
 			dst := filepath.Join(buildDir, file.Name())
-			if err := cp.Copy(file.Name(), dst); err != nil {
+			if err := goutils.Cp(file.Name(), dst); err != nil {
 				log.WithError(err).Errorf(
 					"failed to copy %s to %s: %v", file.Name(), buildDir, err)
 				return "", err
@@ -232,7 +239,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	// Copy packer template into build dir
 	src := filepath.Join(cwd, "packer_templates", pTmpl.Name)
 	dst := filepath.Join(buildDir, pTmpl.Name)
-	if err := cp.Copy(src, dst); err != nil {
+	if err := goutils.Cp(src, dst); err != nil {
 		log.WithError(err).Errorf(
 			"failed to transfer packer template to %s: %v", buildDir, err)
 		return "", err
@@ -249,6 +256,14 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		return err
 	}
 
+	// Get container parameters
+	if err = viper.UnmarshalKey("container", &pTmpl.Container); err != nil {
+		log.WithError(err).Errorf(
+			"failed to unmarshal container parameters "+
+				"from %s config file: %v", blueprint.Name, err)
+		os.Exit(1)
+	}
+
 	// Create the provision command for the input packer template
 	provisionCmd := fmt.Sprintf(
 		"packer build "+
@@ -257,14 +272,22 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 			"-var 'new_image_tag=%s' "+
 			"-var 'new_image_version=%s' "+
 			"-var 'provision_repo_path=%s' "+
-			"-var 'setup_systemd=%t' "+
+			"-var 'registry_server=%s' "+
+			"-var 'registry_username=%s' "+
+			"-var 'workdir=%s' "+
+			"-var 'entrypoint=%s' "+
+			"-var 'container_user=%s' "+
 			"-var 'registry_cred=%s' %s",
 		pTmpl.Base.Name,
 		pTmpl.Base.Version,
 		pTmpl.Tag.Name,
 		pTmpl.Tag.Version,
 		blueprint.ProvisioningRepo,
-		pTmpl.Systemd,
+		pTmpl.Container.Registry.Server,
+		pTmpl.Container.Registry.Username,
+		pTmpl.Container.Workdir,
+		pTmpl.Container.Entrypoint,
+		pTmpl.Container.User,
 		os.Getenv("PAT"),
 		buildDir)
 

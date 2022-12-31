@@ -4,14 +4,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "create mage_output_file.go and run code to debug",
+      "label": "Delete blueprint",
       "type": "shell",
-      "command": "mage -d .mage --keep runPreCommit"
-    },
-    {
-      "label": "delete mage_output_file.go",
-      "type": "shell",
-      "command": "rm -f .mage/mage_output_file.go"
+      "command": "rm -rf blueprints/test-bp"
     }
   ]
 }

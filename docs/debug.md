@@ -28,7 +28,6 @@ To troubleshoot issues pushing to your container registry,
 try pushing an image manually like so:
 
 ```bash
-# Assign the personal access token created above
 GITHUB_USERNAME=CowDogMoo
 PAT=ghp_......
 IMAGE_TAG=ansible-vnc:latest
