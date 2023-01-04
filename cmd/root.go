@@ -23,9 +23,9 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"embed"
 	"errors"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -37,14 +37,11 @@ import (
 )
 
 const (
-	defaultConfigName = "wg-config.yaml"
+	defaultConfigName = "config.yaml"
 	defaultConfigType = "yaml"
 )
 
 var (
-	//go:embed config/*
-	configContentsFs embed.FS
-
 	blueprint = Blueprint{
 		Key: "blueprint",
 	}
@@ -78,13 +75,13 @@ func init() {
 
 	pf := rootCmd.PersistentFlags()
 	pf.StringVar(
-		&cfgFile, "config", "", "config file (default is $HOME/.warp/wg-config.yaml)")
+		&cfgFile, "config", "", "config file (default is $HOME/.warp/config.yaml)")
 	pf.BoolVarP(
 		&debug, "debug", "", false, "Show debug messages.")
 
-	err := viper.BindPFlag("debug", pf.Lookup("debug"))
-	if err != nil {
+	if err := viper.BindPFlag("debug", pf.Lookup("debug")); err != nil {
 		log.WithError(err).Error("failed to bind to debug in the yaml config")
+		os.Exit(1)
 	}
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
@@ -128,8 +125,8 @@ func configLogging() error {
 }
 
 func getConfigFile() ([]byte, error) {
-	configFileData, err := configContentsFs.ReadFile(
-		filepath.Join("config", defaultConfigName))
+	configFileData, err := ioutil.ReadFile(
+		filepath.Join("cmd", "config", defaultConfigName))
 	if err != nil {
 		log.WithError(err).Errorf("error reading config/ contents: %v", err)
 		return configFileData, err
@@ -190,15 +187,13 @@ func initConfig() {
 
 	if err := viper.ReadInConfig(); err != nil {
 		log.Info("No config file found - creating with default values")
-		err = createConfigFile(
-			filepath.Join(defaultConfigDir, defaultConfigName))
-		if err != nil {
+		if err := createConfigFile(
+			filepath.Join(defaultConfigDir, defaultConfigName)); err != nil {
 			log.WithError(err).Error("failed to create the config file")
 			os.Exit(1)
 		}
 
-		err = viper.ReadInConfig()
-		if err != nil {
+		if err := viper.ReadInConfig(); err != nil {
 			log.WithError(err).Error("error reading config file")
 			os.Exit(1)
 		} else {

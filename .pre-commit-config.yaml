@@ -49,7 +49,9 @@ repos:
       - id: go-imports
       - id: go-cyclo
         args: [-over=15]
+      - id: golangci-lint
       - id: go-critic
+      - id: go-build
       - id: go-mod-tidy
 
   - repo: local
