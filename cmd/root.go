@@ -189,7 +189,7 @@ func initConfig() {
 	viper.AutomaticEnv() // read in environment variables that match
 
 	if err := viper.ReadInConfig(); err != nil {
-
+		log.Info("No config file found - creating with default values")
 		err = createConfigFile(
 			filepath.Join(defaultConfigDir, defaultConfigName))
 		if err != nil {
@@ -208,8 +208,8 @@ func initConfig() {
 		log.Debug("Using config file: ", viper.ConfigFileUsed())
 	}
 
-	err := configLogging()
-	if err != nil {
+	if err = configLogging(); err != nil {
 		log.WithError(err).Error("failed to set up logging")
+		os.Exit(1)
 	}
 }
