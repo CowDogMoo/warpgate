@@ -25,7 +25,6 @@ package cmd
 import (
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -125,7 +124,7 @@ func configLogging() error {
 }
 
 func getConfigFile() ([]byte, error) {
-	configFileData, err := ioutil.ReadFile(
+	configFileData, err := os.ReadFile(
 		filepath.Join("cmd", "config", defaultConfigName))
 	if err != nil {
 		log.WithError(err).Errorf("error reading config/ contents: %v", err)
