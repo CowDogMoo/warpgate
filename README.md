@@ -5,15 +5,17 @@
 [![🚨 CodeQL Analysis](https://github.com/CowDogMoo/warpgate/actions/workflows/codeql-analysis.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/codeql-analysis.yaml)
 [![Pre-commit](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml)
 
-Warp Gate facilitates the creation of docker images
-using [Packer](https://www.packer.io/) and provided forms of provisioning logic,
-such as [Ansible](https://github.com/ansible/ansible),
-or even just a good old Bash script. This facilitates the creation of container
-images without having to write a `Dockerfile`.
-Instead, you can simply use the same code that you would to provision a VM.
+<img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
 
-Everything required to built a container image is represented as a blueprint, which
-Warp Gate consumes.
+Warp Gate facilitates the creation of container images using [Packer](https://www.packer.io/)
+and various forms of provisioning logic, such as [Ansible](https://github.com/ansible/ansible),
+or even just a good old Bash script.
+
+This project is for folks who don't want to spend time converting
+the logic they use to provision a VM into a `Dockerfile`.
+
+Virtually everything that is required to build a container image
+is abstracted into a blueprint, which Warp Gate consumes.
 
 ---
 

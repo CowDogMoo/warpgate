@@ -6,7 +6,6 @@ dist/
 
 # Generated binaries
 wg
-wg-*
 warpgate
 
 # Generated directories
