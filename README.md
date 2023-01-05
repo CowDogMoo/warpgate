@@ -13,7 +13,8 @@ and various forms of provisioning logic, such as [Ansible](https://github.com/an
 or even just a good old Bash script.
 
 This project is for folks who don't want to spend time converting
-the logic they use to provision a VM into a `Dockerfile`.
+the logic they use to provision a VM into a Dockerfile and then have
+to maintain that logic in two places.
 
 Virtually everything that is required to build a container image
 is abstracted into a blueprint, which Warp Gate consumes.
