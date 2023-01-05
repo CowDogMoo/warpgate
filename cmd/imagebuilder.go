@@ -85,89 +85,88 @@ type Registry struct {
 	Credential string
 }
 
-// imageBuilderCmd represents the imageBuilder command
-var imageBuilderCmd = &cobra.Command{
-	Use:   "imageBuilder",
-	Short: "Build a container image using packer and a provisoning repo",
-	Run: func(cmd *cobra.Command, args []string) {
-		// Get local path to provision repo from CLI args
-		blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
-		if err != nil {
-			log.WithError(err).Errorf(
-				"failed to get provisionPath from CLI input: %v", err)
-			os.Exit(1)
-		}
+var (
+	bpConfig        string
+	imageBuilderCmd = &cobra.Command{
+		Use:   "imageBuilder",
+		Short: "Build a container image using packer and a provisoning repo",
+		Run: func(cmd *cobra.Command, args []string) {
+			// Get local path to provision repo from CLI args
+			blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
+			if err != nil {
+				log.WithError(err).Errorf(
+					"failed to get provisionPath from CLI input: %v", err)
+				os.Exit(1)
+			}
 
-		// Get the blueprint to build.
-		blueprint.Name, err = cmd.Flags().GetString("blueprint")
-		if err != nil {
-			log.WithError(err).Errorf(
-				"failed to retrieve blueprint to build from CLI input: %v", err)
-			os.Exit(1)
-		}
+			// Get the blueprint to build.
+			blueprint.Name, err = cmd.Flags().GetString(blueprintKey)
+			if err != nil {
+				log.WithError(err).Errorf(
+					"failed to retrieve blueprint to build from CLI input: %v", err)
+				os.Exit(1)
+			}
 
-		// Get blueprint information
-		if err = viper.UnmarshalKey(blueprint.Key, &blueprint); err != nil {
-			log.WithError(err).Errorf(
-				"failed to unmarshal blueprint path from config file: %v", err)
-			os.Exit(1)
-		}
+			// Get blueprint information
+			if err = viper.UnmarshalKey(blueprintKey, &blueprint); err != nil {
+				log.WithError(err).Errorf(
+					"failed to unmarshal blueprint path from config file: %v", err)
+				os.Exit(1)
+			}
 
-		// Change into the blueprint directory
-		if err := goutils.Cd(filepath.Join("blueprints", blueprint.Name)); err != nil {
-			log.WithError(err).Errorf(
-				"failed to change into the %s directory: %v", blueprint.Name, err)
-			os.Exit(1)
-		}
+			bpConfig = filepath.Join("blueprints", blueprint.Name, "config.yaml")
 
-		// Validate input provisioning repo.
-		if _, err := os.Stat(blueprint.ProvisioningRepo); err != nil {
-			log.WithError(err).Errorf("invalid provisionPath %s input: %v", blueprint.ProvisioningRepo, err)
-			os.Exit(1)
-		}
+			// Validate input provisioning repo path.
+			if _, err := os.Stat(blueprint.ProvisioningRepo); err != nil {
+				log.WithError(err).Errorf("invalid provisionPath %s input: %v", blueprint.ProvisioningRepo, err)
+				os.Exit(1)
+			}
 
-		// Merge blueprint config file.
-		viper.AddConfigPath(".")
-		viper.SetConfigName("config.yaml")
-		if err := viper.MergeInConfig(); err != nil {
-			log.WithError(err).Errorf(
-				"failed to merge %s blueprint config into the existing config: %v", blueprint.Name, err)
-			os.Exit(1)
-		}
+			viper.AddConfigPath(filepath.Dir(bpConfig))
+			viper.SetConfigName(filepath.Base(bpConfig))
 
-		var packerTemplates []PackerTemplate
+			if err := viper.MergeInConfig(); err != nil {
+				log.WithError(err).Errorf(
+					"failed to merge %s blueprint config into the existing config: %v", blueprint.Name, err)
+				os.Exit(1)
+			}
 
-		// Get packer templates
-		if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
-			log.WithError(err).Errorf(
-				"failed to unmarshal packer templates from config file: %v", err)
-			os.Exit(1)
-		}
+			log.Debug("Using config file: ", viper.ConfigFileUsed())
 
-		log.Debug(viper.Get("blueprint.name"))
+			var packerTemplates []PackerTemplate
 
-		// Build each template listed in the blueprint's config.yaml
-		var wg sync.WaitGroup
-		for _, pTmpl := range packerTemplates {
-			wg.Add(1)
-			go func(pTmpl PackerTemplate, blueprint Blueprint) {
-				defer wg.Done()
-				fmt.Print(color.YellowString(
-					"Now building the %s template as part of the %s blueprint, please wait.\n",
-					pTmpl.Name, blueprint.Name))
+			// Get packer templates
+			if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
+				log.WithError(err).Errorf(
+					"failed to unmarshal packer templates from config file: %v", err)
+				os.Exit(1)
+			}
 
-				if err := buildPackerImage(pTmpl, blueprint); err != nil {
-					log.WithError(err)
-					os.Exit(1)
-				}
-			}(pTmpl, blueprint)
-		}
-		wg.Wait()
+			log.Debug(viper.Get("blueprint.name"))
 
-		s := "All packer templates in the " + blueprint.Name + " blueprint were built successfully!"
-		fmt.Print(color.GreenString(s))
-	},
-}
+			// Build each template listed in the blueprint's config.yaml
+			var wg sync.WaitGroup
+			for _, pTmpl := range packerTemplates {
+				wg.Add(1)
+				go func(pTmpl PackerTemplate, blueprint Blueprint) {
+					defer wg.Done()
+					fmt.Print(color.YellowString(
+						"Now building the %s template as part of the %s blueprint, please wait.\n",
+						pTmpl.Name, blueprint.Name))
+
+					if err := buildPackerImage(pTmpl, blueprint); err != nil {
+						log.WithError(err)
+						os.Exit(1)
+					}
+				}(pTmpl, blueprint)
+			}
+			wg.Wait()
+
+			s := "All packer templates in the " + blueprint.Name + " blueprint were built successfully!"
+			fmt.Print(color.GreenString(s))
+		},
+	}
+)
 
 func init() {
 	rootCmd.AddCommand(imageBuilderCmd)
@@ -196,13 +195,6 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 		return "", err
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to get working directory: %v", err)
-		return "", err
-	}
-
 	// Create buildDir
 	buildDir := filepath.Join("/tmp", "builds", dirName)
 	if err := goutils.CreateDirectory(buildDir); err != nil {
@@ -211,33 +203,35 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 		return "", err
 	}
 
-	files, err := os.ReadDir(cwd)
+	bpDir := filepath.Dir(bpConfig)
+	files, err := os.ReadDir(bpDir)
 	if err != nil {
 		log.WithError(err).Errorf(
-			"failed to read files from %s: %v", cwd, err)
+			"failed to list files in %s: %v", bpDir, err)
 		return "", err
 	}
 
-	// packer_templates is excluded here since we need
+	// packer_templates is excluded here because we need
 	// to get the specific packer template specified
-	// in `pTmpl.Name`
+	// in `pTmpl.Name`.
 	excludedFiles := []string{"builds", "packer_templates",
 		"config.yaml", ".gitignore", "README.md"}
 
 	// Copy blueprint to build dir
 	for _, file := range files {
 		if !goutils.StringInSlice(file.Name(), excludedFiles) {
+			src := filepath.Join(bpDir, file.Name())
 			dst := filepath.Join(buildDir, file.Name())
-			if err := goutils.Cp(file.Name(), dst); err != nil {
+			if err := goutils.Cp(src, dst); err != nil {
 				log.WithError(err).Errorf(
-					"failed to copy %s to %s: %v", file.Name(), buildDir, err)
+					"failed to copy %s to %s: %v", src, dst, err)
 				return "", err
 			}
 		}
 	}
 
 	// Copy packer template into build dir
-	src := filepath.Join(cwd, "packer_templates", pTmpl.Name)
+	src := filepath.Join(bpDir, "packer_templates", pTmpl.Name)
 	dst := filepath.Join(buildDir, pTmpl.Name)
 	if err := goutils.Cp(src, dst); err != nil {
 		log.WithError(err).Errorf(
@@ -257,11 +251,11 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 	}
 
 	// Get container parameters
-	if err = viper.UnmarshalKey("container", &pTmpl.Container); err != nil {
+	if err = viper.UnmarshalKey(containerKey, &pTmpl.Container); err != nil {
 		log.WithError(err).Errorf(
 			"failed to unmarshal container parameters "+
 				"from %s config file: %v", blueprint.Name, err)
-		os.Exit(1)
+		return err
 	}
 
 	// Create the provision command for the input packer template
@@ -292,6 +286,13 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		buildDir)
 
 	log.Debug(provisionCmd)
+
+	// Run packer from buildDir
+	if err := goutils.Cd(buildDir); err != nil {
+		log.WithError(err).Errorf(
+			"failed to change into the %s directory: %v", buildDir, err)
+		return err
+	}
 
 	if _, err := script.Exec(provisionCmd).Stdout(); err != nil {
 		if err != nil {

@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/fatih/color"
 	goutils "github.com/l50/goutils"
 	homedir "github.com/mitchellh/go-homedir"
 	log "github.com/sirupsen/logrus"
@@ -36,27 +37,31 @@ import (
 )
 
 const (
-	defaultConfigName = "config.yaml"
-	defaultConfigType = "yaml"
+	defaultConfigName  = "config.yaml"
+	blueprintKey       = "blueprint"
+	containerKey       = "container"
+	defaultConfigType  = "yaml"
+	logLevelKey        = "log.level"
+	logFormatKey       = "log.format"
+	packerTemplatesKey = "packer_templates"
+	logName            = "warpgate.log"
 )
 
 var (
-	blueprint = Blueprint{
-		Key: "blueprint",
-	}
-	cfgFile            string
-	debug              bool
-	err                error
-	packerTemplates    = []PackerTemplate{}
-	packerTemplatesKey = "packer_templates"
+	blueprint       = Blueprint{}
+	cfgFile         string
+	debug           bool
+	err             error
+	home            string
+	logLevel        string
+	logFormat       string
+	warpCfg         string
+	packerTemplates = []PackerTemplate{}
 
 	rootCmd = &cobra.Command{
 		Use:   "wg",
 		Short: "Create new container images with existing provisioning code.",
 	}
-
-	home, _          = homedir.Dir()
-	defaultConfigDir = filepath.Join(home, ".warp")
 )
 
 // Execute runs the root cobra command
@@ -72,40 +77,59 @@ func init() {
 		os.Exit(1)
 	}
 
+	warpCfg = filepath.Join(home, ".warp", defaultConfigName)
+
 	pf := rootCmd.PersistentFlags()
 	pf.StringVar(
-		&cfgFile, "config", "", "config file (default is $HOME/.warp/config.yaml)")
+		&cfgFile, "config", warpCfg, "config file (default is "+warpCfg+")")
 	pf.BoolVarP(
 		&debug, "debug", "", false, "Show debug messages.")
 
+	// Read debug value if it's set in the config file.
 	if err := viper.BindPFlag("debug", pf.Lookup("debug")); err != nil {
-		log.WithError(err).Error("failed to bind to debug in the yaml config")
+		log.WithError(err).Error("failed to bind to debug in the config file")
 		os.Exit(1)
 	}
+
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+
+	if err := depCheck(); err != nil {
+		log.WithError(err).Error("missing dependencies")
+		os.Exit(1)
+	}
+
+	// Create warpDir if it does not already exist
+	if _, err := os.Stat(filepath.Dir(warpCfg)); os.IsNotExist(err) {
+		log.Infof("Creating default config directory %s.", filepath.Dir(warpCfg))
+		if err := os.MkdirAll(filepath.Dir(warpCfg), os.ModePerm); err != nil {
+			log.WithError(err).Errorf(color.RedString(
+				"failed to create %s: %v", filepath.Dir(warpCfg), err))
+			os.Exit(1)
+		}
+	}
+
+	// Get input logging configuration parameters -or- set to default values.
+	pf.StringVar(
+		&logLevel, logLevelKey, "info", "The log level.")
+	pf.StringVar(
+		&logFormat, logFormatKey, "text", "The log format.")
 }
 
 func configLogging() error {
-	logger, err := goutils.CreateLogFile()
-	if err != nil {
-		log.WithError(err).Error("error creating the log file")
+	if debug {
+		logLevel = "debug"
 	}
 
-	// Set log level
-	configLogLevel := viper.GetString("log.level")
-	if logLevel, err := log.ParseLevel(configLogLevel); err != nil {
+	parsedLogLevel, err := log.ParseLevel(logLevel)
+	if err != nil {
 		log.WithFields(log.Fields{"level": logLevel,
 			"fallback": "info"}).Warn("Invalid log level")
-	} else {
-		if debug {
-			log.Debug("Debug logs enabled")
-			logLevel = log.DebugLevel
-		}
-		log.SetLevel(logLevel)
 	}
 
+	log.SetLevel(parsedLogLevel)
+
 	// Set log format
-	switch viper.GetString("log.format") {
+	switch logFormat {
 	case "json":
 		log.SetFormatter(&log.JSONFormatter{})
 	default:
@@ -116,22 +140,20 @@ func configLogging() error {
 		})
 	}
 
+	warpLog := filepath.Join(filepath.Dir(warpCfg), logName)
+
+	f, err := os.OpenFile(warpLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.WithError(err).Errorf(color.RedString(
+			"failed to open %s: %v", warpLog, err))
+		return err
+	}
+
 	// Output to both stdout and the log file
-	mw := io.MultiWriter(os.Stdout, logger.FilePtr)
+	mw := io.MultiWriter(os.Stdout, f)
 	log.SetOutput(mw)
 
 	return nil
-}
-
-func getConfigFile() ([]byte, error) {
-	configFileData, err := os.ReadFile(
-		filepath.Join("cmd", "config", defaultConfigName))
-	if err != nil {
-		log.WithError(err).Errorf("error reading config/ contents: %v", err)
-		return configFileData, err
-	}
-
-	return configFileData, nil
 }
 
 func depCheck() error {
@@ -143,27 +165,19 @@ func depCheck() error {
 }
 
 func createConfigFile(cfgPath string) error {
-	err := os.MkdirAll(filepath.Dir(cfgPath), os.ModePerm)
-	if err != nil {
-		log.WithError(err).Errorf("cannot create dir %s: %s", cfgPath, err)
+	// Set default logging values for config
+	viper.SetDefault(logLevelKey, logLevel)
+	viper.SetDefault(logFormatKey, logFormat)
+
+	// Write viper config to cfgPath
+	if err := viper.WriteConfigAs(cfgPath); err != nil {
+		log.WithError(err).Errorf("failed to write config to %s: %v", cfgPath, err)
 		return err
 	}
 
-	configFileData, err := getConfigFile()
-	if err != nil {
-		log.WithError(err).Errorf("cannot get lines of config file: %v", err)
-		return err
-	}
-
-	err = os.WriteFile(cfgPath, configFileData, os.ModePerm)
-	if err != nil {
-		log.WithError(err).Errorf("cannot write to file %s: %s", cfgPath, err)
-		return err
-	}
-
-	err = depCheck()
-	if err != nil {
-		log.WithError(err)
+	// Read values from newly created config
+	if err := viper.ReadInConfig(); err != nil {
+		log.WithError(err).Errorf("error reading %s config file", cfgPath)
 		return err
 	}
 
@@ -172,38 +186,35 @@ func createConfigFile(cfgPath string) error {
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
+	// Set the config file type to YAML
+	viper.SetConfigType(defaultConfigType)
+	// If a config file is specified via CLI, use that.
 	if cfgFile != "" {
-		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {
-		// Search for config yaml file in the config directory
-		viper.AddConfigPath(defaultConfigDir)
-		viper.SetConfigType(defaultConfigType)
+		viper.AddConfigPath(filepath.Dir(warpCfg))
 		viper.SetConfigName(defaultConfigName)
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	// Get relevant environment variables tied to viper params.
+	viper.AutomaticEnv()
 
+	// Attempt to read config from file. If the file doesn't exist,
+	// create and populate it.
 	if err := viper.ReadInConfig(); err != nil {
 		log.Info("No config file found - creating with default values")
-		if err := createConfigFile(
-			filepath.Join(defaultConfigDir, defaultConfigName)); err != nil {
-			log.WithError(err).Error("failed to create the config file")
+		if err := createConfigFile(warpCfg); err != nil {
+			log.WithError(err).Errorf("failed to create config file at %s", warpCfg)
 			os.Exit(1)
 		}
-
-		if err := viper.ReadInConfig(); err != nil {
-			log.WithError(err).Error("error reading config file")
-			os.Exit(1)
-		} else {
-			log.Debug("Using config file: ", viper.ConfigFileUsed())
-		}
-	} else {
-		log.Debug("Using config file: ", viper.ConfigFileUsed())
 	}
 
-	if err = configLogging(); err != nil {
+	// This needs to happen here since we won't have all
+	// of the inputs up until initConfig() is called.
+	if err := configLogging(); err != nil {
 		log.WithError(err).Error("failed to set up logging")
 		os.Exit(1)
 	}
+
+	log.Debug("Using config file: ", viper.ConfigFileUsed())
 }

@@ -35,4 +35,5 @@ docker login ghcr.io -u $GITHUB_USERNAME -p $PAT
 docker push ghcr.io/$GITHUB_USERNAME/$IMAGE_TAG
 ```
 
-Built images can be found [here](https://github.com/orgs/CowDogMoo/packages).
+Built images from existing blueprints can be
+found [here](https://github.com/orgs/CowDogMoo/packages) and [here](https://github.com/l50?tab=packages).

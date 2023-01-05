@@ -19,9 +19,32 @@ Warp Gate consumes.
 
 ## Table of Contents
 
+- [Getting Started](#getting-started)
 - [Usage](#usage)
 - [Developer Environment Setup](docs/dev.md)
 - [Debugging](docs/debug.md)
+
+---
+
+## Getting Started
+
+1. Download and install the [gh cli tool](https://cli.github.com/).
+
+1. Clone the repo:
+
+   ```bash
+   gh repo clone CowDogMoo/warpgate
+   cd warpgate
+   ```
+
+1. Get latest warpgate release:
+
+   ```bash
+   OS="$(uname | python3 -c 'print(open(0).read().lower().strip())')"
+   ARCH="$(uname -a | awk '{ print $NF }')"
+   gh release download -p "*${OS}_${ARCH}.tar.gz"
+   tar -xvf *tar.gz
+   ```
 
 ---
 
@@ -34,7 +57,7 @@ the existing `ansible-attack-box` blueprint and
 the ansible playbook at `~/.ansible/Workspace/ansible-attack-box`.
 
 ```bash
-wg imageBuilder -b ansible-attack-box -p ~/.ansible/Workspace/ansible-attack-box
+./wg imageBuilder -b ansible-attack-box -p ~/.ansible/Workspace/ansible-attack-box
 ```
 
 This next example will create a container image using
@@ -42,7 +65,7 @@ the existing `ansible-vnc-zsh` blueprint and
 the ansible playbook at `~/cowdogmoo/ansible-vnc-zsh`.
 
 ```bash
-wg imageBuilder -b ansible-vnc-zsh -p ~/cowdogmoo/ansible-vnc-zsh
+./wg imageBuilder -b ansible-vnc-zsh -p ~/cowdogmoo/ansible-vnc-zsh
 ```
 
 ### Create new blueprint skeleton
@@ -52,7 +75,7 @@ and a systemd-based container using `kalilinux/kali-rolling:latest`
 and `cisagov/docker-kali-ansible:latest` as the base images.
 
 ```bash
-wg blueprint -c new-blueprint \
+./wg blueprint -c new-blueprint \
     --systemd \
     --base kalilinux/kali-rolling:latest,cisagov/docker-kali-ansible:latest \
     --tag yourname/your-container-image:latest

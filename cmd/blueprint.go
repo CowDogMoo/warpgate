@@ -43,7 +43,6 @@ type Blueprint struct {
 	Name string `yaml:"name"`
 	// Path to the provisioning repo
 	ProvisioningRepo string
-	Key              string
 }
 
 // Data holds a blueprint and its associated packer templates.

@@ -13,7 +13,7 @@
         "-b",
         "ansible-vnc-zsh",
         "-p",
-        "~/cowdogmoo/ansible-vnc-zsh"
+        "${env:HOME}/cowdogmoo/ansible-vnc-zsh"
       ]
     }
   ]
