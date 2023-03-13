@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/bitfield/script v0.21.4
-	github.com/fatih/color v1.14.1
+	github.com/fatih/color v1.15.0
 	github.com/l50/goutils v1.2.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/sirupsen/logrus v1.9.0
