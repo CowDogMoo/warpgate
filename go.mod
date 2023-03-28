@@ -5,7 +5,7 @@ go 1.20
 require (
 	github.com/bitfield/script v0.21.4
 	github.com/fatih/color v1.15.0
-	github.com/l50/goutils v1.2.3
+	github.com/l50/goutils v1.2.5
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1
@@ -24,7 +24,7 @@ require (
 	github.com/glendc/go-external-ip v0.1.0 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
 	github.com/go-git/go-billy/v5 v5.4.1 // indirect
-	github.com/go-git/go-git/v5 v5.6.0 // indirect
+	github.com/go-git/go-git/v5 v5.6.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
