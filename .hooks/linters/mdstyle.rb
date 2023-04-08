@@ -26,7 +26,9 @@ rule 'MD013', ignore_code_blocks: true
 #   - one indent
 #   - second indent
 # * Another major bullet
+# Unordered list style
 exclude_rule 'MD004'
+exclude_rule 'MD007'
 
 # Ordered lists are fine.
 exclude_rule 'MD029'
@@ -34,9 +36,8 @@ exclude_rule 'MD029'
 # The first line doesn't always need to be a top level header.
 exclude_rule 'MD041'
 
-# I find it necessary to use '<br/>' to force line breaks
-# and it can quite useful for sizing images.
-exclude_rule 'MD033'
+# I find it necessary to use '<br/>' to force line breaks.
+exclude_rule 'MD033' # Inline HTML
 
 # Using bare URLs is fine.
 exclude_rule 'MD034'

@@ -3,7 +3,6 @@ name: Pre-Commit
 on:
   pull_request:
   push:
-    branches: [main]
   # Run once a week (see https://crontab.guru)
   schedule:
     - cron: "0 0 * * 0"
@@ -47,15 +46,5 @@ jobs:
       - name: Install pre-commit dependencies
         run: mage installDeps
 
-      - name: Run pre-commit autoupdate action
-        uses: browniebroke/pre-commit-autoupdate-action@main
-
-      - name: Create Pull Request with updates
-        uses: peter-evans/create-pull-request@v4
-        with:
-          token: ${{ secrets.BOT_TOKEN }}
-          base: main
-          branch: update/pre-commit-hooks
-          title: Update pre-commit hooks
-          commit-message: "chore: update pre-commit hooks"
-          body: Update versions of pre-commit hooks to latest version.
+      - name: Run pre-commit
+        run: pre-commit run --all-files
