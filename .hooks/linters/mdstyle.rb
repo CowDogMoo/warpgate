@@ -26,9 +26,9 @@ rule 'MD013', ignore_code_blocks: true
 #   - one indent
 #   - second indent
 # * Another major bullet
-# Unordered list style
-exclude_rule 'MD004'
-exclude_rule 'MD007'
+exclude_rule 'MD004' # Unordered list style
+
+exclude_rule 'MD007' # Unordered list indentation
 
 # Ordered lists are fine.
 exclude_rule 'MD029'
