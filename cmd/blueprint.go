@@ -58,27 +58,44 @@ var (
 		Use:   "blueprint",
 		Short: "All blueprint oriented operations for Warp Gate.",
 		Run: func(cmd *cobra.Command, args []string) {
-			listBlueprints(cmd)
-			createBlueprint(cmd)
+			if err := cmd.Help(); err != nil {
+				log.WithError(err).Error("failed to show help")
+			}
 		},
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(blueprintCmd)
-	blueprintCmd.Flags().StringSliceVarP(
+
+	blueprintCmd.PersistentFlags().StringSliceVarP(
 		&base, "base", "b", []string{}, "Base image(s) to use for blueprint creation.")
-	blueprintCmd.Flags().StringP(
-		"create", "c", "", "Create a blueprint.")
-	blueprintCmd.Flags().BoolP(
-		"list", "l", false, "List all blueprints.")
-	blueprintCmd.Flags().StringP(
+	blueprintCmd.PersistentFlags().StringP(
 		"template", "t", "", "Template to use for blueprint "+
 			"(all templates can be found in templates/).")
-	blueprintCmd.Flags().BoolP(
+	blueprintCmd.PersistentFlags().BoolP(
 		"systemd", "", false, "Blueprint includes a systemd-based image.")
-	blueprintCmd.Flags().StringP(
+	blueprintCmd.PersistentFlags().StringP(
 		"tag", "", "", "Tag information for the created container image.")
+
+	blueprintCmd.AddCommand(createBlueprintCmd, listBlueprintsCmd)
+}
+
+var createBlueprintCmd = &cobra.Command{
+	Use:   "create [blueprint name]",
+	Short: "Create a new blueprint.",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		createBlueprint(cmd, args[0])
+	},
+}
+
+var listBlueprintsCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all blueprints.",
+	Run: func(cmd *cobra.Command, args []string) {
+		listBlueprints()
+	},
 }
 
 func genBPDirs(newBlueprint string) error {
@@ -94,13 +111,33 @@ func genBPDirs(newBlueprint string) error {
 	}
 
 	return nil
+}
 
+func validateBaseInput(baseInput []string) error {
+	if len(baseInput) == 0 {
+		return errors.New("base input is required")
+	}
+	for _, input := range baseInput {
+		parts := strings.Split(input, ":")
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid base input format for %s, expected name:version", input)
+		}
+	}
+	return nil
+}
+
+func validateTagInput(tagInput string) error {
+	parts := strings.Split(tagInput, ":")
+	if len(parts) != 2 {
+		return errors.New("invalid tag input format, expected name:version")
+	}
+	return nil
 }
 
 func processCfgInputs(cmd *cobra.Command) error {
 	tagInfo, err := cmd.Flags().GetString("tag")
-	if err != nil {
-		log.WithError(err).Error()
+	if err != nil || validateTagInput(tagInfo) != nil {
+		log.WithError(err).Error("failed to get tag info from input or invalid format")
 		os.Exit(1)
 	}
 
@@ -108,17 +145,18 @@ func processCfgInputs(cmd *cobra.Command) error {
 	var tagVersion string
 
 	parts := strings.Split(tagInfo, ":")
-	if len(parts) > 1 {
-		tagName = parts[0]
-		tagVersion = parts[1]
-	} else {
-		err = errors.New("failed to get tag info from input")
-		log.WithError(err)
-	}
+	tagName = parts[0]
+	tagVersion = parts[1]
 
 	systemd, err := cmd.Flags().GetBool("systemd")
 	if err != nil {
 		log.WithError(err).Error()
+		os.Exit(1)
+	}
+
+	baseInput, err := cmd.Flags().GetStringSlice("base")
+	if err != nil || validateBaseInput(baseInput) != nil {
+		log.WithError(err).Error("failed to get base input from CLI or invalid format")
 		os.Exit(1)
 	}
 
@@ -136,8 +174,13 @@ func processCfgInputs(cmd *cobra.Command) error {
 		tmplNames = []string{blueprint.Name + ".pkr.hcl"}
 	}
 
+	if len(baseInput) < len(tagNames) {
+		log.Error("not enough base inputs for the specified tag names")
+		os.Exit(1)
+	}
+
 	for i, n := range tagNames {
-		parts = strings.Split(base[i], ":")
+		parts = strings.Split(baseInput[i], ":")
 		packerTemplates = append(packerTemplates, PackerTemplate{
 			Name: tmplNames[i],
 			Base: Base{
@@ -259,13 +302,8 @@ func createScript(bpName string) error {
 	return nil
 }
 
-func createBlueprint(cmd *cobra.Command) {
-	blueprint.Name, err = cmd.Flags().GetString("create")
-	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to retrieve blueprint to create from CLI input: %v", err)
-		os.Exit(1)
-	}
+func createBlueprint(cmd *cobra.Command, blueprintName string) {
+	blueprint.Name = blueprintName
 
 	// Create blueprint directories
 	if err := genBPDirs(blueprint.Name); err != nil {
@@ -305,23 +343,15 @@ func createBlueprint(cmd *cobra.Command) {
 	os.Exit(0)
 }
 
-func listBlueprints(cmd *cobra.Command) {
-	ls, err := cmd.Flags().GetBool("list")
+func listBlueprints() {
+	files, err := os.ReadDir("blueprints")
 	if err != nil {
 		log.WithError(err).Errorf(
-			"failed to get ls from CLI input: %v", err)
+			"failed to read blueprints: %v", err)
 		os.Exit(1)
 	}
-	if ls {
-		files, err := os.ReadDir("blueprints")
-		if err != nil {
-			log.WithError(err).Errorf(
-				"failed to read blueprints: %v", err)
-			os.Exit(1)
-		}
-		for _, f := range files {
-			fmt.Println(f.Name())
-		}
-		os.Exit(0)
+	for _, f := range files {
+		fmt.Println(f.Name())
 	}
+	os.Exit(0)
 }

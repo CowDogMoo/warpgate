@@ -62,7 +62,7 @@ the existing `ansible-attack-box` blueprint and
 the ansible playbook at `~/.ansible/Workspace/ansible-attack-box`.
 
 ```bash
-./wg imageBuilder -b ansible-attack-box -p ~/.ansible/Workspace/ansible-attack-box
+wg imageBuilder -b ansible-attack-box -p ~/.ansible/Workspace/ansible-attack-box
 ```
 
 This next example will create a container image using
@@ -70,7 +70,7 @@ the existing `ansible-vnc-zsh` blueprint and
 the ansible playbook at `~/cowdogmoo/ansible-vnc-zsh`.
 
 ```bash
-./wg imageBuilder -b ansible-vnc-zsh -p ~/cowdogmoo/ansible-vnc-zsh
+wg imageBuilder -b ansible-vnc-zsh -p ~/cowdogmoo/ansible-vnc-zsh
 ```
 
 ### Create new blueprint skeleton
@@ -80,11 +80,15 @@ and a systemd-based container using `kalilinux/kali-rolling:latest`
 and `cisagov/docker-kali-ansible:latest` as the base images.
 
 ```bash
-./wg blueprint -c new-blueprint \
+NAME=yourusername
+IMG_NAME=yourcontainerimagename
+
+wg blueprint create new-blueprint \
     --systemd \
     --base kalilinux/kali-rolling:latest,cisagov/docker-kali-ansible:latest \
-    --tag yourname/your-container-image:latest
+    --tag $NAME/$IMG_NAME:latest
 ```
 
-Be sure to add provisioning logic to `blueprints/new-blueprint/scripts/provision.sh`
-and address any relevant TODOs in `config.yaml`.
+Be sure to add provisioning logic to
+`blueprints/new-blueprint/scripts/provision.sh` and address any relevant
+TODOs in `config.yaml`.

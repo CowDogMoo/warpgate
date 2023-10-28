@@ -31,6 +31,7 @@ import (
 	"github.com/bitfield/script"
 	"github.com/fatih/color"
 	goutils "github.com/l50/goutils"
+	git "github.com/l50/goutils/v2/git"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -89,7 +90,7 @@ var (
 	bpConfig        string
 	imageBuilderCmd = &cobra.Command{
 		Use:   "imageBuilder",
-		Short: "Build a container image using packer and a provisoning repo",
+		Short: "Build a container image using packer and a provisioning repo",
 		Run: func(cmd *cobra.Command, args []string) {
 			// Get local path to provision repo from CLI args
 			blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
@@ -114,7 +115,14 @@ var (
 				os.Exit(1)
 			}
 
-			bpConfig = filepath.Join("blueprints", blueprint.Name, "config.yaml")
+			repoRoot, err := git.RepoRoot()
+			if err != nil {
+				log.WithError(err).Errorf(
+					"failed to get the root of the git repo: %v", err)
+				cobra.CheckErr(err)
+			}
+
+			bpConfig = filepath.Join(repoRoot, "blueprints", blueprint.Name, "config.yaml")
 
 			// Validate input provisioning repo path.
 			if _, err := os.Stat(blueprint.ProvisioningRepo); err != nil {
@@ -242,11 +250,46 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	return buildDir, nil
 }
 
+func initializeBlueprint(blueprintDir string) error {
+	repoRoot, err := git.RepoRoot()
+	if err != nil {
+		return fmt.Errorf("failed to get the root of the git repo: %v", err)
+	}
+
+	// Path to the directory where plugins would be installed
+	pluginsDir := filepath.Join(repoRoot, blueprintDir, "packer_templates", "github.com")
+
+	// Check if the plugins directory exists
+	if _, err := os.Stat(pluginsDir); os.IsNotExist(err) {
+		// Change to the blueprint's directory
+		if err := os.Chdir(filepath.Join(blueprintDir, "packer_templates")); err != nil {
+			return fmt.Errorf("failed to change directory to %s: %v", blueprintDir, err)
+		}
+
+		// Run packer init .
+		initCmd := "packer init ."
+		if _, err := script.Exec(initCmd).Stdout(); err != nil {
+			return fmt.Errorf("failed to initialize blueprint with packer init: %v", err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("failed to check the status of the plugins directory: %v", err)
+	}
+
+	return nil
+}
+
 func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 	buildDir, err := createBuildDir(pTmpl, blueprint)
 	if err != nil {
 		log.WithError(err).Errorf(
 			"failed to create build directory: %v", err)
+		return err
+	}
+
+	// Initialize the blueprint before building the image
+	if err := initializeBlueprint(filepath.Dir(bpConfig)); err != nil {
+		log.WithError(err).Errorf(
+			"failed to initialize blueprint: %v", err)
 		return err
 	}
 

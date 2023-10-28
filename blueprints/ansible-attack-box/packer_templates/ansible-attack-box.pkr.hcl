@@ -1,13 +1,3 @@
-# Define the plugin(s) used by Packer.
-packer {
-  required_plugins {
-    docker = {
-      version = ">= 1.0.1"
-      source  = "github.com/hashicorp/docker"
-    }
-  }
-}
-
 source "docker" "ansible-attack-box" {
   commit      = true
   image   = "${var.base_image}:${var.base_image_version}"

@@ -1,7 +1,7 @@
 ---
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: check-case-conflict
       - id: check-merge-conflict
@@ -22,24 +22,13 @@ repos:
     rev: v3.0.3
     hooks:
       - id: prettier
-        files: \.(json|md|yaml|yml)$
-
-  - repo: https://github.com/jumanjihouse/pre-commit-hooks
-    rev: 3.0.0
-    hooks:
-      - id: script-must-have-extension
-        name: Ensure shell scripts end with .sh
-        types: [shell]
-      - id: shellcheck
-      - id: shfmt
-      # Configuration in .mdlrc and .hooks/linters/mdstyle.rb
-      - id: markdownlint
+        files: \.(json|yaml|yml)$
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.5
+    rev: v2.2.6
     hooks:
       - id: codespell
-        entry: codespell -q 3 -f --skip=".git,.github" README.md
+        entry: codespell -q 3 -f --skip=".git,.github,go.*,magefiles/go.*" README.md
 
   - repo: https://github.com/dnephin/pre-commit-golang
     rev: v0.5.1
@@ -65,7 +54,7 @@ repos:
       - id: go-unit-tests
         name: Go unit tests
         language: script
-        entry: .hooks/go-unit-tests.sh short
+        entry: .hooks/run-go-tests.sh coverage
         files: '\.go$'
 
       - id: go-vet
@@ -73,3 +62,26 @@ repos:
         language: script
         entry: .hooks/go-vet.sh
         files: '\.go$'
+
+      - id: go-licenses
+        name: Run go-licenses
+        language: script
+        entry: .hooks/go-licenses.sh check_forbidden
+
+      - id: generate-docs
+        name: Update package docs
+        language: script
+        entry: .hooks/generate-docs.sh
+        require_serial: true
+
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: script-must-have-extension
+        name: Ensure shell scripts end with .sh
+        types: [shell]
+        exclude: .bats
+      - id: shellcheck
+      - id: shfmt
+      # Configuration in .mdlrc and .hooks/linters/mdstyle.rb
+      - id: markdownlint
