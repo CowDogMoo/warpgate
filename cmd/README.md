@@ -1,6 +1,6 @@
-# warpgate/v2/cmd
+# WarpGate/cmd
 
-The `cmd` package is a part of the warpgate.
+The `cmd` package is a part of the WarpGate.
 
 ---
 
@@ -29,11 +29,11 @@ Execute runs the root cobra command
 
 ## Installation
 
-To use the warpgate/cmd package, you first need to install it.
+To use the WarpGate/cmd package, you first need to install it.
 Follow the steps below to install via go get.
 
 ```bash
-go get github.com/l50/goutils/v2/cmd
+go get github.com/cowdogmoo/warpgate/cmd
 ```
 
 ---
@@ -44,7 +44,7 @@ After installation, you can import the package in your Go project
 using the following import statement:
 
 ```go
-import "github.com/l50/goutils/v2/cmd"
+import "github.com/cowdogmoo/warpgate/cmd"
 ```
 
 ---
@@ -52,7 +52,7 @@ import "github.com/l50/goutils/v2/cmd"
 ## Tests
 
 To ensure the package is working correctly, run the following
-command to execute the tests for `warpgate/cmd`:
+command to execute the tests for `WarpGate/cmd`:
 
 ```bash
 go test -v
@@ -71,5 +71,5 @@ you would like to change.
 ## License
 
 This project is licensed under the MIT
-License - see the [LICENSE](https://github.com/cowdogmoo/Warpgate/blob/main/LICENSE
+License - see the [LICENSE](https://github.com/CowDogMoo/WarpGate/blob/main/LICENSE)
 file for details.

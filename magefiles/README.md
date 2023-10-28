@@ -1,4 +1,4 @@
-# warpgate/v2/magefiles
+# WarpGate/magefiles
 
 `magefiles` provides utilities that would normally be managed
 and executed with a `Makefile`. Instead of being written in the make language,
@@ -202,5 +202,5 @@ you would like to change.
 ## License
 
 This project is licensed under the MIT
-License - see the [LICENSE](https://github.com/cowdogmoo/Warpgate/blob/main/LICENSE
+License - see the [LICENSE](https://github.com/CowDogMoo/WarpGate/blob/main/LICENSE)
 file for details.
