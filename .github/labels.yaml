@@ -3,11 +3,72 @@
 - name: area/github
   color: "72ccf3"
   description: >-
-    Changes made in the github directory
+    Changes made to github actions
 - name: area/pre-commit
-  color: "144B0D"
+  color: "BC9BE3"
   description: >-
-    Changes made in the pre-commit directory
+    Changes made to pre-commit hooks
+- name: area/ansible
+  color: "7BD7E0"
+  description: >-
+    Changes made to Ansible resources
+- name: area/cloudflare
+  color: "7BD7E0"
+  description: >-
+    Changes made to Cloudflare resources
+- name: area/dev
+  color: "7BD7E0"
+  description: >-
+    Changes made to dev resources
+- name: area/file
+  color: "7BD7E0"
+  description: >-
+    Changes made to file resources
+- name: area/git
+  color: "7BD7E0"
+  description: >-
+    Changes made to Git resources
+- name: area/keeper
+  color: "7BD7E0"
+  description: >-
+    Changes made to Keeper resources
+- name: area/logging
+  color: "7BD7E0"
+  description: >-
+    Changes made to Logging resources
+- name: area/macos
+  color: "7BD7E0"
+  description: >-
+    Changes made to MacOS resources
+- name: area/net
+  color: "7BD7E0"
+  description: >-
+    Changes made to network resources
+- name: area/str
+  color: "7BD7E0"
+  description: >-
+    Changes made to string resources
+- name: area/sys
+  color: "7BD7E0"
+  description: >-
+    Changes made to system resources
+- name: area/web
+  color: "7BD7E0"
+  description: >-
+    Changes made to web resources
+- name: area/magefiles
+  color: "7BD7E0"
+  description: >-
+    Changes made to Magefiles
+- name: area/go-mod-sum
+  color: "7BD7E0"
+  description: >-
+    Changes made to go.mod and go.sum
+- name: area/asdf
+  color: "F4D1B7" # orange
+  description: >-
+    Changes made to asdf resources
+
 # Renovate
 - name: renovate/container
   color: "ffc300"
@@ -15,6 +76,7 @@
   color: "ffc300"
 - name: renovate/github-release
   color: "ffc300"
+
 # Semantic Type
 - name: type/digest
   color: "FFEC19"
@@ -26,9 +88,7 @@
   color: "F6412D"
 - name: type/break
   color: "F6412D"
-# Release Issue
-- name: image-not-found
-  color: "ee0701"
+
 # Uncategorized
 - name: bug
   color: "ee0701"
@@ -38,9 +98,7 @@
   color: "F4D1B7"
 - name: enhancement
   color: "84b6eb"
-- name: broken-links
-  color: "7B55D7"
 - name: question
+  description: >-
+    Clarification and/or additional information required to move forward
   color: "cc317c"
-- name: community
-  color: "0e8a16"

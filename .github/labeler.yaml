@@ -1,6 +1,55 @@
 ---
 area/github:
   - ".github/**/*"
+
 area/pre-commit:
   - ".pre-commit-config.yaml"
   - ".hooks/**/*"
+
+area/ansible:
+  - "ansible/*.go"
+
+area/cloudflare:
+  - "cloudflare/*.go"
+
+area/dev:
+  - "dev/**/*.go"
+
+area/file:
+  - "file/*.go"
+
+area/git:
+  - "git/*.go"
+
+area/keeper:
+  - "keeper/*.go"
+
+area/logging:
+  - "logging/*.go"
+
+area/macos:
+  - "macos/*.go"
+
+area/net:
+  - "net/*.go"
+
+area/str:
+  - "str/*.go"
+
+area/sys:
+  - "sys/*.go"
+
+area/web:
+  - "web/*.go"
+  - "web/cdpchrome/*.go"
+
+area/magefiles:
+  - "magefiles/*"
+
+area/asdf:
+  - ".asdf"
+  - ".tool-versions"
+
+area/go-mod-sum:
+  - "go.mod"
+  - "go.sum"
