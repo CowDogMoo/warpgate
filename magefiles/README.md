@@ -31,7 +31,7 @@ to the current system's OS and architecture.
 
 release: Determines the compilation mode.
 
-If "true", compiles all supported releases for TTPForge.
+If "true", compiles all supported releases for warpgate.
 If "false", compiles only the binary for the specified OS
 and architecture (based on GOOS and GOARCH) or the current
 system's default if the vars aren't set.
@@ -45,7 +45,7 @@ current system's architecture if not set.
 Example usage:
 
 ```go
-release=true mage compile # Compiles all supported releases for TTPForge
+release=true mage compile # Compiles all supported releases for warpgate
 GOOS=darwin GOARCH=arm64 mage compile false # Compiles the binary for darwin/arm64
 GOOS=linux GOARCH=amd64 mage compile false # Compiles the binary for linux/amd64
 ```
@@ -202,5 +202,5 @@ you would like to change.
 ## License
 
 This project is licensed under the MIT
-License - see the [LICENSE](../LICENSE)
+License - see the [LICENSE](https://github.com/cowdogmoo/Warpgate/blob/main/LICENSE
 file for details.

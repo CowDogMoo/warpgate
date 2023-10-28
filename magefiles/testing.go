@@ -61,7 +61,7 @@ func (p *compileParams) populateFromEnv() {
 //
 // release: Determines the compilation mode.
 //
-// If "true", compiles all supported releases for TTPForge.
+// If "true", compiles all supported releases for warpgate.
 // If "false", compiles only the binary for the specified OS
 // and architecture (based on GOOS and GOARCH) or the current
 // system's default if the vars aren't set.
@@ -75,7 +75,7 @@ func (p *compileParams) populateFromEnv() {
 // Example usage:
 //
 // ```go
-// release=true mage compile # Compiles all supported releases for TTPForge
+// release=true mage compile # Compiles all supported releases for warpgate
 // GOOS=darwin GOARCH=arm64 mage compile false # Compiles the binary for darwin/arm64
 // GOOS=linux GOARCH=amd64 mage compile false # Compiles the binary for linux/amd64
 // ```
@@ -114,10 +114,10 @@ func Compile() error {
 		var args []string
 
 		if release {
-			fmt.Println("Compiling all supported releases for TTPForge with goreleaser")
+			fmt.Println("Compiling all supported releases for warpgate with goreleaser")
 			args = []string{"release", "--snapshot", "--clean", "--skip", "validate"}
 		} else {
-			fmt.Printf("Compiling the TTPForge binary for %s/%s, please wait.\n", p.GOOS, p.GOARCH)
+			fmt.Printf("Compiling the warpgate binary for %s/%s, please wait.\n", p.GOOS, p.GOARCH)
 			args = []string{"build", "--snapshot", "--clean", "--skip", "validate", "--single-target"}
 		}
 
@@ -213,7 +213,7 @@ func RunIntegrationTests() error {
 	newPath := absoluteBinPath + string(os.PathListSeparator) + originalPath
 	os.Setenv("PATH", newPath)
 
-	armoryTTPs := filepath.Join(home, ".ttpforge", "repos", "forgearmory", "ttps")
+	armoryTTPs := filepath.Join(home, ".warpgate", "repos", "forgearmory", "ttps")
 
 	// Parse README files to extract and run example commands, ensuring the
 	// validity of our examples.
@@ -306,10 +306,10 @@ func handleLineInCodeBlock(trimmedLine, line string, inCodeBlock bool, language 
 	return inCodeBlock, codeBlockLines
 }
 
-// extractTTPForgeCommand extracts the TTPForge run commands from the provided
+// extractWarpGateCommand extracts the warpgate run commands from the provided
 // reader (parsed README content). This approach automates the testing of
 // examples by leveraging the commands documented in READMEs.
-func extractTTPForgeCommand(r io.Reader) ([]string, error) {
+func extractWarpGateCommand(r io.Reader) ([]string, error) {
 	lines, err := processLines(r, "bash")
 	if err != nil {
 		return nil, err
@@ -347,7 +347,7 @@ func extractTTPForgeCommand(r io.Reader) ([]string, error) {
 }
 
 // findReadmeFiles looks for README.md files in the specified directory.
-// The READMEs are expected to contain TTPForge commands that serve as
+// The READMEs are expected to contain warpgate commands that serve as
 // user-facing instructions for the examples. By parsing these READMEs, we can
 // automatically test and validate these instructions.
 func findReadmeFiles(rootDir string) error {
@@ -364,7 +364,7 @@ func findReadmeFiles(rootDir string) error {
 }
 
 // processReadme reads the content of a given README file, extracts the
-// TTPForge commands, and runs them. This acts as a verification step to
+// warpgate commands, and runs them. This acts as a verification step to
 // ensure the examples work as described in the README.
 func processReadme(path string, info os.FileInfo) error {
 	contents, err := os.ReadFile(path)
@@ -372,7 +372,7 @@ func processReadme(path string, info os.FileInfo) error {
 		return fmt.Errorf("error reading %s:%v", path, err)
 	}
 
-	commands, err := extractTTPForgeCommand(strings.NewReader(string(contents)))
+	commands, err := extractWarpGateCommand(strings.NewReader(string(contents)))
 	if err != nil {
 		return fmt.Errorf("failed to parse %v: %v", path, err)
 	}
@@ -385,7 +385,7 @@ func processReadme(path string, info os.FileInfo) error {
 	return nil
 }
 
-// runExtractedCommand executes the input TTPForge command, acting as a
+// runExtractedCommand executes the input warpgate command, acting as a
 // dynamic validation step.
 func runExtractedCommand(command string, info os.FileInfo) error {
 	if command == "" {

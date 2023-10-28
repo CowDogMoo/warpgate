@@ -120,9 +120,8 @@ func GeneratePackageDocs() error {
 // of the process.
 func RunPreCommit() error {
 	if !sys.CmdExists("pre-commit") {
-		return fmt.Errorf("pre-commit is not installed, please follow the " +
-			"instructions in the dev doc: " +
-			"https://github.com/facebookincubator/TTPForge/tree/main/docs/dev")
+		return fmt.Errorf("pre-commit is not installed, please install it " +
+			"with the following command: `python3 -m pip install pre-commit`")
 	}
 
 	fmt.Println(color.YellowString("Updating pre-commit hooks."))

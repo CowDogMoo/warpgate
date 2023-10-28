@@ -1,11 +1,9 @@
 # warpgate/v2/{{.PackageName}}
 
-{{if ne .PackageName "magefiles"}}The `{{.PackageName}}` package is a collection of utility functions
-designed to simplify common {{.PackageName}} tasks.
-{{else}}`{{.PackageName}}` provides utilities that would normally be managed
+{{if ne .PackageName "magefiles"}}The `{{.PackageName}}` package is a part of the warpgate.{{else}}`{{.PackageName}}` provides utilities that would normally be managed
 and executed with a `Makefile`. Instead of being written in the make language,
-magefiles are crafted in Go and leverage the [Mage](https://magefile.org/) library.
-{{end}}
+magefiles are crafted in Go and leverage the [Mage](https://magefile.org/) library.{{end}}
+
 ---
 
 ## Table of contents
@@ -32,7 +30,7 @@ magefiles are crafted in Go and leverage the [Mage](https://magefile.org/) libra
 {{end}}{{if ne .PackageName "magefiles"}}
 ## Installation
 
-To use the goutils/v2/{{.PackageName}} package, you first need to install it.
+To use the warpgate/{{.PackageName}} package, you first need to install it.
 Follow the steps below to install via go get.
 
 ```bash
@@ -55,7 +53,7 @@ import "{{.GoGetPath}}"
 ## Tests
 
 To ensure the package is working correctly, run the following
-command to execute the tests for `goutils/v2/{{.PackageName}}`:
+command to execute the tests for `warpgate/{{.PackageName}}`:
 
 ```bash
 go test -v
@@ -74,5 +72,5 @@ you would like to change.
 ## License
 
 This project is licensed under the MIT
-License - see the [LICENSE](../LICENSE)
+License - see the [LICENSE](https://github.com/cowdogmoo/Warpgate/blob/main/LICENSE
 file for details.

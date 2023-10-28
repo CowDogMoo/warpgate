@@ -1,7 +1,6 @@
 # warpgate/v2/cmd
 
-The `cmd` package is a collection of utility functions
-designed to simplify common cmd tasks.
+The `cmd` package is a part of the warpgate.
 
 ---
 
@@ -30,7 +29,7 @@ Execute runs the root cobra command
 
 ## Installation
 
-To use the goutils/v2/cmd package, you first need to install it.
+To use the warpgate/cmd package, you first need to install it.
 Follow the steps below to install via go get.
 
 ```bash
@@ -53,7 +52,7 @@ import "github.com/l50/goutils/v2/cmd"
 ## Tests
 
 To ensure the package is working correctly, run the following
-command to execute the tests for `goutils/v2/cmd`:
+command to execute the tests for `warpgate/cmd`:
 
 ```bash
 go test -v
@@ -72,5 +71,5 @@ you would like to change.
 ## License
 
 This project is licensed under the MIT
-License - see the [LICENSE](../LICENSE)
+License - see the [LICENSE](https://github.com/cowdogmoo/Warpgate/blob/main/LICENSE
 file for details.
