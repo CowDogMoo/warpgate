@@ -24,7 +24,7 @@ jobs:
       # - name: Install changelog gh cli extension
       #   run: gh extension install chelnak/gh-changelog
       #   env:
-      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     GH_TOKEN: ${{ secrets.BOT_TOKEN }}
 
       - name: Fix GOPATH
         run: export PATH=$PATH:$(go env GOPATH)/bin
@@ -36,4 +36,4 @@ jobs:
           version: latest
           args: release --rm-dist
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
