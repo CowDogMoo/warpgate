@@ -119,17 +119,23 @@ func GeneratePackageDocs() error {
 // error: An error if any issue occurs at any of the three stages
 // of the process.
 func RunPreCommit() error {
-	fmt.Println("Updating pre-commit hooks.")
+	if !sys.CmdExists("pre-commit") {
+		return fmt.Errorf("pre-commit is not installed, please follow the " +
+			"instructions in the dev doc: " +
+			"https://github.com/facebookincubator/TTPForge/tree/main/docs/dev")
+	}
+
+	fmt.Println(color.YellowString("Updating pre-commit hooks."))
 	if err := lint.UpdatePCHooks(); err != nil {
 		return err
 	}
 
-	fmt.Println("Clearing the pre-commit cache to ensure we have a fresh start.")
+	fmt.Println(color.YellowString("Clearing the pre-commit cache to ensure we have a fresh start."))
 	if err := lint.ClearPCCache(); err != nil {
 		return err
 	}
 
-	fmt.Println("Running all pre-commit hooks locally.")
+	fmt.Println(color.YellowString("Running all pre-commit hooks locally."))
 	if err := lint.RunPCHooks(); err != nil {
 		return err
 	}
