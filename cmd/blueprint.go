@@ -246,10 +246,10 @@ func createPacker(cmd *cobra.Command, data Data) error {
 	}
 
 	set := false
-	data.Container.Registry.Credential, set = os.LookupEnv("PAT")
+	data.Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
 	if !set {
 		log.WithError(err).Error(
-			"required env var $PAT is not set, please set it with a correct Personal Access Token and try again")
+			"required env var $GITHUB_TOKEN is not set, please set it with a correct Personal Access Token and try again")
 		os.Exit(1)
 	}
 

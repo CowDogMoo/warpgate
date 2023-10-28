@@ -325,7 +325,7 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		pTmpl.Container.Workdir,
 		pTmpl.Container.Entrypoint,
 		pTmpl.Container.User,
-		os.Getenv("PAT"),
+		os.Getenv("GITHUB_TOKEN"),
 		buildDir)
 
 	log.Debug(provisionCmd)

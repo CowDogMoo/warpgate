@@ -16,7 +16,7 @@ packer build -debug \
     -var 'new_image_version=latest' \
     -var 'provision_repo_path=~/cowdogmoo/ubuntu-vnc-zsh' \
     -var 'setup_systemd=false' \
-    -var "registry_cred=$PAT" \
+    -var "registry_cred=$GITHUB_TOKEN" \
     .
 ```
 
@@ -29,9 +29,9 @@ try pushing an image manually like so:
 
 ```bash
 GITHUB_USERNAME=CowDogMoo
-PAT=ghp_......
+GITHUB_TOKEN=ghp_......
 IMAGE_TAG=ansible-vnc:latest
-docker login ghcr.io -u $GITHUB_USERNAME -p $PAT
+docker login ghcr.io -u $GITHUB_USERNAME -p $GITHUB_TOKEN
 docker push ghcr.io/$GITHUB_USERNAME/$IMAGE_TAG
 ```
 
