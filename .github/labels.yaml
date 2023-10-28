@@ -8,54 +8,26 @@
   color: "BC9BE3"
   description: >-
     Changes made to pre-commit hooks
-- name: area/ansible
-  color: "7BD7E0"
+- name: area/blueprints
+  color: "8fbcbc"
   description: >-
-    Changes made to Ansible resources
-- name: area/cloudflare
-  color: "7BD7E0"
+    Changes made to blueprint configurations and scripts
+- name: area/cmd
+  color: "a18fbf"
   description: >-
-    Changes made to Cloudflare resources
-- name: area/dev
-  color: "7BD7E0"
+    Changes made to command line utilities
+- name: area/docs
+  color: "8fbc8f"
   description: >-
-    Changes made to dev resources
-- name: area/file
-  color: "7BD7E0"
+    Changes made to project documentation
+- name: area/templates
+  color: "bc8f8f"
   description: >-
-    Changes made to file resources
-- name: area/git
-  color: "7BD7E0"
+    Changes made to template files
+- name: area/warpgate
+  color: "8f8fbc"
   description: >-
-    Changes made to Git resources
-- name: area/keeper
-  color: "7BD7E0"
-  description: >-
-    Changes made to Keeper resources
-- name: area/logging
-  color: "7BD7E0"
-  description: >-
-    Changes made to Logging resources
-- name: area/macos
-  color: "7BD7E0"
-  description: >-
-    Changes made to MacOS resources
-- name: area/net
-  color: "7BD7E0"
-  description: >-
-    Changes made to network resources
-- name: area/str
-  color: "7BD7E0"
-  description: >-
-    Changes made to string resources
-- name: area/sys
-  color: "7BD7E0"
-  description: >-
-    Changes made to system resources
-- name: area/web
-  color: "7BD7E0"
-  description: >-
-    Changes made to web resources
+    Changes made to warpgate directory
 - name: area/magefiles
   color: "7BD7E0"
   description: >-

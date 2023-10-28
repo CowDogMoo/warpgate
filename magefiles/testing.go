@@ -31,7 +31,7 @@ func init() {
 	var err error
 	repoRoot, err = git.RepoRoot()
 	if err != nil {
-		fmt.Errorf("failed to get repo root: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to get repo root: %v", err)
 		os.Exit(1)
 	}
 }

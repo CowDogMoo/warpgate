@@ -2,8 +2,6 @@ module github.com/cowdogmoo/warpgate
 
 go 1.21
 
-toolchain go1.21.3
-
 require (
 	github.com/bitfield/script v0.22.0
 	github.com/fatih/color v1.15.0

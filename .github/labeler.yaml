@@ -6,42 +6,20 @@ area/pre-commit:
   - ".pre-commit-config.yaml"
   - ".hooks/**/*"
 
-area/ansible:
-  - "ansible/*.go"
+area/blueprints:
+  - "blueprints/**/*"
 
-area/cloudflare:
-  - "cloudflare/*.go"
+area/cmd:
+  - "cmd/**/*"
 
-area/dev:
-  - "dev/**/*.go"
+area/docs:
+  - "docs/**/*"
 
-area/file:
-  - "file/*.go"
+area/templates:
+  - "templates/**/*"
 
-area/git:
-  - "git/*.go"
-
-area/keeper:
-  - "keeper/*.go"
-
-area/logging:
-  - "logging/*.go"
-
-area/macos:
-  - "macos/*.go"
-
-area/net:
-  - "net/*.go"
-
-area/str:
-  - "str/*.go"
-
-area/sys:
-  - "sys/*.go"
-
-area/web:
-  - "web/*.go"
-  - "web/cdpchrome/*.go"
+area/warpgate:
+  - "warpgate/**/*"
 
 area/magefiles:
   - "magefiles/*"
