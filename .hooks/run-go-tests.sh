@@ -16,8 +16,7 @@ if [[ -z "${TESTS_TO_RUN}" ]]; then
     exit 1
 fi
 
-run_tests()
-            {
+run_tests() {
     local coverage_file=$1
     repo_root=$(git rev-parse --show-toplevel 2> /dev/null) || exit
     pushd "${repo_root}" || exit

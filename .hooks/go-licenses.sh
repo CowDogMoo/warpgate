@@ -1,15 +1,13 @@
 #!/bin/bash
 
 # Function to check if go mod vendor should run or not
-run_vendor()
-             {
+run_vendor() {
     echo "Running go mod vendor..."
     go mod vendor
 }
 
 # Function to check licenses
-check_licenses()
-                 {
+check_licenses() {
     action=$1
 
     go install github.com/google/go-licenses@latest

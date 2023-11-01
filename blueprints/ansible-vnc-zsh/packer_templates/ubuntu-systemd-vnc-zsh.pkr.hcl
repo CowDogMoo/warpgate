@@ -4,8 +4,6 @@
 #
 # Description: Create a systemd-based docker image
 # provisioned with https://github.com/CowDogMoo/ansible-vnc-zsh on Ubuntu.
-#
-
 source "docker" "systemd-vnc-zsh" {
   commit      = true
   image   = "${var.base_image}:${var.base_image_version}"
