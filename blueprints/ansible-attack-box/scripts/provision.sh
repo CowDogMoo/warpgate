@@ -22,10 +22,11 @@ run_provision_logic() {
     # Install galaxy dependencies if they are present
     if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
         ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
-        ansible-galaxy collection install -r "${PKR_BUILD_DIR}/requirements.yml"
     fi
 
-    ANSIBLE_CONFIG="${PKR_BUILD_DIR}/ansible.cfg" ansible-playbook \
+    ANSIBLE_CONFIG=${HOME}/.ansible.cfg
+    cp "${PKR_BUILD_DIR}/ansible.cfg" "${ANSIBLE_CONFIG}"
+    ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
         -e "setup_systemd=${SETUP_SYSTEMD}", \
