@@ -11,12 +11,9 @@ Ansible role. One container runs with systemd and the other without.
 From the root of the repo:
 
 ```bash
-# Path to the blueprint configuration from the repo root
-export BLUEPRINT_CFG=blueprints/ansible-vnc-zsh/config.yaml
-
-# Be sure to put quotes around the path string or it
-# will not be processed properly!
-wg --config "${BLUEPRINT_CFG}" imageBuilder -p "~/cowdogmoo/ansible-vnc-zsh"
+wg imageBuilder \
+  -b ansible-vnc-zsh \
+  -p ~/cowdogmoo/ansible-vnc-zsh
 ```
 
 ---

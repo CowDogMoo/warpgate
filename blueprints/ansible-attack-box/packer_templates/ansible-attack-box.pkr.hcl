@@ -1,3 +1,9 @@
+# attack-box packer template
+#
+# Author: Jayson Grace <Jayson Grace <jayson.e.grace@gmail.com>
+#
+# Description: Create a docker image
+# provisioned with https://github.com/l50/ansible-attack-box on Kali.
 source "docker" "ansible-attack-box" {
   commit      = true
   image   = "${var.base_image}:${var.base_image_version}"
@@ -12,6 +18,9 @@ source "docker" "ansible-attack-box" {
 build {
   sources = ["source.docker.ansible-attack-box"]
 
+  // Transfer the code found at the input provision_repo_path
+  // to the pkr_build_dir, which is used by packer
+  // during the build process.
   provisioner "file" {
     source = "${var.provision_repo_path}"
     destination = "${var.pkr_build_dir}"

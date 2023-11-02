@@ -14,21 +14,23 @@ install_dependencies() {
 
 # Provision logic run by packer
 run_provision_logic() {
-    mkdir -p "${HOME}/.ansible/roles"
-    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/roles/cowdogmoo.vnc_zsh"
+    mkdir -p "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation"
+
+    # Link the current directory to the expected collection path
+    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation"
 
     pushd "${PKR_BUILD_DIR}"
 
     # Install galaxy dependencies if they are present
     if [[ -f /provision/requirements.yml ]]; then
-        ansible-galaxy install -r requirements.yml
+        ansible-galaxy install -r /provision/requirements.yml
     fi
 
     ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
         -e "setup_systemd=${SETUP_SYSTEMD}", \
-        --limit 127.0.0.1 examples/playbook.yaml
+        --limit 127.0.0.1 "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation/playbooks/attack-box.yml"
     popd
 
     # Wait for ansible to finish running
@@ -39,8 +41,8 @@ run_provision_logic() {
 }
 
 cleanup() {
-    # Remove Ansible roles directory
-    rm -rf "${HOME}/.ansible/roles"
+    # Remove Ansible collections directory
+    rm -rf "${HOME}/.ansible/collections"
 
     # Remove build directory
     rm -rf "${PKR_BUILD_DIR}"

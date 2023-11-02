@@ -62,7 +62,9 @@ the existing `ansible-attack-box` blueprint and
 the ansible playbook at `~/.ansible/Workspace/ansible-attack-box`.
 
 ```bash
-wg imageBuilder -b ansible-attack-box -p ~/.ansible/Workspace/ansible-attack-box
+wg imageBuilder \
+  -b ansible-attack-box \
+  -p ~/cowdogmoo/ansible-collection-workstation
 ```
 
 This next example will create a container image using
@@ -70,7 +72,9 @@ the existing `ansible-vnc-zsh` blueprint and
 the ansible playbook at `~/cowdogmoo/ansible-vnc-zsh`.
 
 ```bash
-wg imageBuilder -b ansible-vnc-zsh -p ~/cowdogmoo/ansible-vnc-zsh
+wg imageBuilder \
+  -b ansible-vnc-zsh \
+  -p ~/cowdogmoo/ansible-vnc-zsh
 ```
 
 ### Create new blueprint skeleton

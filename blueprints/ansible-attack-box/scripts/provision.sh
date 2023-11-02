@@ -14,21 +14,22 @@ install_dependencies() {
 
 # Provision logic run by packer
 run_provision_logic() {
-    mkdir -p "${HOME}/.ansible/roles"
-    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/roles/l50.attack_box"
+    mkdir -p "${HOME}/.ansible/collections/ansible_collections/cowdogmoo"
 
-    pushd "${PKR_BUILD_DIR}"
+    # Link the current directory to the expected collection path
+    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation"
 
     # Install galaxy dependencies if they are present
-    if [[ -f /provision/requirements.yml ]]; then
-        ansible-galaxy install -r requirements.yml
+    if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
+        ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
+        ansible-galaxy collection install -r "${PKR_BUILD_DIR}/requirements.yml"
     fi
 
-    ansible-playbook \
+    ANSIBLE_CONFIG="${PKR_BUILD_DIR}/ansible.cfg" ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
-        --limit 127.0.0.1 playbooks/attack-box.yml
-    popd
+        -e "setup_systemd=${SETUP_SYSTEMD}", \
+        --limit 127.0.0.1 "${PKR_BUILD_DIR}/playbooks/attack-box.yml"
 
     # Wait for ansible to finish running
     while /usr/bin/pgrep ansible > /dev/null; do
@@ -38,8 +39,8 @@ run_provision_logic() {
 }
 
 cleanup() {
-    # Remove Ansible roles directory
-    rm -rf "${HOME}/.ansible/roles"
+    # Remove Ansible collections directory
+    rm -rf "${HOME}/.ansible/collections"
 
     # Remove build directory
     rm -rf "${PKR_BUILD_DIR}"

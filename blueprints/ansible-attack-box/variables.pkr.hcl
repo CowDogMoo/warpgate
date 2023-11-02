@@ -31,7 +31,7 @@ variable "new_image_version" {
 variable "pkr_build_dir" {
   type    = string
   description = "Directory that packer will execute the transferred provisioning logic from within the container."
-  default = "/provision"
+  default = "/ansible-collection-workstation"
 }
 
 variable "provision_repo_path" {
@@ -52,6 +52,12 @@ variable "registry_username" {
 variable "registry_cred" {
   type    = string
   description = "Token or credential to authenticate to registry with."
+}
+
+variable "setup_systemd" {
+  type    = bool
+  description = "Setup vnc service with systemd."
+  default = false
 }
 
 variable "workdir" {

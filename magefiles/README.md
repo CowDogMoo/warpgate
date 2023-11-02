@@ -99,27 +99,6 @@ install the dependencies.
 
 ---
 
-### RunIntegrationTests()
-
-```go
-RunIntegrationTests() error
-```
-
-RunIntegrationTests executes all integration tests by extracting the commands
-described in README files of TTP examples and then executing them.
-
-Example usage:
-
-```go
-mage runintegrationtests
-```
-
-**Returns:**
-
-error: An error if any issue occurs while running the tests.
-
----
-
 ### RunPreCommit()
 
 ```go
