@@ -8,7 +8,7 @@ install_dependencies() {
     apt-get update -y 2> /dev/null | grep packages | cut -d '.' -f 1
 
     # Install ansible and associated pre-requisites
-    apt-get install -y bash gpg-agent python3 python3-pip
+    apt-get install -y bash git gpg-agent python3 python3-pip
     python3 -m pip install --upgrade pip wheel setuptools ansible
 }
 
@@ -16,13 +16,14 @@ install_dependencies() {
 run_provision_logic() {
     mkdir -p "${HOME}/.ansible/collections/ansible_collections/cowdogmoo"
 
-    # Link the current directory to the expected collection path
-    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation"
+    # # Link the current directory to the expected collection path
+    # ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation"
 
     # Install galaxy dependencies if they are present
     if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
         ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
     fi
+    ansible-galaxy collection install git+https://github.com/cowdogmoo/workstation.git,main
 
     ANSIBLE_CONFIG=${HOME}/.ansible.cfg
     cp "${PKR_BUILD_DIR}/ansible.cfg" "${ANSIBLE_CONFIG}"
@@ -39,14 +40,11 @@ run_provision_logic() {
     done
 }
 
-cleanup() {
-    # Remove Ansible collections directory
-    rm -rf "${HOME}/.ansible/collections"
-
+# cleanup() {
     # Remove build directory
-    rm -rf "${PKR_BUILD_DIR}"
-}
+    # rm -rf "${PKR_BUILD_DIR}"
+# }
 
 install_dependencies
 run_provision_logic
-cleanup
+# cleanup
