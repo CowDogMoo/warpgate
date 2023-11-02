@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 # Provision logic for container image creation.
-set -ex
+set -e
 
 install_dependencies() {
     # Get latest packages and install aptitude
