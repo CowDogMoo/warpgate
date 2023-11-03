@@ -3,6 +3,9 @@
 # Provision logic for container image creation.
 set -e
 
+export PKR_BUILD_DIR="${1:-/ansible-collection-workstation}"
+export CLEANUP="${2:-false}"
+
 install_dependencies() {
     # Get latest packages and install aptitude
     apt-get update -y 2> /dev/null | grep packages | cut -d '.' -f 1
@@ -40,11 +43,13 @@ run_provision_logic() {
     done
 }
 
-# cleanup() {
+cleanup() {
     # Remove build directory
-    # rm -rf "${PKR_BUILD_DIR}"
-# }
+    if [[ "${CLEANUP}" == "true" ]]; then
+        rm -rf "${PKR_BUILD_DIR}"
+    fi
+}
 
 install_dependencies
 run_provision_logic
-# cleanup
+cleanup
