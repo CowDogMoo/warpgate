@@ -19,21 +19,19 @@ install_dependencies() {
 run_provision_logic() {
     mkdir -p "${HOME}/.ansible/collections/ansible_collections/cowdogmoo"
 
-    # # Link the current directory to the expected collection path
-    # ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation"
+    # Link the current directory to the expected collection path
+    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation"
 
     # Install galaxy dependencies if they are present
     if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
         ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
     fi
-    ansible-galaxy collection install git+https://github.com/cowdogmoo/workstation.git,main
 
     ANSIBLE_CONFIG=${HOME}/.ansible.cfg
     cp "${PKR_BUILD_DIR}/ansible.cfg" "${ANSIBLE_CONFIG}"
     ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
-        -e "setup_systemd=${SETUP_SYSTEMD}", \
         --limit 127.0.0.1 "${PKR_BUILD_DIR}/playbooks/attack-box.yml"
 
     # Wait for ansible to finish running

@@ -7,12 +7,16 @@
 source "docker" "ansible-attack-box" {
   commit      = true
   image   = "${var.base_image}:${var.base_image_version}"
+  privileged = true
+  volumes = {
+    "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
+  }
   changes = [
     "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
   ]
-  run_command = ["-d", "-i", "-t", "{{ .Image }}"]
+  run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
 build {

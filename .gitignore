@@ -13,3 +13,6 @@ builds/
 
 # Generated logs
 logs/
+
+# Custom attributes files created by macOS
+.DS_Store

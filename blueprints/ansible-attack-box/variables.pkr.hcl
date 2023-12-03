@@ -57,7 +57,7 @@ variable "registry_cred" {
 variable "setup_systemd" {
   type    = bool
   description = "Setup vnc service with systemd."
-  default = false
+  default = true
 }
 
 variable "workdir" {
