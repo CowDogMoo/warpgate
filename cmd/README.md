@@ -27,6 +27,27 @@ Execute runs the root cobra command
 
 ---
 
+### RunImageBuilder(*cobra.Command, []string)
+
+```go
+RunImageBuilder(*cobra.Command, []string) error
+```
+
+RunImageBuilder is the main function for the imageBuilder command
+that is used to build container images using packer.
+
+---
+
+### SetBlueprintConfigPath(string)
+
+```go
+SetBlueprintConfigPath(string) error
+```
+
+SetBlueprintConfigPath sets the configuration path for the blueprint
+
+---
+
 ## Installation
 
 To use the WarpGate/cmd package, you first need to install it.
