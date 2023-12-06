@@ -3,7 +3,7 @@
 # This script is a pre-commit hook that checks if the mage command is
 # installed and if not, prompts the user to install it. If mage is
 # installed, the script navigates to the repository root by calling the
-# `repo_root` function and runs the `mage generatepackagedocs` command.
+# `rr` function and runs the `mage generatepackagedocs` command.
 # This command generates documentation for all Go packages in the current
 # directory and its subdirectories by traversing the file tree and creating
 # a new README.md file in each directory containing a Go package.
@@ -28,7 +28,7 @@ fi
 # shellcheck source=/dev/null
 source "${bashutils_path}"
 
-repo_root || exit 1
+rr || exit 1
 
 # Check if mage is installed
 if command -v mage > /dev/null 2>&1; then
