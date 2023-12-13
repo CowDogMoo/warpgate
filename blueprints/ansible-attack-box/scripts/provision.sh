@@ -32,7 +32,7 @@ run_provision_logic() {
     ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
-        --limit 127.0.0.1 "${PKR_BUILD_DIR}/playbooks/attack-box.yml"
+        --limit 127.0.0.1 "${PKR_BUILD_DIR}/playbooks/attack-box/attack-box.yml"
 
     # Wait for ansible to finish running
     while /usr/bin/pgrep ansible > /dev/null; do

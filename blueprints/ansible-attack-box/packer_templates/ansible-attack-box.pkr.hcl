@@ -3,7 +3,9 @@
 # Author: Jayson Grace <Jayson Grace <jayson.e.grace@gmail.com>
 #
 # Description: Create a docker image
-# provisioned with https://github.com/l50/ansible-attack-box on Kali.
+# provisioned with
+# https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/attack-box
+# on Kali.
 source "docker" "ansible-attack-box" {
   commit      = true
   image   = "${var.base_image}:${var.base_image_version}"
