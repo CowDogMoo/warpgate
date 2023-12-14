@@ -51,7 +51,6 @@ const (
 var (
 	blueprint       = Blueprint{}
 	cfgFile         string
-	debug           bool
 	err             error
 	warpCfg         string
 	packerTemplates = []PackerTemplate{}
@@ -76,9 +75,10 @@ func init() {
 		cobra.CheckErr(err)
 	}
 
-	warpCfg := filepath.Join(home, ".warp", defaultConfigName)
+	// Remove the := to ensure we're using the global warpCfg variable
+	warpCfg = filepath.Join(home, ".warp", defaultConfigName)
 	logDir := filepath.Dir(warpCfg)
-	logPath := filepath.Join(logDir, logName)
+	// logPath := filepath.Join(logDir, logName)
 
 	// Create log file using CreateLogFile
 	fs := afero.NewOsFs()
@@ -88,20 +88,19 @@ func init() {
 		cobra.CheckErr(err)
 	}
 
-	// Initialize global logger
-	logLevel := slog.LevelInfo
-	if debug {
-		logLevel = slog.LevelDebug
-	}
-	if err := log.InitGlobalLogger(logLevel, logPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize global logger: %v\n", err)
-		cobra.CheckErr(err)
-	}
+	// // Initialize global logger
+	// logLevel := slog.LevelInfo
+	// if debug {
+	// 	logLevel = slog.LevelDebug
+	// }
+	// if err := log.InitGlobalLogger(logLevel, logPath); err != nil {
+	// 	fmt.Fprintf(os.Stderr, "Failed to initialize global logger: %v\n", err)
+	// 	cobra.CheckErr(err)
+	// }
 
 	// Set up Cobra's persistent flags
 	pf := rootCmd.PersistentFlags()
 	pf.StringVar(&cfgFile, "config", warpCfg, "config file (default is "+warpCfg+")")
-	pf.BoolVarP(&debug, "debug", "", false, "Show debug messages.")
 }
 
 func depCheck() error {
@@ -150,30 +149,53 @@ func createConfigFile(cfgPath string) error {
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
-	// Set the config file type to YAML
 	viper.SetConfigType(defaultConfigType)
 
-	// If a config file is specified via CLI, use that.
+	// Determine the configuration file path
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
+		home, err := homedir.Dir()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to get home directory: %v\n", err)
+			cobra.CheckErr(err)
+		}
+		warpCfg = filepath.Join(home, ".warp", defaultConfigName)
 		viper.AddConfigPath(filepath.Dir(warpCfg))
 		viper.SetConfigName(defaultConfigName)
 	}
 
-	// Get relevant environment variables tied to viper params.
 	viper.AutomaticEnv()
 
-	// If a config file is found, read it in.
+	// Default values for log path and level
+	var logPath = filepath.Join(filepath.Dir(warpCfg), logName)
+	var logLevel = slog.LevelInfo // Default level
+
+	// Read the configuration file
 	if err := viper.ReadInConfig(); err == nil {
-		log.L().Debugf("Using config file: %s", viper.ConfigFileUsed())
+		logPath = viper.GetString("log.path")
+		logLevel = log.GetLogLevel(viper.GetString(logLevelKey))
 	} else {
-		log.L().Printf("No config file found - creating with default values")
+		fmt.Println("No config file found - creating with default values")
+		if warpCfg == "" {
+			fmt.Fprintf(os.Stderr, "Configuration path is empty\n")
+			cobra.CheckErr(errors.New("configuration path is empty"))
+		}
 		if err := createConfigFile(warpCfg); err != nil {
-			log.L().Errorf("Error creating config file: %s", err)
+			fmt.Fprintf(os.Stderr, "Error creating config file: %v\n", err)
 			cobra.CheckErr(err)
 		}
 	}
+
+	// Initialize the global logger
+	if err := log.InitGlobalLogger(logLevel, logPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize global logger: %v\n", err)
+		cobra.CheckErr(err)
+	} else {
+		log.L().Println("Logger initialized successfully")
+	}
+
+	log.L().Debugf("Using config file: %s", viper.ConfigFileUsed())
 
 	// Create warpDir if it does not already exist
 	if _, err := os.Stat(filepath.Dir(warpCfg)); os.IsNotExist(err) {
