@@ -31,10 +31,11 @@ import (
 	"github.com/bitfield/script"
 	"github.com/fatih/color"
 	fileutils "github.com/l50/goutils/v2/file/fileutils"
+
+	log "github.com/cowdogmoo/warpgate/pkg/logging"
 	git "github.com/l50/goutils/v2/git"
 	"github.com/l50/goutils/v2/str"
 	"github.com/l50/goutils/v2/sys"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -129,9 +130,8 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		wg.Add(1)
 		go func(pTmpl PackerTemplate) {
 			defer wg.Done()
-			fmt.Print(color.YellowString(
-				"Now building %s template as part of %s blueprint, please wait.\n",
-				pTmpl.Name, blueprintName))
+			log.L().Printf("Now building %s template as part of %s blueprint, please wait.\n",
+				pTmpl.Name, blueprintName)
 
 			blueprint.Name = blueprintName
 			blueprint.ProvisioningRepo = provisioningRepo
@@ -163,15 +163,15 @@ func init() {
 	imageBuilderCmd.Flags().StringP(
 		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
 	if err := imageBuilderCmd.MarkFlagRequired("provisionPath"); err != nil {
-		log.WithError(err)
-		os.Exit(1)
+		log.L()
+		cobra.CheckErr(err)
 	}
 
 	imageBuilderCmd.Flags().StringP(
 		"blueprint", "b", "", "The blueprint to use for image building.")
 	if err := imageBuilderCmd.MarkFlagRequired("blueprint"); err != nil {
-		log.WithError(err)
-		os.Exit(1)
+		log.L()
+		cobra.CheckErr(err)
 	}
 }
 
@@ -179,7 +179,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	// Create random name for the build directory
 	dirName, err := str.GenRandom(8)
 	if err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to get random string for buildDir: %v", err)
 		return "", err
 	}
@@ -187,7 +187,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	// Create buildDir
 	buildDir := filepath.Join("/tmp", "builds", dirName)
 	if err := fileutils.Create(buildDir, nil, fileutils.CreateDirectory); err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to create %s build directory for image building: %v", dirName, err)
 		return "", err
 	}
@@ -195,7 +195,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	bpDir := filepath.Dir(bpConfig)
 	files, err := os.ReadDir(bpDir)
 	if err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to list files in %s: %v", bpDir, err)
 		return "", err
 	}
@@ -212,7 +212,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 			src := filepath.Join(bpDir, file.Name())
 			dst := filepath.Join(buildDir, file.Name())
 			if err := sys.Cp(src, dst); err != nil {
-				log.WithError(err).Errorf(
+				log.L().Errorf(
 					"failed to copy %s to %s: %v", src, dst, err)
 				return "", err
 			}
@@ -223,7 +223,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	src := filepath.Join(bpDir, "packer_templates", pTmpl.Name)
 	dst := filepath.Join(buildDir, pTmpl.Name)
 	if err := sys.Cp(src, dst); err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to transfer packer template to %s: %v", buildDir, err)
 		return "", err
 	}
@@ -262,21 +262,21 @@ func initializeBlueprint(blueprintDir string) error {
 func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 	buildDir, err := createBuildDir(pTmpl, blueprint)
 	if err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to create build directory: %v", err)
 		return err
 	}
 
 	// Initialize the blueprint before building the image
 	if err := initializeBlueprint(filepath.Dir(bpConfig)); err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to initialize blueprint: %v", err)
 		return err
 	}
 
 	// Get container parameters
 	if err = viper.UnmarshalKey(containerKey, &pTmpl.Container); err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to unmarshal container parameters "+
 				"from %s config file: %v", blueprint.Name, err)
 		return err
@@ -311,14 +311,14 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 
 	// Run packer from buildDir
 	if err := sys.Cd(buildDir); err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to change into the %s directory: %v", buildDir, err)
 		return err
 	}
 
 	if _, err := script.Exec(provisionCmd).Stdout(); err != nil {
 		if err != nil {
-			log.WithError(err).Errorf(
+			log.L().Errorf(
 				"failed to build container image from the %s "+
 					"packer template that's part of the %s blueprint: %v",
 				pTmpl.Name, blueprint.Name, err)

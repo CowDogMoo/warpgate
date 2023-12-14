@@ -30,9 +30,10 @@ import (
 	"strings"
 	"text/template"
 
+	log "github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/fatih/color"
-	goutils "github.com/l50/goutils"
-	log "github.com/sirupsen/logrus"
+	fileutils "github.com/l50/goutils/v2/file/fileutils"
+	"github.com/l50/goutils/v2/sys"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -59,7 +60,7 @@ var (
 		Short: "All blueprint oriented operations for Warp Gate.",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := cmd.Help(); err != nil {
-				log.WithError(err).Error("failed to show help")
+				log.L().Error("failed to show help")
 			}
 		},
 	}
@@ -102,14 +103,14 @@ func genBPDirs(newBlueprint string) error {
 	if newBlueprint != "" {
 		bpDirs := []string{"packer_templates", "scripts"}
 		for _, d := range bpDirs {
-			if err := goutils.CreateDirectory(filepath.Join("blueprints", newBlueprint, d)); err != nil {
-				log.WithError(err).Errorf(
-					"failed to create %s directory for new %s blueprint: %v", d, newBlueprint, err)
+			dirPath := filepath.Join("blueprints", newBlueprint, d)
+			err := fileutils.Create(dirPath, nil, fileutils.CreateDirectory)
+			if err != nil {
+				log.L().Errorf("failed to create %s directory for new %s blueprint: %v", d, newBlueprint, err)
 				return err
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -137,8 +138,8 @@ func validateTagInput(tagInput string) error {
 func processCfgInputs(cmd *cobra.Command) error {
 	tagInfo, err := cmd.Flags().GetString("tag")
 	if err != nil || validateTagInput(tagInfo) != nil {
-		log.WithError(err).Error("failed to get tag info from input or invalid format")
-		os.Exit(1)
+		log.L().Error("failed to get tag info from input or invalid format")
+		cobra.CheckErr(err)
 	}
 
 	var tagName string
@@ -150,14 +151,14 @@ func processCfgInputs(cmd *cobra.Command) error {
 
 	systemd, err := cmd.Flags().GetBool("systemd")
 	if err != nil {
-		log.WithError(err).Error()
-		os.Exit(1)
+		log.L().Error()
+		cobra.CheckErr(err)
 	}
 
 	baseInput, err := cmd.Flags().GetStringSlice("base")
 	if err != nil || validateBaseInput(baseInput) != nil {
-		log.WithError(err).Error("failed to get base input from CLI or invalid format")
-		os.Exit(1)
+		log.L().Error("failed to get base input from CLI or invalid format")
+		cobra.CheckErr(err)
 	}
 
 	var systemdContainer []bool
@@ -175,8 +176,9 @@ func processCfgInputs(cmd *cobra.Command) error {
 	}
 
 	if len(baseInput) < len(tagNames) {
-		log.Error("not enough base inputs for the specified tag names")
-		os.Exit(1)
+		errMsg := fmt.Sprintf("not enough base inputs for the specified tag names: %v", tagNames)
+		log.L().Error(errMsg)
+		cobra.CheckErr(errors.New(errMsg))
 	}
 
 	for i, n := range tagNames {
@@ -195,7 +197,7 @@ func processCfgInputs(cmd *cobra.Command) error {
 		})
 	}
 
-	log.Debugf("Templated packer config data: %#v\n", packerTemplates)
+	log.L().Debugf("Templated packer config data: %#v\n", packerTemplates)
 
 	return nil
 }
@@ -230,7 +232,7 @@ func createPacker(cmd *cobra.Command, data Data) error {
 	viper.AddConfigPath(newBPPath)
 	viper.SetConfigName("config.yaml")
 	if err := viper.MergeInConfig(); err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to merge %s blueprint config into the existing config: %v", data.Blueprint.Name, err)
 		return err
 	}
@@ -240,17 +242,17 @@ func createPacker(cmd *cobra.Command, data Data) error {
 
 	// Get blueprint information
 	if err = viper.UnmarshalKey("container", &data.Container); err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to unmarshal container data from config file: %v", err)
-		os.Exit(1)
+		cobra.CheckErr(err)
 	}
 
 	set := false
 	data.Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
 	if !set {
-		log.WithError(err).Error(
+		log.L().Error(
 			"required env var $GITHUB_TOKEN is not set, please set it with a correct Personal Access Token and try again")
-		os.Exit(1)
+		cobra.CheckErr(err)
 	}
 
 	for _, pkr := range data.PackerTemplates {
@@ -273,11 +275,11 @@ func createPacker(cmd *cobra.Command, data Data) error {
 		}
 	}
 
-	if err := goutils.Cp(filepath.Join("files", "variables.pkr.hcl"), filepath.Join(newBPPath, "variables.pkr.hcl")); err != nil {
+	if err := sys.Cp(filepath.Join("files", "variables.pkr.hcl"), filepath.Join(newBPPath, "variables.pkr.hcl")); err != nil {
 		return fmt.Errorf(color.RedString("failed to transfer packer variables file to new blueprint directory: %v", err))
 	}
 
-	log.Debugf("Contents of all Packer templates: %#v\n", packerTemplates)
+	log.L().Debugf("Contents of all Packer templates: %#v\n", packerTemplates)
 
 	return nil
 }
@@ -307,14 +309,14 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 
 	// Create blueprint directories
 	if err := genBPDirs(blueprint.Name); err != nil {
-		log.WithError(err).Error()
-		os.Exit(1)
+		log.L().Error()
+		cobra.CheckErr(err)
 	}
 
 	// Get packer template contents from input
 	if err := processCfgInputs(cmd); err != nil {
-		log.WithError(err).Error()
-		os.Exit(1)
+		log.L().Error()
+		cobra.CheckErr(err)
 	}
 
 	// Create data to hold the blueprint and
@@ -325,18 +327,18 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 	}
 
 	if err := createCfg(cmd, data); err != nil {
-		log.WithError(err).Error(err)
-		os.Exit(1)
+		log.L()
+		cobra.CheckErr(err)
 	}
 
 	if err := createPacker(cmd, data); err != nil {
-		log.WithError(err).Error(err)
-		os.Exit(1)
+		log.L()
+		cobra.CheckErr(err)
 	}
 
 	if err := createScript(data.Blueprint.Name); err != nil {
-		log.WithError(err).Error(err)
-		os.Exit(1)
+		log.L()
+		cobra.CheckErr(err)
 	}
 
 	fmt.Print(color.GreenString("Successfully created %s blueprint!", blueprint.Name))
@@ -346,9 +348,9 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 func listBlueprints() {
 	files, err := os.ReadDir("blueprints")
 	if err != nil {
-		log.WithError(err).Errorf(
+		log.L().Errorf(
 			"failed to read blueprints: %v", err)
-		os.Exit(1)
+		cobra.CheckErr(err)
 	}
 	for _, f := range files {
 		fmt.Println(f.Name())

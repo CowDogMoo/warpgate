@@ -11,6 +11,7 @@ import (
 
 	"github.com/l50/goutils/v2/git"
 	"github.com/l50/goutils/v2/sys"
+	"github.com/spf13/cobra"
 
 	// mage utility functions
 	"github.com/magefile/mage/sh"
@@ -28,7 +29,7 @@ func init() {
 	repoRoot, err = git.RepoRoot()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to get repo root: %v", err)
-		os.Exit(1)
+		cobra.CheckErr(err)
 	}
 }
 
