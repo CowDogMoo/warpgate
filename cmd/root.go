@@ -74,7 +74,7 @@ func init() {
 
 	home, err = homedir.Dir()
 	if err != nil {
-		os.Exit(1)
+		cobra.CheckErr(err)
 	}
 
 	warpCfg = filepath.Join(home, ".warp", defaultConfigName)
@@ -88,14 +88,14 @@ func init() {
 	// Read debug value if it's set in the config file.
 	if err := viper.BindPFlag("debug", pf.Lookup("debug")); err != nil {
 		log.WithError(err).Error("failed to bind to debug in the config file")
-		os.Exit(1)
+		cobra.CheckErr(err)
 	}
 
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
 	if err := depCheck(); err != nil {
 		log.WithError(err).Error("missing dependencies")
-		os.Exit(1)
+		cobra.CheckErr(err)
 	}
 
 	// Create warpDir if it does not already exist
@@ -104,7 +104,7 @@ func init() {
 		if err := os.MkdirAll(filepath.Dir(warpCfg), os.ModePerm); err != nil {
 			log.WithError(err).Errorf(color.RedString(
 				"failed to create %s: %v", filepath.Dir(warpCfg), err))
-			os.Exit(1)
+			cobra.CheckErr(err)
 		}
 	}
 
@@ -188,6 +188,7 @@ func createConfigFile(cfgPath string) error {
 func initConfig() {
 	// Set the config file type to YAML
 	viper.SetConfigType(defaultConfigType)
+
 	// If a config file is specified via CLI, use that.
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -205,7 +206,7 @@ func initConfig() {
 		log.Info("No config file found - creating with default values")
 		if err := createConfigFile(warpCfg); err != nil {
 			log.WithError(err).Errorf("failed to create config file at %s", warpCfg)
-			os.Exit(1)
+			cobra.CheckErr(err)
 		}
 	}
 
@@ -213,7 +214,7 @@ func initConfig() {
 	// of the inputs up until initConfig() is called.
 	if err := configLogging(); err != nil {
 		log.WithError(err).Error("failed to set up logging")
-		os.Exit(1)
+		cobra.CheckErr(err)
 	}
 
 	log.Debug("Using config file: ", viper.ConfigFileUsed())

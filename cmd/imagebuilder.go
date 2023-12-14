@@ -110,7 +110,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 	}
 
 	// Set the configuration path for the blueprint
-	if err := SetBlueprintConfigPath(blueprintName); err != nil {
+	if err := SetBlueprintConfigPath(filepath.Join("blueprints", blueprintName)); err != nil {
 		return err
 	}
 
@@ -133,7 +133,9 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 				"Now building %s template as part of %s blueprint, please wait.\n",
 				pTmpl.Name, blueprintName))
 
-			if err := buildPackerImage(pTmpl, blueprint, provisioningRepo); err != nil {
+			blueprint.Name = blueprintName
+			blueprint.ProvisioningRepo = provisioningRepo
+			if err := buildPackerImage(pTmpl, blueprint); err != nil {
 				errChan <- fmt.Errorf("error building %s: %v", pTmpl.Name, err)
 			}
 		}(pTmpl)
@@ -257,7 +259,7 @@ func initializeBlueprint(blueprintDir string) error {
 	return nil
 }
 
-func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint, provisioningRepo string) error {
+func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 	buildDir, err := createBuildDir(pTmpl, blueprint)
 	if err != nil {
 		log.WithError(err).Errorf(
@@ -306,8 +308,6 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint, provisioningRep
 		pTmpl.Container.User,
 		os.Getenv("GITHUB_TOKEN"),
 		buildDir)
-
-	log.Debug(provisionCmd)
 
 	// Run packer from buildDir
 	if err := sys.Cd(buildDir); err != nil {
