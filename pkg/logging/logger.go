@@ -300,6 +300,28 @@ func (l *SlogPlainLogger) Debugf(format string, v ...interface{}) {
 	l.Logger.Debug(fmt.Sprintf(format, v...))
 }
 
+// GetLogLevel determines the slog.Level based on a provided string.
+// It supports 'debug' and 'info' levels, defaulting to 'info' if
+// the input does not match these values.
+//
+// **Parameters:**
+//
+// level: A string representing the desired log level.
+//
+// **Returns:**
+//
+// slog.Level: The corresponding slog log level for the provided string.
+func GetLogLevel(level string) slog.Level {
+	switch level {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	default:
+		return slog.LevelInfo // Default log level
+	}
+}
+
 // configureLogger creates and configures a logger based on the specified
 // logging level and file path. It sets up the logger to write to both
 // the file and standard output.

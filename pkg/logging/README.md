@@ -99,6 +99,26 @@ error: An error if there is a failure in creating the log file.
 
 ---
 
+### GetLogLevel(string)
+
+```go
+GetLogLevel(string) slog.Level
+```
+
+GetLogLevel determines the slog.Level based on a provided string.
+It supports 'debug' and 'info' levels, defaulting to 'info' if
+the input does not match these values.
+
+**Parameters:**
+
+level: A string representing the desired log level.
+
+**Returns:**
+
+slog.Level: The corresponding slog log level for the provided string.
+
+---
+
 ### InitGlobalLogger(slog.Level, string)
 
 ```go
