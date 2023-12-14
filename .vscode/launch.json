@@ -11,9 +11,9 @@
         "--debug",
         "imageBuilder",
         "-b",
-        "ansible-vnc-zsh",
+        "ansible-attack-box",
         "-p",
-        "${env:HOME}/cowdogmoo/ansible-vnc-zsh"
+        "${env:HOME}/cowdogmoo/ansible-collection-workstation"
       ]
     }
   ]

@@ -14,6 +14,22 @@ import (
 	"github.com/spf13/afero"
 )
 
+// GlobalLogger is a variable that holds the instance of the logger.
+var GlobalLogger Logger
+
+// InitGlobalLogger initializes the global logger with the specified level and file path.
+// This function should be called at the beginning of your application.
+func InitGlobalLogger(level slog.Level, path string) error {
+	var err error
+	GlobalLogger, err = configureLogger(level, path)
+	return err
+}
+
+// L returns the global logger instance.
+func L() Logger {
+	return GlobalLogger
+}
+
 // Logger is an interface that defines methods for a generic logging
 // system. It supports basic logging operations like printing,
 // formatted printing, error logging, and debug logging.
@@ -284,7 +300,7 @@ func (l *SlogPlainLogger) Debugf(format string, v ...interface{}) {
 	l.Logger.Debug(fmt.Sprintf(format, v...))
 }
 
-// ConfigureLogger creates and configures a logger based on the specified
+// configureLogger creates and configures a logger based on the specified
 // logging level and file path. It sets up the logger to write to both
 // the file and standard output.
 //
@@ -297,7 +313,7 @@ func (l *SlogPlainLogger) Debugf(format string, v ...interface{}) {
 //
 // Logger: The configured logger instance.
 // error: An error if the logger configuration fails.
-func ConfigureLogger(level slog.Level, path string) (Logger, error) {
+func configureLogger(level slog.Level, path string) (Logger, error) {
 	var err error
 
 	logFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
