@@ -12,7 +12,7 @@ warpgate
 builds/
 
 # Generated logs
-logs/
+*.log
 
 # Custom attributes files created by macOS
 .DS_Store

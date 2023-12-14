@@ -77,28 +77,6 @@ Println logs a line with the provided arguments in the specified color.
 
 ---
 
-### ConfigureLogger(slog.Level, string)
-
-```go
-ConfigureLogger(slog.Level, string) Logger, error
-```
-
-ConfigureLogger creates and configures a logger based on the specified
-logging level and file path. It sets up the logger to write to both
-the file and standard output.
-
-**Parameters:**
-
-level: The logging level to set for the logger.
-path: Path to the log file.
-
-**Returns:**
-
-Logger: The configured logger instance.
-error: An error if the logger configuration fails.
-
----
-
 ### CreateLogFile(afero.Fs, string, string)
 
 ```go
@@ -118,6 +96,27 @@ logName: Name of the log file to create.
 
 LogInfo: Information about the created log file.
 error: An error if there is a failure in creating the log file.
+
+---
+
+### InitGlobalLogger(slog.Level, string)
+
+```go
+InitGlobalLogger(slog.Level, string) error
+```
+
+InitGlobalLogger initializes the global logger with the specified level and file path.
+This function should be called at the beginning of your application.
+
+---
+
+### L()
+
+```go
+L() Logger
+```
+
+L returns the global logger instance.
 
 ---
 
