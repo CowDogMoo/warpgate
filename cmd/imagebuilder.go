@@ -31,9 +31,10 @@ import (
 	"github.com/bitfield/script"
 	"github.com/fatih/color"
 	fileutils "github.com/l50/goutils/v2/file/fileutils"
+	homedir "github.com/mitchellh/go-homedir"
 
-	log "github.com/cowdogmoo/warpgate/pkg/logging"
 	git "github.com/l50/goutils/v2/git"
+	log "github.com/l50/goutils/v2/logging"
 	"github.com/l50/goutils/v2/str"
 	"github.com/l50/goutils/v2/sys"
 	"github.com/spf13/cobra"
@@ -100,18 +101,24 @@ func SetBlueprintConfigPath(blueprintDir string) error {
 // RunImageBuilder is the main function for the imageBuilder command
 // that is used to build container images using packer.
 func RunImageBuilder(cmd *cobra.Command, args []string) error {
-	provisioningRepo, err := cmd.Flags().GetString("provisionPath")
+	var err error
+	blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
 	if err != nil {
 		return fmt.Errorf("failed to get provisionPath: %v", err)
 	}
 
-	blueprintName, err := cmd.Flags().GetString(blueprintKey)
+	blueprint.Name, err = cmd.Flags().GetString(blueprintKey)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve blueprint: %v", err)
 	}
 
 	// Set the configuration path for the blueprint
-	if err := SetBlueprintConfigPath(filepath.Join("blueprints", blueprintName)); err != nil {
+	home, err := homedir.Dir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %v", err)
+	}
+	// if err := SetBlueprintConfigPath(blueprint.Name); err != nil {
+	if err := SetBlueprintConfigPath(filepath.Join(home, "cowdogmoo", "warpgate", "blueprints", blueprint.Name)); err != nil {
 		return err
 	}
 
@@ -131,10 +138,8 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		go func(pTmpl PackerTemplate) {
 			defer wg.Done()
 			log.L().Printf("Now building %s template as part of %s blueprint, please wait.\n",
-				pTmpl.Name, blueprintName)
+				pTmpl.Name, blueprint.Name)
 
-			blueprint.Name = blueprintName
-			blueprint.ProvisioningRepo = provisioningRepo
 			if err := buildPackerImage(pTmpl, blueprint); err != nil {
 				errChan <- fmt.Errorf("error building %s: %v", pTmpl.Name, err)
 			}
@@ -153,7 +158,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Print(color.GreenString(
-		"All packer templates in %s blueprint built successfully!\n", blueprintName))
+		"All packer templates in %s blueprint built successfully!\n", blueprint.Name))
 	return nil
 }
 
@@ -163,14 +168,14 @@ func init() {
 	imageBuilderCmd.Flags().StringP(
 		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
 	if err := imageBuilderCmd.MarkFlagRequired("provisionPath"); err != nil {
-		log.L()
+		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
 
 	imageBuilderCmd.Flags().StringP(
 		"blueprint", "b", "", "The blueprint to use for image building.")
 	if err := imageBuilderCmd.MarkFlagRequired("blueprint"); err != nil {
-		log.L()
+		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
 }
@@ -275,7 +280,7 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 	}
 
 	// Get container parameters
-	if err = viper.UnmarshalKey(containerKey, &pTmpl.Container); err != nil {
+	if err := viper.UnmarshalKey(containerKey, &pTmpl.Container); err != nil {
 		log.L().Errorf(
 			"failed to unmarshal container parameters "+
 				"from %s config file: %v", blueprint.Name, err)
@@ -311,20 +316,21 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 
 	// Run packer from buildDir
 	if err := sys.Cd(buildDir); err != nil {
-		log.L().Errorf(
-			"failed to change into the %s directory: %v", buildDir, err)
+		log.L().Errorf("failed to change into the %s directory: %v", buildDir, err)
 		return err
 	}
 
 	if _, err := script.Exec(provisionCmd).Stdout(); err != nil {
-		if err != nil {
-			log.L().Errorf(
-				"failed to build container image from the %s "+
-					"packer template that's part of the %s blueprint: %v",
-				pTmpl.Name, blueprint.Name, err)
-			return err
-		}
+		log.L().Errorf(
+			"failed to build container image from the %s "+
+				"packer template that's part of the %s blueprint: %v",
+			pTmpl.Name, blueprint.Name, err)
+		return err
 	}
+
+	// If there's no error, log the success
+	log.L().Printf("Successfully built container image from the %s packer template as part of the %s blueprint",
+		pTmpl.Name, blueprint.Name)
 
 	return nil
 }

@@ -8,7 +8,6 @@
       "mode": "debug",
       "program": "${workspaceRoot}",
       "args": [
-        "--debug",
         "imageBuilder",
         "-b",
         "ansible-attack-box",
