@@ -30,9 +30,9 @@ import (
 	"strings"
 	"text/template"
 
-	log "github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/fatih/color"
 	fileutils "github.com/l50/goutils/v2/file/fileutils"
+	log "github.com/l50/goutils/v2/logging"
 	"github.com/l50/goutils/v2/sys"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -104,8 +104,7 @@ func genBPDirs(newBlueprint string) error {
 		bpDirs := []string{"packer_templates", "scripts"}
 		for _, d := range bpDirs {
 			dirPath := filepath.Join("blueprints", newBlueprint, d)
-			err := fileutils.Create(dirPath, nil, fileutils.CreateDirectory)
-			if err != nil {
+			if err := fileutils.Create(dirPath, nil, fileutils.CreateDirectory); err != nil {
 				log.L().Errorf("failed to create %s directory for new %s blueprint: %v", d, newBlueprint, err)
 				return err
 			}
@@ -241,7 +240,7 @@ func createPacker(cmd *cobra.Command, data Data) error {
 	packerDir := filepath.Join(newBPPath, "packer_templates")
 
 	// Get blueprint information
-	if err = viper.UnmarshalKey("container", &data.Container); err != nil {
+	if err := viper.UnmarshalKey("container", &data.Container); err != nil {
 		log.L().Errorf(
 			"failed to unmarshal container data from config file: %v", err)
 		cobra.CheckErr(err)
@@ -250,9 +249,8 @@ func createPacker(cmd *cobra.Command, data Data) error {
 	set := false
 	data.Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
 	if !set {
-		log.L().Error(
-			"required env var $GITHUB_TOKEN is not set, please set it with a correct Personal Access Token and try again")
-		cobra.CheckErr(err)
+		return errors.New("required env var $GITHUB_TOKEN is not set, please " +
+			"set it with a correct Personal Access Token and try again")
 	}
 
 	for _, pkr := range data.PackerTemplates {
@@ -327,17 +325,17 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 	}
 
 	if err := createCfg(cmd, data); err != nil {
-		log.L()
+		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
 
 	if err := createPacker(cmd, data); err != nil {
-		log.L()
+		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
 
 	if err := createScript(data.Blueprint.Name); err != nil {
-		log.L()
+		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
 
