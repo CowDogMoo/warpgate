@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/bitfield/script v0.22.0
 	github.com/fatih/color v1.16.0
-	github.com/l50/goutils/v2 v2.1.8
+	github.com/l50/goutils/v2 v2.1.9
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/spf13/afero v1.11.0
 	github.com/spf13/cobra v1.7.0

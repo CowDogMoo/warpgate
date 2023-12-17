@@ -287,48 +287,40 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		return err
 	}
 
-	// Create the provision command for the input packer template
-	provisionCmd := fmt.Sprintf(
-		"packer build "+
-			"-var 'base_image=%s' "+
-			"-var 'base_image_version=%s' "+
-			"-var 'new_image_tag=%s' "+
-			"-var 'new_image_version=%s' "+
-			"-var 'provision_repo_path=%s' "+
-			"-var 'registry_server=%s' "+
-			"-var 'registry_username=%s' "+
-			"-var 'workdir=%s' "+
-			"-var 'entrypoint=%s' "+
-			"-var 'container_user=%s' "+
-			"-var 'registry_cred=%s' %s",
-		pTmpl.Base.Name,
-		pTmpl.Base.Version,
-		pTmpl.Tag.Name,
-		pTmpl.Tag.Version,
-		blueprint.ProvisioningRepo,
-		pTmpl.Container.Registry.Server,
-		pTmpl.Container.Registry.Username,
-		pTmpl.Container.Workdir,
-		pTmpl.Container.Entrypoint,
-		pTmpl.Container.User,
-		os.Getenv("GITHUB_TOKEN"),
-		buildDir)
+	args := []string{
+		"build",
+		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
+		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
+		"-var", fmt.Sprintf("new_image_tag=%s", pTmpl.Tag.Name),
+		"-var", fmt.Sprintf("new_image_version=%s", pTmpl.Tag.Version),
+		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
+		"-var", fmt.Sprintf("registry_server=%s", pTmpl.Container.Registry.Server),
+		"-var", fmt.Sprintf("registry_username=%s", pTmpl.Container.Registry.Username),
+		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
+		"-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint),
+		"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
+		"-var", fmt.Sprintf("registry_cred=%s", os.Getenv("GITHUB_TOKEN")),
+		buildDir,
+	}
 
-	// Run packer from buildDir
-	if err := sys.Cd(buildDir); err != nil {
+	// Change to the build directory
+	if err := os.Chdir(buildDir); err != nil {
 		log.L().Errorf("failed to change into the %s directory: %v", buildDir, err)
 		return err
 	}
 
-	if _, err := script.Exec(provisionCmd).Stdout(); err != nil {
-		log.L().Errorf(
-			"failed to build container image from the %s "+
-				"packer template that's part of the %s blueprint: %v",
-			pTmpl.Name, blueprint.Name, err)
+	cmd := sys.Cmd{
+		CmdString:     "packer",
+		Args:          args,
+		OutputHandler: func(s string) { log.L().Println(s) },
+	}
+
+	_, err = cmd.RunCmd()
+	if err != nil {
+		log.L().Errorf("Failed to execute %s %s: %v", cmd.CmdString, cmd.Args, err)
 		return err
 	}
 
-	// If there's no error, log the success
 	log.L().Printf("Successfully built container image from the %s packer template as part of the %s blueprint",
 		pTmpl.Name, blueprint.Name)
 
