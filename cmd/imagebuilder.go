@@ -184,8 +184,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	// Create random name for the build directory
 	dirName, err := str.GenRandom(8)
 	if err != nil {
-		log.L().Errorf(
-			"failed to get random string for buildDir: %v", err)
+		log.L().Errorf("Failed to get random string for buildDir: %v", err)
 		return "", err
 	}
 
@@ -193,15 +192,14 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	buildDir := filepath.Join("/tmp", "builds", dirName)
 	if err := fileutils.Create(buildDir, nil, fileutils.CreateDirectory); err != nil {
 		log.L().Errorf(
-			"failed to create %s build directory for image building: %v", dirName, err)
+			"Failed to create %s build directory for image building: %v", dirName, err)
 		return "", err
 	}
 
 	bpDir := filepath.Dir(bpConfig)
 	files, err := os.ReadDir(bpDir)
 	if err != nil {
-		log.L().Errorf(
-			"failed to list files in %s: %v", bpDir, err)
+		log.L().Errorf("Failed to list files in %s: %v", bpDir, err)
 		return "", err
 	}
 
@@ -217,8 +215,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 			src := filepath.Join(bpDir, file.Name())
 			dst := filepath.Join(buildDir, file.Name())
 			if err := sys.Cp(src, dst); err != nil {
-				log.L().Errorf(
-					"failed to copy %s to %s: %v", src, dst, err)
+				log.L().Errorf("Failed to copy %s to %s: %v", src, dst, err)
 				return "", err
 			}
 		}
@@ -229,7 +226,7 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 	dst := filepath.Join(buildDir, pTmpl.Name)
 	if err := sys.Cp(src, dst); err != nil {
 		log.L().Errorf(
-			"failed to transfer packer template to %s: %v", buildDir, err)
+			"Failed to transfer packer template to %s: %v", buildDir, err)
 		return "", err
 	}
 
@@ -268,22 +265,21 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 	buildDir, err := createBuildDir(pTmpl, blueprint)
 	if err != nil {
 		log.L().Errorf(
-			"failed to create build directory: %v", err)
+			"Failed to create build directory: %v", err)
 		return err
 	}
 
 	// Initialize the blueprint before building the image
 	if err := initializeBlueprint(filepath.Dir(bpConfig)); err != nil {
 		log.L().Errorf(
-			"failed to initialize blueprint: %v", err)
+			"Failed to initialize blueprint: %v", err)
 		return err
 	}
 
 	// Get container parameters
 	if err := viper.UnmarshalKey(containerKey, &pTmpl.Container); err != nil {
-		log.L().Errorf(
-			"failed to unmarshal container parameters "+
-				"from %s config file: %v", blueprint.Name, err)
+		log.L().Errorf("Failed to unmarshal container parameters "+
+			"from %s config file: %v", blueprint.Name, err)
 		return err
 	}
 
@@ -305,7 +301,7 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 
 	// Change to the build directory
 	if err := os.Chdir(buildDir); err != nil {
-		log.L().Errorf("failed to change into the %s directory: %v", buildDir, err)
+		log.L().Errorf("Failed to change into the %s directory: %v", buildDir, err)
 		return err
 	}
 
@@ -315,9 +311,8 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		OutputHandler: func(s string) { log.L().Println(s) },
 	}
 
-	_, err = cmd.RunCmd()
-	if err != nil {
-		log.L().Errorf("Failed to execute %s %s: %v", cmd.CmdString, cmd.Args, err)
+	if _, err := cmd.RunCmd(); err != nil {
+		log.L().Errorf("Failed to build container image from %s packer template: %v", pTmpl.Name, err)
 		return err
 	}
 
