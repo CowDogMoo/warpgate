@@ -27,6 +27,11 @@ run_provision_logic() {
         ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
     fi
 
+    ANSIBLE_CONFIG=${HOME}/.ansible.cfg
+    if [[ -f "${ANSIBLE_CONFIG}" ]]; then
+        cp "${PKR_BUILD_DIR}/ansible.cfg" "${ANSIBLE_CONFIG}"
+    fi
+
     ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
