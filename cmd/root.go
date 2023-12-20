@@ -49,8 +49,10 @@ const (
 )
 
 var (
-	blueprint       = Blueprint{}
-	cfgFile         string
+	blueprint = Blueprint{}
+	cfgFile   string
+	// Logger is the global logger
+	Logger          log.Logger
 	warpCfg         string
 	packerTemplates = []PackerTemplate{}
 
@@ -90,11 +92,11 @@ func init() {
 	var logLevel = slog.LevelInfo
 
 	// Initialize global logger
-	logger, err := log.ConfigureLogger(logLevel, logPath, log.ColorOutput)
+	Logger, err = log.ConfigureLogger(logLevel, logPath, log.ColorOutput)
 	cobra.CheckErr(err)
 
 	// Set the global logger
-	log.GlobalLogger = logger
+	log.GlobalLogger = Logger
 }
 
 // initConfig reads in config file and ENV variables if set.
