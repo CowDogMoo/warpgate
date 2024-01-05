@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/l50/goutils/v2/logging"
 	log "github.com/l50/goutils/v2/logging"
 	"github.com/l50/goutils/v2/sys"
 	homedir "github.com/mitchellh/go-homedir"
@@ -43,9 +44,10 @@ const (
 	containerKey       = "container"
 	defaultConfigType  = "yaml"
 	logLevelKey        = "log.level"
-	logFormatKey       = "log.format"
 	packerTemplatesKey = "packer_templates"
 	logName            = "warpgate.log"
+	logPathKey         = "log.path"
+	logToFileKey       = "log.to_file"
 )
 
 var (
@@ -75,24 +77,21 @@ func init() {
 		cobra.CheckErr(fmt.Errorf("failed to get home directory: %v", err))
 	}
 	warpCfg = filepath.Join(home, ".warp", defaultConfigName)
-	logDir := filepath.Dir(warpCfg)
-
-	// Create log file using CreateLogFile
-	fs := afero.NewOsFs()
-	if _, err := log.CreateLogFile(fs, logDir, logName); err != nil {
-		cobra.CheckErr(fmt.Errorf("failed to create log file: %v", err))
-	}
 
 	// Set up Cobra's persistent flags
 	pf := rootCmd.PersistentFlags()
 	pf.StringVar(&cfgFile, "config", warpCfg, "config file (default is "+warpCfg+")")
 
-	// Default values for log path and level
-	var logPath = filepath.Join(filepath.Dir(warpCfg), logName)
-	var logLevel = slog.LevelInfo
-
 	// Initialize global logger
-	Logger, err = log.ConfigureLogger(logLevel, logPath, log.ColorOutput)
+	logCfg := logging.LogConfig{
+		Fs:         afero.NewOsFs(),
+		LogPath:    filepath.Join(home, ".warp", logName),
+		Level:      slog.LevelInfo,
+		OutputType: logging.ColorOutput,
+		LogToDisk:  true,
+	}
+	// Logger, err = log.InitLogging(fs, logPath, logLevel, log.ColorOutput, viper.GetBool(logToFileKey))
+	Logger, err := logging.InitLogging(&logCfg)
 	cobra.CheckErr(err)
 
 	// Set the global logger
@@ -129,10 +128,16 @@ func initConfig() {
 }
 
 func createConfigFile(cfgPath string) error {
-	// Set default values for config
+	// Set default log level (options: debug, info, warn, error)
 	viper.SetDefault(logLevelKey, "info")
-	viper.SetDefault(logFormatKey, "text")
-	viper.SetDefault("log.path", filepath.Join(filepath.Dir(cfgPath), logName))
+
+	// Enable or disable logging to file (default: true)
+	viper.SetDefault(logToFileKey, true)
+
+	// Default path for the log file, used if log.to_file is true
+	if logToFile := viper.GetBool(logToFileKey); logToFile {
+		viper.SetDefault(logPathKey, filepath.Join(filepath.Dir(cfgPath), logName))
+	}
 
 	// Create directory for config file if it doesn't exist
 	cfgDir := filepath.Dir(cfgPath)
