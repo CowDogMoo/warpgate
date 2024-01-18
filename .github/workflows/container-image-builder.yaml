@@ -61,6 +61,9 @@ jobs:
           mkdir -p ~/cowdogmoo
           git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ~/cowdogmoo/ansible-collection-workstation
 
+      - name: Set the Token as Env Var for Subsequent Steps
+        run: echo "GITHUB_TOKEN=${{ steps.app-token.outputs.token }}" >> $GITHUB_ENV
+
       - name: Run image builder for each blueprint
         run: |
           for bp in $(ls blueprints); do
