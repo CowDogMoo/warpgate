@@ -60,7 +60,7 @@ var (
 		Short: "All blueprint oriented operations for Warp Gate.",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := cmd.Help(); err != nil {
-				log.L().Error("failed to show help")
+				log.L().Error("Failed to show help")
 			}
 		},
 	}
@@ -105,7 +105,7 @@ func genBPDirs(newBlueprint string) error {
 		for _, d := range bpDirs {
 			dirPath := filepath.Join("blueprints", newBlueprint, d)
 			if err := fileutils.Create(dirPath, nil, fileutils.CreateDirectory); err != nil {
-				log.L().Errorf("failed to create %s directory for new %s blueprint: %v", d, newBlueprint, err)
+				log.L().Errorf("Failed to create %s directory for new %s blueprint: %v", d, newBlueprint, err)
 				return err
 			}
 		}
@@ -137,8 +137,8 @@ func validateTagInput(tagInput string) error {
 func processCfgInputs(cmd *cobra.Command) error {
 	tagInfo, err := cmd.Flags().GetString("tag")
 	if err != nil || validateTagInput(tagInfo) != nil {
-		log.L().Error("failed to get tag info from input or invalid format")
-		cobra.CheckErr(err)
+		log.L().Error("Failed to get tag info from input or invalid format: %v", err)
+		return err
 	}
 
 	var tagName string
@@ -150,14 +150,14 @@ func processCfgInputs(cmd *cobra.Command) error {
 
 	systemd, err := cmd.Flags().GetBool("systemd")
 	if err != nil {
-		log.L().Error()
-		cobra.CheckErr(err)
+		log.L().Error("Failed to get systemd flag from input: %v", err)
+		return err
 	}
 
 	baseInput, err := cmd.Flags().GetStringSlice("base")
 	if err != nil || validateBaseInput(baseInput) != nil {
-		log.L().Error("failed to get base input from CLI or invalid format")
-		cobra.CheckErr(err)
+		log.L().Error("Failed to get base input from CLI or invalid format: %v", err)
+		return err
 	}
 
 	var systemdContainer []bool
@@ -177,7 +177,7 @@ func processCfgInputs(cmd *cobra.Command) error {
 	if len(baseInput) < len(tagNames) {
 		errMsg := fmt.Sprintf("not enough base inputs for the specified tag names: %v", tagNames)
 		log.L().Error(errMsg)
-		cobra.CheckErr(errors.New(errMsg))
+		return errors.New(errMsg)
 	}
 
 	for i, n := range tagNames {
@@ -231,8 +231,7 @@ func createPacker(cmd *cobra.Command, data Data) error {
 	viper.AddConfigPath(newBPPath)
 	viper.SetConfigName("config.yaml")
 	if err := viper.MergeInConfig(); err != nil {
-		log.L().Errorf(
-			"failed to merge %s blueprint config into the existing config: %v", data.Blueprint.Name, err)
+		log.L().Errorf("Failed to merge %s blueprint config into the existing config: %v", data.Blueprint.Name, err)
 		return err
 	}
 
@@ -241,8 +240,7 @@ func createPacker(cmd *cobra.Command, data Data) error {
 
 	// Get blueprint information
 	if err := viper.UnmarshalKey("container", &data.Container); err != nil {
-		log.L().Errorf(
-			"failed to unmarshal container data from config file: %v", err)
+		log.L().Errorf("Failed to unmarshal container data from config file: %v", err)
 		cobra.CheckErr(err)
 	}
 
