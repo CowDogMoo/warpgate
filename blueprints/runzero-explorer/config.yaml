@@ -14,7 +14,7 @@ packer_templates:
 
 container:
   workdir: /home/ubuntu
-  entrypoint: "/run/docker-entrypoint.sh ; zsh"
+  entrypoint: "/run/docker-entrypoint.sh ; sh"
   user: ubuntu
   registry:
     server: ghcr.io

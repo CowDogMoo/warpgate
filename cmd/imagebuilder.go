@@ -30,7 +30,6 @@ import (
 
 	"github.com/fatih/color"
 	fileutils "github.com/l50/goutils/v2/file/fileutils"
-	homedir "github.com/mitchellh/go-homedir"
 
 	git "github.com/l50/goutils/v2/git"
 	log "github.com/l50/goutils/v2/logging"
@@ -111,13 +110,8 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to retrieve blueprint: %v", err)
 	}
 
-	// Set the configuration path for the blueprint
-	home, err := homedir.Dir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %v", err)
-	}
-	// if err := SetBlueprintConfigPath(blueprint.Name); err != nil {
-	if err := SetBlueprintConfigPath(filepath.Join(home, "cowdogmoo", "warpgate", "blueprints", blueprint.Name)); err != nil {
+	fmt.Println("BLUEPRINT: ", blueprint.Name)
+	if err := SetBlueprintConfigPath(filepath.Join("blueprints", blueprint.Name)); err != nil {
 		return err
 	}
 
@@ -130,7 +124,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
 	}
 
-	errChan := make(chan error)
+	errChan := make(chan error, len(packerTemplates))
 	var wg sync.WaitGroup
 	for _, pTmpl := range packerTemplates {
 		wg.Add(1)
@@ -150,14 +144,21 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		close(errChan)
 	}()
 
+	var errOccurred bool
 	for err := range errChan {
 		if err != nil {
-			return err
+			log.L().Error(err)
+			errOccurred = true
 		}
+	}
+
+	if errOccurred {
+		return fmt.Errorf("errors occurred while building packer images")
 	}
 
 	fmt.Print(color.GreenString(
 		"All packer templates in %s blueprint built successfully!\n", blueprint.Name))
+
 	return nil
 }
 
@@ -187,8 +188,17 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 		return "", err
 	}
 
+	buildBaseDir := filepath.Join(os.TempDir(), "builds")
+	if _, err := os.Stat(buildBaseDir); os.IsNotExist(err) {
+		if err := os.Mkdir(buildBaseDir, 0755); err != nil {
+			log.L().Errorf("Failed to create base build directory: %v", err)
+			return "", err
+		}
+	}
+
+	log.L().Println("BUILD BASE DIR: ", buildBaseDir)
 	// Create buildDir
-	buildDir := filepath.Join("/tmp", "builds", dirName)
+	buildDir := filepath.Join(buildBaseDir, dirName)
 	if err := fileutils.Create(buildDir, nil, fileutils.CreateDirectory); err != nil {
 		log.L().Errorf(
 			"Failed to create %s build directory for image building: %v", dirName, err)
@@ -240,8 +250,16 @@ func initializeBlueprint(blueprintDir string) error {
 		return err
 	}
 
+	log.L().Println("BLUEPRINT DIR: ", blueprintDir)
+
 	// Path to the directory where plugins would be installed
 	pluginsDir := filepath.Join(repoRoot, blueprintDir, "packer_templates", "github.com")
+
+	// Validate the directory structure
+	if _, err := os.Stat(filepath.Join(blueprintDir, "packer_templates")); os.IsNotExist(err) {
+		log.L().Errorf("Expected packer_templates directory not found in %s: %v", blueprintDir, err)
+		return err
+	}
 
 	// Check if the plugins directory exists
 	if _, err := os.Stat(pluginsDir); os.IsNotExist(err) {
