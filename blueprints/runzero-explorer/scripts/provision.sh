@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 # Provision logic for container image creation.
-set -e
+set -ex
 
 export PKR_BUILD_DIR="${1:-/ansible-collection-workstation}"
 export CLEANUP="${2:-false}"
@@ -17,10 +17,11 @@ install_dependencies() {
 
 # Provision logic run by packer
 run_provision_logic() {
-    mkdir -p "${HOME}/.ansible/collections/ansible_collections/cowdogmoo"
+    cowdogmoo_collections_path="${HOME}/.ansible/collections/ansible_collections/cowdogmoo"
+    mkdir -p "$cowdogmoo_collections_path"
 
     # Link PKR_BUILD_DIR to the expected collection path
-    ln -s "${PKR_BUILD_DIR}" "${HOME}/.ansible/collections/ansible_collections/cowdogmoo/workstation"
+    ln -s "${PKR_BUILD_DIR}" "$cowdogmoo_collections_path/workstation"
 
     # Install galaxy dependencies if they are present
     if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
@@ -35,7 +36,7 @@ run_provision_logic() {
     ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
-        --limit 127.0.0.1 "${PKR_BUILD_DIR}/playbooks/attack-box/attack-box.yml"
+        --limit 127.0.0.1 "${PKR_BUILD_DIR}/playbooks/runzero-explorer/runzero-explorer.yml"
 
     # Wait for ansible to finish running
     while /usr/bin/pgrep ansible > /dev/null; do

@@ -1,0 +1,21 @@
+---
+blueprint:
+  name: runzero-explorer
+
+packer_templates:
+  - name: runzero-explorer.pkr.hcl
+    base:
+      name: geerlingguy/docker-ubuntu2204-ansible
+      version: latest
+    systemd: true
+    tag:
+      name: cowdogmoo/runzero-explorer
+      version: latest
+
+container:
+  workdir: /home/ubuntu
+  entrypoint: "/run/docker-entrypoint.sh ; zsh"
+  user: ubuntu
+  registry:
+    server: ghcr.io
+    username: cowdogmoo
