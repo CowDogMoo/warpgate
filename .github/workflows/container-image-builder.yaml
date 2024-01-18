@@ -57,7 +57,20 @@ jobs:
 
       - name: Run image builder for each blueprint
         run: |
-          for blueprint in $(find blueprints -name config.yaml); do
-            echo "Processing blueprint: $blueprint"
-            wg imageBuilder -b "$blueprint" -p ~/cowdogmoo/ansible-collection-workstation
+          # Ensure this script runs from the repository root.
+          cd ${{ github.workspace }}
+
+          for blueprintRelPath in $(find blueprints -name config.yaml); do
+              echo "Processing blueprint: $blueprintRelPath"
+
+              # Construct the absolute path for the blueprint.
+              blueprintPath="${PWD}/${blueprintRelPath}"
+              echo "Blueprint absolute path: $blueprintPath"
+
+              # Verify the provisioning path.
+              provisioningPath="/home/runner/cowdogmoo/ansible-collection-workstation"
+              echo "Provisioning path: $provisioningPath"
+
+              # Run the wg imageBuilder command with the correct paths.
+              wg imageBuilder -b "$blueprintPath" -p "$provisioningPath"
           done
