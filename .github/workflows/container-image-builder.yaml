@@ -1,0 +1,37 @@
+---
+name: Container Image Builder
+on:
+  pull_request:
+  push:
+    branches: [main, container]
+
+jobs:
+  container-image-builder:
+    name: Build container images using warpgate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up git repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Set up Go
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
+        with:
+          go-version: "1.21.0"
+          cache-dependency-path: "**/*.sum"
+
+      - name: Set up warpgate
+        run: |
+          go mod tidy
+          go build -o warp
+          sudo mv warp /usr/local/bin/warp
+
+      - name: Clone ansible-collection-workstation
+        run: |
+          mkdir -p ~/cowdogmoo
+          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ~/cowdogmoo/ansible-collection-workstation
+
+      - name: Run image builder for each blueprint
+        run: |
+          for blueprint in $(find blueprints -name config.yaml); do
+              warp imageBuilder -b $blueprint -p ~/cowdogmoo/ansible-collection-workstation
+          done

@@ -236,7 +236,9 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 func initializeBlueprint(blueprintDir string) error {
 	repoRoot, err := git.RepoRoot()
 	if err != nil {
-		return fmt.Errorf("failed to get the root of the git repo: %v", err)
+		log.L().Errorf(
+			"Failed to get the root of the git repo: %v", err)
+		return err
 	}
 
 	// Path to the directory where plugins would be installed
@@ -246,16 +248,22 @@ func initializeBlueprint(blueprintDir string) error {
 	if _, err := os.Stat(pluginsDir); os.IsNotExist(err) {
 		// Change to the blueprint's directory
 		if err := os.Chdir(filepath.Join(blueprintDir, "packer_templates")); err != nil {
-			return fmt.Errorf("failed to change directory to %s: %v", blueprintDir, err)
+			log.L().Errorf(
+				"Failed to change directory to %s: %v", blueprintDir, err)
+			return err
 		}
 
 		// Run packer init .
 		initCmd := "packer init ."
 		if _, err := script.Exec(initCmd).Stdout(); err != nil {
-			return fmt.Errorf("failed to initialize blueprint with packer init: %v", err)
+			log.L().Errorf(
+				"Failed to initialize blueprint with packer init: %v", err)
+			return err
 		}
 	} else if err != nil {
-		return fmt.Errorf("failed to check the status of the plugins directory: %v", err)
+		log.L().Errorf(
+			"Failed to check the status of the plugins directory: %v", err)
+		return err
 	}
 
 	return nil
@@ -301,7 +309,8 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 
 	// Change to the build directory
 	if err := os.Chdir(buildDir); err != nil {
-		log.L().Errorf("Failed to change into the %s directory: %v", buildDir, err)
+		log.L().Errorf(
+			"Failed to change into the %s directory: %v", buildDir, err)
 		return err
 	}
 
@@ -312,7 +321,8 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 	}
 
 	if _, err := cmd.RunCmd(); err != nil {
-		log.L().Errorf("Failed to build container image from %s packer template: %v", pTmpl.Name, err)
+		log.L().Errorf(
+			"Failed to build container image from %s packer template: %v", pTmpl.Name, err)
 		return err
 	}
 
