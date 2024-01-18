@@ -41,9 +41,6 @@ jobs:
         with:
           version: ${{ env.PRODUCT_VERSION }}
 
-      - name: Install dependencies
-        run: |
-          go install github.com/goreleaser/goreleaser@latest
       - name: Set up warpgate
         run: |
           go mod tidy
@@ -54,6 +51,13 @@ jobs:
         run: |
           mkdir -p ~/cowdogmoo
           git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ~/cowdogmoo/ansible-collection-workstation
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        # Only allow access using your registered public keys
+        # in github
+        with:
+          limit-access-to-actor: true
 
       - name: Run image builder for each blueprint
         run: |
