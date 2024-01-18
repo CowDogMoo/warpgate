@@ -33,5 +33,6 @@ jobs:
       - name: Run image builder for each blueprint
         run: |
           for blueprint in $(find blueprints -name config.yaml); do
-              warp imageBuilder -b $blueprint -p ~/cowdogmoo/ansible-collection-workstation
+            echo "Processing blueprint: $blueprint"
+            warp imageBuilder -b "$blueprint" -p ~/cowdogmoo/ansible-collection-workstation
           done
