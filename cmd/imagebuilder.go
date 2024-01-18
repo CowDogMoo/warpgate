@@ -28,7 +28,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/bitfield/script"
 	"github.com/fatih/color"
 	fileutils "github.com/l50/goutils/v2/file/fileutils"
 	homedir "github.com/mitchellh/go-homedir"
@@ -254,8 +253,13 @@ func initializeBlueprint(blueprintDir string) error {
 		}
 
 		// Run packer init .
-		initCmd := "packer init ."
-		if _, err := script.Exec(initCmd).Stdout(); err != nil {
+		cmd := sys.Cmd{
+			CmdString:     "packer",
+			Args:          []string{"init", "."},
+			OutputHandler: func(s string) { log.L().Println(s) },
+		}
+
+		if _, err := cmd.RunCmd(); err != nil {
 			log.L().Errorf(
 				"Failed to initialize blueprint with packer init: %v", err)
 			return err

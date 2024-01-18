@@ -3,7 +3,6 @@ module github.com/cowdogmoo/warpgate
 go 1.21
 
 require (
-	github.com/bitfield/script v0.22.0
 	github.com/fatih/color v1.16.0
 	github.com/l50/goutils/v2 v2.2.2-0.20240106214313-c4fc674d2f58
 	github.com/mitchellh/go-homedir v1.1.0
@@ -26,8 +25,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/itchyny/gojq v0.12.14 // indirect
-	github.com/itchyny/timefmt-go v0.1.5 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
@@ -61,5 +58,4 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	mvdan.cc/sh/v3 v3.7.0 // indirect
 )
