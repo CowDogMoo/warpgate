@@ -128,16 +128,15 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get the GitHub token from the command-line flag or environment variable
-	token := githubToken
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
-		if token == "" {
+	if githubToken == "" {
+		githubToken = os.Getenv("GITHUB_TOKEN")
+		if githubToken == "" {
 			return fmt.Errorf("no GitHub token provided")
 		}
 	}
 
 	// Validate the GitHub token
-	if err := validateToken(token); err != nil {
+	if err := validateToken(githubToken); err != nil {
 		return fmt.Errorf("GitHub token validation failed: %v", err)
 	}
 
@@ -345,7 +344,7 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
 		"-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint),
 		"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
-		"-var", fmt.Sprintf("registry_cred=%s", os.Getenv("GITHUB_TOKEN")),
+		"-var", fmt.Sprintf("registry_cred=%s", githubToken),
 		buildDir,
 	}
 
