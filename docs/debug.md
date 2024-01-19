@@ -27,7 +27,7 @@ To troubleshoot issues pushing to your container registry,
 try pushing an image manually like so:
 
 ```bash
-GITHUB_USERNAME=CowDogMoo
+GITHUB_USERNAME=cowdogmoo
 GITHUB_TOKEN=ghp_......
 IMAGE_TAG=ansible-vnc:latest
 docker login ghcr.io -u $GITHUB_USERNAME -p $GITHUB_TOKEN
