@@ -7,7 +7,7 @@ on:
 
 env:
   PRODUCT_VERSION: "latest"
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.repository.name }}
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
 
 jobs:
   container-image-builder:
@@ -70,19 +70,28 @@ jobs:
           mkdir -p ~/cowdogmoo
           git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ~/cowdogmoo/ansible-collection-workstation
 
+      # - name: Run image builder for each blueprint
+      #   run: |
+      #     for bp in $(ls blueprints); do
+      #         echo "Processing blueprint: $bp"
+      #         # Run the wg imageBuilder command with the correct paths.
+      #         wg imageBuilder \
+      #           -b "$bp" \
+      #           -p "$HOME/cowdogmoo/ansible-collection-workstation" \
+      #           -t "${{ secrets.BOT_TOKEN }}"
+      #     done
+
       - name: Run image builder for each blueprint
         run: |
-          for bp in $(ls blueprints); do
-              echo "Processing blueprint: $bp"
-              # Run the wg imageBuilder command with the correct paths.
-              wg imageBuilder \
-                -b "$bp" \
-                -p "$HOME/cowdogmoo/ansible-collection-workstation" \
-                -t "${{ secrets.BOT_TOKEN }}"
-          done
+          # Run the wg imageBuilder command with the correct paths.
+          wg imageBuilder \
+            -b "runzero-explorer" \
+            -p "$HOME/cowdogmoo/ansible-collection-workstation" \
+            -t "${{ secrets.BOT_TOKEN }}"
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
+        if: ${{ failure() }}
         with:
           limit-access-to-actor: true
 
