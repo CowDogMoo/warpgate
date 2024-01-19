@@ -215,7 +215,6 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 		}
 	}
 
-	log.L().Println("BUILD BASE DIR: ", buildBaseDir)
 	// Create buildDir
 	buildDir := filepath.Join(buildBaseDir, dirName)
 	if err := fileutils.Create(buildDir, nil, fileutils.CreateDirectory); err != nil {
@@ -268,8 +267,6 @@ func initializeBlueprint(blueprintDir string) error {
 			"Failed to get the root of the git repo: %v", err)
 		return err
 	}
-
-	log.L().Println("BLUEPRINT DIR: ", blueprintDir)
 
 	// Path to the directory where plugins would be installed
 	pluginsDir := filepath.Join(repoRoot, blueprintDir, "packer_templates", "github.com")

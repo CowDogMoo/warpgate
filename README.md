@@ -57,23 +57,25 @@ is abstracted into a blueprint, which Warp Gate consumes.
 
 ### Warp image from existing blueprint
 
-This example will create a container image using
-the existing `ansible-attack-box` blueprint and
-the ansible playbook at `~/.ansible/Workspace/ansible-attack-box`.
+This example will create a container image using the existing
+`ansible-attack-box` blueprint and the `ansible-attack-box`
+playbook found in the `cowdogmoo.workstation` collection.
 
 ```bash
 wg imageBuilder \
   -b ansible-attack-box \
-  -p ~/cowdogmoo/ansible-collection-workstation \
-  -t $GITHUB_TOKEN
+  -p ~/cowdogmoo/ansible-collection-workstation
 ```
 
-This next example will create the same container image, while using
-a provided `$GITHUB_TOKEN` for the commit and push operations.
+This next example will create a container image using the existing
+`runzero-explorer` blueprint and the `runzero-explorrer` ansible playbook
+playbook found in the `cowdogmoo.workstation` collection.
+
+Additionally, a `$GITHUB_TOKEN` is provided for the commit and push operations.
 
 ```bash
 wg imageBuilder \
-  -b ansible-attack-box \
+  -b runzero-explorer \
   -p ~/cowdogmoo/ansible-collection-workstation \
   -t $GITHUB_TOKEN
 ```
