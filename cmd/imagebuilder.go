@@ -24,6 +24,8 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -38,6 +40,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
+
+var githubToken string
 
 // PackerTemplate is used to hold the information used
 // with a blueprint's packer templates.
@@ -110,7 +114,6 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to retrieve blueprint: %v", err)
 	}
 
-	fmt.Println("BLUEPRINT: ", blueprint.Name)
 	if err := SetBlueprintConfigPath(filepath.Join("blueprints", blueprint.Name)); err != nil {
 		return err
 	}
@@ -122,6 +125,20 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 	var packerTemplates []PackerTemplate
 	if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
 		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
+	}
+
+	// Get the GitHub token from the command-line flag or environment variable
+	token := githubToken
+	if token == "" {
+		token = os.Getenv("GITHUB_TOKEN")
+		if token == "" {
+			return fmt.Errorf("no GitHub token provided")
+		}
+	}
+
+	// Validate the GitHub token
+	if err := validateToken(token); err != nil {
+		return fmt.Errorf("GitHub token validation failed: %v", err)
 	}
 
 	errChan := make(chan error, len(packerTemplates))
@@ -178,6 +195,9 @@ func init() {
 		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
+
+	imageBuilderCmd.Flags().StringVarP(
+		&githubToken, "github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
 }
 
 func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
@@ -350,6 +370,41 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 
 	log.L().Printf("Successfully built container image from the %s packer template as part of the %s blueprint",
 		pTmpl.Name, blueprint.Name)
+
+	return nil
+}
+
+func validateToken(token string) error {
+	// Define the GitHub API URL for user authentication
+	url := "https://api.github.com/user"
+
+	// Create a new request
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	// Set the Authorization header with the token
+	req.Header.Set("Authorization", "token "+token)
+
+	// Make the request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	_, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading response: %v", err)
+	}
+
+	// Check if the status code is not 200
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("token validation failed with status code: %d", resp.StatusCode)
+	}
 
 	return nil
 }

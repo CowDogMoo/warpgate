@@ -64,17 +64,18 @@ the ansible playbook at `~/.ansible/Workspace/ansible-attack-box`.
 ```bash
 wg imageBuilder \
   -b ansible-attack-box \
-  -p ~/cowdogmoo/ansible-collection-workstation
+  -p ~/cowdogmoo/ansible-collection-workstation \
+  -t $GITHUB_TOKEN
 ```
 
-This next example will create a container image using
-the existing `ansible-vnc-zsh` blueprint and
-the ansible playbook at `~/cowdogmoo/ansible-vnc-zsh`.
+This next example will create the same container image, while using
+a provided `$GITHUB_TOKEN` for the commit and push operations.
 
 ```bash
 wg imageBuilder \
-  -b ansible-vnc-zsh \
-  -p ~/cowdogmoo/ansible-vnc-zsh
+  -b ansible-attack-box \
+  -p ~/cowdogmoo/ansible-collection-workstation \
+  -t $GITHUB_TOKEN
 ```
 
 ### Create new blueprint skeleton

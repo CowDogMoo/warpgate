@@ -70,22 +70,16 @@ jobs:
           mkdir -p ~/cowdogmoo
           git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ~/cowdogmoo/ansible-collection-workstation
 
-      # - name: Get the token permissions
-      #   run: |
-      #     export GITHUB_TOKEN=${{ secrets.BOT_TOKEN }}
-      #     PERMS=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" "https://api.github.com/user/packages?package_type=container" | jq .message)
-      #     if [[ "$PERMS" == *"You need at least read:packages scope to list packages"* ]]; then
-      #       echo "You need at least read:packages scope to list packages."
-      #       exit 1
-      #     fi
-
       - name: Run image builder for each blueprint
         run: |
           export GITHUB_TOKEN=${{ secrets.BOT_TOKEN }}
           for bp in $(ls blueprints); do
               echo "Processing blueprint: $bp"
               # Run the wg imageBuilder command with the correct paths.
-              wg imageBuilder -b "$bp" -p "$HOME/cowdogmoo/ansible-collection-workstation"
+              wg imageBuilder \
+                -b "$bp" \
+                -p "$HOME/cowdogmoo/ansible-collection-workstation" \
+                -t "$GITHUB_TOKEN"
           done
 
       - name: Test
