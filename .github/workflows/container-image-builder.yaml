@@ -72,15 +72,19 @@ jobs:
 
       - name: Run image builder for each blueprint
         run: |
-          export GITHUB_TOKEN=${{ secrets.BOT_TOKEN }}
           for bp in $(ls blueprints); do
               echo "Processing blueprint: $bp"
               # Run the wg imageBuilder command with the correct paths.
               wg imageBuilder \
                 -b "$bp" \
                 -p "$HOME/cowdogmoo/ansible-collection-workstation" \
-                -t "$GITHUB_TOKEN"
+                -t "${{ secrets.BOT_TOKEN }}"
           done
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
 
       - name: Test
         run: docker run --rm ${{ env.IMAGE_NAME }}:latest
