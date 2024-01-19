@@ -331,7 +331,7 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		return err
 	}
 
-	log.L().Println("TOKEN", githubToken)
+	log.L().Println("TOKEN ", githubToken)
 
 	args := []string{
 		"build",

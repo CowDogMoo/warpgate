@@ -48,7 +48,7 @@ jobs:
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3
         with:
           registry: ghcr.io
-          username: cowdogmoo
+          username: "${{ github.repository_owner }}"
           password: "${{ steps.app-token.outputs.token }}"
 
       - name: Set up Go
@@ -87,14 +87,14 @@ jobs:
 
       - name: Run image builder for each blueprint
         run: |
-          echo "${{ steps.app-token.outputs.token }} | tee /tmp/token"
+          echo ${{ steps.app-token.outputs.token }} >> secrets.txt
+          echo "BOT TOKEN:" >> secrets.txt
+          echo "${{ secrets.BOT_TOKEN }}" >> secrets.txt
           # Run the wg imageBuilder command with the correct paths.
           wg imageBuilder \
             -b "runzero-explorer" \
             -p "~/cowdogmoo/ansible-collection-workstation" \
-            -t "${{ steps.app-token.outputs.token }}"
-        env:
-          GITHUB_TOKEN: "${{ steps.app-token.outputs.token }}"
+            -t "${{ secrets.BOT_TOKEN }}"
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
