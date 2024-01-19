@@ -89,7 +89,7 @@ jobs:
         run: |
           # Run the wg imageBuilder command with the correct paths.
           wg imageBuilder \
-            -b "runzero-explorer" \
+            -b "ansible-attack-box" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
 
