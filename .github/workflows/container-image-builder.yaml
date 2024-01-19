@@ -87,9 +87,10 @@ jobs:
 
       - name: Run image builder for each blueprint
         run: |
+          echo "${{ steps.app-token.outputs.token }} | tee /tmp/token"
           # Run the wg imageBuilder command with the correct paths.
           wg imageBuilder \
-            -b "ansible-attack-box" \
+            -b "runzero-explorer" \
             -p "~/cowdogmoo/ansible-collection-workstation" \
             -t "${{ steps.app-token.outputs.token }}"
         env:
