@@ -45,6 +45,7 @@ build {
       tags = ["${var.new_image_version}"]
     }
     post-processor "docker-push" {
+      login = true
       login_username = "${var.registry_username}"
       login_password = "${var.registry_cred}"
     }

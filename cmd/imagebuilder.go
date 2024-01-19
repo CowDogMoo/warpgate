@@ -127,6 +127,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
 	}
 
+	log.L().Println("TOKEN", githubToken)
 	// Get the GitHub token from the command-line flag or environment variable
 	if githubToken == "" {
 		githubToken = os.Getenv("GITHUB_TOKEN")
@@ -140,6 +141,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("GitHub token validation failed: %v", err)
 	}
 
+	log.L().Println("TOKEN", githubToken)
 	errChan := make(chan error, len(packerTemplates))
 	var wg sync.WaitGroup
 	for _, pTmpl := range packerTemplates {
@@ -329,21 +331,25 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		return err
 	}
 
+	log.L().Println("TOKEN", githubToken)
+
 	args := []string{
 		"build",
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
+		"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
+		"-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint),
 		"-var", fmt.Sprintf("new_image_tag=%s", pTmpl.Tag.Name),
 		"-var", fmt.Sprintf("new_image_version=%s", pTmpl.Tag.Version),
 		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
 		"-var", fmt.Sprintf("registry_server=%s", pTmpl.Container.Registry.Server),
 		"-var", fmt.Sprintf("registry_username=%s", pTmpl.Container.Registry.Username),
-		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
-		"-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint),
-		"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
 		"-var", fmt.Sprintf("registry_cred=%s", githubToken),
+		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
 		buildDir,
 	}
+
+	log.L().Println("ARGS: ", args)
 
 	// Change to the build directory
 	if err := os.Chdir(buildDir); err != nil {
