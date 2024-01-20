@@ -23,21 +23,18 @@ jobs:
 
       - id: set-matrix
         run: |
-          BLUEPRINTS_JSON=$(find blueprints -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | awk NF | jq -R -c '[split("\n")[] | select(length > 0) | {blueprint: .}]')
-          echo "::set-output name=matrix::{\"include\":$BLUEPRINTS_JSON}"
-
-      - name: Setup tmate session for debugging
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: true
-        if: failure()
+          BLUEPRINTS_JSON_FILE=$(mktemp)
+          find blueprints -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | awk NF | jq -R -c '[split("\n")[] | select(length > 0) | {blueprint: .}]' > "$BLUEPRINTS_JSON_FILE"
+          MATRIX_JSON=$(cat "$BLUEPRINTS_JSON_FILE")
+          echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+          rm "$BLUEPRINTS_JSON_FILE"
 
   build:
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{fromJson(needs.prepare.outputs.matrix).include}}
+      matrix: ${{fromJson(needs.prepare.outputs.matrix)}}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
