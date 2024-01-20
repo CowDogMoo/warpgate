@@ -27,8 +27,6 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-        with:
-          token: "${{ steps.app-token.outputs.token }}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3
@@ -86,15 +84,14 @@ jobs:
       #     done
 
       - name: Run image builder for each blueprint
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          echo ${{ steps.app-token.outputs.token }} >> secrets.txt
-          echo "BOT TOKEN:" >> secrets.txt
-          echo "${{ secrets.BOT_TOKEN }}" >> secrets.txt
           # Run the wg imageBuilder command with the correct paths.
           wg imageBuilder \
             -b "runzero-explorer" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
-            -t "${{ secrets.BOT_TOKEN }}"
+            -t "${{ env.GH_TOKEN }}"
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
