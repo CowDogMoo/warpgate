@@ -18,12 +18,12 @@ jobs:
     name: Build container images using warpgate
     runs-on: ubuntu-latest
     steps:
-      - name: Generate Token
-        uses: actions/create-github-app-token@2986852ad836768dfea7781f31828eb3e17990fa
-        id: app-token
-        with:
-          app-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+      # - name: Generate Token
+      #   uses: actions/create-github-app-token@2986852ad836768dfea7781f31828eb3e17990fa
+      #   id: app-token
+      #   with:
+      #     app-id: ${{ secrets.BOT_APP_ID }}
+      #     private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
 
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -47,7 +47,8 @@ jobs:
         with:
           registry: ghcr.io
           username: "${{ github.repository_owner }}"
-          password: "${{ steps.app-token.outputs.token }}"
+          password: "${{ secrets.BOT_TOKEN }}"
+          # password: "${{ steps.app-token.outputs.token }}"
 
       - name: Set up Go
         uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
@@ -84,14 +85,12 @@ jobs:
       #     done
 
       - name: Run image builder for each blueprint
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           # Run the wg imageBuilder command with the correct paths.
           wg imageBuilder \
             -b "runzero-explorer" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
-            -t "${{ env.GH_TOKEN }}"
+            -t "${{ secrets.BOT_TOKEN }}"
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
