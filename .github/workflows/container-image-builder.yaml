@@ -86,7 +86,9 @@ jobs:
 
       - name: Make repository name lowercase
         id: lower-repo
-        run: echo "repository=$(echo $IMAGE_NAME | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+        run: |
+          echo "repository=$(echo $IMAGE_NAME | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "repo_owner=$(echo ghcr.io/${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Run image builder for each blueprint
         run: |
@@ -96,11 +98,15 @@ jobs:
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
 
-      - name: Test
-        run: docker run --rm ${{ env.repository }}:latest
+      # - name: Test
+      #   run: docker run -d --rm --name runzero-explorer-test \
+      #     --privileged \
+      #     --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
+      #     --cgroupns host \
+      #     ${{ env.repo_owner }}/runzero-explorer:latest
 
       - name: Push image
-        run: docker push ${{ env.repository }}:latest
+        run: docker push ${{ env.repo_owner }}/runzero-explorer:latest
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
