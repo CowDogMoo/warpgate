@@ -23,11 +23,10 @@ jobs:
 
       - id: set-matrix
         run: |
-          BLUEPRINTS_JSON_FILE=$(mktemp)
-          find blueprints -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | awk NF | jq -R -c '[split("\n")[] | select(length > 0) | {blueprint: .}]' > "$BLUEPRINTS_JSON_FILE"
-          MATRIX_JSON=$(cat "$BLUEPRINTS_JSON_FILE")
-          echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
-          rm "$BLUEPRINTS_JSON_FILE"
+          BLUEPRINTS_JSON=$(find blueprints -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | awk NF | jq -R -c '[split("\n")[] | select(length > 0) | {blueprint: .}]')
+          BLUEPRINTS_JSON_ESCAPED=$(echo "$BLUEPRINTS_JSON" | jq @uri)
+          echo "MATRIX_JSON=$BLUEPRINTS_JSON_ESCAPED" >> $GITHUB_ENV
+          echo "matrix=${BLUEPRINTS_JSON_ESCAPED}" >> $GITHUB_OUTPUT
 
   build:
     needs: prepare
