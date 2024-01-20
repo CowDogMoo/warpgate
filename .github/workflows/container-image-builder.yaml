@@ -14,9 +14,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  generate-blueprints:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Generate list of blueprints
+        id: set-matrix
+        run: |
+          echo "::set-output name=matrix::$(find blueprints -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -c -s 'split("\n")[:-1]')"
+
   container-image-builder:
+    needs: generate-blueprints
     name: Build container images using warpgate
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        blueprint: ${{fromJson(needs.generate-blueprints.outputs.matrix)}}
+      fail-fast: false
     steps:
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -83,11 +101,19 @@ jobs:
           echo "repository=$(echo $IMAGE_NAME | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           echo "repo_owner=$(echo ghcr.io/${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
+      # - name: Run image builder for each blueprint
+      #   run: |
+      #     # Run the wg imageBuilder command with the correct paths.
+      #     wg imageBuilder \
+      #       -b "runzero-explorer" \
+      #       -p "$HOME/cowdogmoo/ansible-collection-workstation" \
+      #       -t "${{ secrets.BOT_TOKEN }}"
+
       - name: Run image builder for each blueprint
         run: |
-          # Run the wg imageBuilder command with the correct paths.
+          # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
           wg imageBuilder \
-            -b "runzero-explorer" \
+            -b "${{ matrix.blueprint }}" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
 
