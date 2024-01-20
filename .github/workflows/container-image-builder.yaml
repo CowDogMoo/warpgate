@@ -18,6 +18,8 @@ jobs:
     name: Build container images using warpgate
     runs-on: ubuntu-latest
     steps:
+      - name: Convert IMAGE_NAME to lowercase
+        run: echo "IMAGE_NAME=$(echo $IMAGE_NAME_UPPERCASE | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
       # - name: Generate Token
       #   uses: actions/create-github-app-token@2986852ad836768dfea7781f31828eb3e17990fa
       #   id: app-token
