@@ -7,42 +7,25 @@ on:
 
 env:
   PRODUCT_VERSION: "latest"
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  prepare:
+  container-image-builder:
+    name: Build container images using warpgate
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-
-      - id: set-matrix
-        run: |
-          BLUEPRINTS_JSON=$(find blueprints -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | awk NF | jq -R -c '[split("\n")[] | select(length > 0) | {blueprint: .}]')
-          BLUEPRINTS_JSON_ESCAPED=$(echo "$BLUEPRINTS_JSON" | jq @uri)
-          echo "MATRIX_JSON=$BLUEPRINTS_JSON_ESCAPED" >> $GITHUB_ENV
-          echo "matrix=${BLUEPRINTS_JSON_ESCAPED}" >> $GITHUB_OUTPUT
-
-  build:
-    needs: prepare
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{fromJson(needs.prepare.outputs.matrix)}}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3
 
       - name: Cache Docker layers
         uses: actions/cache@v3
@@ -53,20 +36,22 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Log in to the GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.BOT_TOKEN }}
+          username: "${{ github.repository_owner }}"
+          password: "${{ secrets.BOT_TOKEN }}"
+          # password: "${{ steps.app-token.outputs.token }}"
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
         with:
           go-version: "1.21.0"
           cache-dependency-path: "**/*.sum"
 
       - name: Setup `packer`
         uses: hashicorp/setup-packer@main
+        id: setup
         with:
           version: ${{ env.PRODUCT_VERSION }}
 
@@ -81,26 +66,43 @@ jobs:
           mkdir -p $HOME/cowdogmoo
           git clone https://github.com/CowDogMoo/ansible-collection-workstation.git $HOME/cowdogmoo/ansible-collection-workstation
 
-      - name: Make repository name lowercase
-        run: |
-          echo "repo_owner=$(echo 'ghcr.io/${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      # - name: Run image builder for each blueprint
+      #   run: |
+      #     for bp in $(ls blueprints); do
+      #         echo "Processing blueprint: $bp"
+      #         # Run the wg imageBuilder command with the correct paths.
+      #         wg imageBuilder \
+      #           -b "$bp" \
+      #           -p "$HOME/cowdogmoo/ansible-collection-workstation" \
+      #           -t "${{ secrets.BOT_TOKEN }}"
+      #     done
 
-      - name: Run image builder for blueprint
+      - name: Make repository name lowercase
+        id: lower-repo
         run: |
-          blueprint=${{ matrix.blueprints }}
-          echo "Processing blueprint: $blueprint"
+          echo "repository=$(echo $IMAGE_NAME | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "repo_owner=$(echo ghcr.io/${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Run image builder for each blueprint
+        run: |
+          # Run the wg imageBuilder command with the correct paths.
           wg imageBuilder \
-            -b "$blueprint" \
+            -b "runzero-explorer" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
 
-      - name: Setup tmate session for debugging
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: true
-        if: failure()
+      # - name: Test
+      #   run: docker run -d --rm --name runzero-explorer-test \
+      #     --privileged \
+      #     --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
+      #     --cgroupns host \
+      #     ${{ env.repo_owner }}/runzero-explorer:latest
 
       - name: Push image
-        run: |
-          blueprint=${{ matrix.blueprints }}
-          docker push ${{ env.repo_owner }}/${blueprint,,}:latest
+        run: docker push ${{ env.repo_owner }}/runzero-explorer:latest
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ failure() }}
+        with:
+          limit-access-to-actor: true
