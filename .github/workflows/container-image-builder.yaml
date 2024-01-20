@@ -26,6 +26,11 @@ jobs:
           BLUEPRINTS_JSON=$(find blueprints -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | awk NF | jq -R -c '[split("\n")[] | select(length > 0) | {blueprint: .}]')
           echo "::set-output name=matrix::{\"include\":$BLUEPRINTS_JSON}"
 
+      - name: Setup tmate session for debugging
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
+
   build:
     needs: prepare
     runs-on: ubuntu-latest
@@ -96,9 +101,3 @@ jobs:
         run: |
           blueprint=${{ matrix.blueprints }}
           docker push ${{ env.repo_owner }}/${blueprint,,}:latest
-
-      - name: Setup tmate session for debugging
-        if: ${{ failure() }}
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: true
