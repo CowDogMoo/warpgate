@@ -30,7 +30,7 @@ try pushing an image manually like so:
 GITHUB_USERNAME=cowdogmoo
 GITHUB_TOKEN=ghp_......
 IMAGE_TAG=ansible-vnc:latest
-docker login ghcr.io -u $GITHUB_USERNAME -p $GITHUB_TOKEN
+echo $GITHUB_TOKEN | docker login ghcr.io -u $GITHUB_USERNAME --password-stdin
 docker push ghcr.io/$GITHUB_USERNAME/$IMAGE_TAG
 ```
 
