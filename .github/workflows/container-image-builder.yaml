@@ -30,6 +30,7 @@ jobs:
         uses: mxschmitt/action-tmate@v3
         with:
           limit-access-to-actor: true
+        if: failure()
 
   build:
     needs: prepare
@@ -96,6 +97,12 @@ jobs:
             -b "$blueprint" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
+
+      - name: Setup tmate session for debugging
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
+        if: failure()
 
       - name: Push image
         run: |
