@@ -71,8 +71,8 @@ jobs:
 
       - name: Clone ansible-collection-workstation
         run: |
-          mkdir -p ~/cowdogmoo
-          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ~/cowdogmoo/ansible-collection-workstation
+          mkdir -p $HOME/cowdogmoo
+          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git $HOME/cowdogmoo/ansible-collection-workstation
 
       # - name: Run image builder for each blueprint
       #   run: |
@@ -93,7 +93,7 @@ jobs:
           # Run the wg imageBuilder command with the correct paths.
           wg imageBuilder \
             -b "runzero-explorer" \
-            -p "~/cowdogmoo/ansible-collection-workstation" \
+            -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
 
       - name: Setup tmate session
