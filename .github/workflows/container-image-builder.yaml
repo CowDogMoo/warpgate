@@ -59,7 +59,6 @@ jobs:
           registry: ghcr.io
           username: "${{ github.repository_owner }}"
           password: "${{ secrets.BOT_TOKEN }}"
-          # password: "${{ steps.app-token.outputs.token }}"
 
       - name: Set up Go
         uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe # v4
@@ -87,6 +86,7 @@ jobs:
       - name: Make repository name lowercase
         id: lower-repo
         run: |
+          echo "repo_owner_lowercase=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Run image builder for each blueprint
         run: |
@@ -105,11 +105,10 @@ jobs:
 
       - name: Push image
         run: |
-          echo "repo_owner=$(echo ghcr.io/${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-          docker push "${{env.repo_owner}}/${{ matrix.blueprint }}"
+          docker push "${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}"
 
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        if: ${{ failure() }}
-        with:
-          limit-access-to-actor: true
+      # - name: Setup tmate session
+      #   uses: mxschmitt/action-tmate@v3
+      #   if: ${{ failure() }}
+      #   with:
+      #     limit-access-to-actor: true
