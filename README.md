@@ -58,12 +58,12 @@ is abstracted into a blueprint, which Warp Gate consumes.
 ### Warp image from existing blueprint
 
 This example will create a container image using the existing
-`ansible-attack-box` blueprint and the `ansible-attack-box`
+`attack-box` blueprint and the `attack-box`
 playbook found in the `cowdogmoo.workstation` collection.
 
 ```bash
 wg imageBuilder \
-  -b ansible-attack-box \
+  -b attack-box \
   -p ~/cowdogmoo/ansible-collection-workstation
 ```
 

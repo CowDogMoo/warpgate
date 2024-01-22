@@ -6,7 +6,7 @@
 # provisioned with
 # https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/attack-box
 # on Kali.
-source "docker" "ansible-attack-box" {
+source "docker" "attack-box" {
   commit      = true
   image   = "${var.base_image}:${var.base_image_version}"
   privileged = true
@@ -22,7 +22,7 @@ source "docker" "ansible-attack-box" {
 }
 
 build {
-  sources = ["source.docker.ansible-attack-box"]
+  sources = ["source.docker.attack-box"]
 
   // Transfer the code found at the input provision_repo_path
   // to the pkr_build_dir, which is used by packer
