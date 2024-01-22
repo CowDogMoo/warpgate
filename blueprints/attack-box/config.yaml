@@ -3,7 +3,7 @@ blueprint:
   name: attack-box
 
 packer_templates:
-  - name: ansible-attack-box.pkr.hcl
+  - name: attack-box.pkr.hcl
     base:
       name: cisagov/docker-kali-ansible
       version: latest

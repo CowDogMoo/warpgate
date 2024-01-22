@@ -11,11 +11,11 @@
         "--debug",
         "blueprint",
         "-c",
-        "ansible-attack-box",
+        "attack-box",
         "--base",
         "kalilinux/kali-rolling:latest,cisagov/docker-kali-ansible:latest",
         "--tag",
-        "l50/ansible-attack-box:latest",
+        "l50/attack-box:latest",
         "--systemd"
       ],
       "postDebugTask": "Delete blueprint"

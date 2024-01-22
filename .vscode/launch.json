@@ -10,7 +10,7 @@
       "args": [
         "imageBuilder",
         "-b",
-        "ansible-attack-box",
+        "attack-box",
         "-p",
         "${env:HOME}/cowdogmoo/ansible-collection-workstation"
       ]
