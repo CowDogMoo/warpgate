@@ -1,3 +1,17 @@
+variable "architectures" {
+  type = map(object({
+    platform = string
+  }))
+  default = {
+    "amd64" = {
+      platform = "linux/amd64"
+    },
+    "arm64" = {
+      platform = "linux/arm64"
+    }
+  }
+}
+
 variable "base_image" {
   type    = string
   description = "Base image."
