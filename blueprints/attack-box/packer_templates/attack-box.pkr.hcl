@@ -22,7 +22,15 @@ source "docker" "attack-box" {
 }
 
 build {
-  sources = ["source.docker.attack-box"]
+  dynamic "source" {
+    for_each = var.architectures
+    iterator = arch
+    labels   = ["source.docker.attack-box.${arch.key}"]
+    content {
+      name      = "attack-box.${arch.key}"
+      platform  = arch.value.platform
+    }
+  }
 
   // Transfer the code found at the input provision_repo_path
   // to the pkr_build_dir, which is used by packer
@@ -36,13 +44,18 @@ build {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
       ]
-    script           = "scripts/provision.sh"
+    script = "scripts/provision.sh"
   }
 
-  post-processors {
-    post-processor "docker-tag" {
-      repository = "${var.registry_server}/${var.new_image_tag}"
-      tags = ["${var.new_image_version}"]
+ dynamic "post-processor" {
+    for_each = var.architectures
+    iterator = arch
+    labels   = ["docker-tag"]
+    content {
+      type = "docker-tag"
+      only = ["source.docker.attack-box.${arch.key}"]
+      repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
+      tags      = ["${var.new_image_version}"]
     }
   }
 }
