@@ -54,7 +54,7 @@ Before you start, ensure you have the following installed:
 ### Building the Container Image
 
 Use warpgate to build local container images based on the `runzero-explorer`
-blueprint
+blueprint:
 
 ```bash
 wg imageBuilder \
