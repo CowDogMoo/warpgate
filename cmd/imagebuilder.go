@@ -127,7 +127,6 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
 	}
 
-	log.L().Println("TOKEN", githubToken)
 	// Get the GitHub token from the command-line flag or environment variable
 	if githubToken == "" {
 		githubToken = os.Getenv("GITHUB_TOKEN")
@@ -141,7 +140,6 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("GitHub token validation failed: %v", err)
 	}
 
-	log.L().Println("TOKEN", githubToken)
 	errChan := make(chan error, len(packerTemplates))
 	var wg sync.WaitGroup
 	for _, pTmpl := range packerTemplates {
@@ -330,8 +328,6 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 			"from %s config file: %v", blueprint.Name, err)
 		return err
 	}
-
-	log.L().Println("TOKEN ", githubToken)
 
 	args := []string{
 		"build",
