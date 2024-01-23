@@ -98,7 +98,15 @@ jobs:
 
       - name: Push image
         run: |
-          docker push "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}"
+          # Push the image for each architecture
+          for arch in amd64 arm64; do
+            docker push "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}-$arch:latest"
+          done
+          # Optionally, create and push a manifest for multi-architecture support
+          docker manifest create "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}:latest" \
+            --amend "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}-amd64:latest" \
+            --amend "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}-arm64:latest"
+          docker manifest push "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}:latest"
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3
