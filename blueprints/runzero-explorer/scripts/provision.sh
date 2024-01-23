@@ -5,6 +5,7 @@ set -ex
 
 export PKR_BUILD_DIR="${1:-/ansible-collection-workstation}"
 export CLEANUP="${2:-false}"
+cowdogmoo_collections_path="${HOME}/.ansible/collections/ansible_collections/cowdogmoo"
 
 install_dependencies() {
     # Get latest packages and install aptitude
@@ -17,8 +18,7 @@ install_dependencies() {
 
 # Provision logic run by packer
 run_provision_logic() {
-    cowdogmoo_collections_path="${HOME}/.ansible/collections/ansible_collections/cowdogmoo"
-    mkdir -p "$cowdogmoo_collections_path"
+    mkdir -p "$cowdogmoo_collections_path/attack-box"
 
     # Link PKR_BUILD_DIR to the expected collection path
     ln -s "${PKR_BUILD_DIR}" "$cowdogmoo_collections_path/workstation"
