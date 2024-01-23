@@ -17,7 +17,7 @@ install_dependencies() {
 
 # Provision logic run by packer
 run_provision_logic() {
-    mkdir -p "$cowdogmoo_collections_path/attack-box"
+    mkdir -p "$cowdogmoo_collections_path"
 
     # Link PKR_BUILD_DIR to the expected collection path
     ln -s "${PKR_BUILD_DIR}" "$cowdogmoo_collections_path/attack-box"
