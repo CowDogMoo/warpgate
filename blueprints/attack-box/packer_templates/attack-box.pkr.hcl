@@ -52,8 +52,6 @@ build {
     iterator = arch
     labels   = ["docker-tag"]
     content {
-      type = "docker-tag"
-      only = ["source.docker.attack-box.${arch.key}"]
       repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
       tags      = ["${var.new_image_version}"]
     }
