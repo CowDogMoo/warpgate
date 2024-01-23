@@ -96,13 +96,6 @@ jobs:
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
 
-      # - name: Test
-      #   run: docker run -d --rm --name runzero-explorer-test \
-      #     --privileged \
-      #     --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
-      #     --cgroupns host \
-      #     ${{ env.repo_owner }}/runzero-explorer:latest
-
       - name: Push image
         run: |
           docker push "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}"
