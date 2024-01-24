@@ -48,12 +48,11 @@ build {
   }
 
  dynamic "post-processor" {
-    for_each = var.architectures
-    iterator = arch
+    for_each = [for arch in [var.architectures] : arch]
     labels   = ["docker-tag"]
     content {
       repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
-      tags      = ["${var.new_image_version}"]
+      tags        = ["${var.new_image_version}"]
     }
   }
 }

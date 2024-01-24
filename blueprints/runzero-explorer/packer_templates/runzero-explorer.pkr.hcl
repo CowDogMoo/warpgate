@@ -48,16 +48,12 @@ build {
     script = "scripts/provision.sh"
   }
 
-// Define a post-processor for each architecture
-  post-processor "docker-tag" {
-    only       = ["runzero.amd64"]
-    repository = "${var.registry_server}/${var.new_image_tag}-amd64"
-    tags       = ["${var.new_image_version}"]
-  }
-
-  post-processor "docker-tag" {
-    only       = ["runzero.arm64"]
-    repository = "${var.registry_server}/${var.new_image_tag}-arm64"
-    tags       = ["${var.new_image_version}"]
+dynamic "post-processor" {
+    for_each = [for arch in [var.architectures] : arch]
+    labels   = ["docker-tag"]
+    content {
+      repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
+      tags        = ["${var.new_image_version}"]
+    }
   }
 }

@@ -51,6 +51,6 @@ cleanup() {
     fi
 }
 
-install_dependencies
+# install_dependencies
 run_provision_logic
 cleanup
