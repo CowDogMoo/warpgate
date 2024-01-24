@@ -7,7 +7,7 @@ variable "architectures" {
       platform = "linux/amd64"
     },
     "arm64" = {
-      platform = "linux/arm64/v8"
+      platform = "linux/arm64"
     }
   }
 }
