@@ -7,8 +7,8 @@
 # https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/attack-box
 # on Kali.
 source "docker" "attack-box" {
-  commit      = true
-  image   = "${var.base_image}:${var.base_image_version}"
+  commit     = true
+  image      = "${var.base_image}:${var.base_image_version}"
   privileged = true
   volumes = {
     "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
@@ -27,8 +27,8 @@ build {
     iterator = arch
     labels   = ["source.docker.attack-box.${arch.key}"]
     content {
-      name      = "attack-box.${arch.key}"
-      platform  = arch.value.platform
+      name     = "attack-box.${arch.key}"
+      platform = arch.value.platform
     }
   }
 
@@ -36,23 +36,27 @@ build {
   // to the pkr_build_dir, which is used by packer
   // during the build process.
   provisioner "file" {
-    source = "${var.provision_repo_path}"
+    source      = "${var.provision_repo_path}"
     destination = "${var.pkr_build_dir}"
   }
 
   provisioner "shell" {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
-      ]
+    ]
     script = "scripts/provision.sh"
   }
 
- dynamic "post-processor" {
-    for_each = [for arch in [var.architectures] : arch]
-    labels   = ["docker-tag"]
-    content {
-      repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
-      tags        = ["${var.new_image_version}"]
+  post-processors {
+    dynamic "post-processor" {
+      for_each = var.architectures
+      iterator = arch
+      labels   = ["docker-tag"]
+      content {
+        only       = ["docker.attack-box.${arch.key}"]
+        repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
+        tags       = ["${var.new_image_version}"]
+      }
     }
   }
 }

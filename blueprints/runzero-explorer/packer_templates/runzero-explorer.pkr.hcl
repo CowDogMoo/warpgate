@@ -28,10 +28,10 @@ build {
     iterator = arch
     labels   = ["source.docker.runzero.${arch.key}"]
     content {
-      name      = "runzero.${arch.key}"
-      platform  = arch.value.platform
+      name     = "runzero.${arch.key}"
+      platform = arch.value.platform
+    }
   }
-}
 
   // Transfer the code found at the input provision_repo_path
   // to the pkr_build_dir, which is used by packer
@@ -48,12 +48,16 @@ build {
     script = "scripts/provision.sh"
   }
 
-dynamic "post-processor" {
-    for_each = [for arch in [var.architectures] : arch]
-    labels   = ["docker-tag"]
-    content {
-      repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
-      tags        = ["${var.new_image_version}"]
+  post-processors {
+    dynamic "post-processor" {
+      for_each = var.architectures
+      iterator = arch
+      labels   = ["docker-tag"]
+      content {
+        only       = ["docker.runzero.${arch.key}"]
+        repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
+        tags       = ["${var.new_image_version}"]
+      }
     }
   }
 }
