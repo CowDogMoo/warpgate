@@ -9,9 +9,9 @@ env:
   PRODUCT_VERSION: "latest"
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.ref }}
+#   cancel-in-progress: true
 
 jobs:
   generate-blueprints:
@@ -102,7 +102,7 @@ jobs:
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
 
-      - name: Push image
+      - name: Push image and Create Manifest
         run: |
           # Push the image for each architecture
           for arch in amd64 arm64; do
@@ -110,25 +110,12 @@ jobs:
             docker push "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}-$arch:${{ env.PRODUCT_VERSION }}"
           done
 
-          # Create a manifest for multi-architecture support
-          echo "Creating manifest..."
+          # Create and push the manifest for each blueprint
+          echo "Creating and Pushing manifest for ${{ matrix.blueprint }}..."
           docker manifest create "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}:${{ env.PRODUCT_VERSION }}" \
             --amend "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}-amd64:${{ env.PRODUCT_VERSION }}" \
             --amend "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}-arm64:${{ env.PRODUCT_VERSION }}"
-
-          # Push the manifest
-          echo "Pushing manifest..."
           docker manifest push "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}:${{ env.PRODUCT_VERSION }}"
-
-          # Create a manifest for multi-architecture support
-          echo "Creating manifest..."
-          docker manifest create "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}:latest" \
-            --amend "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}-amd64:latest" \
-            --amend "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}-arm64:latest"
-
-          # Push the manifest
-          echo "Pushing manifest..."
-          docker manifest push "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}:latest"
 
       # For debugging:
       - name: Setup tmate session
