@@ -346,7 +346,7 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
 		"-var", fmt.Sprintf("registry_server=%s", pTmpl.Container.Registry.Server),
 		"-var", fmt.Sprintf("registry_username=%s", pTmpl.Container.Registry.Username),
-		"-var", fmt.Sprintf("registry_cred=%s", githubToken),
+		"-var", "registry_cred=******",
 		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
 		buildDir,
 	}
