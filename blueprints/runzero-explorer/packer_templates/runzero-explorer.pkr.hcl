@@ -14,7 +14,6 @@ source "docker" "runzero" {
     "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
   }
   changes = [
-    "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
   ]
