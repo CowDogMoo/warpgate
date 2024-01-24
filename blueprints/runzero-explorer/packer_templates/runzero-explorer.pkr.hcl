@@ -30,8 +30,8 @@ build {
     content {
       name      = "runzero.${arch.key}"
       platform  = arch.value.platform
-    }
   }
+}
 
   // Transfer the code found at the input provision_repo_path
   // to the pkr_build_dir, which is used by packer
@@ -48,13 +48,16 @@ build {
     script = "scripts/provision.sh"
   }
 
- dynamic "post-processor" {
-    for_each = var.architectures
-    iterator = arch
-    labels   = ["docker-tag"]
-    content {
-      repository = "${var.registry_server}/${var.new_image_tag}-${arch.key}"
-      tags      = ["${var.new_image_version}"]
-    }
+// Define a post-processor for each architecture
+  post-processor "docker-tag" {
+    only       = ["runzero.amd64"]
+    repository = "${var.registry_server}/${var.new_image_tag}-amd64"
+    tags       = ["${var.new_image_version}"]
+  }
+
+  post-processor "docker-tag" {
+    only       = ["runzero.arm64"]
+    repository = "${var.registry_server}/${var.new_image_tag}-arm64"
+    tags       = ["${var.new_image_version}"]
   }
 }

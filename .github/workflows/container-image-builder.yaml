@@ -87,6 +87,7 @@ jobs:
         id: lower-repo
         run: |
           echo "repo_owner_lowercase=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "image_name_lowercase=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Run image builder for each blueprint
         run: |
@@ -101,8 +102,18 @@ jobs:
           # Push the image for each architecture
           for arch in amd64 arm64; do
             echo "Pushing image for architecture: $arch"
-            docker push "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}-$arch:latest"
+            docker push "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}-$arch:${{ env.PRODUCT_VERSION }}"
           done
+
+          # Create a manifest for multi-architecture support
+          echo "Creating manifest..."
+          docker manifest create "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}:${{ env.PRODUCT_VERSION }}" \
+            --amend "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}-amd64:${{ env.PRODUCT_VERSION }}" \
+            --amend "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}-arm64:${{ env.PRODUCT_VERSION }}"
+
+          # Push the manifest
+          echo "Pushing manifest..."
+          docker manifest push "${{ env.image_name_lowercase }}-${{ matrix.blueprint }}:${{ env.PRODUCT_VERSION }}"
 
           # Create a manifest for multi-architecture support
           echo "Creating manifest..."
