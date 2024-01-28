@@ -119,7 +119,7 @@ jobs:
 
       # For debugging:
       - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
+        uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3
         if: ${{ failure() }}
         with:
           limit-access-to-actor: true
