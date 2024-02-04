@@ -1,45 +1,44 @@
 ---
 # Area
-- name: area/github
-  color: "72ccf3"
-  description: >-
-    Changes made to github actions
-- name: area/pre-commit
-  color: "BC9BE3"
-  description: >-
-    Changes made to pre-commit hooks
 - name: area/blueprints
-  color: "8fbcbc"
+  color: "8fbcbc" # teal
   description: >-
     Changes made to blueprint configurations and scripts
+
 - name: area/cmd
-  color: "a18fbf"
+  color: "a18fbf" # purple
   description: >-
     Changes made to command line utilities
+
 - name: area/docs
   color: "8fbc8f"
   description: >-
     Changes made to project documentation
-- name: area/templates
-  color: "bc8f8f"
+
+- name: area/github
+  color: "72ccf3"
   description: >-
-    Changes made to template files
-- name: area/warpgate
-  color: "8f8fbc"
-  description: >-
-    Changes made to warpgate directory
+    Changes made to github actions
+
 - name: area/magefiles
   color: "7BD7E0"
   description: >-
     Changes made to Magefiles
+
+- name: area/pre-commit
+  color: "BC9BE3"
+  description: >-
+    Changes made to pre-commit hooks
+
+- name: area/templates
+  color: "bc8f8f"
+  description: >-
+    Changes made to template files
+
 - name: area/go-mod-sum
   color: "7BD7E0"
   description: >-
     Changes made to go.mod and go.sum
-- name: area/asdf
-  color: "F4D1B7" # orange
-  description: >-
-    Changes made to asdf resources
 
 # Renovate
 - name: renovate/container

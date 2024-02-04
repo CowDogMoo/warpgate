@@ -1,33 +1,34 @@
 ---
-area/github:
-  - ".github/**/*"
-
-area/pre-commit:
-  - ".pre-commit-config.yaml"
-  - ".hooks/**/*"
-
 area/blueprints:
-  - "blueprints/**/*"
+  - changed-files:
+      - any-glob-to-any-file: "blueprints/**/*"
 
 area/cmd:
-  - "cmd/**/*"
+  - changed-files:
+      - any-glob-to-any-file: "cmd/**/*"
 
 area/docs:
-  - "docs/**/*"
+  - changed-files:
+      - any-glob-to-any-file: "docs/**/*"
 
-area/templates:
-  - "templates/**/*"
-
-area/warpgate:
-  - "warpgate/**/*"
+area/github:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**/*"
 
 area/magefiles:
-  - "magefiles/*"
+  - changed-files:
+      - any-glob-to-any-file: "magefiles/*"
 
-area/asdf:
-  - ".asdf"
-  - ".tool-versions"
+area/pre-commit:
+  - changed-files:
+      - any-glob-to-any-file: .pre-commit-config.yaml
+      - any-glob-to-any-file: .hooks/**/*
+
+area/templates:
+  - changed-files:
+      - any-glob-to-any-file: "templates/**/*"
 
 area/go-mod-sum:
-  - "go.mod"
-  - "go.sum"
+  - changed-files:
+      - any-glob-to-any-file: "go.mod"
+      - any-glob-to-any-file: "go.sum"
