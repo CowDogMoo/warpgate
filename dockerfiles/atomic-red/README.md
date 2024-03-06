@@ -18,28 +18,15 @@ Once you have the token, assign the value to the `GITHUB_TOKEN` environment vari
 With that out of the way, you can build and push the container image to `GHCR`:
 
 ```bash
-# Because each architecture we want to support has a different base image
-# use build instead of buildx.
-
-# Subsequently, you'll want to run these commands on systems that have the
-# appropriate architecture.
-
 export BUILDX_NO_DEFAULT_ATTESTATIONS=1 # Avoid unknown/unknown images from being pushed
 echo $GITHUB_TOKEN | docker login ghcr.io -u cowdogmoo --password-stdin
 
-# Build and push ARM64 container image
-docker build \
-     --build-arg IMG=mcr.microsoft.com/powershell:mariner-2.0-arm64 \
-    -t ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest \
-    --platform linux/arm64 \
-    --push .
-
-# Build and push AMD64 container image
-docker build \
-     --build-arg IMG=mcr.microsoft.com/powershell:latest \
-    -t ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest \
-    --platform linux/amd64 \
-    --push .
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --build-arg BUILDARCH=amd64 \
+  --build-arg BUILDARCH=arm64 \
+  -t ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest \
+  --push .
 ```
 
 ## Testing the Container Image

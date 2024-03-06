@@ -1,16 +1,18 @@
-# Base images used for this Dockerfile
-# mcr.microsoft.com/powershell:latest (x86_64)
-# mcr.microsoft.com/powershell:mariner-2.0-arm64 (aarch64)
+# syntax=docker/dockerfile:1.4
 
-# Use build arguments to define the base image for the current architecture
-ARG IMG
-FROM ${IMG} AS base
+# Define base images for different architectures
+FROM --platform=linux/amd64 mcr.microsoft.com/powershell:preview-7.5-mariner-2.0 AS build-amd64
+FROM --platform=linux/arm64 mcr.microsoft.com/powershell:preview-7.5-mariner-2.0-arm64 AS build-arm64
+
+# Use the BUILDARCH build argument to select the appropriate base image
+ARG BUILDARCH
+FROM build-$BUILDARCH AS base
 
 # Final stage: Use the selected base image and run the PowerShell logic
 FROM base AS final
 
 # Set PowerShell as the default shell
-SHELL ["pwsh", "-noprofile", "-Command"]
+SHELL ["pwsh", "-Command"]
 
 # Run the specified PowerShell logic
 RUN Write-Host "Downloading install-atomicredteam.ps1 script..." ; \
