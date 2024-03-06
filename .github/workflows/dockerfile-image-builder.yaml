@@ -116,7 +116,7 @@ jobs:
           file: ./dockerfiles/atomic-red/Dockerfile
           load: true
           tags: ${{ env.IMAGE_NAME }}:latest
-          build-args: IMG=${{ matrix.arch == 'amd64' && 'mcr.microsoft.com/powershell:preview-7.5-mariner-2.0' || 'mcr.microsoft.com/powershell:preview-7.5-mariner-2.0-arm64' }}
+          build-args: IMG=${{ matrix.arch == 'amd64' && 'mcr.microsoft.com/powershell:latest' || 'mcr.microsoft.com/powershell:preview-7.5-mariner-2.0-arm64' }}
           platforms: linux/${{ matrix.arch }}
 
       - name: Debug image tag
