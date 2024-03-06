@@ -17,7 +17,7 @@ env:
 
 jobs:
   build-and-push:
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         arch:
@@ -58,8 +58,9 @@ jobs:
           context: ./dockerfiles/atomic-red
           file: ./dockerfiles/atomic-red/Dockerfile
           load: true
-          tags: ${{ env.IMAGE_NAME }}:${{ matrix.arch }}
+          tags: ${{ env.IMAGE_NAME }}:latest
           build-args: IMG=${{ matrix.arch == 'amd64' && 'mcr.microsoft.com/powershell:mariner-2.0' || 'mcr.microsoft.com/powershell:mariner-2.0-arm64' }}
+          platforms: linux/${{ matrix.arch }}
 
       - name: Debug image tag
         run: "echo Image tag: ${{ env.IMAGE_NAME }}:${{ matrix.arch }}"
