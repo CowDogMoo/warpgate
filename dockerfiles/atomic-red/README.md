@@ -24,18 +24,21 @@ With that out of the way, you can build and push the container image to `GHCR`:
 # Subsequently, you'll want to run these commands on systems that have the
 # appropriate architecture.
 
-echo $GITHUB_TOKEN | docker login ghcr.io -u $YOUR_GITHUB_USER --password-stdin
+export BUILDX_NO_DEFAULT_ATTESTATIONS=1 # Avoid unknown/unknown images from being pushed
+echo $GITHUB_TOKEN | docker login ghcr.io -u cowdogmoo --password-stdin
 
 # Build and push ARM64 container image
 docker build \
-     --build-arg ARCH=mcr.microsoft.com/powershell:mariner-2.0-arm64 \
+     --build-arg IMG=mcr.microsoft.com/powershell:mariner-2.0-arm64 \
     -t ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest \
+    --platform linux/arm64 \
     --push .
 
 # Build and push AMD64 container image
 docker build \
-     --build-arg ARCH=mcr.microsoft.com/powershell:mariner-2.0 \
+     --build-arg IMG=mcr.microsoft.com/powershell:latest \
     -t ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest \
+    --platform linux/amd64 \
     --push .
 ```
 
