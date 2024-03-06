@@ -21,12 +21,16 @@ With that out of the way, you can build and push the container image to `GHCR`:
 export BUILDX_NO_DEFAULT_ATTESTATIONS=1 # Avoid unknown/unknown images from being pushed
 echo $GITHUB_TOKEN | docker login ghcr.io -u cowdogmoo --password-stdin
 
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  --build-arg BUILDARCH=amd64 \
-  --build-arg BUILDARCH=arm64 \
-  -t ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest \
-  --push .
+docker buildx bake --file docker-bake.hcl \
+  --push \
+  --set "*.tags=ghcr.io/cowdogmoo/atomic-red:latest"
+
+# docker buildx build \
+#   --platform linux/amd64,linux/arm64 \
+#   --build-arg BUILDARCH=amd64 \
+#   --build-arg BUILDARCH=arm64 \
+#   -t ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest \
+#   --push .
 ```
 
 ## Testing the Container Image
