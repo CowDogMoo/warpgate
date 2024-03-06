@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.4
 
 # Define base images for different architectures
-FROM --platform=linux/amd64 mcr.microsoft.com/powershell:preview-7.5-mariner-2.0 AS build-amd64
-FROM --platform=linux/arm64 mcr.microsoft.com/powershell:preview-7.5-mariner-2.0-arm64 AS build-arm64
+FROM --platform=linux/amd64 mcr.microsoft.com/powershell:mariner-2.0 AS build-amd64
+FROM --platform=linux/arm64 mcr.microsoft.com/powershell:mariner-2.0-arm64 AS build-arm64
 
 # Use the BUILDARCH build argument to select the appropriate base image
 ARG BUILDARCH
