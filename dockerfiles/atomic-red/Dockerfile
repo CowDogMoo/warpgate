@@ -1,6 +1,6 @@
-# Define base images for different architectures
-ARG BASE_IMAGE_AMD64=mcr.microsoft.com/powershell:mariner-2.0
-ARG BASE_IMAGE_ARM64=mcr.microsoft.com/powershell:mariner-2.0-arm64
+# # Define base images for different architectures
+# ARG BASE_IMAGE_AMD64=mcr.microsoft.com/powershell:mariner-2.0
+# ARG BASE_IMAGE_ARM64=mcr.microsoft.com/powershell:mariner-2.0-arm64
 
 # Use build arguments to define the base image for the current architecture
 ARG ARCH
@@ -12,10 +12,9 @@ FROM base AS final
 # Set PowerShell as the default shell
 SHELL ["pwsh", "-Command"]
 
-# Install the powershell-yaml module
-RUN pwsh -Command "Install-Module -Name powershell-yaml -Force -Verbose"
-RUN pwsh -Command "Install-Module -Name PowerShellGet -Force -AllowClobber -Verbose"
-RUN pwsh -Command "Install-Module -Name PackageManagement -Force -AllowClobber -Verbose"
+# Install PowerShellGet and the powershell-yaml module
+RUN Install-Module -Name PowerShellGet -Force -Verbose ; \
+    Install-Module -Name powershell-yaml -Force -Verbose
 
 # Run the specified PowerShell logic
 RUN Write-Host "Downloading install-atomicredteam.ps1 script..." ; \
