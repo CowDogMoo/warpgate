@@ -6,15 +6,19 @@ ARG BASE_IMAGE_ARM64=mcr.microsoft.com/powershell:mariner-2.0-arm64
 ARG ARCH
 FROM ${ARCH} AS base
 
-# Final stge: Use the selected base image and run the Powershell logic
+# Final stage: Use the selected base image and run the PowerShell logic
 FROM base AS final
 
 # Set PowerShell as the default shell
 SHELL ["pwsh", "-Command"]
 
 # Run the specified PowerShell logic
-RUN IEX (IWR 'https://raw.githubusercontent.com/redcanaryco/invoke-atomicredteam/master/install-atomicredteam.ps1' -UseBasicParsing); \
-    Install-AtomicRedTeam -getAtomics
+RUN Write-Host "Downloading install-atomicredteam.ps1 script..." ; \
+    IEX (IWR 'https://raw.githubusercontent.com/redcanaryco/invoke-atomicredteam/master/install-atomicredteam.ps1' -UseBasicParsing) ; \
+    Write-Host "Script downloaded. Installing Atomic Red Team..." ; \
+    Install-AtomicRedTeam -getAtomics -Verbose ; \
+    Write-Host "Installation complete."
+
 RUN New-Item $PROFILE -Force
 COPY ./setup.ps1 .
 RUN ./setup.ps1
