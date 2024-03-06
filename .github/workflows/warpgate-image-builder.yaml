@@ -105,7 +105,7 @@ jobs:
 
       - name: Push image
         run: |
-          docker push "ghcr.io/${{ env.repo_owner_lowercase }}/${{ matrix.blueprint }}:latest"
+          docker push "ghcr.io/${{ env.image_name_lowercase }}/${{ matrix.blueprint }}:latest"
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3

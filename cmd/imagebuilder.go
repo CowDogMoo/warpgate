@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/fatih/color"
@@ -107,6 +108,11 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 	blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
 	if err != nil {
 		return fmt.Errorf("failed to get provisionPath: %v", err)
+	}
+
+	// If the provisioning repo path contains a tilde, expand it
+	if strings.Contains(blueprint.ProvisioningRepo, "~") {
+		blueprint.ProvisioningRepo = sys.ExpandHomeDir(blueprint.ProvisioningRepo)
 	}
 
 	blueprint.Name, err = cmd.Flags().GetString(blueprintKey)
