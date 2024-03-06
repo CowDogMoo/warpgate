@@ -13,7 +13,9 @@ FROM base AS final
 SHELL ["pwsh", "-Command"]
 
 # Install the powershell-yaml module
-RUN pwsh -Command "Install-Module -Name powershell-yaml -Force"
+RUN pwsh -Command "Install-Module -Name powershell-yaml -Force -Verbose"
+RUN pwsh -Command "Install-Module -Name PowerShellGet -Force -AllowClobber -Verbose"
+RUN pwsh -Command "Install-Module -Name PackageManagement -Force -AllowClobber -Verbose"
 
 # Run the specified PowerShell logic
 RUN Write-Host "Downloading install-atomicredteam.ps1 script..." ; \
