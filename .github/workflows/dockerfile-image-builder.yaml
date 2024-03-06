@@ -12,6 +12,7 @@ concurrency:
 env:
   PRODUCT_VERSION: "latest"
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+  # IMAGE_NAME: ghcr.io/${{ secrets.GITHUB_REPOSITORY_OWNER }}/${{ secrets.GITHUB_REPOSITORY_NAME }}
 
 jobs:
   build_and_test:
@@ -106,8 +107,8 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_NAME }}
           build-args: ARCH=${{ matrix.arch == 'amd64' && 'mcr.microsoft.com/powershell:mariner-2.0' || 'mcr.microsoft.com/powershell:mariner-2.0-arm64' }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
+          # cache-from: type=local,src=/tmp/.buildx-cache
+          # cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3
