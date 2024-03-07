@@ -1,25 +1,3 @@
-/*
-Copyright © 2022 Jayson Grace <jayson.e.grace@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
-
 package cmd
 
 import (
@@ -314,68 +292,74 @@ func initializeBlueprint(blueprintDir string) error {
 }
 
 func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
-	buildDir, err := createBuildDir(pTmpl, blueprint)
-	if err != nil {
-		log.L().Errorf(
-			"Failed to create build directory: %v", err)
-		return err
+	const maxRetries = 3
+	var lastError error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		buildDir, err := createBuildDir(pTmpl, blueprint)
+		if err != nil {
+			log.L().Errorf(
+				"Failed to create build directory: %v", err)
+			return err
+		}
+
+		if err := initializeBlueprint(filepath.Dir(bpConfig)); err != nil {
+			log.L().Errorf(
+				"Failed to initialize blueprint: %v", err)
+			return err
+		}
+
+		if err := viper.UnmarshalKey(containerKey, &pTmpl.Container); err != nil {
+			log.L().Errorf("Failed to unmarshal container parameters "+
+				"from %s config file: %v", blueprint.Name, err)
+			return err
+		}
+
+		args := []string{
+			"build",
+			"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
+			"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
+			"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
+			"-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint),
+			"-var", fmt.Sprintf("new_image_tag=%s", pTmpl.Tag.Name),
+			"-var", fmt.Sprintf("new_image_version=%s", pTmpl.Tag.Version),
+			"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
+			"-var", fmt.Sprintf("registry_server=%s", pTmpl.Container.Registry.Server),
+			"-var", fmt.Sprintf("registry_username=%s", pTmpl.Container.Registry.Username),
+			"-var", fmt.Sprintf("registry_cred=%s", githubToken),
+			"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
+			buildDir,
+		}
+
+		log.L().Printf("Attempt %d: ARGS: %s", attempt, args)
+
+		if err := os.Chdir(buildDir); err != nil {
+			log.L().Errorf(
+				"Failed to change into the %s directory: %v", buildDir, err)
+			return err
+		}
+
+		cmd := sys.Cmd{
+			CmdString:     "packer",
+			Args:          args,
+			OutputHandler: func(s string) { log.L().Println(s) },
+		}
+
+		if _, err := cmd.RunCmd(); err != nil {
+			log.L().Errorf(
+				"Attempt %d: Failed to build container image from %s packer template: %v", attempt, pTmpl.Name, err)
+			lastError = err
+			continue // retry
+		}
+
+		log.L().Printf("Successfully built container image from the %s packer template as part of the %s blueprint",
+			pTmpl.Name, blueprint.Name)
+
+		return nil // success
 	}
 
-	// Initialize the blueprint before building the image
-	if err := initializeBlueprint(filepath.Dir(bpConfig)); err != nil {
-		log.L().Errorf(
-			"Failed to initialize blueprint: %v", err)
-		return err
-	}
-
-	// Get container parameters
-	if err := viper.UnmarshalKey(containerKey, &pTmpl.Container); err != nil {
-		log.L().Errorf("Failed to unmarshal container parameters "+
-			"from %s config file: %v", blueprint.Name, err)
-		return err
-	}
-
-	args := []string{
-		"build",
-		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
-		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
-		"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
-		"-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint),
-		"-var", fmt.Sprintf("new_image_tag=%s", pTmpl.Tag.Name),
-		"-var", fmt.Sprintf("new_image_version=%s", pTmpl.Tag.Version),
-		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
-		"-var", fmt.Sprintf("registry_server=%s", pTmpl.Container.Registry.Server),
-		"-var", fmt.Sprintf("registry_username=%s", pTmpl.Container.Registry.Username),
-		"-var", fmt.Sprintf("registry_cred=%s", githubToken),
-		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
-		buildDir,
-	}
-
-	log.L().Println("ARGS: ", args)
-
-	// Change to the build directory
-	if err := os.Chdir(buildDir); err != nil {
-		log.L().Errorf(
-			"Failed to change into the %s directory: %v", buildDir, err)
-		return err
-	}
-
-	cmd := sys.Cmd{
-		CmdString:     "packer",
-		Args:          args,
-		OutputHandler: func(s string) { log.L().Println(s) },
-	}
-
-	if _, err := cmd.RunCmd(); err != nil {
-		log.L().Errorf(
-			"Failed to build container image from %s packer template: %v", pTmpl.Name, err)
-		return err
-	}
-
-	log.L().Printf("Successfully built container image from the %s packer template as part of the %s blueprint",
-		pTmpl.Name, blueprint.Name)
-
-	return nil
+	// If the loop completes, it means all attempts failed
+	return fmt.Errorf("all attempts failed to build container image from %s packer template: %v", pTmpl.Name, lastError)
 }
 
 func validateToken(token string) error {
