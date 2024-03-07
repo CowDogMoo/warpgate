@@ -1,15 +1,17 @@
 # syntax=docker/dockerfile:1.4
 
+# Use the BASE_IMAGE build argument to select the appropriate base image
+ARG BASE_IMAGE_ARCH
+
 # Define base images for different architectures
-FROM --platform=linux/amd64 mcr.microsoft.com/powershell:mariner-2.0 AS build-amd64
+FROM --platform=linux/amd64 mcr.microsoft.com/powershell:latest AS build-amd64
 FROM --platform=linux/arm64 mcr.microsoft.com/powershell:mariner-2.0-arm64 AS build-arm64
 
-# Use the BUILDARCH build argument to select the appropriate base image
-ARG BUILDARCH
-FROM build-$BUILDARCH AS base
+# Use the selected base image and run the PowerShell logic
+FROM build-$BASE_IMAGE_ARCH AS final
 
-# Final stage: Use the selected base image and run the PowerShell logic
-FROM base AS final
+# # Final stage: Use the selected base image and run the PowerShell logic
+# FROM base AS final
 
 # Set PowerShell as the default shell
 SHELL ["pwsh", "-Command"]
