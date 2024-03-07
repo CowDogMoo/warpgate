@@ -1,13 +1,9 @@
-# Container Image Creation
+# Atomic Red Team (ART) Container Image
 
-Begin by cloning the sliver repo locally and building the container image:
+Atomic Red Team (ART) is a library of TTPs that can be executed to
+validate security controls and test detection capabilities.
 
-```bash
-git clone https://github.com/redcanaryco/invoke-atomicredteam.git
-cd invoke-atomicredteam/docker
-```
-
-## Pushing the Container Image to Github Container Registry
+## Container Image Creation and Pushing to GHCR
 
 To push the container image to the `GitHub Container Registry` (`GHCR`), you
 will need to create a classic personal access token by following
@@ -38,7 +34,7 @@ docker buildx bake --file docker-bake.hcl \
   --set "*.tags=ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest"
 ```
 
-## Testing the Container Image
+### Testing the Container Image
 
 If everything worked, you should now be able to pull the new container image
 from `GHCR`:
