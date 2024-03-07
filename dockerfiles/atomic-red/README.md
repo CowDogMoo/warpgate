@@ -15,22 +15,27 @@ will need to create a classic personal access token by following
 
 Once you have the token, assign the value to the `GITHUB_TOKEN` environment variable.
 
-With that out of the way, you can build and push the container image to `GHCR`:
+Next you'll want to create a new buildx builder instance and set it as the
+active builder. This will allow you to build and push the container image to
+`GHCR` for multiple architectures.
 
 ```bash
 export BUILDX_NO_DEFAULT_ATTESTATIONS=1 # Avoid unknown/unknown images from being pushed
-echo $GITHUB_TOKEN | docker login ghcr.io -u cowdogmoo --password-stdin
+docker buildx create --name mybuilder --bootstrap --use --driver docker-container
+```
+
+With that out of the way, you can login to `GHCR` and proceed to build and push
+the container image:
+
+```bash
+YOUR_GITHUB_USER=cowdogmoo # Replace with your GitHub username
+
+# GITHUB_TOKEN is a personal access token with the `write:packages` scope
+echo $GITHUB_TOKEN | docker login ghcr.io -u $YOUR_GITHUB_USER --password-stdin
 
 docker buildx bake --file docker-bake.hcl \
   --push \
-  --set "*.tags=ghcr.io/cowdogmoo/atomic-red:latest"
-
-# docker buildx build \
-#   --platform linux/amd64,linux/arm64 \
-#   --build-arg BUILDARCH=amd64 \
-#   --build-arg BUILDARCH=arm64 \
-#   -t ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest \
-#   --push .
+  --set "*.tags=ghcr.io/$YOUR_GITHUB_USER/atomic-red:latest"
 ```
 
 ## Testing the Container Image

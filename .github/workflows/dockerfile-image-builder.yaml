@@ -1,5 +1,5 @@
 ---
-name: Build, Publish, and Test Container Images
+name: Build and Publish Container Images
 on:
   push:
     branches:
@@ -13,7 +13,7 @@ env:
   PRODUCT_VERSION: "latest"
   BUILDX_NO_DEFAULT_ATTESTATIONS: 1 # Avoid unknown/unknown images from being pushed
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
-  # # For testing locally with act
+  # # Used for testing locally with act
   # IMAGE_NAME: ghcr.io/${{ secrets.GITHUB_REPOSITORY_OWNER }}/${{ secrets.GITHUB_REPOSITORY_NAME }}
 
 jobs:
@@ -42,19 +42,8 @@ jobs:
         run: echo "IMAGE_NAME=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Build and export to Docker (Test Image)
-        uses: docker/build-push-action@2eb1c1961a95fc15694676618e422e8ba1d63825 # v4
+        uses: docker/bake-action@v4
         with:
-          context: ./dockerfiles/atomic-red
-          file: ./dockerfiles/atomic-red/Dockerfile
-          tags: "${{ env.IMAGE_NAME }}:amd64"
-          build-args: IMG=${{ 'mcr.microsoft.com/powershell:latest' }}
-          platforms: linux/amd64
+          set: "*.tags=ghcr.io/cowdogmoo/atomic-red:latest"
+          workdir: ./dockerfiles/atomic-red
           push: true
-
-      - name: Create and push manifest list
-        run: |
-          docker manifest create ${{ env.IMAGE_NAME }}:latest \
-            --amend ${{ env.IMAGE_NAME }}:amd64 \
-            --amend ${{ env.IMAGE_NAME }}:arm64
-
-          docker manifest push ${{ env.IMAGE_NAME }}:latest

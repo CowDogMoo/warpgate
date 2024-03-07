@@ -1,8 +1,5 @@
 # syntax=docker/dockerfile:1.4
 
-# ARG BASE_IMAGE
-# FROM ${BASE_IMAGE} AS base
-
 # Define base images for different architectures
 FROM --platform=linux/amd64 mcr.microsoft.com/powershell:mariner-2.0 AS build-amd64
 FROM --platform=linux/arm64 mcr.microsoft.com/powershell:mariner-2.0-arm64 AS build-arm64
