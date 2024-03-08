@@ -34,7 +34,16 @@ RunImageBuilder(*cobra.Command, []string) error
 ```
 
 RunImageBuilder is the main function for the imageBuilder command
-that is used to build container images using packer.
+that builds container images using Packer.
+
+**Parameters:**
+
+cmd: A Cobra command object containing flags and arguments for the command.
+args: A slice of strings containing additional arguments passed to the command.
+
+**Returns:**
+
+error: An error if any issue occurs while building the images.
 
 ---
 
@@ -44,7 +53,15 @@ that is used to build container images using packer.
 SetBlueprintConfigPath(string) error
 ```
 
-SetBlueprintConfigPath sets the configuration path for the blueprint
+SetBlueprintConfigPath sets the configuration path for the blueprint.
+
+**Parameters:**
+
+blueprintDir: The directory where the blueprint configuration file is located.
+
+**Returns:**
+
+error: An error if any issue occurs while setting the configuration path.
 
 ---
 

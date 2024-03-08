@@ -30,7 +30,15 @@ var (
 	}
 )
 
-// SetBlueprintConfigPath sets the configuration path for the blueprint
+// SetBlueprintConfigPath sets the configuration path for the blueprint.
+//
+// **Parameters:**
+//
+// blueprintDir: The directory where the blueprint configuration file is located.
+//
+// **Returns:**
+//
+// error: An error if any issue occurs while setting the configuration path.
 func SetBlueprintConfigPath(blueprintDir string) error {
 	bpConfig = filepath.Join(blueprintDir, "config.yaml")
 	viper.SetConfigFile(bpConfig)
@@ -41,7 +49,16 @@ func SetBlueprintConfigPath(blueprintDir string) error {
 }
 
 // RunImageBuilder is the main function for the imageBuilder command
-// that is used to build container images using packer.
+// that builds container images using Packer.
+//
+// **Parameters:**
+//
+// cmd: A Cobra command object containing flags and arguments for the command.
+// args: A slice of strings containing additional arguments passed to the command.
+//
+// **Returns:**
+//
+// error: An error if any issue occurs while building the images.
 func RunImageBuilder(cmd *cobra.Command, args []string) error {
 	var err error
 	blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
