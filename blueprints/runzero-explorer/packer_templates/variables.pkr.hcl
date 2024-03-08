@@ -62,7 +62,7 @@ variable "registry_cred" {
 variable "setup_systemd" {
   type    = bool
   description = "Create systemd service for container."
-  default = true
+  default = false
 }
 
 variable "workdir" {

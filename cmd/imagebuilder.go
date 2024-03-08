@@ -61,14 +61,36 @@ func SetBlueprintConfigPath(blueprintDir string) error {
 //
 // error: An error if any issue occurs while building the images.
 func RunImageBuilder(cmd *cobra.Command, args []string) error {
-	var err error
+	if err := parseCommandLineFlags(cmd); err != nil {
+		return err
+	}
 
+	if err := validateGitHubToken(); err != nil {
+		return err
+	}
+
+	if err := loadPackerTemplates(); err != nil {
+		return err
+	}
+
+	if err := buildPackerImages(); err != nil {
+		return err
+	}
+
+	if err := pushDockerImages(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func parseCommandLineFlags(cmd *cobra.Command) error {
+	var err error
 	blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
 	if err != nil {
 		return fmt.Errorf("failed to get provisionPath: %v", err)
 	}
 
-	// If the provisioning repo path contains a tilde, expand it
 	if strings.Contains(blueprint.ProvisioningRepo, "~") {
 		blueprint.ProvisioningRepo = sys.ExpandHomeDir(blueprint.ProvisioningRepo)
 	}
@@ -78,12 +100,14 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to retrieve blueprint: %v", err)
 	}
 
-	// Set the path for the blueprint configuration file
 	if err := SetBlueprintConfigPath(filepath.Join("blueprints", blueprint.Name)); err != nil {
 		return err
 	}
 
-	// Get the GitHub token from the command-line flag or environment variable
+	return nil
+}
+
+func validateGitHubToken() error {
 	if githubToken == "" {
 		githubToken = os.Getenv("GITHUB_TOKEN")
 		if githubToken == "" {
@@ -91,21 +115,26 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Validate the GitHub token
 	if err := validateToken(githubToken); err != nil {
 		return fmt.Errorf("GitHub token validation failed: %v", err)
 	}
 
-	// Populate packerTemplates from the blueprint configuration
+	return nil
+}
+
+func loadPackerTemplates() error {
 	if err := viper.UnmarshalKey("packer_templates", &packerTemplates); err != nil {
 		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
 	}
 
-	// Check if packerTemplates is empty
 	if len(packerTemplates) == 0 {
 		return fmt.Errorf("no packer templates found")
 	}
 
+	return nil
+}
+
+func buildPackerImages() error {
 	errChan := make(chan error, len(packerTemplates))
 	var wg sync.WaitGroup
 	for _, pTmpl := range packerTemplates {
@@ -138,43 +167,40 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("errors occurred while building packer images")
 	}
 
-	fmt.Print(color.GreenString(
-		"All packer templates in %s blueprint built successfully!\n", blueprint.Name))
+	fmt.Print(color.GreenString("All packer templates in %s blueprint built successfully!\n", blueprint.Name))
+	return nil
+}
 
-	// TODO: REFACTOR to support multiple packer templates
-
+func pushDockerImages() error {
 	registryServer := viper.GetString("container.registry.server")
 	registryUsername := viper.GetString("container.registry.username")
-	imageName := viper.GetString("packer_templates.0.tag.name")
 
-	// Docker login
-	if err := registry.DockerLogin(registryUsername, githubToken); err != nil {
-		return err
-	}
+	for _, pTmpl := range packerTemplates {
+		imageName := pTmpl.Tag.Name
 
-	// Construct full image name with registry server
-	fullImageName := filepath.Join(registryServer, imageName)
+		if err := registry.DockerLogin(registryUsername, githubToken); err != nil {
+			return err
+		}
 
-	// Construct image tags for amd64 and arm64 architectures
-	amd64Tag := fmt.Sprintf("%s:amd64-latest", fullImageName)
-	arm64Tag := fmt.Sprintf("%s:arm64-latest", fullImageName)
+		fullImageName := filepath.Join(registryServer, imageName)
+		amd64Tag := fmt.Sprintf("%s:amd64-latest", fullImageName)
+		arm64Tag := fmt.Sprintf("%s:arm64-latest", fullImageName)
 
-	// Push images
-	if err := registry.DockerPush(amd64Tag); err != nil {
-		return err
-	}
-	if err := registry.DockerPush(arm64Tag); err != nil {
-		return err
-	}
+		if err := registry.DockerPush(amd64Tag); err != nil {
+			return err
+		}
+		if err := registry.DockerPush(arm64Tag); err != nil {
+			return err
+		}
 
-	// Create and push manifest
-	images := []string{amd64Tag, arm64Tag}
-	manifestName := fmt.Sprintf("%s:latest", fullImageName)
-	if err := registry.DockerManifestCreate(manifestName, images); err != nil {
-		return err
-	}
-	if err := registry.DockerManifestPush(manifestName); err != nil {
-		return err
+		images := []string{amd64Tag, arm64Tag}
+		manifestName := fmt.Sprintf("%s:latest", fullImageName)
+		if err := registry.DockerManifestCreate(manifestName, images); err != nil {
+			return err
+		}
+		if err := registry.DockerManifestPush(manifestName); err != nil {
+			return err
+		}
 	}
 
 	return nil
