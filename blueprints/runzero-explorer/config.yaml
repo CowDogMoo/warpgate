@@ -5,9 +5,8 @@ blueprint:
 packer_templates:
   - name: runzero-explorer.pkr.hcl
     base:
-      name: geerlingguy/docker-ubuntu2204-ansible
+      name: ubuntu
       version: latest
-    systemd: true
     tag:
       name: cowdogmoo/runzero-explorer
       version: latest

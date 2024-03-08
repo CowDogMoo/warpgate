@@ -30,6 +30,8 @@ import (
 	"strings"
 	"text/template"
 
+	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
+	packer "github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/fatih/color"
 	fileutils "github.com/l50/goutils/v2/file/fileutils"
 	log "github.com/l50/goutils/v2/logging"
@@ -37,21 +39,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
-
-// Blueprint represents the contents of a Blueprint.
-type Blueprint struct {
-	// Name of the Blueprint
-	Name string `yaml:"name"`
-	// Path to the provisioning repo
-	ProvisioningRepo string
-}
-
-// Data holds a blueprint and its associated packer templates.
-type Data struct {
-	Blueprint       Blueprint
-	PackerTemplates []PackerTemplate
-	Container       Container
-}
 
 var (
 	base         []string
@@ -180,17 +167,17 @@ func processCfgInputs(cmd *cobra.Command) error {
 		return errors.New(errMsg)
 	}
 
-	for i, n := range tagNames {
+	for i, name := range tagNames {
 		parts = strings.Split(baseInput[i], ":")
-		packerTemplates = append(packerTemplates, PackerTemplate{
+		packerTemplates = append(packerTemplates, packer.BlueprintPacker{
 			Name: tmplNames[i],
-			Base: Base{
+			Base: packer.BlueprintBase{
 				Name:    parts[0],
 				Version: parts[1],
 			},
 			Systemd: systemdContainer[i],
-			Tag: Tag{
-				Name:    n,
+			Tag: packer.BlueprintTag{
+				Name:    name,
 				Version: tagVersion,
 			},
 		})
@@ -201,7 +188,7 @@ func processCfgInputs(cmd *cobra.Command) error {
 	return nil
 }
 
-func createCfg(cmd *cobra.Command, data Data) error {
+func createCfg(cmd *cobra.Command, data bp.Data) error {
 	// Parse the input config template
 	tmpl := template.Must(
 		template.ParseFiles(filepath.Join("templates", "config.yaml.tmpl")))
@@ -222,7 +209,7 @@ func createCfg(cmd *cobra.Command, data Data) error {
 	return nil
 }
 
-func createPacker(cmd *cobra.Command, data Data) error {
+func createPacker(cmd *cobra.Command, data bp.Data) error {
 	// Parse the input config template
 	tmpl := template.Must(
 		template.ParseFiles(filepath.Join("templates", "packer.pkr.hcl.tmpl")))
@@ -253,9 +240,9 @@ func createPacker(cmd *cobra.Command, data Data) error {
 
 	for _, pkr := range data.PackerTemplates {
 		tmplData := struct {
-			Blueprint      Blueprint
-			PackerTemplate PackerTemplate
-			Container      Container
+			Blueprint      bp.Blueprint
+			PackerTemplate packer.BlueprintPacker
+			Container      packer.BlueprintContainer
 		}{
 			Blueprint:      data.Blueprint,
 			PackerTemplate: pkr,
@@ -317,7 +304,7 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 
 	// Create data to hold the blueprint and
 	// associated packer templates.
-	data := Data{
+	data := bp.Data{
 		Blueprint:       blueprint,
 		PackerTemplates: packerTemplates,
 	}

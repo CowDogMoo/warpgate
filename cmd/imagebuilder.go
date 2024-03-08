@@ -10,9 +10,9 @@ import (
 	"sync"
 
 	"github.com/fatih/color"
-	fileutils "github.com/l50/goutils/v2/file/fileutils"
 
-	git "github.com/l50/goutils/v2/git"
+	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
+	packer "github.com/cowdogmoo/warpgate/pkg/packer"
 	log "github.com/l50/goutils/v2/logging"
 	"github.com/l50/goutils/v2/str"
 	"github.com/l50/goutils/v2/sys"
@@ -20,49 +20,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-var githubToken string
-
-// PackerTemplate is used to hold the information used
-// with a blueprint's packer templates.
-type PackerTemplate struct {
-	Name      string    `yaml:"name"`
-	Container Container `yaml:"container"`
-	Base      Base      `yaml:"base"`
-	Tag       Tag       `yaml:"tag"`
-	Systemd   bool      `yaml:"systemd"`
-}
-
-// Base represents the base image used
-// by Packer for image building.
-type Base struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
-}
-
-// Tag represents the new tag for the image built by Packer.
-type Tag struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
-}
-
-// Container stores information that is used for
-// the container build process.
-type Container struct {
-	Workdir    string   `yaml:"container.workdir"`
-	User       string   `yaml:"container.user"`
-	Entrypoint string   `yaml:"container.entrypoint"`
-	Registry   Registry `yaml:"container.registry"`
-}
-
-// Registry stores container registry information that is
-// used after image building to commit the image.
-type Registry struct {
-	Server     string `yaml:"registry.server"`
-	Username   string `yaml:"registry.username"`
-	Credential string `yaml:"registry.credential"`
-}
-
 var (
+	githubToken     string
 	bpConfig        string
 	imageBuilderCmd = &cobra.Command{
 		Use:   "imageBuilder",
@@ -74,8 +33,10 @@ var (
 // SetBlueprintConfigPath sets the configuration path for the blueprint
 func SetBlueprintConfigPath(blueprintDir string) error {
 	bpConfig = filepath.Join(blueprintDir, "config.yaml")
-	viper.AddConfigPath(filepath.Dir(bpConfig))
-	viper.SetConfigName(filepath.Base(bpConfig))
+	viper.SetConfigFile(bpConfig)
+	if err := viper.ReadInConfig(); err != nil { // Read the configuration file
+		return fmt.Errorf("failed to read config file: %v", err)
+	}
 	return nil
 }
 
@@ -98,17 +59,9 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to retrieve blueprint: %v", err)
 	}
 
+	// Set the path for the blueprint configuration file
 	if err := SetBlueprintConfigPath(filepath.Join("blueprints", blueprint.Name)); err != nil {
 		return err
-	}
-
-	if err := viper.MergeInConfig(); err != nil {
-		return fmt.Errorf("failed to merge blueprint config: %v", err)
-	}
-
-	var packerTemplates []PackerTemplate
-	if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
-		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
 	}
 
 	// Get the GitHub token from the command-line flag or environment variable
@@ -124,11 +77,21 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("GitHub token validation failed: %v", err)
 	}
 
+	// Populate packerTemplates from the blueprint configuration
+	if err := viper.UnmarshalKey("packer_templates", &packerTemplates); err != nil {
+		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
+	}
+
+	// Check if packerTemplates is empty
+	if len(packerTemplates) == 0 {
+		return fmt.Errorf("no packer templates found")
+	}
+
 	errChan := make(chan error, len(packerTemplates))
 	var wg sync.WaitGroup
 	for _, pTmpl := range packerTemplates {
 		wg.Add(1)
-		go func(pTmpl PackerTemplate) {
+		go func(pTmpl packer.BlueprintPacker) {
 			defer wg.Done()
 			log.L().Printf("Now building %s template as part of %s blueprint, please wait.\n",
 				pTmpl.Name, blueprint.Name)
@@ -183,7 +146,7 @@ func init() {
 		&githubToken, "github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
 }
 
-func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
+func createBuildDir(blueprint bp.Blueprint) (string, error) {
 	// Create random name for the build directory
 	dirName, err := str.GenRandom(8)
 	if err != nil {
@@ -191,119 +154,80 @@ func createBuildDir(pTmpl PackerTemplate, blueprint Blueprint) (string, error) {
 		return "", err
 	}
 
-	buildBaseDir := filepath.Join(os.TempDir(), "builds")
-	if _, err := os.Stat(buildBaseDir); os.IsNotExist(err) {
-		if err := os.Mkdir(buildBaseDir, 0755); err != nil {
-			log.L().Errorf("Failed to create base build directory: %v", err)
+	buildDir := filepath.Join(os.TempDir(), "builds", dirName)
+	if _, err := os.Stat(buildDir); os.IsNotExist(err) {
+		if err := os.Mkdir(buildDir, 0755); err != nil {
+			log.L().Errorf("Failed to create build directory %s: %v", buildDir, err)
 			return "", err
 		}
 	}
 
-	// Create buildDir
-	buildDir := filepath.Join(buildBaseDir, dirName)
-	if err := fileutils.Create(buildDir, nil, fileutils.CreateDirectory); err != nil {
-		log.L().Errorf(
-			"Failed to create %s build directory for image building: %v", dirName, err)
+	// Set bpDir to the correct blueprint directory
+	bpDir := filepath.Join("blueprints", blueprint.Name)
+	if err := sys.Cp(bpDir, buildDir); err != nil {
+		log.L().Errorf("Failed to copy %s to %s: %v", bpDir, buildDir, err)
 		return "", err
 	}
 
-	bpDir := filepath.Dir(bpConfig)
-	files, err := os.ReadDir(bpDir)
-	if err != nil {
-		log.L().Errorf("Failed to list files in %s: %v", bpDir, err)
+	if err := SetBlueprintConfigPath(buildDir); err != nil {
 		return "", err
 	}
 
-	// packer_templates is excluded here because we need
-	// to get the specific packer template specified
-	// in `pTmpl.Name`.
-	excludedFiles := []string{"builds", "packer_templates",
-		"config.yaml", ".gitignore", "README.md"}
-
-	// Copy blueprint to build dir
-	for _, file := range files {
-		if !str.InSlice(file.Name(), excludedFiles) {
-			src := filepath.Join(bpDir, file.Name())
-			dst := filepath.Join(buildDir, file.Name())
-			if err := sys.Cp(src, dst); err != nil {
-				log.L().Errorf("Failed to copy %s to %s: %v", src, dst, err)
-				return "", err
-			}
-		}
-	}
-
-	// Copy packer template into build dir
-	src := filepath.Join(bpDir, "packer_templates", pTmpl.Name)
-	dst := filepath.Join(buildDir, pTmpl.Name)
-	if err := sys.Cp(src, dst); err != nil {
-		log.L().Errorf(
-			"Failed to transfer packer template to %s: %v", buildDir, err)
-		return "", err
+	if err = viper.UnmarshalKey(packerTemplatesKey, &packerTemplates); err != nil {
+		return "", fmt.Errorf("failed to unmarshal packer templates: %v", err)
 	}
 
 	return buildDir, nil
 }
 
 func initializeBlueprint(blueprintDir string) error {
-	repoRoot, err := git.RepoRoot()
-	if err != nil {
-		log.L().Errorf(
-			"Failed to get the root of the git repo: %v", err)
-		return err
-	}
-
 	// Path to the directory where plugins would be installed
-	pluginsDir := filepath.Join(repoRoot, blueprintDir, "packer_templates", "github.com")
+	pluginsDir := filepath.Join(blueprintDir, "packer_templates")
 
-	// Validate the directory structure
-	if _, err := os.Stat(filepath.Join(blueprintDir, "packer_templates")); os.IsNotExist(err) {
+	// Ensure the packer templates directory exists
+	if _, err := os.Stat(pluginsDir); os.IsNotExist(err) {
 		log.L().Errorf("Expected packer_templates directory not found in %s: %v", blueprintDir, err)
 		return err
 	}
 
-	// Check if the plugins directory exists
-	if _, err := os.Stat(pluginsDir); os.IsNotExist(err) {
-		// Change to the blueprint's directory
-		if err := os.Chdir(filepath.Join(blueprintDir, "packer_templates")); err != nil {
-			log.L().Errorf(
-				"Failed to change directory to %s: %v", blueprintDir, err)
-			return err
-		}
-
-		// Run packer init .
-		cmd := sys.Cmd{
-			CmdString:     "packer",
-			Args:          []string{"init", "."},
-			OutputHandler: func(s string) { log.L().Println(s) },
-		}
-
-		if _, err := cmd.RunCmd(); err != nil {
-			log.L().Errorf(
-				"Failed to initialize blueprint with packer init: %v", err)
-			return err
-		}
-	} else if err != nil {
+	// Change to the blueprint's directory
+	if err := os.Chdir(pluginsDir); err != nil {
 		log.L().Errorf(
-			"Failed to check the status of the plugins directory: %v", err)
+			"Failed to change directory to %s: %v", blueprintDir, err)
+		return err
+	}
+
+	// Run packer init .
+	cmd := sys.Cmd{
+		CmdString:     "packer",
+		Args:          []string{"init", "."},
+		OutputHandler: func(s string) { log.L().Println(s) },
+	}
+
+	if _, err := cmd.RunCmd(); err != nil {
+		log.L().Errorf(
+			"Failed to initialize blueprint with packer init: %v", err)
 		return err
 	}
 
 	return nil
 }
 
-func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
+func buildPackerImage(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) error {
 	const maxRetries = 3
 	var lastError error
+	var buildDir string
+	var err error
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		buildDir, err := createBuildDir(pTmpl, blueprint)
+		buildDir, err = createBuildDir(blueprint)
 		if err != nil {
 			log.L().Errorf(
 				"Failed to create build directory: %v", err)
 			return err
 		}
 
-		if err := initializeBlueprint(filepath.Dir(bpConfig)); err != nil {
+		if err := initializeBlueprint(buildDir); err != nil {
 			log.L().Errorf(
 				"Failed to initialize blueprint: %v", err)
 			return err
@@ -314,6 +238,9 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 				"from %s config file: %v", blueprint.Name, err)
 			return err
 		}
+
+		templateDir := filepath.Join(buildDir, "packer_templates")
+		log.L().Printf("Packer template path: %s\n", templateDir)
 
 		args := []string{
 			"build",
@@ -328,10 +255,18 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 			"-var", fmt.Sprintf("registry_username=%s", pTmpl.Container.Registry.Username),
 			"-var", fmt.Sprintf("registry_cred=%s", githubToken),
 			"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
-			buildDir,
+			templateDir,
 		}
 
-		log.L().Printf("Attempt %d: ARGS: %s", attempt, args)
+		// Log the arguments with the token hidden
+		logArgs := make([]string, len(args))
+		copy(logArgs, args)
+		for i, arg := range logArgs {
+			if strings.Contains(arg, "registry_cred=") {
+				logArgs[i] = "-var registry_cred=<HIDDEN>"
+			}
+		}
+		log.L().Debugf("Attempt %d - Packer Parameters: %s", attempt, logArgs)
 
 		if err := os.Chdir(buildDir); err != nil {
 			log.L().Errorf(
@@ -347,7 +282,7 @@ func buildPackerImage(pTmpl PackerTemplate, blueprint Blueprint) error {
 
 		if _, err := cmd.RunCmd(); err != nil {
 			log.L().Errorf(
-				"Attempt %d: Failed to build container image from %s packer template: %v", attempt, pTmpl.Name, err)
+				"Attempt %d: Failed to build container image from %s packer template: %s/%v", attempt, buildDir, pTmpl.Name, err)
 			lastError = err
 			continue // retry
 		}
