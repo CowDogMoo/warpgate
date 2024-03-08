@@ -173,7 +173,7 @@ func createBuildDir(blueprint bp.Blueprint) (string, error) {
 
 	buildDir := filepath.Join(os.TempDir(), "builds", dirName)
 	if _, err := os.Stat(buildDir); os.IsNotExist(err) {
-		if err := os.Mkdir(buildDir, 0755); err != nil {
+		if err := os.MkdirAll(buildDir, 0755); err != nil {
 			log.L().Errorf("Failed to create build directory %s: %v", buildDir, err)
 			return "", err
 		}

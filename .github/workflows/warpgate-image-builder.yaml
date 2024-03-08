@@ -1,17 +1,18 @@
 ---
 name: Warpgate Image Builder
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
 
-env:
-  PRODUCT_VERSION: "latest"
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  PRODUCT_VERSION: "latest"
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
 
 jobs:
   generate-blueprints:
@@ -102,9 +103,3 @@ jobs:
       #     --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
       #     --cgroupns host \
       #     ${{ env.repo_owner }}/runzero-explorer:latest
-
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3
-        if: ${{ failure() }}
-        with:
-          limit-access-to-actor: true
