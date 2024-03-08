@@ -1,7 +1,7 @@
 #########################################################################################
-# runzero packer template
+# runZero packer template
 #
-# Author: Jayson Grace <Jayson Grace <jayson.e.grace@gmail.com>
+# Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
 # Description: Create a docker image provisioned with
 # https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/runzero
@@ -71,17 +71,14 @@ build {
     ]
   }
 
-  post-processors {
-    post-processor "docker-tag" {
-      repository = "${var.registry_server}/${var.new_image_tag}"
-      tags       = ["latest"]
-    }
-
-    post-processor "docker-push" {
-      login          = true
-      login_server   = "${var.registry_server}"
-      login_username = "${var.registry_username}"
-      login_password = "${var.registry_cred}"
-    }
+  provisioner "shell-local" {
+    inline = [
+      "docker login -u ${var.registry_username} -p ${var.registry_cred} ${var.registry_server}",
+      "docker manifest create ${var.registry_server}/${var.new_image_tag}:latest --amend ${var.registry_server}/${var.new_image_tag}:amd64-latest --amend ${var.registry_server}/${var.new_image_tag}:arm64-latest",
+      "docker manifest push ${var.registry_server}/${var.new_image_tag}:latest"
+    ]
+    environment_vars = [
+      "DOCKER_CLI_EXPERIMENTAL=enabled"
+    ]
   }
 }
