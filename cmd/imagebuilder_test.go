@@ -91,6 +91,9 @@ container:
 				t.Fatalf("failed to get absolute path for blueprint dir: %v", err)
 			}
 
+			// Debug: Log the absolute path being used
+			t.Logf("Using blueprint config path: %s", absBlueprintDir)
+
 			cmd := &cobra.Command{}
 			cmd.Flags().String("provisionPath", tc.provisionPath, "")
 			cmd.Flags().String("blueprint", absBlueprintDir, "") // Use absolute path
@@ -99,9 +102,6 @@ container:
 			if err := warpgate.SetBlueprintConfigPath(absBlueprintDir); err != nil {
 				t.Fatalf("failed to set blueprint config path: %v", err)
 			}
-
-			// Debug: Log the absolute path being used
-			t.Logf("Using blueprint config path: %s", absBlueprintDir)
 
 			err = warpgate.RunImageBuilder(cmd, nil)
 			if (err != nil) != tc.expectErr {
