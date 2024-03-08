@@ -8,29 +8,41 @@
 #
 #########################################################################################
 source "docker" "runzero_amd64" {
+  commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
   platform   = "linux/amd64"
-  commit     = true
   privileged = true
+
+  volumes = {
+    "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
+  }
+
   changes = [
     "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
   ]
-  run_command = ["-d", "-i", "-t", "--privileged", "--tmpfs", "/tmp", "--tmpfs", "/run", "--tmpfs", "/run/lock", "--volume", "/sys/fs/cgroup:/sys/fs/cgroup:ro", "{{ .Image }}", "/lib/systemd/systemd"]
+
+  run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
 source "docker" "runzero_arm64" {
+  commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
   platform   = "linux/arm64"
-  commit     = true
   privileged = true
+
   changes = [
     "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
   ]
-  run_command = ["-d", "-i", "-t", "--privileged", "--tmpfs", "/tmp", "--tmpfs", "/run", "--tmpfs", "/run/lock", "--volume", "/sys/fs/cgroup:/sys/fs/cgroup:ro", "{{ .Image }}", "/lib/systemd/systemd"]
+
+  volumes = {
+    "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
+  }
+
+  run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
 build {
@@ -40,15 +52,23 @@ build {
   ]
 
   provisioner "file" {
-    source      = "${var.provision_repo_path}/scripts"
-    destination = "/ansible-collection-workstation/scripts"
+    source      = "${var.provision_repo_path}"
+    destination = "${var.pkr_build_dir}"
+  }
+
+  provisioner "file" {
+    source      = "${path.cwd}/scripts/provision.sh"
+    destination = "${var.pkr_build_dir}/provision.sh"
   }
 
   provisioner "shell" {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
     ]
-    script = "/ansible-collection-workstation/scripts/provision.sh"
+    inline = [
+      "chmod +x ${var.pkr_build_dir}/provision.sh",
+      "${var.pkr_build_dir}/provision.sh"
+    ]
   }
 
   post-processors {
