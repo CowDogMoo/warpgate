@@ -13,6 +13,7 @@ import (
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	packer "github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/cowdogmoo/warpgate/pkg/registry"
 	log "github.com/l50/goutils/v2/logging"
 	"github.com/l50/goutils/v2/str"
 	"github.com/l50/goutils/v2/sys"
@@ -61,6 +62,7 @@ func SetBlueprintConfigPath(blueprintDir string) error {
 // error: An error if any issue occurs while building the images.
 func RunImageBuilder(cmd *cobra.Command, args []string) error {
 	var err error
+
 	blueprint.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
 	if err != nil {
 		return fmt.Errorf("failed to get provisionPath: %v", err)
@@ -138,6 +140,42 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 
 	fmt.Print(color.GreenString(
 		"All packer templates in %s blueprint built successfully!\n", blueprint.Name))
+
+	// TODO: REFACTOR to support multiple packer templates
+
+	registryServer := viper.GetString("container.registry.server")
+	registryUsername := viper.GetString("container.registry.username")
+	imageName := viper.GetString("packer_templates.0.tag.name")
+
+	// Docker login
+	if err := registry.DockerLogin(registryUsername, githubToken); err != nil {
+		return err
+	}
+
+	// Construct full image name with registry server
+	fullImageName := filepath.Join(registryServer, imageName)
+
+	// Construct image tags for amd64 and arm64 architectures
+	amd64Tag := fmt.Sprintf("%s:amd64-latest", fullImageName)
+	arm64Tag := fmt.Sprintf("%s:arm64-latest", fullImageName)
+
+	// Push images
+	if err := registry.DockerPush(amd64Tag); err != nil {
+		return err
+	}
+	if err := registry.DockerPush(arm64Tag); err != nil {
+		return err
+	}
+
+	// Create and push manifest
+	images := []string{amd64Tag, arm64Tag}
+	manifestName := fmt.Sprintf("%s:latest", fullImageName)
+	if err := registry.DockerManifestCreate(manifestName, images); err != nil {
+		return err
+	}
+	if err := registry.DockerManifestPush(manifestName); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -263,6 +301,7 @@ func buildPackerImage(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) erro
 			"build",
 			"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
 			"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
+			"-var", fmt.Sprintf("blueprint_name=%s", pTmpl.Name),
 			"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
 			"-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint),
 			"-var", fmt.Sprintf("new_image_tag=%s", pTmpl.Tag.Name),

@@ -8,6 +8,11 @@ variable "base_image_version" {
   description = "Version of the base image."
 }
 
+variable "blueprint_name" {
+  type    = string
+  description = "Name of the blueprint."
+}
+
 variable "container_user" {
   type    = string
   description = "Default user for a new container."

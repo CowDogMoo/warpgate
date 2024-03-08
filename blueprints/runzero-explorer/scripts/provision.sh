@@ -4,7 +4,7 @@
 set -ex
 
 export PKR_BUILD_DIR="${1:-/ansible-collection-workstation}"
-export CLEANUP="${2:-false}"
+export CLEANUP="${2:-true}"
 
 install_dependencies() {
     # Get latest packages and install aptitude

@@ -70,15 +70,4 @@ build {
       "${var.pkr_build_dir}/provision.sh"
     ]
   }
-
-  provisioner "shell-local" {
-    inline = [
-      "docker login -u ${var.registry_username} -p ${var.registry_cred} ${var.registry_server}",
-      "docker manifest create ${var.registry_server}/${var.new_image_tag}:latest --amend ${var.registry_server}/${var.new_image_tag}:amd64-latest --amend ${var.registry_server}/${var.new_image_tag}:arm64-latest",
-      "docker manifest push ${var.registry_server}/${var.new_image_tag}:latest"
-    ]
-    environment_vars = [
-      "DOCKER_CLI_EXPERIMENTAL=enabled"
-    ]
-  }
 }
