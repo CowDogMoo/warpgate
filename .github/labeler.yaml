@@ -15,10 +15,6 @@ area/github:
   - changed-files:
       - any-glob-to-any-file: ".github/**/*"
 
-area/magefiles:
-  - changed-files:
-      - any-glob-to-any-file: "magefiles/*"
-
 area/pre-commit:
   - changed-files:
       - any-glob-to-any-file: .pre-commit-config.yaml

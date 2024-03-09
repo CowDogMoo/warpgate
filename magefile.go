@@ -33,24 +33,6 @@ func init() {
 // error: An error if any issue occurs while trying to
 // install the dependencies.
 func InstallDeps() error {
-	fmt.Println(color.YellowString("Running go mod tidy on magefiles and repo root."))
-	cwd := sys.Gwd()
-	if err := sys.Cd("magefiles"); err != nil {
-		return fmt.Errorf("failed to cd into magefiles directory: %v", err)
-	}
-
-	if err := mageutils.Tidy(); err != nil {
-		return fmt.Errorf("failed to install dependencies: %v", err)
-	}
-
-	if err := sys.Cd(cwd); err != nil {
-		return fmt.Errorf("failed to cd back into repo root: %v", err)
-	}
-
-	if err := mageutils.Tidy(); err != nil {
-		return fmt.Errorf("failed to install dependencies: %v", err)
-	}
-
 	fmt.Println(color.YellowString("Installing dependencies."))
 	if err := lint.InstallGoPCDeps(); err != nil {
 		return fmt.Errorf("failed to install pre-commit dependencies: %v", err)

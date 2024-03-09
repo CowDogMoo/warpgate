@@ -10,7 +10,6 @@ for pkg in $pkgs; do
                               && [[ "${dir}" != "bin/" ]] \
                               && [[ "${dir}" != "docs/" ]] \
                               && [[ "${dir}" != "logging/" ]] \
-                              && [[ "${dir}" != "magefiles/" ]] \
                               && [[ "${dir}" != "modules/" ]] \
                               && [[ "${dir}" != "resources/" ]] \
                               && [[ "${dir}" != "templates/" ]]; then
