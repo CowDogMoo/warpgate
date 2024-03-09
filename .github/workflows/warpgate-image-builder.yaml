@@ -13,6 +13,7 @@ concurrency:
 env:
   PRODUCT_VERSION: "latest"
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+  RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
 
 jobs:
   generate-blueprints:
@@ -91,6 +92,7 @@ jobs:
 
       - name: Run image builder for each blueprint
         run: |
+          export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
           wg imageBuilder \
             -b "${{ matrix.blueprint }}" \
