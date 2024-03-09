@@ -36,14 +36,14 @@ Before you start, ensure you have the following installed:
 
 1. Ensure you have the necessary [prerequisites](#prerequisites) installed.
 
-2. Clone the Warp Gate repository:
+1. Clone the Warp Gate repository:
 
    ```bash
    gh repo clone CowDogMoo/warpgate
    cd warpgate
    ```
 
-3. Compile Warp Gate and add it to `$PATH`:
+1. Compile Warp Gate and add it to `$PATH`:
 
    ```bash
    go build -o wg && cp ~/.local/bin/wg
@@ -53,14 +53,24 @@ Before you start, ensure you have the following installed:
 
 ### Building the Container Image
 
-Use warpgate to build local container images based on the `runzero-explorer`
-blueprint:
+1. Set the RUNZERO_DOWNLOAD_TOKEN environment variable:
 
-```bash
-wg imageBuilder \
-  -b "runzero-explorer" \
-  -p "$HOME/cowdogmoo/ansible-collection-workstation"
-```
+   ```bash
+   export RUNZERO_DOWNLOAD_TOKEN=YOUR_DOWNLOAD_TOKEN_HERE
+
+   # 1password: RunZero Explorer Download Token
+   export RUNZERO_DOWNLOAD_TOKEN=$(op item get 'runzero' --fields RUNZERO_DOWNLOAD_TOKEN)
+   ```
+
+1. Use warpgate to build local container images based on the `runzero-explorer`
+   blueprint:
+
+   ```bash
+
+   wg imageBuilder \
+     -b "runzero-explorer" \
+     -p "$HOME/cowdogmoo/ansible-collection-workstation"
+   ```
 
 ### Additional Notes
 
