@@ -1,14 +1,15 @@
-# WarpGate/magefiles
+# WarpGate/magehelpers
 
-`magefiles` provides utilities that would normally be managed
-and executed with a `Makefile`. Instead of being written in the make language,
-magefiles are crafted in Go and leverage the [Mage](https://magefile.org/) library.
+The `magehelpers` package is a part of the WarpGate.
 
 ---
 
 ## Table of contents
 
 - [Functions](#functions)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Tests](#tests)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -77,54 +78,6 @@ error: An error if any issue occurs during documentation generation.
 
 ---
 
-### InstallDeps()
-
-```go
-InstallDeps() error
-```
-
-InstallDeps installs the Go dependencies necessary for developing
-on the project.
-
-Example usage:
-
-```go
-mage installdeps
-```
-
-**Returns:**
-
-error: An error if any issue occurs while trying to
-install the dependencies.
-
----
-
-### RunPreCommit()
-
-```go
-RunPreCommit() error
-```
-
-RunPreCommit updates, clears, and executes all pre-commit hooks
-locally. The function follows a three-step process:
-
-First, it updates the pre-commit hooks.
-Next, it clears the pre-commit cache to ensure a clean environment.
-Lastly, it executes all pre-commit hooks locally.
-
-Example usage:
-
-```go
-mage runprecommit
-```
-
-**Returns:**
-
-error: An error if any issue occurs at any of the three stages
-of the process.
-
----
-
 ### RunTests()
 
 ```go
@@ -145,28 +98,36 @@ error: An error if any issue occurs while running the tests.
 
 ---
 
-### UpdateMirror(string)
+## Installation
 
-```go
-UpdateMirror(string) error
+To use the WarpGate/magehelpers package, you first need to install it.
+Follow the steps below to install via go get.
+
+```bash
+go get github.com/cowdogmoo/warpgate/magehelpers
 ```
 
-UpdateMirror updates pkg.go.dev with the release associated with the
-input tag
+---
 
-Example usage:
+## Usage
+
+After installation, you can import the package in your Go project
+using the following import statement:
 
 ```go
-mage updatemirror v2.0.1
+import "github.com/cowdogmoo/warpgate/magehelpers"
 ```
 
-**Parameters:**
+---
 
-tag: the tag to update pkg.go.dev with
+## Tests
 
-**Returns:**
+To ensure the package is working correctly, run the following
+command to execute the tests for `WarpGate/magehelpers`:
 
-error: An error if any issue occurs while updating pkg.go.dev
+```bash
+go test -v
+```
 
 ---
 

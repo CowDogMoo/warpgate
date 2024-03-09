@@ -1,7 +1,4 @@
-//go:build mage
-// +build mage
-
-package main
+package magehelpers
 
 import (
 	"fmt"
@@ -11,7 +8,6 @@ import (
 
 	"github.com/l50/goutils/v2/git"
 	"github.com/l50/goutils/v2/sys"
-	"github.com/spf13/cobra"
 
 	// mage utility functions
 	"github.com/magefile/mage/sh"
@@ -20,17 +16,6 @@ import (
 type compileParams struct {
 	GOOS   string
 	GOARCH string
-}
-
-var repoRoot string
-
-func init() {
-	var err error
-	repoRoot, err = git.RepoRoot()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get repo root: %v", err)
-		cobra.CheckErr(err)
-	}
 }
 
 func (p *compileParams) populateFromEnv() {
@@ -102,7 +87,11 @@ func Compile() error {
 	if err != nil {
 		return err
 	}
-	defer os.Chdir(cwd)
+	defer func() {
+		if err := os.Chdir(cwd); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to change directory back to original: %v", err)
+		}
+	}()
 
 	doCompile := func(release bool) error {
 		var p compileParams
@@ -131,6 +120,11 @@ func changeToRepoRoot() (originalCwd string, err error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current working directory: %v", err)
+	}
+
+	repoRoot, err := git.RepoRoot()
+	if err != nil {
+		return "", fmt.Errorf("failed to get repo root: %v", err)
 	}
 
 	if cwd != repoRoot {

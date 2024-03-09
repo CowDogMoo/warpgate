@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/cowdogmoo/warpgate/pkg/magehelpers"
 	"github.com/fatih/color"
 	"github.com/l50/goutils/v2/dev/lint"
 	mageutils "github.com/l50/goutils/v2/dev/mage"
@@ -136,6 +137,35 @@ func UpdateMirror(tag string) error {
 		tag))
 	if err != nil {
 		return fmt.Errorf("failed to update pkg.go.dev: %w", err)
+	}
+
+	return nil
+}
+
+// Compile compiles the warpgate binary.
+func Compile() error {
+	fmt.Println("Compiling the warpgate binary, please wait.")
+	if err := magehelpers.Compile(); err != nil {
+		return fmt.Errorf("failed to compile warpgate: %v", err)
+	}
+
+	return nil
+}
+
+// RunTests executes all unit tests.
+func RunTests() error {
+	if err := magehelpers.RunTests(); err != nil {
+		return fmt.Errorf("failed to run unit tests: %v", err)
+	}
+
+	return nil
+}
+
+// GeneratePackageDocs creates documentation for the various packages
+// in the project.
+func GeneratePackageDocs() error {
+	if err := magehelpers.GeneratePackageDocs(); err != nil {
+		return fmt.Errorf("failed to generate package documentation: %v", err)
 	}
 
 	return nil
