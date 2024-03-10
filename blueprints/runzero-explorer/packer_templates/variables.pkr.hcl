@@ -59,6 +59,18 @@ variable "registry_cred" {
   description = "Token or credential to authenticate to registry with."
 }
 
+variable "runzero_download_token" {
+  type    = string
+  description = "Token to download runzero."
+  default = env("RUNZERO_DOWNLOAD_TOKEN")
+  validation {
+    condition     = length(var.runzero_download_token) > 0
+    error_message = <<EOF
+The RUNZERO_DOWNLOAD_TOKEN is not set: this is required to download runZero explorer.
+EOF
+  }
+}
+
 variable "setup_systemd" {
   type    = bool
   description = "Create systemd service for container."

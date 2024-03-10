@@ -32,15 +32,15 @@ source "docker" "runzero_arm64" {
   platform   = "linux/arm64"
   privileged = true
 
+  volumes = {
+    "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
+  }
+
   changes = [
     "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
   ]
-
-  volumes = {
-    "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
-  }
 
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
@@ -64,6 +64,7 @@ build {
   provisioner "shell" {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
+      "RUNZERO_DOWNLOAD_TOKEN=${var.runzero_download_token}",
     ]
     inline = [
       "chmod +x ${var.pkr_build_dir}/provision.sh",
