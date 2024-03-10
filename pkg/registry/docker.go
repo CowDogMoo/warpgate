@@ -53,3 +53,14 @@ func DockerManifestPush(manifest string) error {
 	}
 	return nil
 }
+
+// DockerTag tags a Docker image.
+func DockerTag(sourceImage, targetImage string) error {
+	cmd := exec.Command("docker", "tag", sourceImage, targetImage)
+	var out bytes.Buffer
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("docker tag failed for %s to %s: %s", sourceImage, targetImage, out.String())
+	}
+	return nil
+}

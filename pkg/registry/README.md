@@ -57,6 +57,16 @@ DockerPush pushes a Docker image to the registry.
 
 ---
 
+### DockerTag(string)
+
+```go
+DockerTag(string) error
+```
+
+DockerTag tags a Docker image.
+
+---
+
 ## Installation
 
 To use the WarpGate/registry package, you first need to install it.

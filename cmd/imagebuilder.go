@@ -183,9 +183,20 @@ func pushDockerImages() error {
 		}
 
 		fullImageName := filepath.Join(registryServer, imageName)
+		localAmd64Tag := fmt.Sprintf("%s-amd64", imageName)
+		localArm64Tag := fmt.Sprintf("%s-arm64", imageName)
 		amd64Tag := fmt.Sprintf("%s:amd64-latest", fullImageName)
 		arm64Tag := fmt.Sprintf("%s:arm64-latest", fullImageName)
 
+		// Tag the local images with the full registry path
+		if err := registry.DockerTag(localAmd64Tag, amd64Tag); err != nil {
+			return err
+		}
+		if err := registry.DockerTag(localArm64Tag, arm64Tag); err != nil {
+			return err
+		}
+
+		// Push the tagged images
 		if err := registry.DockerPush(amd64Tag); err != nil {
 			return err
 		}
@@ -193,6 +204,7 @@ func pushDockerImages() error {
 			return err
 		}
 
+		// Create and push the manifest
 		images := []string{amd64Tag, arm64Tag}
 		manifestName := fmt.Sprintf("%s:latest", fullImageName)
 		if err := registry.DockerManifestCreate(manifestName, images); err != nil {
