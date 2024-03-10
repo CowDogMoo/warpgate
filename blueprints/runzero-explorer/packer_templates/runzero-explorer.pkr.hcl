@@ -71,4 +71,17 @@ build {
       "${var.pkr_build_dir}/provision.sh"
     ]
   }
+
+
+  post-processor "docker-tag" {
+    repository = "${var.registry_server}/${var.image_name}"
+    tags       = ["amd64-latest"]
+    only       = ["source.docker.runzero_amd64"]
+  }
+
+  post-processor "docker-tag" {
+    repository = "${var.registry_server}/${var.image_name}"
+    tags       = ["arm64-latest"]
+    only       = ["source.docker.runzero_arm64"]
+  }
 }

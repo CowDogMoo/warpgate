@@ -175,18 +175,18 @@ func pushDockerImages() error {
 	registryServer := viper.GetString("container.registry.server")
 	registryUsername := viper.GetString("container.registry.username")
 
+	// Ensure docker login happens only once
+	if err := registry.DockerLogin(registryUsername, githubToken); err != nil {
+		return err
+	}
+
 	for _, pTmpl := range packerTemplates {
 		imageName := pTmpl.Tag.Name
 
-		if err := registry.DockerLogin(registryUsername, githubToken); err != nil {
-			return err
-		}
-
-		fullImageName := filepath.Join(registryServer, imageName)
-		localAmd64Tag := fmt.Sprintf("%s-amd64", imageName)
-		localArm64Tag := fmt.Sprintf("%s-arm64", imageName)
-		amd64Tag := fmt.Sprintf("%s:amd64-latest", fullImageName)
-		arm64Tag := fmt.Sprintf("%s:arm64-latest", fullImageName)
+		localAmd64Tag := fmt.Sprintf("%s-amd64-latest", imageName)
+		localArm64Tag := fmt.Sprintf("%s-arm64-latest", imageName)
+		amd64Tag := fmt.Sprintf("%s:amd64-latest", filepath.Join(registryServer, imageName))
+		arm64Tag := fmt.Sprintf("%s:arm64-latest", filepath.Join(registryServer, imageName))
 
 		// Tag the local images with the full registry path
 		if err := registry.DockerTag(localAmd64Tag, amd64Tag); err != nil {
@@ -206,7 +206,7 @@ func pushDockerImages() error {
 
 		// Create and push the manifest
 		images := []string{amd64Tag, arm64Tag}
-		manifestName := fmt.Sprintf("%s:latest", fullImageName)
+		manifestName := fmt.Sprintf("%s:latest", filepath.Join(registryServer, imageName))
 		if err := registry.DockerManifestCreate(manifestName, images); err != nil {
 			return err
 		}
