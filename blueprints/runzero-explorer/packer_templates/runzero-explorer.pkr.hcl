@@ -21,6 +21,7 @@ source "docker" "runzero_amd64" {
     "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
+    "LABEL architecture=amd64"
   ]
 
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
@@ -40,6 +41,7 @@ source "docker" "runzero_arm64" {
     "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
+    "LABEL architecture=arm64"
   ]
 
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
@@ -71,7 +73,6 @@ build {
       "${var.pkr_build_dir}/provision.sh"
     ]
   }
-
 
   post-processor "docker-tag" {
     repository = "${var.registry_server}/${var.image_name}"
