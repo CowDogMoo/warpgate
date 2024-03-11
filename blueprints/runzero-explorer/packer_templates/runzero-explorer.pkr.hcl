@@ -74,15 +74,24 @@ build {
     ]
   }
 
-  post-processor "docker-tag" {
-    repository = "${var.registry_server}/${var.image_name}"
-    tags       = ["amd64-latest"]
-    only       = ["source.docker.runzero_amd64"]
-  }
+  post-processors {
+    post-processor "docker-tag" {
+      repository = "${var.registry_server}/${var.image_name}"
+      tags       = ["amd64-latest"]
+      only       = ["source.docker.runzero_amd64"]
+    }
 
-  post-processor "docker-tag" {
-    repository = "${var.registry_server}/${var.image_name}"
-    tags       = ["arm64-latest"]
-    only       = ["source.docker.runzero_arm64"]
+    post-processor "docker-tag" {
+      repository = "${var.registry_server}/${var.image_name}"
+      tags       = ["arm64-latest"]
+      only       = ["source.docker.runzero_arm64"]
+    }
+
+    post-processor "docker-push" {
+      login          = true
+      login_server   = "${var.registry_server}"
+      login_username = "${var.registry_username}"
+      login_password = "${var.registry_cred}"
+    }
   }
 }
