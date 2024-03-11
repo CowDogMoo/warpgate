@@ -99,9 +99,8 @@ jobs:
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
 
-      # - name: Test
-      #   run: docker run -d --rm --name runzero-explorer-test \
-      #     --privileged \
-      #     --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
-      #     --cgroupns host \
-      #     ${{ env.repo_owner }}/runzero-explorer:latest
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
