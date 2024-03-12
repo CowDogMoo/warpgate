@@ -6,13 +6,17 @@ set -ex
 export PKR_BUILD_DIR="${1:-/ansible-collection-workstation}"
 export CLEANUP="${2:-true}"
 
+# Necessary for ansible to work properly
+export TERM=xterm-256color
+
 install_dependencies() {
     # Get latest packages and install aptitude
     apt-get update -y 2> /dev/null | grep packages | cut -d '.' -f 1
 
-    # Install ansible and associated pre-requisites
-    apt-get install -y bash git gpg-agent python3 python3-pip
-    python3 -m pip install --upgrade pip wheel setuptools ansible
+    # Install pipx and python3-venv
+    apt-get install -y bash git gpg-agent \
+        python3-full \
+        ansible  2> /dev/null | grep packages | cut -d '.' -f 1
 }
 
 # Provision logic run by packer
