@@ -77,9 +77,9 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// if err := pushDockerImages(); err != nil {
-	// 	return err
-	// }
+	if err := pushDockerImages(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -137,24 +137,25 @@ func loadPackerTemplates() error {
 func buildPackerImages() error {
 	errChan := make(chan error, len(packerTemplates))
 	var wg sync.WaitGroup
-	for _, pTmpl := range packerTemplates {
+
+	for i, pTmpl := range packerTemplates {
 		wg.Add(1)
-		go func(pTmpl packer.BlueprintPacker) {
+		go func(i int, pTmpl *packer.BlueprintPacker) {
 			defer wg.Done()
 			log.L().Printf("Now building %s template as part of %s blueprint, please wait.\n",
 				pTmpl.Name, blueprint.Name)
 
 			if err := buildPackerImage(pTmpl, blueprint); err != nil {
 				errChan <- fmt.Errorf("error building %s: %v", pTmpl.Name, err)
+			} else {
+				packerTemplates[i] = *pTmpl // Update the packerTemplates slice
 			}
-		}(pTmpl)
+		}(i, &pTmpl)
 	}
 
-	go func() {
-		wg.Wait()
-		close(errChan)
-	}()
+	wg.Wait() // Wait for all goroutines to finish
 
+	close(errChan)
 	var errOccurred bool
 	for err := range errChan {
 		if err != nil {
@@ -182,36 +183,42 @@ func pushDockerImages() error {
 	for _, pTmpl := range packerTemplates {
 		imageName := pTmpl.Tag.Name
 
-		// Define the local and remote tags
-		localAmd64Tag := fmt.Sprintf("%s-amd64:latest", imageName)
-		localArm64Tag := fmt.Sprintf("%s-arm64:latest", imageName)
-		amd64Tag := fmt.Sprintf("%s/%s-amd64:latest", registryServer, imageName)
-		arm64Tag := fmt.Sprintf("%s/%s-arm64:latest", registryServer, imageName)
+		for arch, hash := range pTmpl.ImageHashes {
+			// Define the local and remote tags
+			localTag := fmt.Sprintf("sha256:%s", hash)
+			remoteTag := fmt.Sprintf("%s/%s:%s-latest", registryServer, imageName, arch)
 
-		// Tag the local images with the full registry path
-		if err := registry.DockerTag(localAmd64Tag, amd64Tag); err != nil {
-			return err
-		}
-		if err := registry.DockerTag(localArm64Tag, arm64Tag); err != nil {
-			return err
-		}
+			// Tag the local images with the full registry path
+			if err := registry.DockerTag(localTag, remoteTag); err != nil {
+				return err
+			}
 
-		// Push the tagged images
-		if err := registry.DockerPush(amd64Tag); err != nil {
-			return err
-		}
-		if err := registry.DockerPush(arm64Tag); err != nil {
-			return err
+			// Push the tagged images
+			if err := registry.DockerPush(remoteTag); err != nil {
+				return err
+			}
 		}
 
 		// Create and push the manifest
-		images := []string{amd64Tag, arm64Tag}
-		manifestName := fmt.Sprintf("%s/%s:latest", registryServer, imageName)
-		if err := registry.DockerManifestCreate(manifestName, images); err != nil {
-			return err
+		images := make([]string, 0, len(pTmpl.ImageHashes))
+		for arch, hash := range pTmpl.ImageHashes {
+			imageTag := fmt.Sprintf("%s/%s:%s-latest", registryServer, imageName, arch)
+			images = append(images, imageTag)
+			fmt.Printf("IMAGE TAG: %s\n", imageTag) // Debug output
+			fmt.Printf("HASH BAY: %v\n", hash)      // Debug output
 		}
-		if err := registry.DockerManifestPush(manifestName); err != nil {
-			return err
+		fmt.Printf("IMAGES SLICE: %v\n", images) // Debug output
+
+		if len(images) > 1 {
+			manifestName := fmt.Sprintf("%s/%s:latest", registryServer, imageName)
+			if err := registry.DockerManifestCreate(manifestName, images); err != nil {
+				return err
+			}
+			if err := registry.DockerManifestPush(manifestName); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("Not enough images for manifest creation: %v\n", images)
 		}
 	}
 
@@ -306,7 +313,7 @@ func initializeBlueprint(blueprintDir string) error {
 	return nil
 }
 
-func buildPackerImage(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) error {
+func buildPackerImage(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint) error {
 	const maxRetries = 3
 	var lastError error
 	var buildDir string
@@ -363,7 +370,6 @@ func buildPackerImage(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) erro
 				logArgs[i] = "-var registry_cred=<HIDDEN>"
 			}
 		}
-
 		log.L().Printf("Attempt %d - Packer Parameters: %s", attempt, logArgs)
 
 		if err := os.Chdir(buildDir); err != nil {
@@ -373,9 +379,32 @@ func buildPackerImage(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) erro
 		}
 
 		cmd := sys.Cmd{
-			CmdString:     "packer",
-			Args:          args,
-			OutputHandler: func(s string) { log.L().Println(s) },
+			CmdString: "packer",
+			Args:      args,
+			OutputHandler: func(s string) {
+				log.L().Println(s)
+				// Parse image hashes from the output
+				if strings.Contains(s, "Imported Docker image: sha256:") {
+					parts := strings.Split(s, " ")
+					if len(parts) > 4 {
+						archParts := strings.Split(parts[1], ".")
+						if len(archParts) > 1 {
+							arch := strings.TrimSuffix(archParts[1], ":")
+							for _, part := range parts {
+								if strings.HasPrefix(part, "sha256:") {
+									hash := strings.TrimPrefix(part, "sha256:")
+									if pTmpl.ImageHashes == nil {
+										pTmpl.ImageHashes = make(map[string]string)
+									}
+									pTmpl.ImageHashes[arch] = hash
+									fmt.Printf("DEBUG: Updated ImageHashes: %v\n", pTmpl.ImageHashes) // Debug output
+									break
+								}
+							}
+						}
+					}
+				}
+			},
 		}
 
 		if _, err := cmd.RunCmd(); err != nil {
