@@ -14,6 +14,7 @@ env:
   PRODUCT_VERSION: "latest"
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }} # Used for image builder to push to ghcr.io
 
 jobs:
   generate-blueprints:
@@ -60,7 +61,7 @@ jobs:
         with:
           registry: ghcr.io
           username: "${{ github.repository_owner }}"
-          password: "${{ secrets.BOT_TOKEN }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Set up Go
         uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5
@@ -88,16 +89,16 @@ jobs:
       - name: Make repository name lowercase
         id: lower-repo
         run: |
-          echo "repo_owner_lowercase=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "repo_owner_lowercase=$(echo '${{ github.repository_owner }}' \
+          | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Run image builder for each blueprint
         run: |
-          export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
           wg imageBuilder \
             -b "${{ matrix.blueprint }}" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
-            -t "${{ secrets.BOT_TOKEN }}"
+            -t "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Setup tmate session
         if: ${{ failure() }}
