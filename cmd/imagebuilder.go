@@ -135,7 +135,6 @@ func loadPackerTemplates() error {
 func buildPackerImages() error {
 	errChan := make(chan error, len(packerTemplates))
 	var wg sync.WaitGroup
-
 	for i, pTmpl := range packerTemplates {
 		wg.Add(1)
 		go func(i int, pTmpl *packer.BlueprintPacker) {

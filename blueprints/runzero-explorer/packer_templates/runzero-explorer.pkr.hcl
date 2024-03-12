@@ -1,7 +1,7 @@
 #########################################################################################
-# runZero packer template
+# runzero packer template
 #
-# Author: Jayson Grace <jayson.e.grace@gmail.com>
+# Author: Jayson Grace <Jayson Grace <jayson.e.grace@gmail.com>
 #
 # Description: Create a docker image provisioned with
 # https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/runzero
