@@ -2,9 +2,9 @@
 name: Warpgate Image Builder
 on:
   workflow_dispatch:
+  pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
