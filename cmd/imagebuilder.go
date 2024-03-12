@@ -165,7 +165,7 @@ func buildPackerImages() error {
 		return fmt.Errorf("errors occurred while building packer images")
 	}
 
-	fmt.Print(color.GreenString("All packer templates in %s blueprint built successfully!\n", blueprint.Name))
+	log.L().Printf(color.GreenString("All packer templates in %s blueprint built successfully!\n", blueprint.Name))
 	return nil
 }
 
@@ -347,7 +347,7 @@ func buildImageAttempt(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, at
 	templateDir := filepath.Join(buildDir, "packer_templates")
 	args := preparePackerArgs(pTmpl, blueprint, templateDir)
 
-	log.L().Printf("Attempt %d - Packer Parameters: %s", attempt, hideSensitiveArgs(args))
+	log.L().Debugf("Attempt %d - Packer Parameters: %s", attempt, hideSensitiveArgs(args))
 
 	if err := os.Chdir(buildDir); err != nil {
 		log.L().Errorf("Failed to change into the %s directory: %v", buildDir, err)
@@ -415,7 +415,7 @@ func parseImageHashes(output string, pTmpl *packer.BlueprintPacker) {
 							pTmpl.ImageHashes = make(map[string]string)
 						}
 						pTmpl.ImageHashes[arch] = hash
-						fmt.Printf("DEBUG: Updated ImageHashes: %v\n", pTmpl.ImageHashes) // Debug output
+						log.L().Debug("Updated ImageHashes: %v\n", pTmpl.ImageHashes)
 						break
 					}
 				}
