@@ -152,8 +152,8 @@ func buildPackerImages() error {
 	}
 
 	wg.Wait() // Wait for all goroutines to finish
-
 	close(errChan)
+
 	var errOccurred bool
 	for err := range errChan {
 		if err != nil {
