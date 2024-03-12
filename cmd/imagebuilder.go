@@ -183,10 +183,13 @@ func pushDockerImages() error {
 	for _, pTmpl := range packerTemplates {
 		imageName := pTmpl.Tag.Name
 
+		// Create a slice to store the image tags for the manifest
+		var imageTags []string
+
 		for arch, hash := range pTmpl.ImageHashes {
 			// Define the local and remote tags
 			localTag := fmt.Sprintf("sha256:%s", hash)
-			remoteTag := fmt.Sprintf("%s/%s:%s-latest", registryServer, imageName, arch)
+			remoteTag := fmt.Sprintf("%s/%s:%s", registryServer, imageName, arch)
 
 			// Tag the local images with the full registry path
 			if err := registry.DockerTag(localTag, remoteTag); err != nil {
@@ -197,28 +200,22 @@ func pushDockerImages() error {
 			if err := registry.DockerPush(remoteTag); err != nil {
 				return err
 			}
+
+			// Add the tag to the list for the manifest
+			imageTags = append(imageTags, remoteTag)
 		}
 
 		// Create and push the manifest
-		images := make([]string, 0, len(pTmpl.ImageHashes))
-		for arch, hash := range pTmpl.ImageHashes {
-			imageTag := fmt.Sprintf("%s/%s:%s-latest", registryServer, imageName, arch)
-			images = append(images, imageTag)
-			fmt.Printf("IMAGE TAG: %s\n", imageTag) // Debug output
-			fmt.Printf("HASH BAY: %v\n", hash)      // Debug output
-		}
-		fmt.Printf("IMAGES SLICE: %v\n", images) // Debug output
-
-		if len(images) > 1 {
+		if len(imageTags) > 1 {
 			manifestName := fmt.Sprintf("%s/%s:latest", registryServer, imageName)
-			if err := registry.DockerManifestCreate(manifestName, images); err != nil {
+			if err := registry.DockerManifestCreate(manifestName, imageTags); err != nil {
 				return err
 			}
 			if err := registry.DockerManifestPush(manifestName); err != nil {
 				return err
 			}
 		} else {
-			fmt.Printf("Not enough images for manifest creation: %v\n", images)
+			fmt.Printf("Not enough images for manifest creation: %v\n", imageTags)
 		}
 	}
 
