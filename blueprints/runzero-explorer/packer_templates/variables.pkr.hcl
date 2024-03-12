@@ -7,7 +7,7 @@ variable "base_image" {
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
-  default     = "latest"
+  default     = "noble"
 }
 
 variable "blueprint_name" {

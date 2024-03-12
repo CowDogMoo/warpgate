@@ -6,7 +6,7 @@ packer_templates:
   - name: runzero-explorer.pkr.hcl
     base:
       name: ubuntu
-      version: latest
+      version: noble
     tag:
       name: cowdogmoo/runzero-explorer
       version: latest
