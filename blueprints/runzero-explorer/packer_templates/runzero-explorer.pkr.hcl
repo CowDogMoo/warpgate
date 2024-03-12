@@ -59,14 +59,14 @@ build {
     destination = "${var.pkr_build_dir}/provision.sh"
   }
 
-#   provisioner "shell" {
-#     environment_vars = [
-#       "PKR_BUILD_DIR=${var.pkr_build_dir}",
-#       "RUNZERO_DOWNLOAD_TOKEN=${var.runzero_download_token}",
-#     ]
-#     inline = [
-#       "chmod +x ${var.pkr_build_dir}/provision.sh",
-#       "${var.pkr_build_dir}/provision.sh"
-#     ]
-#   }
+  provisioner "shell" {
+    environment_vars = [
+      "PKR_BUILD_DIR=${var.pkr_build_dir}",
+      "RUNZERO_DOWNLOAD_TOKEN=${var.runzero_download_token}",
+    ]
+    inline = [
+      "chmod +x ${var.pkr_build_dir}/provision.sh",
+      "${var.pkr_build_dir}/provision.sh"
+    ]
+  }
 }
