@@ -10,11 +10,12 @@ package packer
 // Tag: Tag configuration for the generated image.
 // Systemd: Indicates if systemd is used in the container.
 type BlueprintPacker struct {
-	Name      string             `yaml:"name"`
-	Container BlueprintContainer `yaml:"container"`
-	Base      BlueprintBase      `yaml:"base"`
-	Tag       BlueprintTag       `yaml:"tag"`
-	Systemd   bool               `yaml:"systemd"`
+	Name        string             `yaml:"name"`
+	Container   BlueprintContainer `yaml:"container"`
+	ImageHashes map[string]string
+	Base        BlueprintBase `yaml:"base"`
+	Tag         BlueprintTag  `yaml:"tag"`
+	Systemd     bool          `yaml:"systemd"`
 }
 
 // BlueprintBase represents the base image configuration for a Packer template.

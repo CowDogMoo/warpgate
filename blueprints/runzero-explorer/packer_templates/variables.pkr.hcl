@@ -1,11 +1,13 @@
 variable "base_image" {
   type    = string
   description = "Base image."
+  default = "ubuntu"
 }
 
 variable "base_image_version" {
   type    = string
   description = "Version of the base image."
+  default = "noble"
 }
 
 variable "blueprint_name" {
@@ -16,11 +18,6 @@ variable "blueprint_name" {
 variable "container_user" {
   type    = string
   description = "Default user for a new container."
-}
-
-variable "entrypoint" {
-  type    = string
-  description = "Optional entrypoint script."
 }
 
 variable "new_image_tag" {
