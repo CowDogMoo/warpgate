@@ -77,9 +77,9 @@ func RunImageBuilder(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := pushDockerImages(); err != nil {
-		return err
-	}
+	// if err := pushDockerImages(); err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
@@ -341,7 +341,6 @@ func buildPackerImage(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) erro
 			"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
 			"-var", fmt.Sprintf("blueprint_name=%s", pTmpl.Name),
 			"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
-			"-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint),
 			"-var", fmt.Sprintf("new_image_tag=%s", pTmpl.Tag.Name),
 			"-var", fmt.Sprintf("new_image_version=%s", pTmpl.Tag.Version),
 			"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
@@ -352,6 +351,10 @@ func buildPackerImage(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) erro
 			templateDir,
 		}
 
+		if pTmpl.Container.Entrypoint != "" {
+			args = append(args, "-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint))
+		}
+
 		// Log the arguments with the token hidden
 		logArgs := make([]string, len(args))
 		copy(logArgs, args)
@@ -360,7 +363,8 @@ func buildPackerImage(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) erro
 				logArgs[i] = "-var registry_cred=<HIDDEN>"
 			}
 		}
-		log.L().Debugf("Attempt %d - Packer Parameters: %s", attempt, logArgs)
+
+		log.L().Printf("Attempt %d - Packer Parameters: %s", attempt, logArgs)
 
 		if err := os.Chdir(buildDir); err != nil {
 			log.L().Errorf(

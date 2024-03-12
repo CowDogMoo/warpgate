@@ -18,11 +18,6 @@ variable "container_user" {
   description = "Default user for a new container."
 }
 
-variable "entrypoint" {
-  type    = string
-  description = "Optional entrypoint script."
-}
-
 variable "new_image_tag" {
   type    = string
   description = "Tag for the created image."
@@ -57,6 +52,13 @@ variable "registry_username" {
 variable "registry_cred" {
   type    = string
   description = "Token or credential to authenticate to registry with."
+  default = env("GITHUB_TOKEN")
+  validation {
+    condition     = length(var.registry_cred) > 0
+    error_message = <<EOF
+The GITHUB_TOKEN is not set: this is required to push the container image.
+EOF
+  }
 }
 
 variable "runzero_download_token" {
