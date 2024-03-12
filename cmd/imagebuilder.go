@@ -365,12 +365,7 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
 		"-var", fmt.Sprintf("blueprint_name=%s", pTmpl.Name),
 		"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
-		"-var", fmt.Sprintf("new_image_tag=%s", pTmpl.Tag.Name),
-		"-var", fmt.Sprintf("new_image_version=%s", pTmpl.Tag.Version),
 		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
-		"-var", fmt.Sprintf("registry_server=%s", pTmpl.Container.Registry.Server),
-		"-var", fmt.Sprintf("registry_username=%s", pTmpl.Container.Registry.Username),
-		"-var", fmt.Sprintf("registry_cred=%s", githubToken),
 		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
 		templateDir,
 	}
