@@ -9,14 +9,19 @@ export CLEANUP="${2:-true}"
 # Necessary for ansible to work properly
 export TERM=xterm-256color
 
+# Set this only if on a debian-based system
+if [[ -f /etc/debian_version ]]; then
+    export DEBIAN_FRONTEND=noninteractive
+fi
+
 install_dependencies() {
-    # Get latest packages and install aptitude
-    apt-get update -y 2> /dev/null | grep packages | cut -d '.' -f 1
+    # Get latest packages
+    apt update -y 2> /dev/null
 
     # Install pipx and python3-venv
-    apt-get install -y bash git gpg-agent \
+    apt install -y bash git gpg-agent \
         python3-full \
-        ansible  2> /dev/null | grep packages | cut -d '.' -f 1
+        ansible  2> /dev/null
 }
 
 # Provision logic run by packer
