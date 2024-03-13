@@ -7,7 +7,7 @@
 # https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/runzero
 #
 #########################################################################################
-source "docker" "runzero_amd64" {
+source "docker" "amd64" {
   commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
   platform   = "linux/amd64"
@@ -18,39 +18,35 @@ source "docker" "runzero_amd64" {
   }
 
   changes = [
-    "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
-    "LABEL architecture=amd64"
   ]
 
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
-source "docker" "runzero_arm64" {
+source "docker" "arm64" {
   commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
   platform   = "linux/arm64"
   privileged = true
 
+  changes = [
+    "USER ${var.container_user}",
+    "WORKDIR ${var.workdir}",
+  ]
+
   volumes = {
     "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
   }
-
-  changes = [
-    "ENTRYPOINT ${var.entrypoint}",
-    "USER ${var.container_user}",
-    "WORKDIR ${var.workdir}",
-    "LABEL architecture=arm64"
-  ]
 
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
 build {
   sources = [
-    "source.docker.runzero_amd64",
-    "source.docker.runzero_arm64"
+    "source.docker.amd64",
+    "source.docker.arm64"
   ]
 
   provisioner "file" {
@@ -72,26 +68,5 @@ build {
       "chmod +x ${var.pkr_build_dir}/provision.sh",
       "${var.pkr_build_dir}/provision.sh"
     ]
-  }
-
-  post-processors {
-    post-processor "docker-tag" {
-      repository = "${var.registry_server}/${var.image_name}"
-      tags       = ["amd64-latest"]
-      only       = ["source.docker.runzero_amd64"]
-    }
-
-    post-processor "docker-tag" {
-      repository = "${var.registry_server}/${var.image_name}"
-      tags       = ["arm64-latest"]
-      only       = ["source.docker.runzero_arm64"]
-    }
-
-    post-processor "docker-push" {
-      login          = true
-      login_server   = "${var.registry_server}"
-      login_username = "${var.registry_username}"
-      login_password = "${var.registry_cred}"
-    }
   }
 }

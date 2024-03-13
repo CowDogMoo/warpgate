@@ -2,9 +2,9 @@
 name: Warpgate Image Builder
 on:
   workflow_dispatch:
+  pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -98,9 +98,3 @@ jobs:
             -b "${{ matrix.blueprint }}" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
-
-      - name: Setup tmate session
-        if: ${{ failure() }}
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: true
