@@ -1,13 +1,11 @@
 variable "base_image" {
   type        = string
   description = "Base image."
-  default     = "ubuntu"
 }
 
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
-  default     = "noble"
 }
 
 variable "blueprint_name" {
