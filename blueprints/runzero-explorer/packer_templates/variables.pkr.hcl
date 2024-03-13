@@ -1,71 +1,53 @@
 variable "base_image" {
-  type    = string
+  type        = string
   description = "Base image."
 }
 
 variable "base_image_version" {
-  type    = string
+  type        = string
   description = "Version of the base image."
 }
 
 variable "blueprint_name" {
-  type    = string
+  type        = string
   description = "Name of the blueprint."
 }
 
 variable "container_user" {
-  type    = string
+  type        = string
   description = "Default user for a new container."
 }
 
-variable "entrypoint" {
-  type    = string
-  description = "Optional entrypoint script."
-}
-
-variable "new_image_tag" {
-  type    = string
-  description = "Tag for the created image."
-}
-
-variable "new_image_version" {
-  type = string
-  description = "Version for the created image."
-}
-
 variable "pkr_build_dir" {
-  type    = string
+  type        = string
   description = "Directory that packer will execute the transferred provisioning logic from within the container."
-  default = "/ansible-collection-workstation"
+  default     = "/ansible-collection-workstation"
 }
 
 variable "provision_repo_path" {
-  type    = string
+  type        = string
   description = "Path on disk to the repo that contains the provisioning code to build the container image."
 }
 
-variable "registry_server" {
-  type    = string
-  description = "Container registry to push to."
-}
-
-variable "registry_username" {
-  type    = string
-  description = "Username to connect to registry with."
-}
-
-variable "registry_cred" {
-  type    = string
-  description = "Token or credential to authenticate to registry with."
+variable "runzero_download_token" {
+  type        = string
+  description = "Token to download runzero."
+  default     = env("RUNZERO_DOWNLOAD_TOKEN")
+  validation {
+    condition     = length(var.runzero_download_token) > 0
+    error_message = <<EOF
+The RUNZERO_DOWNLOAD_TOKEN is not set: this is required to download runZero explorer.
+EOF
+  }
 }
 
 variable "setup_systemd" {
-  type    = bool
+  type        = bool
   description = "Create systemd service for container."
-  default = false
+  default     = false
 }
 
 variable "workdir" {
-  type    = string
+  type        = string
   description = "Working directory for a new container."
 }

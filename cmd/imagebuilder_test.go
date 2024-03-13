@@ -91,7 +91,6 @@ container:
 				t.Fatalf("failed to get absolute path for blueprint dir: %v", err)
 			}
 
-			// Debug: Log the absolute path being used
 			t.Logf("Using blueprint config path: %s", absBlueprintDir)
 
 			cmd := &cobra.Command{}
