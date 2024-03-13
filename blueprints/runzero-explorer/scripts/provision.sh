@@ -6,22 +6,13 @@ set -ex
 export PKR_BUILD_DIR="${1:-/ansible-collection-workstation}"
 export CLEANUP="${2:-true}"
 
-# Necessary for ansible to work properly
-export TERM=xterm-256color
-
-# Set this only if on a debian-based system
-if [[ -f /etc/debian_version ]]; then
-    export DEBIAN_FRONTEND=noninteractive
-fi
-
 install_dependencies() {
-    # Get latest packages
-    apt update -y 2> /dev/null
+    # Get latest packages and install aptitude
+    apt-get update -y 2> /dev/null | grep packages | cut -d '.' -f 1
 
-    # Install pipx and python3-venv
-    apt install -y bash git gpg-agent \
-        python3-full \
-        ansible  2> /dev/null
+    # Install ansible and associated pre-requisites
+    apt-get install -y bash git gpg-agent python3 python3-pip
+    python3 -m pip install --upgrade pip wheel setuptools ansible
 }
 
 # Provision logic run by packer

@@ -63,7 +63,6 @@ build {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
       "RUNZERO_DOWNLOAD_TOKEN=${var.runzero_download_token}",
-      "DEBIAN_FRONTEND=noninteractive",
     ]
     inline = [
       "chmod +x ${var.pkr_build_dir}/provision.sh",
