@@ -52,6 +52,12 @@ cleanup() {
     fi
 }
 
+# Ensure RUNZERO_DOWNLOAD_TOKEN is set
+if [[ -z "${RUNZERO_DOWNLOAD_TOKEN}" ]]; then
+    echo "RUNZERO_DOWNLOAD_TOKEN is not set. Exiting."
+    exit 1
+fi
+
 install_dependencies
 run_provision_logic
 cleanup

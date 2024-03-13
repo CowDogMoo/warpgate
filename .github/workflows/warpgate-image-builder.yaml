@@ -2,9 +2,9 @@
 name: Warpgate Image Builder
 on:
   workflow_dispatch:
+  pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -98,10 +98,3 @@ jobs:
             -b "${{ matrix.blueprint }}" \
             -p "$HOME/cowdogmoo/ansible-collection-workstation" \
             -t "${{ secrets.BOT_TOKEN }}"
-
-      # - name: Test
-      #   run: docker run -d --rm --name runzero-explorer-test \
-      #     --privileged \
-      #     --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
-      #     --cgroupns host \
-      #     ${{ env.repo_owner }}/runzero-explorer:latest

@@ -7,7 +7,7 @@
 # https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/runzero
 #
 #########################################################################################
-source "docker" "runzero_amd64" {
+source "docker" "amd64" {
   commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
   platform   = "linux/amd64"
@@ -18,7 +18,6 @@ source "docker" "runzero_amd64" {
   }
 
   changes = [
-    "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
   ]
@@ -26,14 +25,13 @@ source "docker" "runzero_amd64" {
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
-source "docker" "runzero_arm64" {
+source "docker" "arm64" {
   commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
   platform   = "linux/arm64"
   privileged = true
 
   changes = [
-    "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.container_user}",
     "WORKDIR ${var.workdir}",
   ]
@@ -47,8 +45,8 @@ source "docker" "runzero_arm64" {
 
 build {
   sources = [
-    "source.docker.runzero_amd64",
-    "source.docker.runzero_arm64"
+    "source.docker.amd64",
+    "source.docker.arm64"
   ]
 
   provisioner "file" {
@@ -64,6 +62,7 @@ build {
   provisioner "shell" {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
+      "RUNZERO_DOWNLOAD_TOKEN=${var.runzero_download_token}",
     ]
     inline = [
       "chmod +x ${var.pkr_build_dir}/provision.sh",
