@@ -9,7 +9,6 @@ import (
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	packer "github.com/cowdogmoo/warpgate/pkg/packer"
-	"github.com/l50/goutils/v2/logging"
 	log "github.com/l50/goutils/v2/logging"
 	"github.com/l50/goutils/v2/sys"
 	homedir "github.com/mitchellh/go-homedir"
@@ -54,7 +53,7 @@ func init() {
 
 	home, err := homedir.Dir()
 	if err != nil {
-		cobra.CheckErr(fmt.Errorf("failed to get home directory: %v", err))
+		cobra.CheckErr(err)
 	}
 	warpCfg = filepath.Join(home, ".warp", defaultConfigName)
 
@@ -63,15 +62,14 @@ func init() {
 	pf.StringVar(&cfgFile, "config", warpCfg, "config file (default is "+warpCfg+")")
 
 	// Initialize global logger
-	logCfg := logging.LogConfig{
+	logCfg := log.LogConfig{
 		Fs:         afero.NewOsFs(),
 		LogPath:    filepath.Join(home, ".warp", logName),
 		Level:      slog.LevelInfo,
-		OutputType: logging.ColorOutput,
+		OutputType: log.ColorOutput,
 		LogToDisk:  true,
 	}
-	// Logger, err = log.InitLogging(fs, logPath, logLevel, log.ColorOutput, viper.GetBool(logToFileKey))
-	Logger, err := logging.InitLogging(&logCfg)
+	Logger, err := log.InitLogging(&logCfg)
 	cobra.CheckErr(err)
 
 	// Set the global logger

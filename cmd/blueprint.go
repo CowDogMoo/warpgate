@@ -124,7 +124,7 @@ func validateTagInput(tagInput string) error {
 func processCfgInputs(cmd *cobra.Command) error {
 	tagInfo, err := cmd.Flags().GetString("tag")
 	if err != nil || validateTagInput(tagInfo) != nil {
-		log.L().Error("Failed to get tag info from input or invalid format: %v", err)
+		log.L().Errorf("Failed to get tag info from input: %v", err)
 		return err
 	}
 
@@ -188,7 +188,7 @@ func processCfgInputs(cmd *cobra.Command) error {
 	return nil
 }
 
-func createCfg(cmd *cobra.Command, data bp.Data) error {
+func createCfg(data bp.Data) error {
 	// Parse the input config template
 	tmpl := template.Must(
 		template.ParseFiles(filepath.Join("templates", "config.yaml.tmpl")))
@@ -209,7 +209,7 @@ func createCfg(cmd *cobra.Command, data bp.Data) error {
 	return nil
 }
 
-func createPacker(cmd *cobra.Command, data bp.Data) error {
+func createPacker(data bp.Data) error {
 	// Parse the input config template
 	tmpl := template.Must(
 		template.ParseFiles(filepath.Join("templates", "packer.pkr.hcl.tmpl")))
@@ -309,12 +309,12 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 		PackerTemplates: packerTemplates,
 	}
 
-	if err := createCfg(cmd, data); err != nil {
+	if err := createCfg(data); err != nil {
 		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
 
-	if err := createPacker(cmd, data); err != nil {
+	if err := createPacker(data); err != nil {
 		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
