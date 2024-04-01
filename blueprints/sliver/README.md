@@ -1,7 +1,7 @@
-# RunZero-Explorer Blueprint
+# Sliver Blueprint
 
-**RunZero-Explorer Blueprint** builds a container image to run the
-[runZero explorer](https://console.runzero.com/deploy/download/explorers).
+**Sliver Blueprint** builds a container image to run the
+[Sliver framework](https://github.com/BishopFox/sliver), a post-exploitation framework.
 
 ---
 
@@ -27,10 +27,8 @@ Before you start, ensure you have the following installed:
 - `./config.yaml`: Configuration file defining the blueprint's basic settings.
 - `./variables.pkr.hcl`: Variable definitions for the Packer build.
 - `./scripts/provision.sh`: Script containing the provisioning logic.
-- `./packer_templates/plugins.pkr.hcl`: Packer configuration file for required
-  plugins.
-- `./packer_templates/runzero-explorer.pkr.hcl`: Main Packer template file for
-  the RunZero-Explorer blueprint.
+- `./packer_templates/plugins.pkr.hcl`: Packer configuration file for required plugins.
+- `./packer_templates/sliver.pkr.hcl`: Main Packer template file for the Sliver blueprint.
 
 ## Getting Started
 
@@ -53,48 +51,33 @@ Before you start, ensure you have the following installed:
 
 ### Building the Container Image
 
-1. Set the RUNZERO_DOWNLOAD_TOKEN environment variable:
+Use warpgate to build local container images based on the `attack-box`
+blueprint:
 
-   ```bash
-   export RUNZERO_DOWNLOAD_TOKEN=YOUR_DOWNLOAD_TOKEN_HERE
-
-   # 1password: RunZero Explorer Download Token
-   export RUNZERO_DOWNLOAD_TOKEN=$(op item get 'runzero' --fields RUNZERO_DOWNLOAD_TOKEN)
-   ```
-
-1. Use warpgate to build local container images based on the `runzero-explorer`
-   blueprint:
-
-   ```bash
-
-   wg imageBuilder \
-     -b "runzero-explorer" \
-     -p "$HOME/cowdogmoo/ansible-collection-workstation"
-   ```
+```bash
+wg imageBuilder \
+  -b "sliver" \
+  -p "$HOME/security/ansible-collection-arsenal" \
+  -t "$(op item get 'CowDogMoo/warpgate BOT TOKEN' --fields token)"
+```
 
 ### Additional Notes
 
 - Pull the Docker image:
 
   ```bash
-  docker pull ghcr.io/cowdogmoo/runzero-explorer
+  docker pull ghcr.io/l50/sliver:latest
   ```
 
 - Run the Docker container:
 
   ```bash
   docker run -it --rm \
-   --privileged \
-   --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
-   --cgroupns host \
-   --entrypoint /bin/bash \
-   --user root \
-   --workdir /root \
-   ghcr.io/cowdogmoo/runzero-explorer:latest
-  ```
-
-- Verify the RunZero Explorer service is running:
-
-  ```bash
-  systemctl list-unit-files | grep enabled | grep 'runzero*'
+    --privileged \
+    --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
+    --cgroupns host \
+    --entrypoint /bin/bash \
+    --user sliver \
+    --workdir /home/sliver \
+    ghcr.io/l50/sliver:latest
   ```
