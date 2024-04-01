@@ -24,10 +24,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
+      - name: Clone ansible-collection repositories
+        run: |
+          mkdir -p $HOME/cowdogmoo
+          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git $HOME/cowdogmoo/ansible-collection-workstation
+          mkdir -p $HOME/security
+          git clone https://github.com/l50/ansible-collection-arsenal.git $HOME/security/ansible-collection-arsenal
+
       - name: Generate list of blueprints
         id: set-matrix
         run: |
-          echo "::set-output name=matrix::$(find blueprints -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -c -s 'split("\n")[:-1]')"
+          echo "::set-output name=matrix::$(find blueprints -mindepth 1 -maxdepth 1 -type d | sed 's|^blueprints/||' | jq -R -s --arg HOME "$HOME" '[split("\n")[:-1][] | {blueprint: ., path: ($HOME + "/blueprints/" + .)}]')"
 
   container-image-builder:
     needs: generate-blueprints
@@ -80,10 +87,12 @@ jobs:
           go build -o wg
           sudo mv wg /usr/local/bin/wg
 
-      - name: Clone ansible-collection-workstation
+      - name: Clone ansible-collection repositories
         run: |
           mkdir -p $HOME/cowdogmoo
           git clone https://github.com/CowDogMoo/ansible-collection-workstation.git $HOME/cowdogmoo/ansible-collection-workstation
+          mkdir -p $HOME/security
+          git clone https://github.com/l50/ansible-collection-arsenal.git $HOME/security/ansible-collection-arsenal
 
       - name: Make repository name lowercase
         id: lower-repo
@@ -96,5 +105,5 @@ jobs:
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
           wg imageBuilder \
             -b "${{ matrix.blueprint }}" \
-            -p "$HOME/cowdogmoo/ansible-collection-workstation" \
+            -p "${{ matrix.path }}" \
             -t "${{ secrets.BOT_TOKEN }}"
