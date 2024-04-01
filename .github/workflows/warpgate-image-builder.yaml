@@ -22,7 +22,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@v3
 
       - name: Clone ansible-collection repositories
         run: |
@@ -31,10 +31,24 @@ jobs:
           mkdir -p $HOME/security
           git clone https://github.com/l50/ansible-collection-arsenal.git $HOME/security/ansible-collection-arsenal
 
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.22"
+
+      - name: Set up warpgate
+        run: |
+          go mod tidy
+          go build -o wg
+          sudo mv wg /usr/local/bin/wg
+
       - name: Generate list of blueprints
         id: set-matrix
         run: |
-          echo "::set-output name=matrix::$(find blueprints -mindepth 1 -maxdepth 1 -type d | sed 's|^blueprints/||' | jq -R -s --arg HOME "$HOME" '[split("\n")[:-1][] | {blueprint: ., path: ($HOME + "/blueprints/" + .)}]')"
+          blueprint_list=$(wg blueprint list | grep -v '^\s*{' | tail -n +2) # Skip log lines and the first line
+          matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" 'split("\n")[:-1] | map({blueprint: ., path: ($HOME + "/blueprints/" + .)})')
+          echo "Matrix JSON: $matrix_json"
+          echo "::set-output name=matrix::$matrix_json"
 
   container-image-builder:
     needs: generate-blueprints
