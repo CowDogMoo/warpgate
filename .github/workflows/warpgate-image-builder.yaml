@@ -56,7 +56,6 @@ jobs:
           blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$')
           matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" --arg PWD "$PWD" 'split("\n")[:-1] | map({blueprint: ., path: ($PWD + "/blueprints/" + .)})' | jq -c .)
           echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
-          echo $GITHUB_OUTPUT
 
   container-image-builder:
     needs: generate-blueprints
@@ -123,8 +122,6 @@ jobs:
         run: |
           blueprint_name="${{ matrix.blueprint.blueprint }}"
           blueprint_path="${{ matrix.blueprint.path }}"
-          echo "BLUEPRINT: $blueprint_name"
-          echo "PATH: $blueprint_path"
           export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
 
           if [[ "$blueprint_name" == "runzero-explorer" ]]; then
@@ -141,11 +138,3 @@ jobs:
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"
-
-      - name: Setup tmate session
-        if: ${{ failure() }}
-        # Only allow access using your registered public keys
-        # in github
-        with:
-          limit-access-to-actor: true
-        uses: mxschmitt/action-tmate@v3
