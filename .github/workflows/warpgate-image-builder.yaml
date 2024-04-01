@@ -22,17 +22,10 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Clone ansible-collection repositories
-        run: |
-          mkdir -p $HOME/cowdogmoo
-          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git $HOME/cowdogmoo/ansible-collection-workstation
-          mkdir -p $HOME/security
-          git clone https://github.com/l50/ansible-collection-arsenal.git $HOME/security/ansible-collection-arsenal
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: "1.22"
 
@@ -45,10 +38,9 @@ jobs:
       - name: Generate list of blueprints
         id: set-matrix
         run: |
-          blueprint_list=$(wg blueprint list | grep -v '^\s*{' | tail -n +2) # Skip log lines and the first line
-          matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" 'split("\n")[:-1] | map({blueprint: ., path: ($HOME + "/blueprints/" + .)})')
-          echo "Matrix JSON: $matrix_json"
-          echo "::set-output name=matrix::$matrix_json"
+          blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$')
+          matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" --arg PWD "$PWD" 'split("\n")[:-1] | map({blueprint: ., path: ($PWD + "/blueprints/" + .)})' | jq -c .)
+          echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
 
   container-image-builder:
     needs: generate-blueprints

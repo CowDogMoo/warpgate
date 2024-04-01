@@ -142,7 +142,7 @@ func depCheck() error {
 		return errors.New(errMsg)
 	}
 
-	log.L().Println("All dependencies are satisfied.")
+	log.L().Debug("All dependencies are satisfied.")
 
 	return nil
 }
