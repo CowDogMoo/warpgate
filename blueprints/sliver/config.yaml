@@ -1,0 +1,20 @@
+---
+blueprint:
+  name: sliver
+
+packer_templates:
+  - name: sliver.pkr.hcl
+    base:
+      name: ubuntu
+      version: latest
+    tag:
+      name: l50/sliver
+      version: latest
+
+container:
+  workdir: /home/ubuntu
+  # entrypoint: "/run/docker-entrypoint.sh ; sh"
+  user: ubuntu
+  registry:
+    server: ghcr.io
+    username: l50
