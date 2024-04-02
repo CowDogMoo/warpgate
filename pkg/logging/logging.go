@@ -11,7 +11,7 @@ import (
 )
 
 // logger is the global variable to access the custom logger.
-var logger CustomLogger
+var logger *CustomLogger
 
 // CustomLogger is a wrapper around the goutils logger.
 //
@@ -107,6 +107,9 @@ func (l *CustomLogger) Error(firstArg interface{}, args ...interface{}) {
 //
 // error: An error if the logger initialization fails.
 func Initialize(configDir, logLevelStr, logName string) error {
+	// Initialize the global logger
+	logger = NewCustomLogger(log.DetermineLogLevel(logLevelStr))
+
 	logLevel := log.DetermineLogLevel(logLevelStr)
 
 	logCfg := log.LogConfig{

@@ -59,13 +59,10 @@ func initConfig() {
 	warpConfigDir = filepath.Join(home, defaultConfigDir)
 	warpConfigFile = filepath.Join(warpConfigDir, fmt.Sprintf("%s.%s", defaultConfigName, defaultConfigType))
 
-	// Ensure the configuration directory exists
-	createConfigDir(warpConfigDir)
-
 	// Check if the config file exists, if not create the default config file
 	if _, err := os.Stat(warpConfigFile); os.IsNotExist(err) {
-		log.Info("Config file not found, creating default config file at %s", warpConfigFile)
-		writeDefaultConfig(warpConfigFile)
+		fmt.Printf("Config file not found, creating default config file at %s", warpConfigFile)
+		createConfig(warpConfigFile)
 	}
 
 	viper.SetConfigFile(warpConfigFile)
@@ -85,21 +82,23 @@ func initConfig() {
 	checkErr(depCheck(), "Dependency check failed")
 }
 
-func createConfigDir(cfgDir string) {
+func createConfig(cfgPath string) {
+	cfgDir := filepath.Dir(cfgPath)
+
+	// Ensure the configuration directory exists
 	if _, err := os.Stat(cfgDir); os.IsNotExist(err) {
-		log.Info("Creating config directory %s", cfgDir)
+		fmt.Printf("Creating config directory %s", cfgDir)
 		checkErr(os.MkdirAll(cfgDir, os.ModePerm), "failed to create config directory %s: %v")
 	}
-}
 
-func writeDefaultConfig(cfgPath string) {
+	// Write the default config file if it does not exist
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
 		configFileData, err := configContentsFs.ReadFile(filepath.Join("config", "config.yaml"))
 		checkErr(err, "failed to read embedded config: %v")
 		checkErr(os.WriteFile(cfgPath, configFileData, 0644), "failed to write config to %s: %v")
-		log.Info("Default config file created at %s", cfgPath)
+		fmt.Printf("Default config file created at %s", cfgPath)
 	} else {
-		log.Warn("Config file already exists at %s", cfgPath)
+		fmt.Printf("Config file already exists at %s", cfgPath)
 	}
 }
 
