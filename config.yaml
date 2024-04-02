@@ -1,5 +1,0 @@
----
-log:
-  format: text
-  level: text
-  path: /tmp/warpgate.log

@@ -23,7 +23,12 @@ The `cmd` package is a part of the WarpGate.
 Execute()
 ```
 
-Execute runs the root cobra command
+Execute runs the root cobra command. It checks for errors and exits
+the program if any are encountered.
+
+**Returns:**
+
+error: An error if the command execution fails.
 
 ---
 
