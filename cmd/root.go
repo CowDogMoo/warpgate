@@ -39,7 +39,7 @@ var (
 
 	rootCmd = &cobra.Command{
 		Use:   "wg",
-		Short: "Create new container images with existing provisioning code.",
+		Short: "WarpGate creates new container images with existing provisioning code.",
 	}
 )
 
