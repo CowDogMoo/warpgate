@@ -24,11 +24,7 @@ const (
 
 	blueprintKey       = "blueprint"
 	containerKey       = "container"
-	logLevelKey        = "log.level"
 	packerTemplatesKey = "packer_templates"
-	logName            = "warpgate.log"
-	logPathKey         = "log.path"
-	logToFileKey       = "log.to_file"
 )
 
 var (
