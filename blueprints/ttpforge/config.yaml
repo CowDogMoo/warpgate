@@ -1,0 +1,19 @@
+---
+blueprint:
+  name: ttpforge
+
+packer_templates:
+  - name: ttpforge.pkr.hcl
+    base:
+      name: ubuntu
+      version: latest
+    tag:
+      name: l50/ttpforge
+      version: latest
+
+container:
+  workdir: /home/ubuntu
+  user: ubuntu
+  registry:
+    server: ghcr.io
+    username: l50
