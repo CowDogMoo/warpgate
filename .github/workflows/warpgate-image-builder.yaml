@@ -126,7 +126,7 @@ jobs:
 
           if [[ "$blueprint_name" == "runzero-explorer" ]]; then
             provision_path="/ansible-collection-workstation"
-          elif [[ "$blueprint_name" == "sliver" || "$blueprint_name" == "ttpforge" ]]; then
+          elif [[ "$blueprint_name" == "sliver" || "$blueprint_name" == "ttpforge" || "$blueprint_name" == "atomic-red-team" ]]; then
             provision_path="/ansible-collection-arsenal"
           else
             echo "Unknown blueprint: $blueprint_name"
