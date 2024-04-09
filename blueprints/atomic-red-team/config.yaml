@@ -1,0 +1,19 @@
+---
+blueprint:
+  name: atomic-red-team
+
+packer_templates:
+  - name: atomic-red-team.pkr.hcl
+    base:
+      name: ubuntu
+      version: latest
+    tag:
+      name: l50/atomic-red-team
+      version: latest
+
+container:
+  workdir: /home/ubuntu
+  user: ubuntu
+  registry:
+    server: ghcr.io
+    username: l50
