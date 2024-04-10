@@ -12,7 +12,7 @@ install_dependencies() {
 
     # Install ansible and associated pre-requisites
     apt-get install -y bash git gpg-agent python3 python3-pip
-    python3 -m pip install --upgrade pip wheel setuptools ansible-core
+    python3 -m pip install --upgrade pip wheel setuptools ansible
 }
 
 # Provision logic run by packer
