@@ -12,9 +12,9 @@ packer_templates:
       version: latest
 
 container:
-  workdir: /home/ubuntu
+  workdir: /home/sliver
   # entrypoint: "/run/docker-entrypoint.sh ; sh"
-  user: ubuntu
+  user: sliver
   registry:
     server: ghcr.io
     username: l50
