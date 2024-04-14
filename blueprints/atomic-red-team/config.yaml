@@ -12,8 +12,8 @@ packer_templates:
       version: latest
 
 container:
-  workdir: /home/ubuntu
-  user: ubuntu
+  workdir: /root/AtomicRedTeam
+  user: root
   registry:
     server: ghcr.io
     username: l50

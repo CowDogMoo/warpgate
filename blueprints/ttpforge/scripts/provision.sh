@@ -31,6 +31,7 @@ run_provision_logic() {
     # Install galaxy dependencies if they are present
     if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
         ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
+        ansible-galaxy collection install -r "${PKR_BUILD_DIR}/requirements.yml"
     fi
 
     ANSIBLE_CONFIG=${HOME}/.ansible.cfg
@@ -41,7 +42,7 @@ run_provision_logic() {
     ansible-playbook \
         --connection=local \
         --inventory 127.0.0.1, \
-        --limit 127.0.0.1 "${PKR_BUILD_DIR}/playbooks/sliver/sliver.yml"
+        --limit 127.0.0.1 "${PKR_BUILD_DIR}/playbooks/ttpforge/ttpforge.yml"
 
     # Wait for ansible to finish running
     while /usr/bin/pgrep ansible > /dev/null; do
