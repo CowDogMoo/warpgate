@@ -77,10 +77,7 @@ wg imageBuilder \
   ```bash
   docker run -it --rm \
     --privileged \
-    --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
-    --cgroupns host \
-    --entrypoint /bin/bash \
-    --user ubuntu \
-    --workdir /home/ubuntu \
+    --entrypoint pwsh \
+    --user root \
     ghcr.io/l50/atomic-red-team:latest
   ```

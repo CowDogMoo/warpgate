@@ -12,12 +12,7 @@ install_dependencies() {
 
     # Install ansible and associated pre-requisites
     apt-get install -y bash git gpg-agent python3 python3-pip
-    python3 -m pip install --upgrade \
-          ansible-core \
-          docker \
-          molecule \
-          molecule-docker \
-          "molecule-plugins[docker]"
+    python3 -m pip install --upgrade pip wheel setuptools ansible
 }
 
 # Provision logic run by packer
@@ -31,6 +26,7 @@ run_provision_logic() {
     # Install galaxy dependencies if they are present
     if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
         ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
+        ansible-galaxy collection install -r "${PKR_BUILD_DIR}/requirements.yml"
     fi
 
     ANSIBLE_CONFIG=${HOME}/.ansible.cfg

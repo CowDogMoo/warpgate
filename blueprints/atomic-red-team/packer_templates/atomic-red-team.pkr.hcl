@@ -4,7 +4,7 @@
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
 # Description: Create a docker image provisioned with
-# https://github.com/l50/ansible-atomic-red-team
+# https://github.com/l50/ansible-collection-arsenal/tree/main/playbooks/atomic_red_team
 #
 #########################################################################################
 source "docker" "amd64" {
