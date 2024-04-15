@@ -26,10 +26,6 @@ Execute()
 Execute runs the root cobra command. It checks for errors and exits
 the program if any are encountered.
 
-**Returns:**
-
-error: An error if the command execution fails.
-
 ---
 
 ### RunImageBuilder(*cobra.Command, []string)
