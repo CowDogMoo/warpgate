@@ -6,7 +6,18 @@ import (
 	"net/http"
 )
 
-// ValidateToken validates a GitHub token.
+// ValidateToken checks the validity of a GitHub access token by making
+// a GET request to the GitHub API. It sets the Authorization header with
+// the token and examines the response status code.
+//
+// **Parameters:**
+//
+// token: The GitHub access token to validate.
+//
+// **Returns:**
+//
+// error: An error if the token is invalid, or if any issue occurs during
+// the request or reading the response.
 func ValidateToken(token string) error {
 	// Define the GitHub API URL for user authentication
 	url := "https://api.github.com/user"
