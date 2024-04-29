@@ -6,7 +6,7 @@ packer_templates:
   - name: atomic-red-team.pkr.hcl
     base:
       name: ubuntu
-      version: latest
+      version: jammy
     tag:
       name: l50/atomic-red-team
       version: latest
