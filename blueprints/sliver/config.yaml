@@ -6,7 +6,7 @@ packer_templates:
   - name: sliver.pkr.hcl
     base:
       name: ubuntu
-      version: latest
+      version: jammy
     tag:
       name: l50/sliver
       version: latest

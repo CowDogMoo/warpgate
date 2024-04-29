@@ -6,7 +6,7 @@ packer_templates:
   - name: ttpforge.pkr.hcl
     base:
       name: ubuntu
-      version: latest
+      version: jammy
     tag:
       name: l50/ttpforge
       version: latest
