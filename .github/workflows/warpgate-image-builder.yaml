@@ -11,9 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PRODUCT_VERSION: "latest"
+  PRODUCT_VERSION: latest
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
+  DEBIAN_FRONTEND: noninteractive
+  TZ: UTC
 
 jobs:
   generate-blueprints:
@@ -83,6 +85,7 @@ jobs:
 
       - name: Setup warpgate
         run: |
+          export DEBIAN_FRONTEND=noninteractive
           go mod tidy
           go build -o wg
           sudo mv wg /usr/local/bin/wg
