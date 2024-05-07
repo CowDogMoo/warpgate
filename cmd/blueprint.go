@@ -90,7 +90,7 @@ func genBPDirs(newBlueprint string) error {
 		bpDirs := []string{"packer_templates", "scripts"}
 		for _, d := range bpDirs {
 			dirPath := filepath.Join("blueprints", newBlueprint, d)
-			if err := fileutils.Create(dirPath, nil, fileutils.CreateDirectory); err != nil {
+			if _, err := fileutils.Create(dirPath, nil, fileutils.CreateDirectory); err != nil {
 				log.L().Errorf("Failed to create %s directory for new %s blueprint: %v", d, newBlueprint, err)
 				return err
 			}
