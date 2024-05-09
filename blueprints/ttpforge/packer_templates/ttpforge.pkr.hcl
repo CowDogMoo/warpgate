@@ -3,7 +3,7 @@
 #
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
-# Description: Create Odysseys provisioned with
+# Description: Create TTPForge Odyssey provisioned with
 # https://github.com/l50/ansible-collection-arsenal/tree/main/playbooks/ttpforge
 #########################################################################################
 source "docker" "amd64" {
@@ -42,14 +42,13 @@ source "docker" "arm64" {
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
-
 source "amazon-ebs" "ubuntu" {
   ami_name      = "ttpforge-${formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())}"
-  instance_type = "t3.medium"
-  region        = "us-east-1"
+  instance_type = "${var.instance_type}"
+  region        = "${var.ami_region}"
   source_ami_filter {
     filters = {
-      name                = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20240501"
+      name = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }

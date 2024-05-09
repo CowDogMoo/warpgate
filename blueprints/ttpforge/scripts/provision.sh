@@ -7,8 +7,18 @@ export PKR_BUILD_DIR="${1:-ansible-collection-arsenal}"
 export CLEANUP="${2:-true}"
 
 install_dependencies() {
-    sudo apt-get update -y 2> /dev/null
-    sudo apt-get install -y bash git gpg-agent python3 python3-pip sudo
+    su root -c "bash -c '
+        install_packages() {
+            if [[ \$EUID -ne 0 ]]; then
+                echo \"This script must be run as root.\"
+                exit 1
+            fi
+            apt-get update -y 2> /dev/null
+            apt-get install -y bash git gpg-agent python3 python3-pip
+            echo debconf debconf/frontend select Noninteractive | debconf-set-selections
+        }
+        install_packages
+    '"
 
     python3 -m pip install --upgrade \
         ansible-core \
@@ -16,7 +26,6 @@ install_dependencies() {
         molecule \
         molecule-docker \
         "molecule-plugins[docker]"
-    echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
 }
 
 # Provision logic run by packer
