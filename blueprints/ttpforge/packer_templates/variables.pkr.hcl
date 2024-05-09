@@ -1,3 +1,6 @@
+############################################
+#              AWS variables               #
+############################################
 variable "ami_instance_type" {
   type        = string
   description = "The type of instance to use for the initial AMI creation."
@@ -10,6 +13,14 @@ variable "ami_region" {
   default     = "us-east-1"
 }
 
+variable "ssh_username" {
+  type    = string
+  default = "ubuntu"
+}
+
+############################################
+#           Container variables            #
+############################################
 variable "base_image" {
   type        = string
   description = "Base image."
@@ -45,11 +56,6 @@ variable "setup_systemd" {
   type        = bool
   description = "Create systemd service for container."
   default     = false
-}
-
-variable "ssh_username" {
-  type    = string
-  default = "ubuntu"
 }
 
 variable "workdir" {
