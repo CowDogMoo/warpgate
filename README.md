@@ -9,25 +9,46 @@
 
 <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
 
-Warp Gate facilitates the creation of container images using [Packer](https://www.packer.io/)
-and various forms of provisioning logic, such as [Ansible](https://github.com/ansible/ansible),
-or even just a good old Bash script.
+Warp Gate employs **Blueprints**, YAML configurations that define the
+provisioning logic for creating **Odysseys**. These can be either
+multi-architecture container images or AWS Golden Images, serving a variety of
+use cases from security simulations to rapid deployment. Odysseys offer a broad
+spectrum of applications, including, but not limited to:
 
-This project is for folks who don't want to spend time converting
-the logic they use to provision a VM into a Dockerfile and then have
-to maintain that logic in two places.
+1. **Security Simulations**:
 
-Virtually everything that is required to build a container image
-is abstracted into a blueprint, which Warp Gate consumes.
+   - Golden images pre-configured with vulnerabilities for penetration testing
+     or cyber range exercises.
+   - Container images with specific configurations for simulating attack
+     scenarios.
 
----
+1. **Development and Testing**:
 
-## Table of Contents
+   - Container images ensure consistent environments across development,
+     staging, and production, reducing compatibility issues.
 
-- [Getting Started](#getting-started)
-- [Usage](#usage)
-- [Developer Environment Setup](docs/dev.md)
-- [Debugging](docs/debug.md)
+   - Golden images provide a standardized base for development and testing,
+     ensuring uniformity.
+
+1. **Rapid Deployment and Scaling**:
+
+   - Container images facilitate quick deployment and scaling in microservices
+     architectures.
+   - Golden images allow for rapid VM deployments with pre-installed
+     configurations.
+
+1. **Disaster Recovery**:
+
+   - Golden images enable quick service restoration through pre-configured VMs.
+   - Container images ensure minimal downtime by facilitating rapid
+     redeployment.
+
+1. **Immutable Infrastructure**:
+
+   - Container images support deploying immutable infrastructures where updates
+     are made by replacing containers.
+   - Golden images help in setting up immutable servers that are frequently
+     recycled and redeployed.
 
 ---
 
@@ -102,27 +123,8 @@ TODOs in `config.yaml`.
 
 ---
 
-## Run actions locally with Act
+## Additional Documentation
 
-1. Install [Act](https://github.com/nektos/act)
-
-2. Create a `.secrets` file with the following content:
-
-   ```bash
-    BOT_TOKEN=your_github_token
-    GITHUB_REPOSITORY_NAME=warpgate
-    GITHUB_REPOSITORY_OWNER=cowdogmoo
-   ```
-
-3. Uncomment relevant sections in
-   `.github/workflows/dockerfile-image-builder.yaml` and run the following command:
-
-   ```bash
-   act -W .github/workflows/dockerfile-image-builder.yaml --secret-file .secrets
-   ```
-
-You will know the action has run successfully if you see the following output:
-
-```bash
-[Build, Publish, and Test Container Images/build-and-push] 🏁  Job succeeded
-```
+- [Developer Environment Setup](docs/dev.md)
+- [Debugging](docs/debug.md)
+- [Local Github Action Testing](docs/act.md)
