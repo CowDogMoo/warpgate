@@ -1,11 +1,10 @@
 #########################################################################################
-# TTPForge packer template
+# TTPForge Packer Template
 #
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
-# Description: Create a docker image provisioned with
+# Description: Create Odysseys provisioned with
 # https://github.com/l50/ansible-collection-arsenal/tree/main/playbooks/ttpforge
-#
 #########################################################################################
 source "docker" "amd64" {
   commit     = true
@@ -43,12 +42,31 @@ source "docker" "arm64" {
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
+
+source "amazon-ebs" "ubuntu" {
+  ami_name      = "ttpforge-${formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())}"
+  instance_type = "t3.medium"
+  region        = "us-east-1"
+  source_ami_filter {
+    filters = {
+      name                = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-20240501"
+      root-device-type    = "ebs"
+      virtualization-type = "hvm"
+    }
+    owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
+    most_recent = true
+  }
+  ssh_username = "${var.ssh_username}"
+}
+
 build {
   sources = [
     "source.docker.amd64",
-    "source.docker.arm64"
+    "source.docker.arm64",
+    "source.amazon-ebs.ubuntu",
   ]
 
+  # Upload the Ansible playbooks and other required files
   provisioner "file" {
     source      = "${var.provision_repo_path}"
     destination = "${var.pkr_build_dir}"
@@ -59,13 +77,15 @@ build {
     destination = "${var.pkr_build_dir}/provision.sh"
   }
 
+  # Execute the provisioning script with necessary environment settings
   provisioner "shell" {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     ]
     inline = [
       "chmod +x ${var.pkr_build_dir}/provision.sh",
-      "${var.pkr_build_dir}/provision.sh"
+      "sudo ${var.pkr_build_dir}/provision.sh"
     ]
   }
 }
