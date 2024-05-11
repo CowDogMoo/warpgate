@@ -2,7 +2,6 @@
 name: Warpgate Image Builder
 on:
   workflow_dispatch:
-  pull_request:
   push:
     branches: [main]
 
@@ -11,10 +10,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PRODUCT_VERSION: latest
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
-  RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
+  AWS_DEFAULT_REGION: us-west-1
   DEBIAN_FRONTEND: noninteractive
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+  PRODUCT_VERSION: latest
+  RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
   TZ: UTC
 
 jobs:
@@ -22,25 +22,27 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+    # Required for OIDC
+    permissions:
+      id-token: write
+      contents: write
     steps:
-      - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@main
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
         with:
-          # this might remove tools that are actually needed,
-          # if set to "true" but frees about 6 GB
-          tool-cache: false
-
-          # all of these default to true, but feel free to set to
-          # "false" if necessary for your workflow
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+          root-reserve-mb: 512
+          swap-size-mb: 1024
+          remove-dotnet: "true"
 
       - name: Checkout
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-west-1
+          role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
+          role-session-name: WarpgateAMIBuilder
 
       - name: Set up Go
         uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
