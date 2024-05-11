@@ -45,13 +45,13 @@ variable "blueprint_name" {
 
 variable "pkr_build_dir" {
   type        = string
-  description = "Directory that packer will execute the transferred provisioning logic from within the container."
+  description = "Directory that packer will execute the transferred provisioning logic from within the build environment."
   default     = "ansible-collection-arsenal"
 }
 
 variable "provision_repo_path" {
   type        = string
-  description = "Path on disk to the repo that contains the provisioning code to build the container image."
+  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
 }
 
 variable "setup_systemd" {
