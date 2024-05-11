@@ -17,7 +17,7 @@ source "docker" "amd64" {
   }
 
   changes = [
-    "USER ${var.container_user}",
+    "USER ${var.user}",
     "WORKDIR ${var.workdir}",
   ]
 
@@ -31,7 +31,7 @@ source "docker" "arm64" {
   privileged = true
 
   changes = [
-    "USER ${var.container_user}",
+    "USER ${var.user}",
     "WORKDIR ${var.workdir}",
   ]
 
@@ -55,7 +55,7 @@ source "amazon-ebs" "ubuntu" {
     owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
     most_recent = true
   }
-  ssh_username = "${var.ssh_username}"
+  ssh_username = "${var.user}"
 }
 
 build {

@@ -25,11 +25,6 @@ variable "instance_type" {
   default     = "t3.medium"
 }
 
-variable "ssh_username" {
-  type    = string
-  default = "ubuntu"
-}
-
 ############################################
 #           Container variables            #
 ############################################
@@ -46,11 +41,6 @@ variable "base_image_version" {
 variable "blueprint_name" {
   type        = string
   description = "Name of the blueprint."
-}
-
-variable "container_user" {
-  type        = string
-  description = "Default user for a new container."
 }
 
 variable "pkr_build_dir" {
@@ -88,4 +78,9 @@ variable "os_version" {
   type        = string
   description = "OS version to use for the AMI."
   default     = "jammy-22.04"
+}
+
+variable "user" {
+  type        = string
+  description = "Default user for a blueprint."
 }

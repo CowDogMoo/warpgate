@@ -63,7 +63,7 @@ jobs:
           matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" --arg PWD "$PWD" 'split("\n")[:-1] | map({blueprint: ., path: ($PWD + "/blueprints/" + .)})' | jq -c .)
           echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
 
-  container-image-builder:
+  image-builder:
     needs: generate-blueprints
     name: Build container images using warpgate
     runs-on: ubuntu-latest
@@ -110,8 +110,8 @@ jobs:
 
       - name: Clone ansible-collection repositories
         run: |
-          sudo git clone https://github.com/CowDogMoo/ansible-collection-workstation.git /ansible-collection-workstation
-          sudo git clone https://github.com/l50/ansible-collection-arsenal.git /ansible-collection-arsenal
+          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ansible-collection-workstation
+          git clone https://github.com/l50/ansible-collection-arsenal.git ansible-collection-arsenal
 
       - name: Make repository name lowercase
         id: lower-repo
@@ -124,9 +124,9 @@ jobs:
           export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
 
           if [[ "$blueprint_name" == "runzero-explorer" ]]; then
-            provision_path="/ansible-collection-workstation"
+            provision_path="ansible-collection-workstation"
           elif [[ "$blueprint_name" == "sliver" || "$blueprint_name" == "ttpforge" || "$blueprint_name" == "atomic-red-team" ]]; then
-            provision_path="/ansible-collection-arsenal"
+            provision_path="ansible-collection-arsenal"
           else
             echo "Unknown blueprint: $blueprint_name"
             exit 1

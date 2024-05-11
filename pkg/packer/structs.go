@@ -88,10 +88,10 @@ type BlueprintTag struct {
 // User: User to run commands as in the container.
 // Workdir: Working directory in the container.
 type BlueprintContainer struct {
-	Entrypoint string            `mapstructure:"container.entrypoint"`
-	Registry   BlueprintRegistry `mapstructure:"container.registry"`
-	User       string            `mapstructure:"container.user"`
-	Workdir    string            `mapstructure:"container.workdir"`
+	Entrypoint string            `mapstructure:"entrypoint"`
+	Registry   BlueprintRegistry `mapstructure:"registry"`
+	User       string            `mapstructure:"user"`
+	Workdir    string            `mapstructure:"workdir"`
 }
 
 // BlueprintRegistry represents the container registry configuration for a Packer template.
@@ -102,7 +102,7 @@ type BlueprintContainer struct {
 // Server: Server URL of the container registry.
 // Username: Username for authentication with the registry.
 type BlueprintRegistry struct {
-	Credential string `mapstructure:"registry.credential"`
-	Server     string `mapstructure:"registry.server"`
-	Username   string `mapstructure:"registry.username"`
+	Credential string `mapstructure:"credential"`
+	Server     string `mapstructure:"server"`
+	Username   string `mapstructure:"username"`
 }

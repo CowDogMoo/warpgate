@@ -373,7 +373,7 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
 		"-var", fmt.Sprintf("blueprint_name=%s", pTmpl.Name),
-		"-var", fmt.Sprintf("container_user=%s", pTmpl.Container.User),
+		"-var", fmt.Sprintf("user=%s", pTmpl.Container.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
 		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
 		templateDir,
