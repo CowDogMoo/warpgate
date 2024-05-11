@@ -44,6 +44,15 @@ jobs:
           go-version: "1.22"
           cache-dependency-path: "**/*.sum"
 
+      - name: Cache Go Modules
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+            ${{ runner.os }}-go-
+
       - name: Setup warpgate
         run: |
           go mod tidy
@@ -102,6 +111,15 @@ jobs:
         with:
           go-version: "1.22"
           cache-dependency-path: "**/*.sum"
+
+      - name: Cache Go Modules
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+            ${{ runner.os }}-go-
 
       - name: Setup `packer`
         uses: hashicorp/setup-packer@main
