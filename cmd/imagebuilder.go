@@ -1,24 +1,3 @@
-/*
-Copyright © 2024-present, Jayson Grace <jayson.e.grace@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 package cmd
 
 import (
@@ -142,8 +121,18 @@ func validateGitHubToken() error {
 }
 
 func loadPackerTemplates() error {
+	// Unmarshalling existing packer templates
 	if err := viper.UnmarshalKey("packer_templates", &packerTemplates); err != nil {
 		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
+	}
+
+	// Check and load AMI settings if available
+	for i, tmpl := range packerTemplates {
+		var amiConfig packer.BlueprintAMI
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &amiConfig); err == nil {
+			tmpl.AMI = amiConfig
+			packerTemplates[i] = tmpl // Update the templates slice with the AMI settings
+		}
 	}
 
 	if len(packerTemplates) == 0 {
@@ -390,8 +379,12 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 		templateDir,
 	}
 
-	if pTmpl.Container.Entrypoint != "" {
-		args = append(args, "-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint))
+	// Add AMI specific variables if they exist
+	if pTmpl.AMI.AMITag != "" {
+		args = append(args, "-var", fmt.Sprintf("ami_tag=%s", pTmpl.AMI.AMITag))
+		args = append(args, "-var", fmt.Sprintf("instance_type=%s", pTmpl.AMI.InstanceType))
+		args = append(args, "-var", fmt.Sprintf("region=%s", pTmpl.AMI.Region))
+		args = append(args, "-var", fmt.Sprintf("source_arn=%s", pTmpl.AMI.SourceARN))
 	}
 
 	return args

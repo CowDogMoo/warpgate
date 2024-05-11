@@ -84,7 +84,7 @@ build {
     ]
     inline = [
       "chmod +x ${var.pkr_build_dir}/provision.sh",
-      "sudo ${var.pkr_build_dir}/provision.sh"
+      "${var.pkr_build_dir}/provision.sh"
     ]
   }
 }

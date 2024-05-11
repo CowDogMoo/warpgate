@@ -21,22 +21,40 @@ THE SOFTWARE.
 */
 package packer
 
+// BlueprintAMI represents the AMI configuration for a Packer template.
+//
+// **Attributes:**
+//
+// AMITag: Tag to apply to the AMI.
+// InstanceType: Instance type to use for the AMI build.
+// Region: AWS region to build the AMI in.
+// SourceARN: ARN of the source AMI to use as a base.
+type BlueprintAMI struct {
+	AMITag       string `mapstructure:"ami_tag"`
+	InstanceType string `mapstructure:"instance_type"`
+	Region       string `mapstructure:"region"`
+	SourceARN    string `mapstructure:"source_arn"`
+}
+
 // BlueprintPacker represents a Packer template associated with a blueprint.
 //
 // **Attributes:**
 //
-// Name: Name of the Packer template.
-// Container: Container configuration for the template.
+// AMI: Optional AMI configuration.
 // Base: Base image configuration for the template.
-// Tag: Tag configuration for the generated image.
+// Container: Container configuration for the template.
+// ImageHashes: Hashes of the image layers for the container.
+// Name: Name of the Packer template.
 // Systemd: Indicates if systemd is used in the container.
+// Tag: Tag configuration for the generated image.
 type BlueprintPacker struct {
-	Name        string             `yaml:"name"`
-	Container   BlueprintContainer `yaml:"container"`
-	ImageHashes map[string]string
-	Base        BlueprintBase `yaml:"base"`
-	Tag         BlueprintTag  `yaml:"tag"`
-	Systemd     bool          `yaml:"systemd"`
+	AMI         BlueprintAMI       `mapstructure:"ami,omitempty"`
+	Base        BlueprintBase      `mapstructure:"base"`
+	Container   BlueprintContainer `mapstructure:"container"`
+	ImageHashes map[string]string  `mapstructure:"image_hashes"`
+	Name        string             `mapstructure:"name"`
+	Systemd     bool               `mapstructure:"systemd"`
+	Tag         BlueprintTag       `mapstructure:"tag"`
 }
 
 // BlueprintBase represents the base image configuration for a Packer template.
@@ -46,8 +64,8 @@ type BlueprintPacker struct {
 // Name: Name of the base image.
 // Version: Version of the base image.
 type BlueprintBase struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
+	Name    string `mapstructure:"name"`
+	Version string `mapstructure:"version"`
 }
 
 // BlueprintTag represents the tag configuration for the image built by Packer.
@@ -57,34 +75,34 @@ type BlueprintBase struct {
 // Name: Name of the tag.
 // Version: Version of the tag.
 type BlueprintTag struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
+	Name    string `mapstructure:"name"`
+	Version string `mapstructure:"version"`
 }
 
 // BlueprintContainer represents the container configuration for a Packer template.
 //
 // **Attributes:**
 //
-// Workdir: Working directory in the container.
-// User: User to run commands as in the container.
 // Entrypoint: Entrypoint for the container.
 // Registry: Container registry configuration.
+// User: User to run commands as in the container.
+// Workdir: Working directory in the container.
 type BlueprintContainer struct {
-	Workdir    string            `yaml:"container.workdir"`
-	User       string            `yaml:"container.user"`
-	Entrypoint string            `yaml:"container.entrypoint"`
-	Registry   BlueprintRegistry `yaml:"container.registry"`
+	Entrypoint string            `mapstructure:"container.entrypoint"`
+	Registry   BlueprintRegistry `mapstructure:"container.registry"`
+	User       string            `mapstructure:"container.user"`
+	Workdir    string            `mapstructure:"container.workdir"`
 }
 
 // BlueprintRegistry represents the container registry configuration for a Packer template.
 //
 // **Attributes:**
 //
+// Credential: Credential (e.g., password or token) for authentication with the registry.
 // Server: Server URL of the container registry.
 // Username: Username for authentication with the registry.
-// Credential: Credential (e.g., password or token) for authentication with the registry.
 type BlueprintRegistry struct {
-	Server     string `yaml:"registry.server"`
-	Username   string `yaml:"registry.username"`
-	Credential string `yaml:"registry.credential"`
+	Credential string `mapstructure:"registry.credential"`
+	Server     string `mapstructure:"registry.server"`
+	Username   string `mapstructure:"registry.username"`
 }

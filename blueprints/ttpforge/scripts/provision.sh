@@ -6,26 +6,45 @@ set -ex
 export PKR_BUILD_DIR="${1:-ansible-collection-arsenal}"
 export CLEANUP="${2:-true}"
 
-install_dependencies() {
-    su root -c "bash -c '
-        install_packages() {
-            if [[ \$EUID -ne 0 ]]; then
-                echo \"This script must be run as root.\"
-                exit 1
-            fi
-            apt-get update -y 2> /dev/null
-            apt-get install -y bash git gpg-agent python3 python3-pip
-            echo debconf debconf/frontend select Noninteractive | debconf-set-selections
-        }
-        install_packages
-    '"
+install_sudo_if_needed() {
+    # Check if we are root and sudo is not available
+    if [[ $EUID -eq 0 ]] && ! command -v sudo &> /dev/null; then
+        apt-get update && apt-get install -y sudo
+    fi
+}
 
+run_as_root() {
+    if command -v sudo &> /dev/null; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
+add_py_deps_to_path() {
+    # Add .local/bin to PATH if it's not already there
+    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        export PATH="$PATH:$HOME/.local/bin"
+    fi
+}
+
+install_dependencies() {
+    install_sudo_if_needed
+
+    run_as_root apt-get update -y 2> /dev/null
+    run_as_root apt-get install -y bash git gpg-agent python3 python3-pip
+    echo 'debconf debconf/frontend select Noninteractive' | run_as_root debconf-set-selections
+
+    # Install Python packages globally to avoid PATH issues
+    python3 -m pip install --upgrade pip
     python3 -m pip install --upgrade \
         ansible-core \
         docker \
         molecule \
         molecule-docker \
         "molecule-plugins[docker]"
+
+    add_py_deps_to_path
 }
 
 # Provision logic run by packer
