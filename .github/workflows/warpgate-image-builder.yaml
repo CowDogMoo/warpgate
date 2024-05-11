@@ -17,15 +17,16 @@ env:
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
   TZ: UTC
 
+# Required for OIDC
+permissions:
+  id-token: write
+  contents: write
+
 jobs:
   generate-blueprints:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
-    # Required for OIDC
-    permissions:
-      id-token: write
-      contents: write
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -65,6 +66,13 @@ jobs:
         blueprint: ${{fromJson(needs.generate-blueprints.outputs.matrix)}}
       fail-fast: false
     steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 512
+          swap-size-mb: 1024
+          remove-dotnet: "true"
+
       - name: Checkout
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
 
@@ -103,7 +111,6 @@ jobs:
 
       - name: Setup warpgate
         run: |
-          export DEBIAN_FRONTEND=noninteractive
           go mod tidy
           go build -o wg
           sudo mv wg /usr/local/bin/wg
