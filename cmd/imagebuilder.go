@@ -150,10 +150,10 @@ func buildPackerImages() error {
 		go func(i int, pTmpl *packer.BlueprintPacker) {
 			defer wg.Done()
 			log.L().Printf("Now building %s template as part of %s blueprint, please wait.\n",
-				pTmpl.Name, blueprint.Name)
+				pTmpl.Base.Name, blueprint.Name)
 
 			if err := buildPackerImage(pTmpl, blueprint); err != nil {
-				errChan <- fmt.Errorf("error building %s: %v", pTmpl.Name, err)
+				errChan <- fmt.Errorf("error building %s: %v", pTmpl.Base.Name, err)
 			} else {
 				packerTemplates[i] = *pTmpl // Update the packerTemplates slice
 			}
@@ -192,7 +192,7 @@ func pushDockerImages() error {
 
 		// Skip Docker operations if no Docker images were built
 		if len(pTmpl.ImageHashes) == 0 {
-			log.L().Printf("No Docker images were built for template %s, skipping Docker operations.", pTmpl.Name)
+			log.L().Printf("No Docker images were built for template %s, skipping Docker operations.", pTmpl.Base.Name)
 			continue
 		}
 
@@ -333,13 +333,13 @@ func buildPackerImage(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint) err
 		}
 
 		log.L().Printf("Successfully built container image from the %s packer template as part of the %s blueprint",
-			pTmpl.Name, blueprint.Name)
+			pTmpl.Base.Name, blueprint.Name)
 
 		return nil // success
 	}
 
 	// If the loop completes, it means all attempts failed
-	return fmt.Errorf("all attempts failed to build container image from %s packer template: %v", pTmpl.Name, lastError)
+	return fmt.Errorf("all attempts failed to build container image from %s packer template: %v", pTmpl.Base.Name, lastError)
 }
 
 func buildImageAttempt(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, attempt int) error {
@@ -377,7 +377,7 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 		"build",
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
-		"-var", fmt.Sprintf("blueprint_name=%s", pTmpl.Name),
+		"-var", fmt.Sprintf("blueprint_name=%s", pTmpl.Base.Name),
 		"-var", fmt.Sprintf("user=%s", pTmpl.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
 		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
@@ -388,6 +388,11 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 	if amiConfig := pTmpl.AMI; amiConfig.InstanceType != "" {
 		args = append(args, "-var", fmt.Sprintf("instance_type=%s", pTmpl.AMI.InstanceType))
 		args = append(args, "-var", fmt.Sprintf("region=%s", pTmpl.AMI.Region))
+	}
+
+	// Add entrypoint if it's set
+	if pTmpl.Container.Entrypoint != "" {
+		args = append(args, "-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint))
 	}
 
 	return args

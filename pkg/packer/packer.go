@@ -25,10 +25,9 @@ package packer
 //
 // **Attributes:**
 //
-// AMITag: Tag to apply to the AMI.
 // InstanceType: Instance type to use for the AMI build.
 // Region: AWS region to build the AMI in.
-// SourceARN: ARN of the source AMI to use as a base.
+// Tag: Tag to apply to the AMI.
 type BlueprintAMI struct {
 	InstanceType string       `mapstructure:"instance_type"`
 	Region       string       `mapstructure:"region"`
@@ -46,12 +45,12 @@ type BlueprintAMI struct {
 // Name: Name of the Packer template.
 // Systemd: Indicates if systemd is used in the container.
 // Tag: Tag configuration for the generated image.
+// User: User to run commands as in the container.
 type BlueprintPacker struct {
 	AMI         BlueprintAMI       `mapstructure:"ami,omitempty"`
 	Base        BlueprintBase      `mapstructure:"base"`
 	Container   BlueprintContainer `mapstructure:"container"`
 	ImageHashes map[string]string  `mapstructure:"image_hashes"`
-	Name        string             `mapstructure:"name"`
 	Systemd     bool               `mapstructure:"systemd"`
 	Tag         BlueprintTag       `mapstructure:"tag"`
 	User        string             `mapstructure:"user"`
@@ -85,7 +84,6 @@ type BlueprintTag struct {
 //
 // Entrypoint: Entrypoint for the container.
 // Registry: Container registry configuration.
-// User: User to run commands as in the container.
 // Workdir: Working directory in the container.
 type BlueprintContainer struct {
 	Entrypoint string            `mapstructure:"entrypoint"`
