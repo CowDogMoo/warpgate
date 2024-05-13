@@ -25,6 +25,12 @@ variable "instance_type" {
   default     = "t3.medium"
 }
 
+variable "ssh_username" {
+  type        = string
+  description = "The SSH username for the AMI."
+  default     = "ubuntu"
+}
+
 ############################################
 #           Container variables            #
 ############################################

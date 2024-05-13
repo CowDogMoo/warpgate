@@ -55,7 +55,7 @@ source "amazon-ebs" "ubuntu" {
     owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
     most_recent = true
   }
-  ssh_username = "${var.user}"
+  ssh_username = "${var.ssh_username}"
 }
 
 build {

@@ -121,8 +121,8 @@ jobs:
 
       - name: Clone ansible-collection repositories
         run: |
-          sudo git clone https://github.com/CowDogMoo/ansible-collection-workstation.git /ansible-collection-workstation
-          sudo git clone https://github.com/l50/ansible-collection-arsenal.git /ansible-collection-arsenal
+          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ansible-collection-workstation
+          git clone https://github.com/l50/ansible-collection-arsenal.git ansible-collection-arsenal
 
       - name: Make repository name lowercase
         id: lower-repo

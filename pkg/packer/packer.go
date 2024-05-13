@@ -27,11 +27,11 @@ package packer
 //
 // InstanceType: Instance type to use for the AMI build.
 // Region: AWS region to build the AMI in.
-// Tag: Tag to apply to the AMI.
+// SSHUser: SSH user to use for the AMI build.
 type BlueprintAMI struct {
-	InstanceType string       `mapstructure:"instance_type"`
-	Region       string       `mapstructure:"region"`
-	Tag          BlueprintTag `mapstructure:"tag"`
+	InstanceType string `mapstructure:"instance_type"`
+	Region       string `mapstructure:"region"`
+	SSHUser      string `mapstructure:"ssh_user"`
 }
 
 // BlueprintPacker represents a Packer template associated with a blueprint.

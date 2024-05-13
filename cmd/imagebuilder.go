@@ -388,12 +388,15 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 	if amiConfig := pTmpl.AMI; amiConfig.InstanceType != "" {
 		args = append(args, "-var", fmt.Sprintf("instance_type=%s", pTmpl.AMI.InstanceType))
 		args = append(args, "-var", fmt.Sprintf("region=%s", pTmpl.AMI.Region))
+		args = append(args, "-var", fmt.Sprintf("ssh_user=%s", pTmpl.AMI.SSHUser))
 	}
 
 	// Add entrypoint if it's set
 	if pTmpl.Container.Entrypoint != "" {
 		args = append(args, "-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint))
 	}
+
+	log.L().Debugf("Packer Parameters: %s", hideSensitiveArgs(args))
 
 	return args
 }

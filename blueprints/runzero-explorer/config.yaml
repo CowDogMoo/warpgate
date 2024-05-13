@@ -10,11 +10,10 @@ packer_templates:
     tag:
       name: cowdogmoo/runzero-explorer
       version: latest
+    user: ubuntu
 
 container:
   workdir: /home/ubuntu
-  # entrypoint: "/run/docker-entrypoint.sh ; sh"
-  user: ubuntu
   registry:
     server: ghcr.io
     username: cowdogmoo
