@@ -17,7 +17,7 @@ source "docker" "amd64" {
   }
 
   changes = [
-    "USER ${var.container_user}",
+    "USER ${var.user}",
     "WORKDIR ${var.workdir}",
   ]
 
@@ -31,7 +31,7 @@ source "docker" "arm64" {
   privileged = true
 
   changes = [
-    "USER ${var.container_user}",
+    "USER ${var.user}",
     "WORKDIR ${var.workdir}",
   ]
 
@@ -42,10 +42,27 @@ source "docker" "arm64" {
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
+source "amazon-ebs" "ubuntu" {
+  ami_name      = "${var.blueprint_name}-${formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())}"
+  instance_type = "${var.instance_type}"
+  region        = "${var.ami_region}"
+  source_ami_filter {
+    filters = {
+      name = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
+      root-device-type    = "ebs"
+      virtualization-type = "hvm"
+    }
+    owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
+    most_recent = true
+  }
+  ssh_username = "${var.user}"
+}
+
 build {
   sources = [
     "source.docker.amd64",
-    "source.docker.arm64"
+    "source.docker.arm64",
+    "source.amazon-ebs.ubuntu",
   ]
 
   provisioner "file" {

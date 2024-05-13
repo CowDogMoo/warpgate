@@ -38,6 +38,20 @@ variable "base_image_version" {
   description = "Version of the base image."
 }
 
+variable "setup_systemd" {
+  type        = bool
+  description = "Create systemd service for container."
+  default     = false
+}
+
+variable "workdir" {
+  type        = string
+  description = "Working directory for a new container."
+}
+
+############################################
+#           Global variables               #
+############################################
 variable "blueprint_name" {
   type        = string
   description = "Name of the blueprint."
@@ -54,20 +68,6 @@ variable "provision_repo_path" {
   description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
 }
 
-variable "setup_systemd" {
-  type        = bool
-  description = "Create systemd service for container."
-  default     = false
-}
-
-variable "workdir" {
-  type        = string
-  description = "Working directory for a new container."
-}
-
-############################################
-#           Global variables               #
-############################################
 variable "os" {
   type        = string
   description = "Operating system to use for the AMI."
