@@ -190,9 +190,14 @@ func pushDockerImages() error {
 	for _, pTmpl := range packerTemplates {
 		imageName := pTmpl.Tag.Name
 
+		// Skip Docker operations if no Docker images were built
+		if len(pTmpl.ImageHashes) == 0 {
+			log.L().Printf("No Docker images were built for template %s, skipping Docker operations.", pTmpl.Name)
+			continue
+		}
+
 		// Create a slice to store the image tags for the manifest
 		var imageTags []string
-
 		for arch, hash := range pTmpl.ImageHashes {
 			// Define the local and remote tags
 			localTag := fmt.Sprintf("sha256:%s", hash)
@@ -373,18 +378,16 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
 		"-var", fmt.Sprintf("blueprint_name=%s", pTmpl.Name),
-		"-var", fmt.Sprintf("user=%s", pTmpl.Container.User),
+		"-var", fmt.Sprintf("user=%s", pTmpl.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
 		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
 		templateDir,
 	}
 
 	// Add AMI specific variables if they exist
-	if pTmpl.AMI.AMITag != "" {
-		args = append(args, "-var", fmt.Sprintf("ami_tag=%s", pTmpl.AMI.AMITag))
+	if amiConfig := pTmpl.AMI; amiConfig.InstanceType != "" {
 		args = append(args, "-var", fmt.Sprintf("instance_type=%s", pTmpl.AMI.InstanceType))
 		args = append(args, "-var", fmt.Sprintf("region=%s", pTmpl.AMI.Region))
-		args = append(args, "-var", fmt.Sprintf("source_arn=%s", pTmpl.AMI.SourceARN))
 	}
 
 	return args

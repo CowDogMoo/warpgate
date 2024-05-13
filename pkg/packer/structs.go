@@ -30,10 +30,9 @@ package packer
 // Region: AWS region to build the AMI in.
 // SourceARN: ARN of the source AMI to use as a base.
 type BlueprintAMI struct {
-	AMITag       string `mapstructure:"ami_tag"`
-	InstanceType string `mapstructure:"instance_type"`
-	Region       string `mapstructure:"region"`
-	SourceARN    string `mapstructure:"source_arn"`
+	InstanceType string       `mapstructure:"instance_type"`
+	Region       string       `mapstructure:"region"`
+	Tag          BlueprintTag `mapstructure:"tag"`
 }
 
 // BlueprintPacker represents a Packer template associated with a blueprint.
@@ -55,6 +54,7 @@ type BlueprintPacker struct {
 	Name        string             `mapstructure:"name"`
 	Systemd     bool               `mapstructure:"systemd"`
 	Tag         BlueprintTag       `mapstructure:"tag"`
+	User        string             `mapstructure:"user"`
 }
 
 // BlueprintBase represents the base image configuration for a Packer template.
@@ -90,7 +90,6 @@ type BlueprintTag struct {
 type BlueprintContainer struct {
 	Entrypoint string            `mapstructure:"entrypoint"`
 	Registry   BlueprintRegistry `mapstructure:"registry"`
-	User       string            `mapstructure:"user"`
 	Workdir    string            `mapstructure:"workdir"`
 }
 
