@@ -10,11 +10,16 @@ packer_templates:
     tag:
       name: l50/sliver
       version: latest
+    user: sliver
+
+# AMI specific configurations
+ami:
+  instance_type: t3.medium
+  region: us-east-1
 
 container:
   workdir: /home/sliver
   # entrypoint: "/run/docker-entrypoint.sh ; sh"
-  user: sliver
   registry:
     server: ghcr.io
     username: l50

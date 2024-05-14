@@ -10,11 +10,11 @@
       "args": [
         "imageBuilder",
         "-b",
-        "runzero-explorer",
+        "ttpforge",
         "-p",
-        "${env:HOME}/cowdogmoo/ansible-collection-workstation",
-        "--config",
-        "${env:HOME}/.warp/config.yaml"
+        "${env:HOME}/security/ansible-collection-arsenal",
+        "-t",
+        "$(op item get 'CowDogMoo/warpgate BOT TOKEN' --fields token)"
       ]
     }
   ]

@@ -17,6 +17,21 @@ The `packer` package is a part of the WarpGate.
 
 ## Functions
 
+### LoadPackerTemplates()
+
+```go
+LoadPackerTemplates() []BlueprintPacker, error
+```
+
+LoadPackerTemplates loads Packer templates from the configuration file.
+
+**Returns:**
+
+[]BlueprintPacker: A slice of Packer templates.
+error: An error if any issue occurs while loading the Packer templates.
+
+---
+
 ## Installation
 
 To use the WarpGate/packer package, you first need to install it.

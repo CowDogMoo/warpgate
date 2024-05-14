@@ -10,10 +10,16 @@ packer_templates:
     tag:
       name: l50/atomic-red-team
       version: latest
+    user: root
+
+# AMI specific configurations
+ami:
+  instance_type: t3.medium
+  region: us-east-1
+  ssh_username: ubuntu
 
 container:
   workdir: /root/AtomicRedTeam
-  user: root
   registry:
     server: ghcr.io
     username: l50

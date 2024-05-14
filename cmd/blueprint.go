@@ -1,24 +1,3 @@
-/*
-Copyright © 2024-present, Jayson Grace <jayson.e.grace@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 package cmd
 
 import (
@@ -113,9 +92,8 @@ func validateBaseInput(baseInput []string) error {
 }
 
 func validateTagInput(tagInput string) error {
-	parts := strings.Split(tagInput, ":")
-	if len(parts) != 2 {
-		return errors.New("invalid tag input format, expected name:version")
+	if !strings.Contains(tagInput, ":") || len(strings.Split(tagInput, ":")) != 2 {
+		return fmt.Errorf("invalid tag input format, expected 'name:version', got: %s", tagInput)
 	}
 	return nil
 }
@@ -127,12 +105,12 @@ func processCfgInputs(cmd *cobra.Command) error {
 		return err
 	}
 
-	var tagName string
-	var tagVersion string
-
 	parts := strings.Split(tagInfo, ":")
-	tagName = parts[0]
-	tagVersion = parts[1]
+	if len(parts) != 2 {
+		log.L().Error("Tag info must be in the format 'name:version'")
+		return errors.New("invalid tag format")
+	}
+	tagName, tagVersion := parts[0], parts[1]
 
 	systemd, err := cmd.Flags().GetBool("systemd")
 	if err != nil {
@@ -146,45 +124,40 @@ func processCfgInputs(cmd *cobra.Command) error {
 		return err
 	}
 
-	var systemdContainer []bool
-	var tagNames []string
-	var tmplNames []string
-
 	if systemd {
-		systemdContainer = []bool{false, true}
-		tagNames = []string{tagName, tagName + "-systemd"}
-		tmplNames = []string{blueprint.Name + ".pkr.hcl",
-			blueprint.Name + "-systemd.pkr.hcl"}
+		// Systemd enabled; prepare both systemd and standard templates
+		packerTemplates = append(packerTemplates, generatePackerTemplate(blueprint.Name+"-systemd.pkr.hcl", baseInput[0], tagName+"-systemd", tagVersion, true))
+		if len(baseInput) > 1 {
+			// Create non-systemd templates for the rest of the base inputs
+			for _, base := range baseInput[1:] {
+				packerTemplates = append(packerTemplates, generatePackerTemplate(blueprint.Name+".pkr.hcl", base, tagName, tagVersion, false))
+			}
+		}
 	} else {
-		tagNames = []string{tagName}
-		tmplNames = []string{blueprint.Name + ".pkr.hcl"}
+		// No systemd; create standard templates for all base inputs
+		for _, base := range baseInput {
+			packerTemplates = append(packerTemplates, generatePackerTemplate(blueprint.Name+".pkr.hcl", base, tagName, tagVersion, false))
+		}
 	}
 
-	if len(baseInput) < len(tagNames) {
-		errMsg := fmt.Sprintf("not enough base inputs for the specified tag names: %v", tagNames)
-		log.L().Error(errMsg)
-		return errors.New(errMsg)
-	}
-
-	for i, name := range tagNames {
-		parts = strings.Split(baseInput[i], ":")
-		packerTemplates = append(packerTemplates, packer.BlueprintPacker{
-			Name: tmplNames[i],
-			Base: packer.BlueprintBase{
-				Name:    parts[0],
-				Version: parts[1],
-			},
-			Systemd: systemdContainer[i],
-			Tag: packer.BlueprintTag{
-				Name:    name,
-				Version: tagVersion,
-			},
-		})
-	}
-
-	log.L().Debugf("Templated packer config data: %#v\n", packerTemplates)
+	log.L().Debugf("Configured packer templates: %#v", packerTemplates)
 
 	return nil
+}
+
+func generatePackerTemplate(templateName, baseInput, tagName, tagVersion string, systemd bool) packer.BlueprintPacker {
+	parts := strings.Split(baseInput, ":")
+	return packer.BlueprintPacker{
+		Base: packer.BlueprintBase{
+			Name:    parts[0],
+			Version: parts[1],
+		},
+		Systemd: systemd,
+		Tag: packer.BlueprintTag{
+			Name:    tagName,
+			Version: tagVersion,
+		},
+	}
 }
 
 func createCfg(data bp.Data) error {
@@ -247,13 +220,13 @@ func createPacker(data bp.Data) error {
 			PackerTemplate: pkr,
 			Container:      data.Container,
 		}
-		f, err := os.Create(filepath.Join(packerDir, pkr.Name))
+		f, err := os.Create(filepath.Join(packerDir, data.Blueprint.Name))
 		if err != nil {
-			return fmt.Errorf(color.RedString("failed to create %s: %v", filepath.Join(packerDir, pkr.Name), err))
+			return fmt.Errorf(color.RedString("failed to create %s: %v", filepath.Join(packerDir, data.Blueprint.Name), err))
 		}
 		defer f.Close()
 		if err := tmpl.Execute(f, tmplData); err != nil {
-			return fmt.Errorf(color.RedString("failed to populate %s with templated data: %v", filepath.Join(packerDir, pkr.Name), err))
+			return fmt.Errorf(color.RedString("failed to populate %s with templated data: %v", filepath.Join(packerDir, data.Blueprint.Name), err))
 		}
 	}
 

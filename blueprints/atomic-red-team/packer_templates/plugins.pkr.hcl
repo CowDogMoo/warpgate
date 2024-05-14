@@ -5,5 +5,9 @@ packer {
       version = ">= 1.0.9"
       source  = "github.com/hashicorp/docker"
     }
+    amazon = {
+      version = ">= 1.0.0"
+      source  = "github.com/hashicorp/amazon"
+    }
   }
 }

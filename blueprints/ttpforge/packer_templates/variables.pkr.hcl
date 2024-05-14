@@ -25,6 +25,12 @@ variable "instance_type" {
   default     = "t3.medium"
 }
 
+variable "ssh_username" {
+  type        = string
+  description = "The SSH username for the AMI."
+  default     = "ubuntu"
+}
+
 ############################################
 #           Container variables            #
 ############################################
@@ -36,22 +42,6 @@ variable "base_image" {
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
-}
-
-variable "blueprint_name" {
-  type        = string
-  description = "Name of the blueprint."
-}
-
-variable "pkr_build_dir" {
-  type        = string
-  description = "Directory that packer will execute the transferred provisioning logic from within the build environment."
-  default     = "ansible-collection-arsenal"
-}
-
-variable "provision_repo_path" {
-  type        = string
-  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
 }
 
 variable "setup_systemd" {
@@ -68,6 +58,22 @@ variable "workdir" {
 ############################################
 #           Global variables               #
 ############################################
+variable "blueprint_name" {
+  type        = string
+  description = "Name of the blueprint."
+}
+
+variable "pkr_build_dir" {
+  type        = string
+  description = "Directory that packer will execute the transferred provisioning logic from within the build environment."
+  default     = "ansible-collection-arsenal"
+}
+
+variable "provision_repo_path" {
+  type        = string
+  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
+}
+
 variable "os" {
   type        = string
   description = "Operating system to use for the AMI."

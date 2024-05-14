@@ -21,19 +21,23 @@ THE SOFTWARE.
 */
 package packer
 
+import (
+	"fmt"
+
+	"github.com/spf13/viper"
+)
+
 // BlueprintAMI represents the AMI configuration for a Packer template.
 //
 // **Attributes:**
 //
-// AMITag: Tag to apply to the AMI.
 // InstanceType: Instance type to use for the AMI build.
 // Region: AWS region to build the AMI in.
-// SourceARN: ARN of the source AMI to use as a base.
+// SSHUser: SSH user to use for the AMI build.
 type BlueprintAMI struct {
-	AMITag       string `mapstructure:"ami_tag"`
 	InstanceType string `mapstructure:"instance_type"`
 	Region       string `mapstructure:"region"`
-	SourceARN    string `mapstructure:"source_arn"`
+	SSHUser      string `mapstructure:"ssh_user"`
 }
 
 // BlueprintPacker represents a Packer template associated with a blueprint.
@@ -47,14 +51,15 @@ type BlueprintAMI struct {
 // Name: Name of the Packer template.
 // Systemd: Indicates if systemd is used in the container.
 // Tag: Tag configuration for the generated image.
+// User: User to run commands as in the container.
 type BlueprintPacker struct {
 	AMI         BlueprintAMI       `mapstructure:"ami,omitempty"`
 	Base        BlueprintBase      `mapstructure:"base"`
 	Container   BlueprintContainer `mapstructure:"container"`
 	ImageHashes map[string]string  `mapstructure:"image_hashes"`
-	Name        string             `mapstructure:"name"`
 	Systemd     bool               `mapstructure:"systemd"`
 	Tag         BlueprintTag       `mapstructure:"tag"`
+	User        string             `mapstructure:"user"`
 }
 
 // BlueprintBase represents the base image configuration for a Packer template.
@@ -85,12 +90,10 @@ type BlueprintTag struct {
 //
 // Entrypoint: Entrypoint for the container.
 // Registry: Container registry configuration.
-// User: User to run commands as in the container.
 // Workdir: Working directory in the container.
 type BlueprintContainer struct {
 	Entrypoint string            `mapstructure:"entrypoint"`
 	Registry   BlueprintRegistry `mapstructure:"registry"`
-	User       string            `mapstructure:"user"`
 	Workdir    string            `mapstructure:"workdir"`
 }
 
@@ -105,4 +108,38 @@ type BlueprintRegistry struct {
 	Credential string `mapstructure:"credential"`
 	Server     string `mapstructure:"server"`
 	Username   string `mapstructure:"username"`
+}
+
+// LoadPackerTemplates loads Packer templates from the configuration file.
+//
+// **Returns:**
+//
+// []BlueprintPacker: A slice of Packer templates.
+// error: An error if any issue occurs while loading the Packer templates.
+func LoadPackerTemplates() ([]BlueprintPacker, error) {
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		return nil, fmt.Errorf("no config file used by viper")
+	}
+	fmt.Printf("Config file used by viper: %s\n", configFile)
+	// Unmarshalling existing packer templates
+	var packerTemplates []BlueprintPacker
+	if err := viper.UnmarshalKey("packer_templates", &packerTemplates); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal packer templates: %v", err)
+	}
+
+	if len(packerTemplates) == 0 {
+		return nil, fmt.Errorf("no packer templates found")
+	}
+
+	// Check and load AMI settings if available
+	for i, tmpl := range packerTemplates {
+		var amiConfig BlueprintAMI
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &amiConfig); err == nil {
+			tmpl.AMI = amiConfig
+			packerTemplates[i] = tmpl // Update the templates slice with the AMI settings
+		}
+	}
+
+	return packerTemplates, nil
 }

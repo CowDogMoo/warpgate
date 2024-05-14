@@ -43,7 +43,7 @@ source "docker" "arm64" {
 }
 
 source "amazon-ebs" "ubuntu" {
-  ami_name      = "ttpforge-${formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())}"
+  ami_name      = "${var.blueprint_name}-${formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())}"
   instance_type = "${var.instance_type}"
   region        = "${var.ami_region}"
   source_ami_filter {
@@ -55,7 +55,7 @@ source "amazon-ebs" "ubuntu" {
     owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
     most_recent = true
   }
-  ssh_username = "${var.user}"
+  ssh_username = "${var.ssh_username}"
 }
 
 build {
