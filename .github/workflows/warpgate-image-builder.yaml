@@ -121,8 +121,9 @@ jobs:
 
       - name: Clone ansible-collection repositories
         run: |
-          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git $PWD/ansible-collection-workstation
-          git clone https://github.com/l50/ansible-collection-arsenal.git $PWD/ansible-collection-arsenal
+          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ansible-collection-workstation
+          git clone https://github.com/l50/ansible-collection-arsenal.git ansible-collection-arsenal
+        working-directory: ${{ github.workspace }}
 
       - name: Make repository name lowercase
         id: lower-repo
@@ -148,3 +149,4 @@ jobs:
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"
+        working-directory: ${{ github.workspace }}
