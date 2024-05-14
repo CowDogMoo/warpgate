@@ -17,6 +17,38 @@ The `blueprint` package is a part of the WarpGate.
 
 ## Functions
 
+### Blueprint.ParseCommandLineFlags(*cobra.Command)
+
+```go
+ParseCommandLineFlags(*cobra.Command) error
+```
+
+ParseCommandLineFlags parses command line flags for a Blueprint.
+
+**Parameters:**
+
+cmd: A Cobra command object containing flags and arguments for the command.
+
+**Returns:**
+
+error: An error if any issue occurs while parsing the command line flags.
+
+---
+
+### Blueprint.SetConfigPath()
+
+```go
+SetConfigPath() error
+```
+
+SetConfigPath sets the configuration path for a Blueprint.
+
+**Returns:**
+
+error: An error if the configuration path cannot be set.
+
+---
+
 ## Installation
 
 To use the WarpGate/blueprint package, you first need to install it.

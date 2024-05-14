@@ -6,103 +6,94 @@ import (
 	"testing"
 
 	warpgate "github.com/cowdogmoo/warpgate/cmd"
+	"github.com/cowdogmoo/warpgate/pkg/blueprint"
+	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
+	gitutils "github.com/l50/goutils/v2/git"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+var (
+	repoRoot string
+)
+
+func init() {
+	var err error
+	repoRoot, err = gitutils.RepoRoot()
+	if err != nil {
+		panic(err)
+	}
+}
 
 func TestRunImageBuilder(t *testing.T) {
 	tests := []struct {
 		name          string
 		provisionPath string
-		blueprint     string
+		blueprint     bp.Blueprint
 		expectErr     bool
-		setup         func(t *testing.T) (provisionPath, blueprintDir string, cleanupFunc func())
+		setup         func(t *testing.T) (string, bp.Blueprint, string, func())
 	}{
 		{
-			name:      "Valid Inputs",
-			blueprint: "validBlueprint",
-			expectErr: false,
-			setup: func(t *testing.T) (string, string, func()) {
-				provisionDir, err := os.MkdirTemp("", "provision")
-				if err != nil {
-					t.Errorf("failed to create temp provision dir: %v", err)
-					cobra.CheckErr(err)
+			name: "Valid Inputs",
+			setup: func(t *testing.T) (string, bp.Blueprint, string, func()) {
+				blueprintName := "ttpforge"
+				blueprintPath := filepath.Join(repoRoot, "blueprints", blueprintName)
+				configFilePath := filepath.Join(blueprintPath, "config.yaml")
+
+				// Ensure the config file exists
+				if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
+					t.Fatalf("config file does not exist at %s", configFilePath)
 				}
 
-				blueprintDir, err := os.MkdirTemp("", "blueprint")
-				if err != nil {
-					t.Errorf("failed to create temp blueprint dir: %v", err)
-					cobra.CheckErr(err)
+				blueprint := bp.Blueprint{
+					Name:             blueprintName,
+					Path:             blueprintPath,
+					ProvisioningRepo: repoRoot,
 				}
 
-				// Create mock config.yaml file based on the repo's structure
-				configContent := `---
-blueprint:
-  name: validBlueprint
-packer_templates:
-  - name: valid-packer-template.pkr.hcl
-    base:
-      name: ubuntu
-      version: "20.04"
-    tag:
-      name: valid-tag
-      version: "1.0"
-container:
-  workdir: /app
-  entrypoint: "/entrypoint.sh"
-  user: appuser
-  registry:
-    server: registry.example.com
-    username: user
-    credential: secret`
-				configFilePath := filepath.Join(blueprintDir, "config.yaml")
-				t.Log(configFilePath)
-				err = os.WriteFile(configFilePath, []byte(configContent), 0644)
-				if err != nil {
-					t.Errorf("failed to create mock config file: %v", err)
-					cobra.CheckErr(err)
-				}
-
-				return provisionDir, blueprintDir, func() {
-					os.RemoveAll(provisionDir)
-					os.RemoveAll(blueprintDir)
-				}
+				return repoRoot, blueprint, "", func() {}
 			},
+			expectErr: false,
 		},
 		{
-			name:          "Invalid Provision Path",
-			provisionPath: "invalidPath",
-			blueprint:     "validBlueprint",
-			expectErr:     true,
+			name: "Invalid Provision Path",
+			setup: func(t *testing.T) (string, bp.Blueprint, string, func()) {
+				provisionDir := "/invalid"
+				blueprint := bp.Blueprint{Name: "invalidBlueprint"}
+				return provisionDir, blueprint, "", func() {}
+			},
+			expectErr: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var blueprintDir string
+			var provisionDir string
+			var blueprint blueprint.Blueprint
+			var githubToken string
 			var cleanup func()
 			if tc.setup != nil {
-				_, blueprintDir, cleanup = tc.setup(t)
+				provisionDir, blueprint, githubToken, cleanup = tc.setup(t)
 				defer cleanup()
 			}
 
-			// Convert blueprintDir to an absolute path
-			absBlueprintDir, err := filepath.Abs(blueprintDir)
-			if err != nil {
-				t.Fatalf("failed to get absolute path for blueprint dir: %v", err)
-			}
-
-			t.Logf("Using blueprint config path: %s", absBlueprintDir)
-
 			cmd := &cobra.Command{}
-			cmd.Flags().String("provisionPath", tc.provisionPath, "")
-			cmd.Flags().String("blueprint", absBlueprintDir, "") // Use absolute path
+			cmd.Flags().String("provisionPath", provisionDir, "")
+			cmd.Flags().String("blueprint", blueprint.Name, "")
+			cmd.Flags().String("github-token", githubToken, "")
 
-			// Set Viper's configuration path to the absolute blueprint directory
-			if err := warpgate.SetBlueprintConfigPath(absBlueprintDir); err != nil {
-				t.Fatalf("failed to set blueprint config path: %v", err)
+			if tc.provisionPath != "" {
+				if err := cmd.Flags().Set("provisionPath", tc.provisionPath); err != nil {
+					t.Fatalf("failed to set provisionPath: %v", err)
+				}
 			}
 
-			err = warpgate.RunImageBuilder(cmd, nil)
+			viper.SetConfigFile(filepath.Join(blueprint.Path, "config.yaml"))
+			if err := viper.ReadInConfig(); err != nil && !tc.expectErr {
+				t.Fatalf("failed to read config file: %v", err)
+			}
+
+			err := warpgate.RunImageBuilder(cmd, nil, blueprint)
 			if (err != nil) != tc.expectErr {
 				t.Errorf("runImageBuilder() error = %v, expectErr %v", err, tc.expectErr)
 			}

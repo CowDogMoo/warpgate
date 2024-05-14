@@ -1,27 +1,17 @@
-/*
-Copyright © 2024-present, Jayson Grace <jayson.e.grace@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 package blueprint
 
-import "github.com/cowdogmoo/warpgate/pkg/packer"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/cowdogmoo/warpgate/pkg/packer"
+	gitutils "github.com/l50/goutils/v2/git"
+	"github.com/l50/goutils/v2/sys"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
 
 // Blueprint represents the configuration of a blueprint for image building.
 //
@@ -30,8 +20,9 @@ import "github.com/cowdogmoo/warpgate/pkg/packer"
 // Name: Name of the blueprint.
 // ProvisioningRepo: Path to the repository containing provisioning logic.
 type Blueprint struct {
-	Name             string `yaml:"name"`
-	ProvisioningRepo string
+	Name             string `mapstructure:"name"`
+	Path             string `mapstructure:"path"`
+	ProvisioningRepo string `mapstructure:"provisioning_repo"`
 }
 
 // Data holds a blueprint and its associated Packer templates and container
@@ -46,4 +37,65 @@ type Data struct {
 	Blueprint       Blueprint
 	PackerTemplates []packer.BlueprintPacker
 	Container       packer.BlueprintContainer
+}
+
+// ParseCommandLineFlags parses command line flags for a Blueprint.
+//
+// **Parameters:**
+//
+// cmd: A Cobra command object containing flags and arguments for the command.
+//
+// **Returns:**
+//
+// error: An error if any issue occurs while parsing the command line flags.
+func (b *Blueprint) ParseCommandLineFlags(cmd *cobra.Command) error {
+	var err error
+	b.ProvisioningRepo, err = cmd.Flags().GetString("provisionPath")
+	if err != nil {
+		return fmt.Errorf("failed to get provisionPath: %v", err)
+	}
+
+	if strings.Contains(b.ProvisioningRepo, "~") {
+		b.ProvisioningRepo = sys.ExpandHomeDir(b.ProvisioningRepo)
+	}
+
+	b.Name, err = cmd.Flags().GetString("blueprint")
+	if err != nil {
+		return fmt.Errorf("failed to retrieve blueprint: %v", err)
+	}
+
+	repoRoot, err := gitutils.RepoRoot()
+	if err != nil {
+		return fmt.Errorf("failed to get repo root: %v", err)
+	}
+
+	b.Path = filepath.Join(repoRoot, "blueprints", b.Name)
+	if _, err := os.Stat(filepath.Join(b.Path, "config.yaml")); os.IsNotExist(err) {
+		return fmt.Errorf("config file does not exist at %s", filepath.Join(b.Path, "config.yaml"))
+	}
+
+	return b.SetConfigPath()
+}
+
+// SetConfigPath sets the configuration path for a Blueprint.
+//
+// **Returns:**
+//
+// error: An error if the configuration path cannot be set.
+func (b *Blueprint) SetConfigPath() error {
+	bpConfig := filepath.Join(b.Path, "config.yaml")
+
+	// Ensure the target blueprint config exists
+	if _, err := os.Stat(bpConfig); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("config file does not exist at %s", bpConfig)
+		}
+		return fmt.Errorf("error accessing config file at %s: %v", bpConfig, err)
+	}
+
+	viper.SetConfigFile(bpConfig)
+	if err := viper.ReadInConfig(); err != nil {
+		return fmt.Errorf("failed to read config file: %v", err)
+	}
+	return nil
 }

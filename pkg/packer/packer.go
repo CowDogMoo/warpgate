@@ -21,6 +21,12 @@ THE SOFTWARE.
 */
 package packer
 
+import (
+	"fmt"
+
+	"github.com/spf13/viper"
+)
+
 // BlueprintAMI represents the AMI configuration for a Packer template.
 //
 // **Attributes:**
@@ -102,4 +108,33 @@ type BlueprintRegistry struct {
 	Credential string `mapstructure:"credential"`
 	Server     string `mapstructure:"server"`
 	Username   string `mapstructure:"username"`
+}
+
+// LoadPackerTemplates loads Packer templates from the configuration file.
+//
+// **Returns:**
+//
+// []BlueprintPacker: A slice of Packer templates.
+// error: An error if any issue occurs while loading the Packer templates.
+func LoadPackerTemplates() ([]BlueprintPacker, error) {
+	// Unmarshalling existing packer templates
+	var packerTemplates []BlueprintPacker
+	if err := viper.UnmarshalKey("packer_templates", &packerTemplates); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal packer templates: %v", err)
+	}
+
+	if len(packerTemplates) == 0 {
+		return nil, fmt.Errorf("no packer templates found")
+	}
+
+	// Check and load AMI settings if available
+	for i, tmpl := range packerTemplates {
+		var amiConfig BlueprintAMI
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &amiConfig); err == nil {
+			tmpl.AMI = amiConfig
+			packerTemplates[i] = tmpl // Update the templates slice with the AMI settings
+		}
+	}
+
+	return packerTemplates, nil
 }

@@ -17,105 +17,6 @@ The `registry` package is a part of the WarpGate.
 
 ## Functions
 
-### DockerLogin(string)
-
-```go
-DockerLogin(string) error
-```
-
-DockerLogin authenticates with a Docker registry using the provided username
-and token. It executes the 'docker login' command.
-
-**Parameters:**
-
-username: The username for the Docker registry.
-token: The access token for the Docker registry.
-
-**Returns:**
-
-error: An error if any issue occurs during the login process.
-
----
-
-### DockerManifestCreate(string, []string)
-
-```go
-DockerManifestCreate(string, []string) error
-```
-
-DockerManifestCreate creates a Docker manifest that references multiple
-platform-specific versions of an image. It builds the manifest using the
-'docker manifest create' command.
-
-**Parameters:**
-
-manifest: The name of the manifest to create.
-images: A slice of image names to include in the manifest.
-
-**Returns:**
-
-error: An error if the manifest creation fails.
-
----
-
-### DockerManifestPush(string)
-
-```go
-DockerManifestPush(string) error
-```
-
-DockerManifestPush pushes a Docker manifest to a registry. It uses the
-'docker manifest push' command.
-
-**Parameters:**
-
-manifest: The name of the manifest to push.
-
-**Returns:**
-
-error: An error if the push operation fails.
-
----
-
-### DockerPush(string)
-
-```go
-DockerPush(string) error
-```
-
-DockerPush pushes a Docker image to a registry. It executes the 'docker push'
-command with the specified image name.
-
-**Parameters:**
-
-image: The name of the image to push.
-
-**Returns:**
-
-error: An error if the push operation fails.
-
----
-
-### DockerTag(string)
-
-```go
-DockerTag(string) error
-```
-
-DockerTag tags a Docker image with a new name. It performs the operation
-using the 'docker tag' command.
-
-**Parameters:**
-
-sourceImage: The current name of the image.
-targetImage: The new name to assign to the image.
-
-**Returns:**
-
-error: An error if the tagging operation fails.
-
----
-
 ### ValidateToken(string)
 
 ```go
@@ -123,17 +24,20 @@ ValidateToken(string) error
 ```
 
 ValidateToken checks the validity of a GitHub access token by making
-a GET request to the GitHub API. It sets the Authorization header with
-the token and examines the response status code.
+a GET request to the GitHub API. If no token is provided as an argument,
+it checks for a GITHUB_TOKEN environment variable and uses that.
+It sets the Authorization header with the token and examines the response status code.
 
 **Parameters:**
 
-token: The GitHub access token to validate.
+token: The GitHub access token to validate. If empty, the function will
+check for a GITHUB_TOKEN environment variable.
 
 **Returns:**
 
 error: An error if the token is invalid, or if any issue occurs during
-the request or reading the response.
+the request or reading the response, or if no token is provided and
+the GITHUB_TOKEN environment variable is not set.
 
 ---
 

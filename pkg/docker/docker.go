@@ -19,12 +19,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package registry
+package docker
 
 import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"strings"
+
+	"github.com/cowdogmoo/warpgate/pkg/packer"
+	log "github.com/l50/goutils/v2/logging"
 )
 
 // DockerLogin authenticates with a Docker registry using the provided username
@@ -133,4 +137,34 @@ func DockerTag(sourceImage, targetImage string) error {
 		return fmt.Errorf("docker tag failed for %s to %s: %s", sourceImage, targetImage, out.String())
 	}
 	return nil
+}
+
+// ParseImageHashes extracts the image hashes from the output of a Packer build
+// command and updates the provided Packer blueprint with the new hashes.
+//
+// **Parameters:**
+//
+// output: The output from the Packer build command.
+// pTmpl: The Packer blueprint to update with the new image hashes.
+func ParseImageHashes(output string, pTmpl *packer.BlueprintPacker) {
+	if strings.Contains(output, "Imported Docker image: sha256:") {
+		parts := strings.Split(output, " ")
+		if len(parts) > 4 {
+			archParts := strings.Split(parts[1], ".")
+			if len(archParts) > 1 {
+				arch := strings.TrimSuffix(archParts[1], ":")
+				for _, part := range parts {
+					if strings.HasPrefix(part, "sha256:") {
+						hash := strings.TrimPrefix(part, "sha256:")
+						if pTmpl.ImageHashes == nil {
+							pTmpl.ImageHashes = make(map[string]string)
+						}
+						pTmpl.ImageHashes[arch] = hash
+						log.L().Debug("Updated ImageHashes: %v\n", pTmpl.ImageHashes)
+						break
+					}
+				}
+			}
+		}
+	}
 }
