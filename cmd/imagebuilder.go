@@ -227,9 +227,8 @@ func createBuildDir(blueprint bp.Blueprint) (string, error) {
 	}
 
 	// Set bpDir to the correct blueprint directory
-	bpDir := filepath.Join("blueprints", blueprint.Name)
-	if err := sys.Cp(bpDir, buildDir); err != nil {
-		log.L().Errorf("Failed to copy %s to %s: %v", bpDir, buildDir, err)
+	if err := sys.Cp(blueprint.Path, buildDir); err != nil {
+		log.L().Errorf("Failed to copy %s to %s: %v", blueprint.Path, buildDir, err)
 		return "", err
 	}
 
