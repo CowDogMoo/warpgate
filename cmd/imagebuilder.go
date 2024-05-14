@@ -55,6 +55,10 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return fmt.Errorf("no packer templates found:%v", err)
 	}
 
+	if len(packerTemplates) == 0 {
+		return fmt.Errorf("no packer templates found")
+	}
+
 	if err := buildPackerImages(blueprint, packerTemplates); err != nil {
 		return err
 	}
@@ -69,15 +73,38 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 func buildPackerImages(blueprint bp.Blueprint, packerTemplates []packer.BlueprintPacker) error {
 	errChan := make(chan error, len(packerTemplates))
 	var wg sync.WaitGroup
+	var missingFields []string
 
 	for _, pTmpl := range packerTemplates {
-		if pTmpl.Base.Name == "" || pTmpl.Base.Version == "" || pTmpl.Tag.Name == "" || pTmpl.Tag.Version == "" {
-			return fmt.Errorf("packer template '%s' has uninitialized fields", pTmpl.Base.Name)
+		missingFields = []string{}
+		requiredFields := map[string]string{
+			"Base.Name":      pTmpl.Base.Name,
+			"Base.Version":   pTmpl.Base.Version,
+			"Tag.Name":       pTmpl.Tag.Name,
+			"Tag.Version":    pTmpl.Tag.Version,
+			"User":           pTmpl.User,
+			"Blueprint.Name": blueprint.Name,
+		}
+
+		for fieldName, fieldValue := range requiredFields {
+			if fieldValue == "" {
+				missingFields = append(missingFields, fieldName)
+			}
+		}
+
+		if len(missingFields) > 0 {
+			return fmt.Errorf("packer template '%s' has uninitialized fields: %s", pTmpl.Base.Name, strings.Join(missingFields, ", "))
 		}
 
 		wg.Add(1)
 		go func(pTmpl packer.BlueprintPacker, blueprint bp.Blueprint) {
 			defer wg.Done()
+
+			// Check if blueprint is not nil or empty
+			if blueprint.Name == "" || blueprint.Path == "" || blueprint.ProvisioningRepo == "" {
+				errChan <- fmt.Errorf("received nil or empty blueprint")
+				return
+			}
 
 			log.L().Printf("Building %s packer template as part of the %s blueprint", pTmpl.Base.Name, blueprint.Name)
 			if err := buildPackerImage(&pTmpl, blueprint); err != nil {

@@ -117,6 +117,11 @@ type BlueprintRegistry struct {
 // []BlueprintPacker: A slice of Packer templates.
 // error: An error if any issue occurs while loading the Packer templates.
 func LoadPackerTemplates() ([]BlueprintPacker, error) {
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		return nil, fmt.Errorf("no config file used by viper")
+	}
+	fmt.Printf("Config file used by viper: %s\n", configFile)
 	// Unmarshalling existing packer templates
 	var packerTemplates []BlueprintPacker
 	if err := viper.UnmarshalKey("packer_templates", &packerTemplates); err != nil {

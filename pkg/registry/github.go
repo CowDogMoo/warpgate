@@ -38,7 +38,8 @@ var Client HttpClient = &http.Client{}
 // ValidateToken checks the validity of a GitHub access token by making
 // a GET request to the GitHub API. If no token is provided as an argument,
 // it checks for a GITHUB_TOKEN environment variable and uses that.
-// It sets the Authorization header with the token and examines the response status code.
+// It sets the Authorization header with the token and examines the
+// response status code.
 //
 // **Parameters:**
 //
