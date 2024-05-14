@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	gitutils "github.com/l50/goutils/v2/git"
@@ -55,9 +54,8 @@ func (b *Blueprint) ParseCommandLineFlags(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to get provisionPath: %v", err)
 	}
 
-	if strings.Contains(b.ProvisioningRepo, "~") {
-		b.ProvisioningRepo = sys.ExpandHomeDir(b.ProvisioningRepo)
-	}
+	// Expand input provisioning repo path to absolute path
+	b.ProvisioningRepo = sys.ExpandHomeDir(b.ProvisioningRepo)
 
 	b.Name, err = cmd.Flags().GetString("blueprint")
 	if err != nil {

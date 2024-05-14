@@ -20,7 +20,8 @@ import (
 )
 
 var (
-	githubToken     string
+	githubToken string
+
 	imageBuilderCmd = &cobra.Command{
 		Use:   "imageBuilder",
 		Short: "Build a container image using packer and a provisioning repo",
@@ -36,6 +37,27 @@ var (
 		},
 	}
 )
+
+func init() {
+	rootCmd.AddCommand(imageBuilderCmd)
+
+	imageBuilderCmd.Flags().StringP(
+		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
+	if err := imageBuilderCmd.MarkFlagRequired("provisionPath"); err != nil {
+		log.L().Error(err)
+		cobra.CheckErr(err)
+	}
+
+	imageBuilderCmd.Flags().StringP(
+		"blueprint", "b", "", "The blueprint to use for image building.")
+	if err := imageBuilderCmd.MarkFlagRequired("blueprint"); err != nil {
+		log.L().Error(err)
+		cobra.CheckErr(err)
+	}
+
+	imageBuilderCmd.Flags().StringVarP(
+		&githubToken, "github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
+}
 
 // RunImageBuilder is the main function for the imageBuilder command
 // that builds container images using Packer.
@@ -78,12 +100,13 @@ func buildPackerImages(blueprint bp.Blueprint, packerTemplates []packer.Blueprin
 	for _, pTmpl := range packerTemplates {
 		missingFields = []string{}
 		requiredFields := map[string]string{
-			"Base.Name":      pTmpl.Base.Name,
-			"Base.Version":   pTmpl.Base.Version,
-			"Tag.Name":       pTmpl.Tag.Name,
-			"Tag.Version":    pTmpl.Tag.Version,
-			"User":           pTmpl.User,
-			"Blueprint.Name": blueprint.Name,
+			"Base.Name":                  pTmpl.Base.Name,
+			"Base.Version":               pTmpl.Base.Version,
+			"Tag.Name":                   pTmpl.Tag.Name,
+			"Tag.Version":                pTmpl.Tag.Version,
+			"User":                       pTmpl.User,
+			"Blueprint.Name":             blueprint.Name,
+			"Blueprint.ProvisioningRepo": blueprint.ProvisioningRepo,
 		}
 
 		for fieldName, fieldValue := range requiredFields {
@@ -185,27 +208,6 @@ func pushDockerImages(packerTemplates []packer.BlueprintPacker) error {
 	}
 
 	return nil
-}
-
-func init() {
-	rootCmd.AddCommand(imageBuilderCmd)
-
-	imageBuilderCmd.Flags().StringP(
-		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
-	if err := imageBuilderCmd.MarkFlagRequired("provisionPath"); err != nil {
-		log.L().Error(err)
-		cobra.CheckErr(err)
-	}
-
-	imageBuilderCmd.Flags().StringP(
-		"blueprint", "b", "", "The blueprint to use for image building.")
-	if err := imageBuilderCmd.MarkFlagRequired("blueprint"); err != nil {
-		log.L().Error(err)
-		cobra.CheckErr(err)
-	}
-
-	imageBuilderCmd.Flags().StringVarP(
-		&githubToken, "github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
 }
 
 func createBuildDir(blueprint bp.Blueprint) (string, error) {
@@ -326,7 +328,7 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 		"build",
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
-		"-var", fmt.Sprintf("blueprint_name=%s", pTmpl.Base.Name),
+		"-var", fmt.Sprintf("blueprint_name=%s", blueprint.Name),
 		"-var", fmt.Sprintf("user=%s", pTmpl.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
 		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
