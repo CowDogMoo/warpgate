@@ -136,9 +136,9 @@ jobs:
           export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
 
           if [[ "$blueprint_name" == "runzero-explorer" ]]; then
-            provision_path="ansible-collection-workstation"
+            provision_path="${{ github.workspace }}/ansible-collection-workstation/playbooks/$blueprint_name"
           elif [[ "$blueprint_name" == "sliver" || "$blueprint_name" == "ttpforge" || "$blueprint_name" == "atomic-red-team" ]]; then
-            provision_path="ansible-collection-arsenal"
+            provision_path="${{ github.workspace }}/ansible-collection-arsenal/playbooks/$blueprint_name"
           else
             echo "Unknown blueprint: $blueprint_name"
             exit 1
@@ -149,7 +149,6 @@ jobs:
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"
-        working-directory: ${{ github.workspace }}
 
       - name: Setup tmate session
         if: ${{ failure() }}
