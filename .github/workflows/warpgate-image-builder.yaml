@@ -134,6 +134,7 @@ jobs:
         run: |
           blueprint_name="${{ matrix.blueprint.blueprint }}"
           export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
+          provision_path=""
 
           if [[ "$blueprint_name" == "runzero-explorer" ]]; then
             provision_path="${{ github.workspace }}/ansible-collection-workstation/playbooks/$blueprint_name"
