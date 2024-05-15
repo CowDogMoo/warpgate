@@ -42,10 +42,6 @@ const (
 	defaultConfigDir  = ".warp"
 	defaultConfigName = "config"
 	defaultConfigType = "yaml"
-
-	blueprintKey       = "blueprint"
-	containerKey       = "container"
-	packerTemplatesKey = "packer_templates"
 )
 
 var (

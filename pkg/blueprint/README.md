@@ -17,6 +17,39 @@ The `blueprint` package is a part of the WarpGate.
 
 ## Functions
 
+### Blueprint.CreateBuildDir()
+
+```go
+CreateBuildDir() error
+```
+
+CreateBuildDir creates a temporary build directory and copies the repo into it.
+
+**Returns:**
+
+error: An error if the build directory creation or repo copy fails.
+CreateBuildDir creates a temporary build directory and copies the repo into it.
+
+**Returns:**
+
+error: An error if the build directory creation or repo copy fails.
+
+---
+
+### Blueprint.Initialize()
+
+```go
+Initialize() error
+```
+
+Initialize initializes the blueprint by setting up the necessary packer templates.
+
+**Returns:**
+
+error: An error if the initialization fails.
+
+---
+
 ### Blueprint.ParseCommandLineFlags(*cobra.Command)
 
 ```go
