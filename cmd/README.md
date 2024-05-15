@@ -39,13 +39,13 @@ that builds container images using Packer.
 
 **Parameters:**
 
-cmd: A Cobra command object containing flags and arguments for the command.
-args: A slice of strings containing additional arguments passed to the command.
-bp: A Blueprint struct containing the blueprint configuration.
+- cmd: A Cobra command object containing flags and arguments for the command.
+- args: A slice of strings containing additional arguments passed to the command.
+- blueprint: A Blueprint struct containing the blueprint configuration.
 
 **Returns:**
 
-error: An error if any issue occurs while building the images.
+- error: An error if any issue occurs while building the images.
 
 ---
 

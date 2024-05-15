@@ -9,8 +9,10 @@ import (
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/docker"
 	packer "github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/cowdogmoo/warpgate/pkg/registry"
 	"github.com/fatih/color"
 	log "github.com/l50/goutils/v2/logging"
+	"github.com/l50/goutils/v2/sys"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -26,9 +28,9 @@ var (
 			if err := blueprint.ParseCommandLineFlags(cmd); err != nil {
 				return err
 			}
-			// if err := registry.ValidateToken(githubToken); err != nil {
-			// 	return err
-			// }
+			if err := registry.ValidateToken(githubToken); err != nil {
+				return err
+			}
 			return RunImageBuilder(cmd, args, blueprint)
 		},
 	}
@@ -60,13 +62,13 @@ func init() {
 //
 // **Parameters:**
 //
-// cmd: A Cobra command object containing flags and arguments for the command.
-// args: A slice of strings containing additional arguments passed to the command.
-// bp: A Blueprint struct containing the blueprint configuration.
+// - cmd: A Cobra command object containing flags and arguments for the command.
+// - args: A slice of strings containing additional arguments passed to the command.
+// - blueprint: A Blueprint struct containing the blueprint configuration.
 //
 // **Returns:**
 //
-// error: An error if any issue occurs while building the images.
+// - error: An error if any issue occurs while building the images.
 func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) error {
 	packerTemplates, err := packer.LoadPackerTemplates()
 	if err != nil || packerTemplates == nil {
@@ -245,16 +247,34 @@ func buildImageAttempt(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, at
 	log.L().Debugf("Attempt %d - Packer Parameters: %s", attempt, hideSensitiveArgs(args))
 
 	// Initialize the packer templates directory
+	log.L().Printf("Initializing %s packer template as part of the %s blueprint", pTmpl.Base.Name, blueprint.Name)
 	if err := pTmpl.RunInit([]string{"."}, templateDir); err != nil {
 		return fmt.Errorf("error initializing packer command: %v", err)
 	}
 
-	return pTmpl.RunBuild(args, templateDir)
+	// Verify the template directory contents
+	log.L().Debugf("Contents of the template directory: %s", templateDir)
+	cmd := sys.Cmd{
+		CmdString: "ls",
+		Args:      []string{"-la", templateDir},
+	}
+	if output, err := cmd.RunCmd(); err != nil {
+		log.L().Errorf("Failed to list contents of template directory: %v", err)
+	} else {
+		log.L().Debugf("Template directory contents:\n%s", output)
+	}
+
+	// Run the build command
+	log.L().Printf("Building %s packer template as part of the %s blueprint", pTmpl.Base.Name, blueprint.Name)
+	if err := pTmpl.RunBuild(args, templateDir); err != nil {
+		return fmt.Errorf("error running build command: %v", err)
+	}
+
+	return nil
 }
 
 func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, templateDir string) []string {
 	args := []string{
-		"build",
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
 		"-var", fmt.Sprintf("blueprint_name=%s", blueprint.Name),

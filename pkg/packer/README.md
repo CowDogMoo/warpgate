@@ -38,13 +38,17 @@ output: The output from the Packer build command.
 RunBuild([]string, string) error
 ```
 
-RunBuild runs the build command with the provided arguments.
+RunBuild runs the Packer build command with the provided arguments.
 
 **Parameters:**
-- args: The arguments for the build command.
+
+args: A slice of strings representing the build command arguments.
+dir: The directory in which to run the command. If empty, the current
+directory is used.
 
 **Returns:**
-- error: An error if the build command fails.
+
+error: An error if the build command fails.
 
 ---
 
@@ -54,7 +58,17 @@ RunBuild runs the build command with the provided arguments.
 RunInit([]string, string) error
 ```
 
-RunInit runs the init command with the provided arguments.
+RunInit runs the Packer init command with the provided arguments.
+
+**Parameters:**
+
+args: A slice of strings representing the init command arguments.
+dir: The directory in which to run the command. If empty, the current
+directory is used.
+
+**Returns:**
+
+error: An error if the init command fails.
 
 ---
 
@@ -64,7 +78,17 @@ RunInit runs the init command with the provided arguments.
 RunValidate([]string, string) error
 ```
 
-RunValidate runs the validate command with the provided arguments.
+RunValidate runs the Packer validate command with the provided arguments.
+
+**Parameters:**
+
+args: A slice of strings representing the validate command arguments.
+dir: The directory in which to run the command. If empty, the current
+directory is used.
+
+**Returns:**
+
+error: An error if the validate command fails.
 
 ---
 
@@ -74,7 +98,12 @@ RunValidate runs the validate command with the provided arguments.
 RunVersion() string, error
 ```
 
-RunVersion runs the version command and returns the Packer version.
+RunVersion runs the Packer version command and returns the Packer version.
+
+**Returns:**
+
+string: The version of Packer.
+error: An error if the version command fails.
 
 ---
 
