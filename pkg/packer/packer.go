@@ -112,12 +112,17 @@ func LoadPackerTemplates() ([]BlueprintPacker, error) {
 		return nil, fmt.Errorf("no packer templates found")
 	}
 
-	// Check and load AMI settings if available
+	// Check and load AMI and container settings if available
 	for i, tmpl := range packerTemplates {
 		var amiConfig BlueprintAMI
 		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &amiConfig); err == nil {
 			tmpl.AMI = amiConfig
 			packerTemplates[i] = tmpl // Update the templates slice with the AMI settings
+		}
+		var containerConfig BlueprintContainer
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container", i), &containerConfig); err == nil {
+			tmpl.Container = containerConfig
+			packerTemplates[i] = tmpl // Update the templates slice with the container settings
 		}
 	}
 

@@ -55,7 +55,7 @@ func (p *BlueprintPacker) runCommand(
 		return fmt.Errorf("error running %s command: %v", subCmd, err)
 	}
 
-	if subCmd == "build" {
+	if subCmd == "build" && p.Container.Registry.Server != "" {
 		p.ParseImageHashes("")
 	}
 
@@ -78,9 +78,12 @@ func (p *BlueprintPacker) RunBuild(args []string, dir string) error {
 		dir = "."
 	}
 
+	fmt.Printf("Running Packer build command from the %s directory...", dir)
 	outputHandler := func(s string) {
 		fmt.Println(s)
-		p.ParseImageHashes(s)
+		if p.Container.Registry.Server != "" {
+			p.ParseImageHashes(s)
+		}
 	}
 
 	if len(args) > 0 && args[0] == "build" {

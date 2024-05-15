@@ -8,7 +8,7 @@ import (
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/docker"
-	packer "github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/cowdogmoo/warpgate/pkg/registry"
 	"github.com/fatih/color"
 	log "github.com/l50/goutils/v2/logging"
@@ -24,13 +24,29 @@ var (
 		Use:   "imageBuilder",
 		Short: "Build a container image using packer and a provisioning repo",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var blueprint bp.Blueprint
+			var err error
+
+			githubToken, err = cmd.Flags().GetString("github-token")
+			if err != nil {
+				return err
+			}
+
+			if err := blueprint.CreateBuildDir(); err != nil {
+				return err
+			}
+
 			if err := blueprint.ParseCommandLineFlags(cmd); err != nil {
 				return err
 			}
+
+			if err := blueprint.SetConfigPath(); err != nil {
+				return err
+			}
+
 			if err := registry.ValidateToken(githubToken); err != nil {
 				return err
 			}
+
 			return RunImageBuilder(cmd, args, blueprint)
 		},
 	}
@@ -53,8 +69,8 @@ func init() {
 		cobra.CheckErr(err)
 	}
 
-	imageBuilderCmd.Flags().StringVarP(
-		&githubToken, "github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
+	imageBuilderCmd.Flags().StringP(
+		"github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
 }
 
 // RunImageBuilder is the main function for the imageBuilder command
@@ -72,7 +88,7 @@ func init() {
 func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) error {
 	packerTemplates, err := packer.LoadPackerTemplates()
 	if err != nil || packerTemplates == nil {
-		return fmt.Errorf("no packer templates found:%v", err)
+		return fmt.Errorf("no packer templates found: %v", err)
 	}
 
 	if len(packerTemplates) == 0 {
@@ -241,48 +257,45 @@ func buildImageAttempt(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, at
 		return err
 	}
 
-	templateDir := filepath.Join(blueprint.BuildDir, "blueprints", blueprint.Name, "packer_templates")
-	args := preparePackerArgs(pTmpl, blueprint, templateDir)
+	args := preparePackerArgs(pTmpl, blueprint)
 
 	log.L().Debugf("Attempt %d - Packer Parameters: %s", attempt, hideSensitiveArgs(args))
 
 	// Initialize the packer templates directory
 	log.L().Printf("Initializing %s packer template as part of the %s blueprint", pTmpl.Base.Name, blueprint.Name)
-	if err := pTmpl.RunInit([]string{"."}, templateDir); err != nil {
+	if err := pTmpl.RunInit([]string{"."}, filepath.Join(blueprint.Path, "packer_templates")); err != nil {
 		return fmt.Errorf("error initializing packer command: %v", err)
 	}
 
 	// Verify the template directory contents
-	log.L().Debugf("Contents of the template directory: %s", templateDir)
+	log.L().Debugf("Contents of the %s build directory", blueprint.Name)
 	cmd := sys.Cmd{
 		CmdString: "ls",
-		Args:      []string{"-la", templateDir},
+		Args:      []string{"-la", blueprint.Path},
 	}
-	if output, err := cmd.RunCmd(); err != nil {
+
+	if _, err := cmd.RunCmd(); err != nil {
 		log.L().Errorf("Failed to list contents of template directory: %v", err)
-	} else {
-		log.L().Debugf("Template directory contents:\n%s", output)
+		return err
 	}
 
 	// Run the build command
 	log.L().Printf("Building %s packer template as part of the %s blueprint", pTmpl.Base.Name, blueprint.Name)
-	if err := pTmpl.RunBuild(args, templateDir); err != nil {
+	if err := pTmpl.RunBuild(args, filepath.Join(blueprint.Path, "packer_templates")); err != nil {
 		return fmt.Errorf("error running build command: %v", err)
 	}
 
 	return nil
 }
 
-func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, templateDir string) []string {
+func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint) []string {
 	args := []string{
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.Base.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.Base.Version),
 		"-var", fmt.Sprintf("blueprint_name=%s", blueprint.Name),
-		"-var", fmt.Sprintf("pkr_build_dir=%s", templateDir),
 		"-var", fmt.Sprintf("user=%s", pTmpl.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", blueprint.ProvisioningRepo),
 		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
-		templateDir,
 	}
 
 	// Add AMI specific variables if they exist
@@ -296,7 +309,7 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, te
 	if pTmpl.Container.Entrypoint != "" {
 		args = append(args, "-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint))
 	}
-
+	args = append(args, ".")
 	log.L().Debugf("Packer Parameters: %s", hideSensitiveArgs(args))
 
 	return args

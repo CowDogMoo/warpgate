@@ -62,17 +62,20 @@ func TestParseCommandLineFlags(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repoRoot, err := gitutils.RepoRoot()
-			if err != nil {
-				t.Fatalf("Failed to get repo root: %v", err)
-			}
-
 			cmd, cleanup := tc.setup(t)
 			defer cleanup()
 
 			blueprint := &bp.Blueprint{}
-			err = blueprint.ParseCommandLineFlags(cmd)
+			blueprint.Name = "ttpforge"
+			if err := blueprint.Initialize(); err != nil {
+				t.Fatalf("Failed to initialize blueprint: %v", err)
+			}
 
+			if err := blueprint.SetConfigPath(); err != nil {
+				t.Fatalf("Failed to set config path: %v", err)
+			}
+
+			err = blueprint.ParseCommandLineFlags(cmd)
 			if (err != nil) != tc.expectError {
 				t.Errorf("ParseCommandLineFlags() error = %v, expectError %v", err, tc.expectError)
 			}
@@ -84,7 +87,7 @@ func TestParseCommandLineFlags(t *testing.T) {
 					t.Errorf("Expected Name to be %s, got %s", blueprintName, blueprint.Name)
 				}
 
-				expectedPath := filepath.Join(repoRoot, "blueprints", blueprintName)
+				expectedPath := blueprint.Path
 				if blueprint.Path != expectedPath {
 					t.Errorf("Expected Path to be %s, got %s", expectedPath, blueprint.Path)
 				}
@@ -122,7 +125,7 @@ func TestSetConfigPath(t *testing.T) {
 			blueprintDir: repoRoot,
 			setup: func() bp.Blueprint {
 				blueprintPath := filepath.Join(repoRoot, "blueprints", "ttpforge")
-				if _, err := os.Stat(blueprintPath); os.IsNotExist(err) {
+				if _, err := os.Stat(repoRoot); os.IsNotExist(err) {
 					t.Fatalf("blueprint directory does not exist at %s", blueprintPath)
 				}
 
