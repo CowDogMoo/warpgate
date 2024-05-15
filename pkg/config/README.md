@@ -20,10 +20,10 @@ The `config` package is a part of the WarpGate.
 ## Installation
 
 To use the WarpGate/config package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/config
+go install github.com/cowdogmoo/warpgate/config@latest
 ```
 
 ---

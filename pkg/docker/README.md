@@ -116,29 +116,13 @@ error: An error if the tagging operation fails.
 
 ---
 
-### ParseImageHashes(string, *packer.BlueprintPacker)
-
-```go
-ParseImageHashes(string, *packer.BlueprintPacker)
-```
-
-ParseImageHashes extracts the image hashes from the output of a Packer build
-command and updates the provided Packer blueprint with the new hashes.
-
-**Parameters:**
-
-output: The output from the Packer build command.
-pTmpl: The Packer blueprint to update with the new image hashes.
-
----
-
 ## Installation
 
 To use the WarpGate/docker package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/docker
+go install github.com/cowdogmoo/warpgate/docker@latest
 ```
 
 ---

@@ -17,6 +17,67 @@ The `packer` package is a part of the WarpGate.
 
 ## Functions
 
+### BlueprintPacker.ParseImageHashes(string)
+
+```go
+ParseImageHashes(string)
+```
+
+ParseImageHashes extracts the image hashes from the output of a Packer build
+command and updates the provided Packer blueprint with the new hashes.
+
+**Parameters:**
+
+output: The output from the Packer build command.
+
+---
+
+### BlueprintPacker.RunBuild([]string, string)
+
+```go
+RunBuild([]string, string) error
+```
+
+RunBuild runs the build command with the provided arguments.
+
+**Parameters:**
+- args: The arguments for the build command.
+
+**Returns:**
+- error: An error if the build command fails.
+
+---
+
+### BlueprintPacker.RunInit([]string, string)
+
+```go
+RunInit([]string, string) error
+```
+
+RunInit runs the init command with the provided arguments.
+
+---
+
+### BlueprintPacker.RunValidate([]string, string)
+
+```go
+RunValidate([]string, string) error
+```
+
+RunValidate runs the validate command with the provided arguments.
+
+---
+
+### BlueprintPacker.RunVersion()
+
+```go
+RunVersion() string, error
+```
+
+RunVersion runs the version command and returns the Packer version.
+
+---
+
 ### LoadPackerTemplates()
 
 ```go
@@ -35,10 +96,10 @@ error: An error if any issue occurs while loading the Packer templates.
 ## Installation
 
 To use the WarpGate/packer package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/packer
+go install github.com/cowdogmoo/warpgate/packer@latest
 ```
 
 ---

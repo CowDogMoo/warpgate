@@ -85,10 +85,10 @@ error: An error if the configuration path cannot be set.
 ## Installation
 
 To use the WarpGate/blueprint package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/blueprint
+go install github.com/cowdogmoo/warpgate/blueprint@latest
 ```
 
 ---

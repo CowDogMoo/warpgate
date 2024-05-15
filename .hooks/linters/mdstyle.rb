@@ -15,9 +15,8 @@ all
 # Override default parameters for some built-in rules.
 # https://github.com/markdownlint/markdownlint/blob/master/docs/creating_styles.md#parameters
 
-exclude_tag :line_length
-# Allow long lines in code blocks and tables
-rule 'MD013', line_length: 120, ignore_code_blocks: true, tables: false
+# Ignore line length in code blocks.
+rule 'MD013', ignore_code_blocks: true
 
 #===============================================================================
 # Exclude the rules I disagree with.
@@ -36,6 +35,9 @@ exclude_rule 'MD029'
 
 # The first line doesn't always need to be a top level header.
 exclude_rule 'MD041'
+
+# Lists don't need to be surrounded by blank lines.
+exclude_rule 'MD032'
 
 # I find it necessary to use '<br/>' to force line breaks.
 exclude_rule 'MD033' # Inline HTML

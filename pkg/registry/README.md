@@ -45,10 +45,10 @@ the GITHUB_TOKEN environment variable is not set.
 ## Installation
 
 To use the WarpGate/registry package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/registry
+go install github.com/cowdogmoo/warpgate/registry@latest
 ```
 
 ---

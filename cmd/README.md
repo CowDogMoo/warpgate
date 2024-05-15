@@ -52,10 +52,10 @@ error: An error if any issue occurs while building the images.
 ## Installation
 
 To use the WarpGate/cmd package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/cmd
+go install github.com/cowdogmoo/warpgate/cmd@latest
 ```
 
 ---

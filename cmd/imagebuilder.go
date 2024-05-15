@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -12,7 +11,6 @@ import (
 	packer "github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/fatih/color"
 	log "github.com/l50/goutils/v2/logging"
-	"github.com/l50/goutils/v2/sys"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -241,17 +239,17 @@ func buildImageAttempt(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, at
 		return err
 	}
 
-	templateDir := filepath.Join(blueprint.Path, "blueprints", blueprint.Name, "packer_templates")
+	templateDir := filepath.Join(blueprint.BuildDir, "blueprints", blueprint.Name, "packer_templates")
 	args := preparePackerArgs(pTmpl, blueprint, templateDir)
 
 	log.L().Debugf("Attempt %d - Packer Parameters: %s", attempt, hideSensitiveArgs(args))
 
-	if err := os.Chdir(blueprint.Path); err != nil {
-		log.L().Errorf("Failed to change into the %s directory: %v", blueprint.Path, err)
-		return err
+	// Initialize the packer templates directory
+	if err := pTmpl.RunInit([]string{"."}, templateDir); err != nil {
+		return fmt.Errorf("error initializing packer command: %v", err)
 	}
 
-	return runPackerBuild(args, pTmpl)
+	return pTmpl.RunBuild(args, templateDir)
 }
 
 func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, templateDir string) []string {
@@ -293,18 +291,4 @@ func hideSensitiveArgs(args []string) []string {
 		}
 	}
 	return logArgs
-}
-
-func runPackerBuild(args []string, pTmpl *packer.BlueprintPacker) error {
-	cmd := sys.Cmd{
-		CmdString: "packer",
-		Args:      args,
-		OutputHandler: func(s string) {
-			log.L().Println(s)
-			docker.ParseImageHashes(s, pTmpl)
-		},
-	}
-
-	_, err := cmd.RunCmd()
-	return err
 }

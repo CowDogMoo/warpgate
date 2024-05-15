@@ -165,3 +165,30 @@ func TestLoadPackerTemplates(t *testing.T) {
 		})
 	}
 }
+
+func TestParseImageHashes(t *testing.T) {
+	tests := []struct {
+		name           string
+		output         string
+		expectedHashes map[string]string
+	}{
+		{
+			name:           "valid output with hashes",
+			output:         "Imported Docker image: sha256: abcd1234",
+			expectedHashes: map[string]string{"docker": "abcd1234"},
+		},
+		{
+			name:           "invalid output without hashes",
+			output:         "No Docker image imported",
+			expectedHashes: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			blueprintPacker := &packer.BlueprintPacker{}
+			blueprintPacker.ParseImageHashes(tc.output)
+			assert.Equal(t, tc.expectedHashes, blueprintPacker.ImageHashes)
+		})
+	}
+}
