@@ -65,7 +65,7 @@ run_provision_logic() {
         --connection=local \
         --inventory 127.0.0.1, \
         --limit 127.0.0.1 \
-        "${PKR_BUILD_DIR}/playbooks/atomic_red_team/atomic_red_team.yml"
+        "${PKR_BUILD_DIR}/playbooks/atomic-red-team/atomic-red-team.yml"
 
     # Wait for ansible to finish
     while /usr/bin/pgrep ansible > /dev/null; do

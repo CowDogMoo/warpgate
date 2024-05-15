@@ -17,6 +17,96 @@ The `packer` package is a part of the WarpGate.
 
 ## Functions
 
+### BlueprintPacker.ParseImageHashes(string)
+
+```go
+ParseImageHashes(string)
+```
+
+ParseImageHashes extracts the image hashes from the output of a Packer build
+command and updates the provided Packer blueprint with the new hashes.
+
+**Parameters:**
+
+output: The output from the Packer build command.
+
+---
+
+### BlueprintPacker.RunBuild([]string, string)
+
+```go
+RunBuild([]string, string) error
+```
+
+RunBuild runs the Packer build command with the provided arguments.
+
+**Parameters:**
+
+args: A slice of strings representing the build command arguments.
+dir: The directory in which to run the command. If empty, the current
+directory is used.
+
+**Returns:**
+
+error: An error if the build command fails.
+
+---
+
+### BlueprintPacker.RunInit([]string, string)
+
+```go
+RunInit([]string, string) error
+```
+
+RunInit runs the Packer init command with the provided arguments.
+
+**Parameters:**
+
+args: A slice of strings representing the init command arguments.
+dir: The directory in which to run the command. If empty, the current
+directory is used.
+
+**Returns:**
+
+error: An error if the init command fails.
+
+---
+
+### BlueprintPacker.RunValidate([]string, string)
+
+```go
+RunValidate([]string, string) error
+```
+
+RunValidate runs the Packer validate command with the provided arguments.
+
+**Parameters:**
+
+args: A slice of strings representing the validate command arguments.
+dir: The directory in which to run the command. If empty, the current
+directory is used.
+
+**Returns:**
+
+error: An error if the validate command fails.
+
+---
+
+### BlueprintPacker.RunVersion()
+
+```go
+RunVersion() string, error
+```
+
+RunVersion runs the Packer version command and returns the Packer version.
+
+**Returns:**
+
+string: The version of Packer.
+error: An error if the version command fails.
+
+---
+
 ### LoadPackerTemplates()
 
 ```go
@@ -35,10 +125,10 @@ error: An error if any issue occurs while loading the Packer templates.
 ## Installation
 
 To use the WarpGate/packer package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/packer
+go install github.com/cowdogmoo/warpgate/packer@latest
 ```
 
 ---

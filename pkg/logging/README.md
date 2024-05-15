@@ -177,10 +177,10 @@ args: The arguments to be formatted into the log message.
 ## Installation
 
 To use the WarpGate/logging package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/logging
+go install github.com/cowdogmoo/warpgate/logging@latest
 ```
 
 ---

@@ -101,10 +101,10 @@ error: An error if any issue occurs while running the tests.
 ## Installation
 
 To use the WarpGate/magehelpers package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/magehelpers
+go install github.com/cowdogmoo/warpgate/magehelpers@latest
 ```
 
 ---

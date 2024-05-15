@@ -71,7 +71,7 @@ build {
   }
 
   provisioner "file" {
-    source      = "${path.cwd}/scripts/provision.sh"
+    source      = "../scripts/provision.sh"
     destination = "${var.pkr_build_dir}/provision.sh"
   }
 

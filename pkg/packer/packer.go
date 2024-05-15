@@ -1,28 +1,8 @@
-/*
-Copyright © 2024-present, Jayson Grace <jayson.e.grace@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 package packer
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -132,14 +112,40 @@ func LoadPackerTemplates() ([]BlueprintPacker, error) {
 		return nil, fmt.Errorf("no packer templates found")
 	}
 
-	// Check and load AMI settings if available
+	// Check and load AMI and container settings if available
 	for i, tmpl := range packerTemplates {
 		var amiConfig BlueprintAMI
 		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &amiConfig); err == nil {
 			tmpl.AMI = amiConfig
 			packerTemplates[i] = tmpl // Update the templates slice with the AMI settings
 		}
+		var containerConfig BlueprintContainer
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container", i), &containerConfig); err == nil {
+			tmpl.Container = containerConfig
+			packerTemplates[i] = tmpl // Update the templates slice with the container settings
+		}
 	}
 
 	return packerTemplates, nil
+}
+
+// ParseImageHashes extracts the image hashes from the output of a Packer build
+// command and updates the provided Packer blueprint with the new hashes.
+//
+// **Parameters:**
+//
+// output: The output from the Packer build command.
+func (p *BlueprintPacker) ParseImageHashes(output string) {
+	if strings.Contains(output, "Imported Docker image: sha256:") {
+		parts := strings.Split(output, " ")
+		for i, part := range parts {
+			if part == "sha256:" && i+1 < len(parts) {
+				hash := parts[i+1]
+				if p.ImageHashes == nil {
+					p.ImageHashes = make(map[string]string)
+				}
+				p.ImageHashes["docker"] = hash
+			}
+		}
+	}
 }

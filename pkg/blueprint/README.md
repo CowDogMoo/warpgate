@@ -17,6 +17,39 @@ The `blueprint` package is a part of the WarpGate.
 
 ## Functions
 
+### Blueprint.CreateBuildDir()
+
+```go
+CreateBuildDir() error
+```
+
+CreateBuildDir creates a temporary build directory and copies the repo into it.
+
+**Returns:**
+
+error: An error if the build directory creation or repo copy fails.
+CreateBuildDir creates a temporary build directory and copies the repo into it.
+
+**Returns:**
+
+error: An error if the build directory creation or repo copy fails.
+
+---
+
+### Blueprint.Initialize()
+
+```go
+Initialize() error
+```
+
+Initialize initializes the blueprint by setting up the necessary packer templates.
+
+**Returns:**
+
+error: An error if the initialization fails.
+
+---
+
 ### Blueprint.ParseCommandLineFlags(*cobra.Command)
 
 ```go
@@ -52,10 +85,10 @@ error: An error if the configuration path cannot be set.
 ## Installation
 
 To use the WarpGate/blueprint package, you first need to install it.
-Follow the steps below to install via go get.
+Follow the steps below to install via go install.
 
 ```bash
-go get github.com/cowdogmoo/warpgate/blueprint
+go install github.com/cowdogmoo/warpgate/blueprint@latest
 ```
 
 ---
