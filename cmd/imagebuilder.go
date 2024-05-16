@@ -185,14 +185,10 @@ func pushDockerImages(packerTemplates []packer.BlueprintPacker) error {
 		return err
 	}
 
+	var manifestImages []string
+
 	for _, pTmpl := range packerTemplates {
 		imageName := pTmpl.Tag.Name
-
-		// Skip Docker operations if no Docker images were built
-		if len(pTmpl.ImageHashes) == 0 {
-			log.L().Printf("No Docker images were built for template %s, skipping Docker operations.", pTmpl.Base.Name)
-			continue
-		}
 
 		// Create a slice to store the image tags for the manifest
 		var imageTags []string
@@ -215,18 +211,21 @@ func pushDockerImages(packerTemplates []packer.BlueprintPacker) error {
 			imageTags = append(imageTags, remoteTag)
 		}
 
-		// Create and push the manifest
-		if len(imageTags) > 1 {
-			manifestName := fmt.Sprintf("%s/%s:latest", registryServer, imageName)
-			if err := docker.DockerManifestCreate(manifestName, imageTags); err != nil {
-				return err
-			}
-			if err := docker.DockerManifestPush(manifestName); err != nil {
-				return err
-			}
-		} else {
-			fmt.Printf("Not enough images for manifest creation: %v\n", imageTags)
+		// Add the image tags to the manifest images slice
+		manifestImages = append(manifestImages, imageTags...)
+	}
+
+	// Create and push the manifest
+	if len(manifestImages) > 1 {
+		manifestName := fmt.Sprintf("%s/%s:latest", registryServer, packerTemplates[0].Tag.Name)
+		if err := docker.DockerManifestCreate(manifestName, manifestImages); err != nil {
+			return err
 		}
+		if err := docker.DockerManifestPush(manifestName); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("Not enough images for manifest creation: %v\n", manifestImages)
 	}
 
 	return nil
@@ -264,7 +263,7 @@ func buildImageAttempt(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, at
 
 	args := preparePackerArgs(pTmpl, blueprint)
 
-	log.L().Debugf("Attempt %d - Packer Parameters: %s", attempt, hideSensitiveArgs(args))
+	log.L().Debugf("Attempt %d - Packer Parameters: %s\n", attempt, hideSensitiveArgs(args))
 
 	// Initialize the packer templates directory
 	log.L().Printf("Initializing %s packer template as part of the %s blueprint", pTmpl.Base.Name, blueprint.Name)
@@ -273,7 +272,7 @@ func buildImageAttempt(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint, at
 	}
 
 	// Verify the template directory contents
-	log.L().Debugf("Contents of the %s build directory", blueprint.Name)
+	log.L().Debugf("Contents of the %s build directory\n", blueprint.Name)
 	cmd := sys.Cmd{
 		CmdString: "ls",
 		Args:      []string{"-la", blueprint.Path},
@@ -315,7 +314,7 @@ func preparePackerArgs(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint) []
 		args = append(args, "-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint))
 	}
 	args = append(args, ".")
-	log.L().Debugf("Packer Parameters: %s", hideSensitiveArgs(args))
+	log.L().Debugf("Packer Parameters: %s\n", hideSensitiveArgs(args))
 
 	return args
 }

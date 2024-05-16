@@ -145,7 +145,3 @@ jobs:
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"
         working-directory: ${{ github.workspace }}
-
-      - name: Setup tmate session
-        if: ${{ failure() }}
-        uses: mxschmitt/action-tmate@v3
