@@ -145,6 +145,9 @@ jobs:
             exit 1
           fi
 
+          echo "Using provision path: $provision_path"
+          ls -la "$provision_path"
+
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
           wg imageBuilder \
             -b "$blueprint_name" \
