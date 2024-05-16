@@ -104,7 +104,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return err
 	}
 
-	if err := pushDockerImages(packerTemplates); err != nil {
+	if err := docker.PushDockerImages(packerTemplates); err != nil {
 		return err
 	}
 
@@ -185,13 +185,12 @@ func pushDockerImages(packerTemplates []packer.BlueprintPacker) error {
 		return err
 	}
 
-	var manifestImages []string
-
 	for _, pTmpl := range packerTemplates {
 		imageName := pTmpl.Tag.Name
 
 		// Create a slice to store the image tags for the manifest
 		var imageTags []string
+
 		for arch, hash := range pTmpl.ImageHashes {
 			// Define the local and remote tags
 			localTag := fmt.Sprintf("sha256:%s", hash)
@@ -211,24 +210,21 @@ func pushDockerImages(packerTemplates []packer.BlueprintPacker) error {
 			imageTags = append(imageTags, remoteTag)
 		}
 
-		// Add the image tags to the manifest images slice
-		manifestImages = append(manifestImages, imageTags...)
-	}
-
-	// Create and push the manifest
-	if len(manifestImages) > 1 {
-		manifestName := fmt.Sprintf("%s/%s:latest", registryServer, packerTemplates[0].Tag.Name)
-		if err := docker.DockerManifestCreate(manifestName, manifestImages); err != nil {
-			return err
+		// Create and push the manifest
+		if len(imageTags) > 1 {
+			manifestName := fmt.Sprintf("%s/%s:latest", registryServer, imageName)
+			if err := docker.DockerManifestCreate(manifestName, imageTags); err != nil {
+				return err
+			}
+			if err := docker.DockerManifestPush(manifestName); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("Not enough images for manifest creation: %v\n", imageTags)
 		}
-		if err := docker.DockerManifestPush(manifestName); err != nil {
-			return err
-		}
-	} else {
-		fmt.Printf("Not enough images for manifest creation: %v\n", manifestImages)
 	}
-
 	return nil
+
 }
 
 func buildPackerImage(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint) error {

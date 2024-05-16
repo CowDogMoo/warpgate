@@ -1,115 +1,104 @@
 package docker
 
 import (
-	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	"os/exec"
+	"io"
+
+	"github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
+	"github.com/spf13/viper"
 )
 
-// DockerLogin authenticates with a Docker registry using the provided username
-// and token. It executes the 'docker login' command.
-//
-// **Parameters:**
-//
-// username: The username for the Docker registry.
-// token: The access token for the Docker registry.
-//
-// **Returns:**
-//
-// error: An error if any issue occurs during the login process.
-func DockerLogin(username, token string) error {
-	cmd := exec.Command("docker", "login", "ghcr.io", "-u", username, "-p", token)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker login failed: %s", out.String())
-	}
-	return nil
+type DockerClientInterface interface {
+	DockerLogin(username, password, server string) (string, error)
+	DockerPush(image, authStr string) error
+	DockerTag(sourceImage, targetImage string) error
 }
 
-// DockerPush pushes a Docker image to a registry. It executes the 'docker push'
-// command with the specified image name.
-//
-// **Parameters:**
-//
-// image: The name of the image to push.
-//
-// **Returns:**
-//
-// error: An error if the push operation fails.
-func DockerPush(image string) error {
-	cmd := exec.Command("docker", "push", image)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker push failed for %s: %s", image, out.String())
-	}
-	return nil
+type DockerClient struct {
+	cli client.APIClient
 }
 
-// DockerManifestCreate creates a Docker manifest that references multiple
-// platform-specific versions of an image. It builds the manifest using the
-// 'docker manifest create' command.
-//
-// **Parameters:**
-//
-// manifest: The name of the manifest to create.
-// images: A slice of image names to include in the manifest.
-//
-// **Returns:**
-//
-// error: An error if the manifest creation fails.
-func DockerManifestCreate(manifest string, images []string) error {
-	args := []string{"manifest", "create", manifest}
-	for _, image := range images {
-		args = append(args, "--amend", image)
+func NewDockerClient() (*DockerClient, error) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, err
 	}
-	cmd := exec.Command("docker", args...)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker manifest create failed for %s: %s", manifest, out.String())
-	}
-	return nil
+	return &DockerClient{cli: cli}, nil
 }
 
-// DockerManifestPush pushes a Docker manifest to a registry. It uses the
-// 'docker manifest push' command.
-//
-// **Parameters:**
-//
-// manifest: The name of the manifest to push.
-//
-// **Returns:**
-//
-// error: An error if the push operation fails.
-func DockerManifestPush(manifest string) error {
-	cmd := exec.Command("docker", "manifest", "push", manifest)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker manifest push failed for %s: %s", manifest, out.String())
+func (d *DockerClient) DockerLogin(username, password, server string) (string, error) {
+	authConfig := map[string]string{
+		"username":      username,
+		"password":      password,
+		"serveraddress": server,
 	}
-	return nil
+	encodedJSON, err := json.Marshal(authConfig)
+	if err != nil {
+		return "", err
+	}
+	authStr := base64.URLEncoding.EncodeToString(encodedJSON)
+	return authStr, nil
 }
 
-// DockerTag tags a Docker image with a new name. It performs the operation
-// using the 'docker tag' command.
-//
-// **Parameters:**
-//
-// sourceImage: The current name of the image.
-// targetImage: The new name to assign to the image.
-//
-// **Returns:**
-//
-// error: An error if the tagging operation fails.
-func DockerTag(sourceImage, targetImage string) error {
-	cmd := exec.Command("docker", "tag", sourceImage, targetImage)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker tag failed for %s to %s: %s", sourceImage, targetImage, out.String())
+func (d *DockerClient) DockerPush(containerImage, authStr string) error {
+	ctx := context.Background()
+	resp, err := d.cli.ImagePush(ctx, containerImage, image.PushOptions{
+		RegistryAuth: authStr,
+	})
+	if err != nil {
+		return err
+	}
+	defer resp.Close()
+	_, err = io.ReadAll(resp)
+	return err
+}
+
+func (d *DockerClient) DockerTag(sourceImage, targetImage string) error {
+	ctx := context.Background()
+	return d.cli.ImageTag(ctx, sourceImage, targetImage)
+}
+
+func (d *DockerClient) PushDockerImages(packerTemplates []packer.BlueprintPacker) error {
+	registryServer := viper.GetString("container.registry.server")
+	registryUsername := viper.GetString("container.registry.username")
+	githubToken := viper.GetString("container.registry.token")
+
+	authStr, err := d.DockerLogin(registryUsername, githubToken, registryServer)
+	if err != nil {
+		return err
+	}
+
+	for _, pTmpl := range packerTemplates {
+		imageName := pTmpl.Tag.Name
+
+		var imageTags []string
+
+		for arch, hash := range pTmpl.ImageHashes {
+			localTag := fmt.Sprintf("sha256:%s", hash)
+			remoteTag := fmt.Sprintf("%s/%s:%s", registryServer, imageName, arch)
+
+			if err := d.DockerTag(localTag, remoteTag); err != nil {
+				return err
+			}
+
+			if err := d.DockerPush(remoteTag, authStr); err != nil {
+				return err
+			}
+
+			imageTags = append(imageTags, remoteTag)
+		}
+
+		if len(imageTags) > 1 {
+			manifestName := fmt.Sprintf("%s/%s:latest", registryServer, imageName)
+			fmt.Printf("Manifest creation and push needs to be handled by CLI or other means: %s\n", manifestName)
+		} else {
+			fmt.Printf("Not enough images for manifest creation: %v\n", imageTags)
+		}
 	}
 	return nil
 }
