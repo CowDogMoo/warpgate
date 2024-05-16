@@ -63,7 +63,7 @@ func (d *DockerClient) DockerTag(sourceImage, targetImage string) error {
 	return d.cli.ImageTag(ctx, sourceImage, targetImage)
 }
 
-func (d *DockerClient) PushDockerImages(packerTemplates []packer.BlueprintPacker) error {
+func (d *DockerClient) PushImages(packerTemplates []packer.BlueprintPacker) error {
 	registryServer := viper.GetString("container.registry.server")
 	registryUsername := viper.GetString("container.registry.username")
 	githubToken := viper.GetString("container.registry.token")

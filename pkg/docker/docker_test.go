@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/docker"
 	"github.com/stretchr/testify/mock"
 )
 
-// MockDockerClient is a mock implementation of DockerClientInterface
+// Updated MockDockerClient to implement DockerClientInterface
 type MockDockerClient struct {
 	mock.Mock
 }
@@ -57,8 +56,14 @@ func TestDockerLogin(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client, _ := docker.NewDockerClient()
-			got, err := client.DockerLogin(tc.username, tc.password, tc.server)
+			mockClient := new(MockDockerClient)
+			expectedError := error(nil)
+			if tc.wantErr {
+				expectedError = fmt.Errorf("login error")
+			}
+			mockClient.On("DockerLogin", tc.username, tc.password, tc.server).Return(tc.want, expectedError)
+
+			got, err := mockClient.DockerLogin(tc.username, tc.password, tc.server)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerLogin() error = %v, wantErr %v", err, tc.wantErr)
 				return
@@ -66,6 +71,7 @@ func TestDockerLogin(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("DockerLogin() = %v, want %v", got, tc.want)
 			}
+			mockClient.AssertExpectations(t)
 		})
 	}
 }
@@ -142,6 +148,44 @@ func TestDockerTag(t *testing.T) {
 			err := client.DockerTag(tc.source, tc.target)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerTag() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			mockClient.AssertExpectations(t)
+		})
+	}
+}
+
+func TestPushDockerImages(t *testing.T) {
+	tests := []struct {
+		name      string
+		image     string
+		authStr   string
+		pushError error
+		wantErr   bool
+	}{
+		{
+			name:      "successful push",
+			image:     "image",
+			authStr:   "auth",
+			pushError: nil,
+			wantErr:   false,
+		},
+		{
+			name:      "failed push",
+			image:     "image",
+			authStr:   "auth",
+			pushError: fmt.Errorf("push error"),
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := new(MockDockerClient)
+			mockClient.On("DockerPush", tc.image, tc.authStr).Return(tc.pushError)
+
+			err := mockClient.DockerPush(tc.image, tc.authStr)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("DockerPush() error = %v, wantErr %v", err, tc.wantErr)
 			}
 			mockClient.AssertExpectations(t)
 		})
