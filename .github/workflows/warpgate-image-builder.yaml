@@ -128,15 +128,9 @@ jobs:
 
           echo "Blueprint name: ${{ matrix.blueprint.blueprint }}"
           if [[ "${{ matrix.blueprint.blueprint }}" == "runzero-explorer" ]]; then
-<<<<<<< HEAD
-            provision_path="${{ github.workspace }}/ansible-collection-workstation/playbooks/${{ matrix.blueprint.blueprint }}"
-          elif [[ "${{ matrix.blueprint.blueprint }}" == "sliver" || "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]]; then
-            provision_path="${{ github.workspace }}/ansible-collection-arsenal/playbooks/${{ matrix.blueprint.blueprint }}"
-=======
             provision_path="${{ github.workspace }}/ansible-collection-workstation"
           elif [[ "${{ matrix.blueprint.blueprint }}" == "sliver" || "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]]; then
             provision_path="${{ github.workspace }}/ansible-collection-arsenal"
->>>>>>> 418625f (chore(deps): update module github.com/hashicorp/hcl to v2 (#296))
           else
             echo "Unknown blueprint: ${{ matrix.blueprint.blueprint }}"
             exit 1
