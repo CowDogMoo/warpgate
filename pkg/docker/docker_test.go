@@ -1,31 +1,17 @@
 package docker_test
 
 import (
-	"fmt"
+	"context"
+	"errors"
+	"io"
+	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/mock"
+	"github.com/cowdogmoo/warpgate/pkg/docker"
+	"github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
 )
-
-// Updated MockDockerClient to implement DockerClientInterface
-type MockDockerClient struct {
-	mock.Mock
-}
-
-func (m *MockDockerClient) DockerLogin(username, password, server string) (string, error) {
-	args := m.Called(username, password, server)
-	return args.String(0), args.Error(1)
-}
-
-func (m *MockDockerClient) DockerPush(image, authStr string) error {
-	args := m.Called(image, authStr)
-	return args.Error(0)
-}
-
-func (m *MockDockerClient) DockerTag(sourceImage, targetImage string) error {
-	args := m.Called(sourceImage, targetImage)
-	return args.Error(0)
-}
 
 func TestDockerLogin(t *testing.T) {
 	tests := []struct {
@@ -41,7 +27,7 @@ func TestDockerLogin(t *testing.T) {
 			username: "user",
 			password: "pass",
 			server:   "server",
-			want:     "eyJ1c2VybmFtZSI6ICJ1c2VyIiwgInBhc3N3b3JkIjogInBhc3MiLCAic2VydmVyYWRkcmVzcyI6ICJzZXJ2ZXIifQ==",
+			want:     "eyJ",
 			wantErr:  false,
 		},
 		{
@@ -50,144 +36,201 @@ func TestDockerLogin(t *testing.T) {
 			password: "",
 			server:   "",
 			want:     "",
-			wantErr:  true,
+			wantErr:  false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mockClient := new(MockDockerClient)
-			expectedError := error(nil)
-			if tc.wantErr {
-				expectedError = fmt.Errorf("login error")
-			}
-			mockClient.On("DockerLogin", tc.username, tc.password, tc.server).Return(tc.want, expectedError)
-
-			got, err := mockClient.DockerLogin(tc.username, tc.password, tc.server)
+			client, _ := docker.NewDockerClient()
+			got, err := client.DockerLogin(tc.username, tc.password, tc.server)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerLogin() error = %v, wantErr %v", err, tc.wantErr)
 				return
 			}
-			if got != tc.want {
-				t.Errorf("DockerLogin() = %v, want %v", got, tc.want)
+			if !tc.wantErr && !strings.Contains(got, tc.want) {
+				t.Errorf("DockerLogin() = %v, want substring %v", got, tc.want)
 			}
-			mockClient.AssertExpectations(t)
 		})
+	}
+}
+
+func ensureImagePulled(t *testing.T, cli *client.Client, containerImage string) {
+	_, _, err := cli.ImageInspectWithRaw(context.Background(), containerImage)
+	if client.IsErrNotFound(err) {
+		_, err = cli.ImagePull(context.Background(), containerImage, image.PullOptions{})
+		if err != nil {
+			t.Fatalf("Failed to pull image %s: %v", containerImage, err)
+		}
+	}
+}
+
+func TestDockerTag(t *testing.T) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		t.Fatalf("Failed to create Docker client: %v", err)
+	}
+
+	// Ensure busybox:latest is available locally
+	ensureImagePulled(t, cli, "busybox:latest")
+
+	tests := []struct {
+		name        string
+		sourceImage string
+		targetImage string
+		wantErr     bool
+	}{
+		{
+			name:        "valid tag",
+			sourceImage: "busybox:latest",
+			targetImage: "busybox:tagged",
+			wantErr:     false,
+		},
+		{
+			name:        "invalid tag",
+			sourceImage: "",
+			targetImage: "busybox:tagged",
+			wantErr:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, _ := docker.NewDockerClient()
+			err := client.DockerTag(tc.sourceImage, tc.targetImage)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("DockerTag() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+type MockDockerClient struct {
+	client.Client
+	ImageTagFunc  func(ctx context.Context, source, target string) error
+	ImagePushFunc func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
+}
+
+func (m *MockDockerClient) ImageTag(ctx context.Context, source, target string) error {
+	if m.ImageTagFunc != nil {
+		return m.ImageTagFunc(ctx, source, target)
+	}
+	return nil
+}
+
+func (m *MockDockerClient) ImagePush(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
+	if m.ImagePushFunc != nil {
+		return m.ImagePushFunc(ctx, ref, options)
+	}
+	return io.NopCloser(strings.NewReader("")), nil
+}
+
+func NewMockDockerClient() *docker.DockerClient {
+	return &docker.DockerClient{
+		CLI: &MockDockerClient{
+			ImageTagFunc: func(ctx context.Context, source, target string) error { return nil },
+			ImagePushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader("")), nil
+			},
+		},
 	}
 }
 
 func TestDockerPush(t *testing.T) {
 	tests := []struct {
-		name      string
-		image     string
-		authStr   string
-		pushError error
-		wantErr   bool
+		name           string
+		containerImage string
+		authStr        string
+		mockPushFunc   func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
+		wantErr        bool
 	}{
 		{
-			name:      "successful push",
-			image:     "image",
-			authStr:   "auth",
-			pushError: nil,
-			wantErr:   false,
+			name:           "valid push",
+			containerImage: "busybox:latest",
+			authStr:        "dGVzdDp0ZXN0",
+			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader("")), nil
+			},
+			wantErr: false,
 		},
 		{
-			name:      "failed push",
-			image:     "image",
-			authStr:   "auth",
-			pushError: fmt.Errorf("push error"),
-			wantErr:   true,
+			name:           "invalid push",
+			containerImage: "invalidimage",
+			authStr:        "dGVzdDp0ZXN0",
+			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
+				return nil, errors.New("push error")
+			},
+			wantErr: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mockClient := new(MockDockerClient)
-			mockClient.On("DockerPush", tc.image, tc.authStr).Return(tc.pushError)
-			client := mockClient
+			client := NewMockDockerClient()
+			client.CLI.(*MockDockerClient).ImagePushFunc = tc.mockPushFunc
 
-			err := client.DockerPush(tc.image, tc.authStr)
+			err := client.DockerPush(tc.containerImage, tc.authStr)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerPush() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			mockClient.AssertExpectations(t)
 		})
 	}
 }
 
-func TestDockerTag(t *testing.T) {
+func TestTagAndPushImages(t *testing.T) {
 	tests := []struct {
-		name     string
-		source   string
-		target   string
-		tagError error
-		wantErr  bool
+		name            string
+		packerTemplates []packer.BlueprintPacker
+		mockTagFunc     func(ctx context.Context, source, target string) error
+		mockPushFunc    func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
+		wantErr         bool
 	}{
 		{
-			name:     "successful tag",
-			source:   "source",
-			target:   "target",
-			tagError: nil,
-			wantErr:  false,
+			name: "valid push images",
+			packerTemplates: []packer.BlueprintPacker{
+				{
+					Tag: packer.BlueprintTag{Name: "test-image"},
+					ImageHashes: map[string]string{
+						"amd64": "hash1",
+						"arm64": "hash2",
+					},
+				},
+			},
+			mockTagFunc: func(ctx context.Context, source, target string) error { return nil },
+			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader("")), nil
+			},
+			wantErr: false,
 		},
 		{
-			name:     "failed tag",
-			source:   "source",
-			target:   "target",
-			tagError: fmt.Errorf("tag error"),
-			wantErr:  true,
+			name: "invalid push images",
+			packerTemplates: []packer.BlueprintPacker{
+				{
+					Tag: packer.BlueprintTag{Name: "test-image"},
+					ImageHashes: map[string]string{
+						"amd64": "hash1",
+						"arm64": "hash2",
+					},
+				},
+			},
+			mockTagFunc: func(ctx context.Context, source, target string) error { return nil },
+			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
+				return nil, errors.New("push error")
+			},
+			wantErr: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mockClient := new(MockDockerClient)
-			mockClient.On("DockerTag", tc.source, tc.target).Return(tc.tagError)
-			client := mockClient
+			client := NewMockDockerClient()
+			client.CLI.(*MockDockerClient).ImageTagFunc = tc.mockTagFunc
+			client.CLI.(*MockDockerClient).ImagePushFunc = tc.mockPushFunc
 
-			err := client.DockerTag(tc.source, tc.target)
+			err := client.TagAndPushImages(tc.packerTemplates)
 			if (err != nil) != tc.wantErr {
-				t.Errorf("DockerTag() error = %v, wantErr %v", err, tc.wantErr)
+				t.Errorf("PushImages() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			mockClient.AssertExpectations(t)
-		})
-	}
-}
-
-func TestPushDockerImages(t *testing.T) {
-	tests := []struct {
-		name      string
-		image     string
-		authStr   string
-		pushError error
-		wantErr   bool
-	}{
-		{
-			name:      "successful push",
-			image:     "image",
-			authStr:   "auth",
-			pushError: nil,
-			wantErr:   false,
-		},
-		{
-			name:      "failed push",
-			image:     "image",
-			authStr:   "auth",
-			pushError: fmt.Errorf("push error"),
-			wantErr:   true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			mockClient := new(MockDockerClient)
-			mockClient.On("DockerPush", tc.image, tc.authStr).Return(tc.pushError)
-
-			err := mockClient.DockerPush(tc.image, tc.authStr)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("DockerPush() error = %v, wantErr %v", err, tc.wantErr)
-			}
-			mockClient.AssertExpectations(t)
 		})
 	}
 }

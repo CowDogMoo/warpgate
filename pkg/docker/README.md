@@ -23,6 +23,20 @@ The `docker` package is a part of the WarpGate.
 DockerLogin(string) string, error
 ```
 
+DockerLogin authenticates with a Docker registry using the provided
+username, password, and server. It constructs an auth string for
+the registry.
+
+**Parameters:**
+
+username: The username for the Docker registry.
+password: The password for the Docker registry.
+server: The server address of the Docker registry.
+
+**Returns:**
+
+string: The base64 encoded auth string.
+error: An error if any issue occurs during the login process.
 
 ---
 
@@ -32,6 +46,17 @@ DockerLogin(string) string, error
 DockerPush(string) error
 ```
 
+DockerPush pushes a Docker image to a registry using the provided
+auth string.
+
+**Parameters:**
+
+containerImage: The name of the image to push.
+authStr: The auth string for the Docker registry.
+
+**Returns:**
+
+error: An error if the push operation fails.
 
 ---
 
@@ -41,15 +66,35 @@ DockerPush(string) error
 DockerTag(string) error
 ```
 
+DockerTag tags a Docker image with a new name.
+
+**Parameters:**
+
+sourceImage: The current name of the image.
+targetImage: The new name to assign to the image.
+
+**Returns:**
+
+error: An error if the tagging operation fails.
 
 ---
 
-### DockerClient.PushDockerImages([]packer.BlueprintPacker)
+### DockerClient.TagAndPushImages([]packer.BlueprintPacker)
 
 ```go
-PushDockerImages([]packer.BlueprintPacker) error
+TagAndPushImages([]packer.BlueprintPacker) error
 ```
 
+TagAndPushImages tags and pushes images specified in the packer templates.
+
+**Parameters:**
+
+packerTemplates: A slice of BlueprintPacker containing the images to tag
+and push.
+
+**Returns:**
+
+error: An error if any operation fails during tagging or pushing.
 
 ---
 
@@ -59,6 +104,12 @@ PushDockerImages([]packer.BlueprintPacker) error
 NewDockerClient() *DockerClient, error
 ```
 
+NewDockerClient creates a new Docker client.
+
+**Returns:**
+
+*DockerClient: A DockerClient instance.
+error: An error if any issue occurs while creating the client.
 
 ---
 

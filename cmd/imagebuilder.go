@@ -104,7 +104,12 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return err
 	}
 
-	if err := docker.PushDockerImages(packerTemplates); err != nil {
+	dockerClient, err := docker.NewDockerClient()
+	if err != nil {
+		return err
+	}
+
+	if err := dockerClient.TagAndPushImages(packerTemplates); err != nil {
 		return err
 	}
 
@@ -175,56 +180,6 @@ func buildPackerImages(blueprint bp.Blueprint, packerTemplates []packer.Blueprin
 
 	log.L().Printf(color.GreenString("All packer templates in %s blueprint built successfully!\n", blueprint.Name))
 	return nil
-}
-
-func pushDockerImages(packerTemplates []packer.BlueprintPacker) error {
-	registryServer := viper.GetString("container.registry.server")
-	registryUsername := viper.GetString("container.registry.username")
-
-	if err := docker.DockerLogin(registryUsername, githubToken); err != nil {
-		return err
-	}
-
-	for _, pTmpl := range packerTemplates {
-		imageName := pTmpl.Tag.Name
-
-		// Create a slice to store the image tags for the manifest
-		var imageTags []string
-
-		for arch, hash := range pTmpl.ImageHashes {
-			// Define the local and remote tags
-			localTag := fmt.Sprintf("sha256:%s", hash)
-			remoteTag := fmt.Sprintf("%s/%s:%s", registryServer, imageName, arch)
-
-			// Tag the local images with the full registry path
-			if err := docker.DockerTag(localTag, remoteTag); err != nil {
-				return err
-			}
-
-			// Push the tagged images
-			if err := docker.DockerPush(remoteTag); err != nil {
-				return err
-			}
-
-			// Add the tag to the list for the manifest
-			imageTags = append(imageTags, remoteTag)
-		}
-
-		// Create and push the manifest
-		if len(imageTags) > 1 {
-			manifestName := fmt.Sprintf("%s/%s:latest", registryServer, imageName)
-			if err := docker.DockerManifestCreate(manifestName, imageTags); err != nil {
-				return err
-			}
-			if err := docker.DockerManifestPush(manifestName); err != nil {
-				return err
-			}
-		} else {
-			fmt.Printf("Not enough images for manifest creation: %v\n", imageTags)
-		}
-	}
-	return nil
-
 }
 
 func buildPackerImage(pTmpl *packer.BlueprintPacker, blueprint bp.Blueprint) error {
