@@ -26,6 +26,11 @@ var (
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 
+			blueprint.Name, err = cmd.Flags().GetString("blueprint")
+			if err != nil {
+				return err
+			}
+
 			githubToken, err = cmd.Flags().GetString("github-token")
 			if err != nil {
 				return err
