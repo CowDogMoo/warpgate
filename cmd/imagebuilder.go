@@ -188,12 +188,6 @@ func pushDockerImages(packerTemplates []packer.BlueprintPacker) error {
 	for _, pTmpl := range packerTemplates {
 		imageName := pTmpl.Tag.Name
 
-		// Skip Docker operations if no Docker images were built
-		if len(pTmpl.ImageHashes) == 0 {
-			log.L().Printf("No Docker images were built for template %s, skipping Docker operations.", pTmpl.Base.Name)
-			continue
-		}
-
 		// Create a slice to store the image tags for the manifest
 		var imageTags []string
 		for arch, hash := range pTmpl.ImageHashes {
