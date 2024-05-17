@@ -20,7 +20,7 @@ The `docker` package is a part of the WarpGate.
 ### DockerClient.DockerLogin(string)
 
 ```go
-DockerLogin(string) string, error
+DockerLogin(string) error
 ```
 
 DockerLogin authenticates with a Docker registry using the provided
@@ -37,6 +37,46 @@ server: The server address of the Docker registry.
 
 string: The base64 encoded auth string.
 error: An error if any issue occurs during the login process.
+
+---
+
+### DockerClient.DockerManifestCreate(string, []string)
+
+```go
+DockerManifestCreate(string, []string) error
+```
+
+DockerManifestCreate creates a Docker manifest that references multiple
+platform-specific versions of an image. It builds the manifest using the
+'docker manifest create' command.
+
+**Parameters:**
+
+manifest: The name of the manifest to create.
+images: A slice of image names to include in the manifest.
+
+**Returns:**
+
+error: An error if the manifest creation fails.
+
+---
+
+### DockerClient.DockerManifestPush(string)
+
+```go
+DockerManifestPush(string) error
+```
+
+DockerManifestPush pushes a Docker manifest to a registry. It uses the
+'docker manifest push' command.
+
+**Parameters:**
+
+manifest: The name of the manifest to push.
+
+**Returns:**
+
+error: An error if the push operation fails.
 
 ---
 
@@ -85,7 +125,7 @@ error: An error if the tagging operation fails.
 TagAndPushImages([]packer.BlueprintPacker) error
 ```
 
-TagAndPushImages tags and pushes images specified in the packer templates.
+TagAndPushImages tags and pushes images specified in packer templates.
 
 **Parameters:**
 

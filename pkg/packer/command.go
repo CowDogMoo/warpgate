@@ -48,7 +48,7 @@ func (p *BlueprintPacker) runCommand(
 	}
 
 	fmt.Printf(
-		"executing command: %s %v in directory: %s",
+		"executing command: %s %v in directory: %s\n",
 		cmd.CmdString, cmd.Args, cmd.Dir)
 
 	if _, err := cmd.RunCmd(); err != nil {
@@ -78,7 +78,7 @@ func (p *BlueprintPacker) RunBuild(args []string, dir string) error {
 		dir = "."
 	}
 
-	fmt.Printf("Running Packer build command from the %s directory...", dir)
+	fmt.Printf("Running Packer build command from the %s directory...\n", dir)
 	outputHandler := func(s string) {
 		fmt.Println(s)
 		if p.Container.Registry.Server != "" {
