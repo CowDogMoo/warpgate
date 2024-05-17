@@ -76,6 +76,11 @@ func init() {
 
 	imageBuilderCmd.Flags().StringP(
 		"github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
+	err := viper.BindPFlag("container.registry.token", imageBuilderCmd.Flags().Lookup("github-token"))
+	if err != nil {
+		log.L().Error(err)
+		cobra.CheckErr(err)
+	}
 }
 
 // RunImageBuilder is the main function for the imageBuilder command
