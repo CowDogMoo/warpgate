@@ -36,7 +36,7 @@ type PackerCommandRunner interface {
 // **Returns:**
 //
 // error: An error if the command fails.
-func (p *BlueprintPacker) runCommand(
+func (p *PackerTemplate) runCommand(
 	subCmd string, args []string, dir string,
 	outputHandler func(string)) error {
 
@@ -73,7 +73,7 @@ func (p *BlueprintPacker) runCommand(
 // **Returns:**
 //
 // error: An error if the build command fails.
-func (p *BlueprintPacker) RunBuild(args []string, dir string) error {
+func (p *PackerTemplate) RunBuild(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -104,7 +104,7 @@ func (p *BlueprintPacker) RunBuild(args []string, dir string) error {
 // **Returns:**
 //
 // error: An error if the init command fails.
-func (p *BlueprintPacker) RunInit(args []string, dir string) error {
+func (p *PackerTemplate) RunInit(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -127,7 +127,7 @@ func (p *BlueprintPacker) RunInit(args []string, dir string) error {
 // **Returns:**
 //
 // error: An error if the validate command fails.
-func (p *BlueprintPacker) RunValidate(args []string, dir string) error {
+func (p *PackerTemplate) RunValidate(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -145,7 +145,7 @@ func (p *BlueprintPacker) RunValidate(args []string, dir string) error {
 //
 // string: The version of Packer.
 // error: An error if the version command fails.
-func (p *BlueprintPacker) RunVersion() (string, error) {
+func (p *PackerTemplate) RunVersion() (string, error) {
 	var versionOutput strings.Builder
 	outputHandler := func(s string) {
 		versionOutput.WriteString(s)

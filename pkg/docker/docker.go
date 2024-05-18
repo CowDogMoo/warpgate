@@ -211,55 +211,63 @@ func (d *DockerClient) DockerManifestPush(manifest string) error {
 //
 // **Parameters:**
 //
-// packerTemplates: A slice of BlueprintPacker containing the images to tag
+// packerTemplates: A slice of PackerTemplate containing the images to tag
 // and push.
 //
 // **Returns:**
 //
 // error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) TagAndPushImages(packerTemplates []packer.BlueprintPacker) error {
+func (d *DockerClient) TagAndPushImages(packerTemplates []packer.PackerTemplate, token, bpName string) error {
 	if len(packerTemplates) == 0 {
-		return errors.New("packerTemplates must not be empty")
+		return errors.New("packer templates must be provided for the blueprint")
 	}
 
-	registryServer := viper.GetString("container.registry.server")
-	registryUsername := viper.GetString("container.registry.username")
-	githubToken := viper.GetString("container.registry.token")
-
-	if registryServer == "" || registryUsername == "" || githubToken == "" {
-		return errors.New("registry server, username, and token must not be empty")
-	}
-
-	if d.AuthStr == "" {
-		if err := d.DockerLogin(registryUsername, githubToken, registryServer); err != nil {
-			return fmt.Errorf("failed to login to %s: %v", registryServer, err)
-		}
+	if token == "" {
+		return errors.New("token used to authenticate with the registry must not be empty")
 	}
 
 	for _, pTmpl := range packerTemplates {
-		if err := d.processTemplate(pTmpl, registryServer); err != nil {
+		pTmpl.Container.Registry.Credential = token
+		if err := d.processTemplate(pTmpl, bpName); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (d *DockerClient) processTemplate(pTmpl packer.BlueprintPacker, registryServer string) error {
-	imageName := pTmpl.Tag.Name
-	if imageName == "" {
+func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName string) error {
+	pTmpl.Container.Registry.Server = viper.GetString("container.registry.server")
+	pTmpl.Container.Registry.Username = viper.GetString("container.registry.username")
+
+	if bpName == "" {
 		return errors.New("image name in packer template must not be empty")
 	}
 
+	if pTmpl.Container.Registry.Username == "" || pTmpl.Container.Registry.Credential == "" || pTmpl.Container.Registry.Server == "" {
+		return errors.New("registry server, username, and token must not be empty")
+	}
+
+	if d.AuthStr == "" {
+		if err := d.DockerLogin(pTmpl.Container.Registry.Username,
+			pTmpl.Container.Registry.Credential, pTmpl.Container.Registry.Server); err != nil {
+			return fmt.Errorf("failed to login to %s: %v", pTmpl.Container.Registry.Server, err)
+		}
+	}
+
+	fmt.Printf("Processing %s image...\n", bpName)
+
 	var imageTags []string
 
-	for arch, hash := range pTmpl.ImageHashes {
-		if err := d.processImageTag(imageName, arch, hash, registryServer, &imageTags); err != nil {
+	for arch, hash := range pTmpl.Container.ImageHashes {
+		fmt.Printf("Processing image name: %s, arch: %s, hash: %s\n", bpName, arch, hash)
+		if err := d.processImageTag(bpName, arch, hash, pTmpl.Container.Registry.Server, &imageTags); err != nil {
 			return err
 		}
 	}
 
+	fmt.Printf("Image tags: %v\n", imageTags)
 	if len(imageTags) > 1 {
-		manifestName := fmt.Sprintf("%s/%s:latest", registryServer, imageName)
+		manifestName := fmt.Sprintf("%s/%s:latest", pTmpl.Container.Registry.Server, bpName)
 		if err := d.DockerManifestCreate(manifestName, imageTags); err != nil {
 			return err
 		}
@@ -267,7 +275,7 @@ func (d *DockerClient) processTemplate(pTmpl packer.BlueprintPacker, registrySer
 			return err
 		}
 	} else {
-		fmt.Printf("not enough images for manifest creation: %v\n", imageTags)
+		fmt.Printf("Not enough images for manifest creation: %v\n", imageTags)
 	}
 
 	return nil
@@ -281,6 +289,8 @@ func (d *DockerClient) processImageTag(imageName, arch, hash, registryServer str
 	localTag := fmt.Sprintf("sha256:%s", hash)
 	remoteTag := fmt.Sprintf("%s/%s:%s", registryServer, imageName, arch)
 
+	fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
+
 	if err := d.DockerTag(localTag, remoteTag); err != nil {
 		return err
 	}
@@ -289,10 +299,13 @@ func (d *DockerClient) processImageTag(imageName, arch, hash, registryServer str
 		return errors.New("containerImage and authStr must not be empty")
 	}
 
+	fmt.Printf("Pushing image: %s\n", remoteTag)
+
 	if err := d.DockerPush(remoteTag); err != nil {
 		return err
 	}
 
+	// Add the tag to the list for the manifest
 	*imageTags = append(*imageTags, remoteTag)
 	return nil
 }

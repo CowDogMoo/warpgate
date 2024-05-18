@@ -246,7 +246,7 @@ func TestTagAndPushImages(t *testing.T) {
 
 	tests := []struct {
 		name                   string
-		packerTemplates        []packer.BlueprintPacker
+		packerTemplates        []packer.PackerTemplate
 		mockLoginFunc          func(username, password, server string) (string, error)
 		mockTagFunc            func(ctx context.Context, source, target string) error
 		mockPushFunc           func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
@@ -257,12 +257,28 @@ func TestTagAndPushImages(t *testing.T) {
 	}{
 		{
 			name: "valid push images",
-			packerTemplates: []packer.BlueprintPacker{
+			packerTemplates: []packer.PackerTemplate{
 				{
-					Tag: packer.BlueprintTag{Name: "test-image"},
-					ImageHashes: map[string]string{
-						"amd64": "hash1",
-						"arm64": "hash2",
+					AMI: packer.AMI{
+						InstanceType: "t2.micro",
+						Region:       "us-west-2",
+						SSHUser:      "ec2-user",
+					},
+					Container: packer.Container{
+						ImageHashes: map[string]string{
+							"amd64": "hash1",
+							"arm64": "hash2",
+						},
+						Registry: packer.ContainerImageRegistry{
+							Server:     "testserver",
+							Username:   "testuser",
+							Credential: "testtoken",
+						},
+						Workdir: "/tmp",
+					},
+					ImageValues: packer.ImageValues{
+						Name:    "test-image",
+						Version: "latest",
 					},
 				},
 			},
@@ -284,12 +300,28 @@ func TestTagAndPushImages(t *testing.T) {
 		},
 		{
 			name: "invalid push images",
-			packerTemplates: []packer.BlueprintPacker{
+			packerTemplates: []packer.PackerTemplate{
 				{
-					Tag: packer.BlueprintTag{Name: "test-image"},
-					ImageHashes: map[string]string{
-						"amd64": "hash1",
-						"arm64": "hash2",
+					AMI: packer.AMI{
+						InstanceType: "t2.micro",
+						Region:       "us-west-2",
+						SSHUser:      "ec2-user",
+					},
+					Container: packer.Container{
+						ImageHashes: map[string]string{
+							"amd64": "hash1",
+							"arm64": "hash2",
+						},
+						Registry: packer.ContainerImageRegistry{
+							Server:     "testserver",
+							Username:   "testuser",
+							Credential: "testtoken",
+						},
+						Workdir: "/tmp",
+					},
+					ImageValues: packer.ImageValues{
+						Name:    "test-image",
+						Version: "latest",
 					},
 				},
 			},
@@ -320,7 +352,7 @@ func TestTagAndPushImages(t *testing.T) {
 				AuthStr: "test-auth-token",
 			}
 
-			err := client.TagAndPushImages(tc.packerTemplates)
+			err := client.TagAndPushImages(tc.packerTemplates, client.AuthStr, "test-image")
 			if (err != nil) != tc.wantErr {
 				t.Errorf("TagAndPushImages() error = %v, wantErr %v", err, tc.wantErr)
 			} else if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.expectedErrMsg) {

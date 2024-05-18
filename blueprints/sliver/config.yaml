@@ -1,15 +1,14 @@
 ---
 blueprint:
   name: sliver
+  tag:
+    name: l50/sliver
+    version: latest
 
 packer_templates:
-  - name: sliver.pkr.hcl
-    base:
+  - image_values:
       name: ubuntu
       version: jammy
-    tag:
-      name: l50/sliver
-      version: latest
     user: sliver
 
 # AMI specific configurations
@@ -19,7 +18,6 @@ ami:
 
 container:
   workdir: /home/sliver
-  # entrypoint: "/run/docker-entrypoint.sh ; sh"
   registry:
     server: ghcr.io
     username: l50
