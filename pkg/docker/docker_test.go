@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -110,7 +112,7 @@ func TestDockerLogin(t *testing.T) {
 			name:     "valid login",
 			username: "user",
 			password: "pass",
-			server:   "server",
+			server:   "https://ghcr.io",
 			want:     "eyJ",
 			wantErr:  false,
 		},
@@ -127,14 +129,27 @@ func TestDockerLogin(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			client := NewMockDockerClient()
-			client.CLI.(*MockDockerClient).DockerLoginFunc = func(username, password, server string) (string, error) {
-				if tc.wantErr {
-					return "", errors.New("login error")
+
+			// Create a test server that mimics the Docker registry login endpoint
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v2/users/login" && r.Method == http.MethodPost {
+					if tc.wantErr {
+						http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					} else {
+						w.WriteHeader(http.StatusOK)
+					}
+				} else {
+					http.Error(w, "Not Found", http.StatusNotFound)
 				}
-				return "eyJ", nil
+			}))
+			defer ts.Close()
+
+			server := ts.URL
+			if tc.server == "https://ghcr.io" {
+				server = ts.URL
 			}
 
-			err := client.DockerLogin(tc.username, tc.password, tc.server)
+			err := client.DockerLogin(tc.username, tc.password, server)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerLogin() error = %v, wantErr %v", err, tc.wantErr)
 				return

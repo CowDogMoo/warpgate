@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os/exec"
 	"strings"
 
@@ -85,12 +86,35 @@ func (d *DockerClient) DockerLogin(username, password, server string) error {
 		"serveraddress": server,
 	}
 
-	encodedJSON, err := json.Marshal(authConfig)
+	authJSON, err := json.Marshal(authConfig)
 	if err != nil {
 		return err
 	}
 
-	d.AuthStr = base64.URLEncoding.EncodeToString(encodedJSON)
+	d.AuthStr = base64.URLEncoding.EncodeToString(authJSON)
+
+	url := "https://index.docker.io/v1/users/login"
+	if server != "https://index.docker.io/v1/" {
+		url = server + "/v2/users/login"
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(authJSON))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("failed to login to Docker registry")
+	}
 
 	return nil
 }
