@@ -15,10 +15,12 @@ func TestParseImageHashes(t *testing.T) {
 	}{
 		{
 			name: "valid output with hashes",
-			output: `==> docker.arm64: Pulling Docker image: ubuntu:jammy
-docker.arm64: Digest: sha256:a6d2b38300ce017add71440577d5b0a90460d0e57fd7aec21dd0d1b0761bbfb2
-==> docker.arm64: Status: Image is up to date for ubuntu:jammy`,
-			expectedHashes: map[string]string{"arm64": "a6d2b38300ce017add71440577d5b0a90460d0e57fd7aec21dd0d1b0761bbfb2"},
+			output: `==> docker.arm64: Imported Docker image: sha256:9f01c52a412f6094205a94a65b10a9534483bba7f27b68a87779d50fb8e56c68
+==> docker.amd64: Imported Docker image: sha256:f19949237afd3ac31f1344b40207bca433523ec2939e9321d7f7e8a39a4c2ef6`,
+			expectedHashes: map[string]string{
+				"arm64": "9f01c52a412f6094205a94a65b10a9534483bba7f27b68a87779d50fb8e56c68",
+				"amd64": "f19949237afd3ac31f1344b40207bca433523ec2939e9321d7f7e8a39a4c2ef6",
+			},
 		},
 		{
 			name:           "invalid output without hashes",
@@ -26,11 +28,12 @@ docker.arm64: Digest: sha256:a6d2b38300ce017add71440577d5b0a90460d0e57fd7aec21dd
 			expectedHashes: map[string]string{},
 		},
 	}
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			pTmpl := &packer.PackerTemplate{}
-			pTmpl.ParseImageHashes(tc.output)
-			assert.Equal(t, tc.expectedHashes, pTmpl.Container.ImageHashes)
+			hashes := pTmpl.ParseImageHashes(tc.output)
+			assert.Equal(t, tc.expectedHashes, hashes)
 		})
 	}
 }

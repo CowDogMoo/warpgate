@@ -100,11 +100,11 @@ func (p *PackerTemplate) ParseImageHashes(output string) map[string]string {
 
 	lines := strings.Split(cleanOutput, "\n")
 	for _, line := range lines {
-		if strings.Contains(line, "Digest: sha256:") {
-			parts := strings.Fields(line)
-			if len(parts) >= 3 {
-				hash := strings.TrimPrefix(parts[2], "sha256:")
-				archParts := strings.Split(parts[0], ".")
+		if strings.Contains(line, "Imported Docker image: sha256:") {
+			parts := strings.Split(line, " ")
+			if len(parts) >= 4 {
+				hash := strings.TrimPrefix(parts[len(parts)-1], "sha256:")
+				archParts := strings.Split(parts[1], ".")
 				if len(archParts) > 1 {
 					arch := strings.TrimSuffix(archParts[1], ":")
 					p.Container.ImageHashes[arch] = hash
