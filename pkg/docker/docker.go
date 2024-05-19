@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/docker/docker/api/types/image"
@@ -169,6 +170,8 @@ func (d *DockerClient) DockerManifestCreate(manifest string, images []string) er
 
 	args := []string{"manifest", "create", manifest}
 	args = append(args, images...)
+
+	fmt.Printf("Executing command: docker %s\n", strings.Join(args, " "))
 
 	cmd := exec.Command("docker", args...)
 	var out bytes.Buffer
