@@ -169,7 +169,9 @@ func (d *DockerClient) DockerManifestCreate(manifest string, images []string) er
 	}
 
 	args := []string{"manifest", "create", manifest}
-	args = append(args, images...)
+	for _, image := range images {
+		args = append(args, "--amend", image)
+	}
 
 	fmt.Printf("Executing command: docker %s\n", strings.Join(args, " "))
 
@@ -264,7 +266,7 @@ func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName strin
 
 	for arch, hash := range pTmpl.Container.ImageHashes {
 		fmt.Printf("Processing image name: %s, arch: %s, hash: %s\n", bpName, arch, hash)
-		err := d.processImageTag(bpName, arch, hash, pTmpl.Container.Registry.Server, &imageTags)
+		err := d.processImageTag(bpName, arch, hash, pTmpl.Container.Registry, &imageTags)
 		if err != nil {
 			return err
 		}
@@ -272,7 +274,7 @@ func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName strin
 
 	fmt.Printf("Image tags: %v\n", imageTags)
 	if len(imageTags) > 0 { // Ensure manifest creation proceeds with one or more tags
-		manifestName := fmt.Sprintf("%s/%s:latest", pTmpl.Container.Registry.Server, bpName)
+		manifestName := fmt.Sprintf("%s/%s/%s:latest", pTmpl.Container.Registry.Server, pTmpl.Container.Registry.Username, bpName)
 		if err := d.DockerManifestCreate(manifestName, imageTags); err != nil {
 			return err
 		}
@@ -286,13 +288,13 @@ func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName strin
 	return nil
 }
 
-func (d *DockerClient) processImageTag(imageName, arch, hash, registryServer string, imageTags *[]string) error {
+func (d *DockerClient) processImageTag(imageName, arch, hash string, containerImageRegistry packer.ContainerImageRegistry, imageTags *[]string) error {
 	if arch == "" || hash == "" {
 		return errors.New("arch and hash must not be empty")
 	}
 
 	localTag := fmt.Sprintf("sha256:%s", hash)
-	remoteTag := fmt.Sprintf("%s/%s:%s", registryServer, imageName, arch)
+	remoteTag := fmt.Sprintf("%s/%s/%s:%s", containerImageRegistry.Server, containerImageRegistry.Username, imageName, arch)
 
 	fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
 
