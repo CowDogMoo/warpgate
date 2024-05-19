@@ -1,15 +1,14 @@
 ---
 blueprint:
   name: runzero-explorer
+  tag:
+    name: cowdogmoo/runzero-explorer
+    version: latest
 
 packer_templates:
-  - name: runzero-explorer.pkr.hcl
-    base:
+  - image_values:
       name: ubuntu
       version: jammy
-    tag:
-      name: cowdogmoo/runzero-explorer
-      version: latest
     user: ubuntu
 
 container:

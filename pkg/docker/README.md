@@ -17,27 +17,30 @@ The `docker` package is a part of the WarpGate.
 
 ## Functions
 
-### DockerLogin(string)
+### DockerClient.DockerLogin(string)
 
 ```go
 DockerLogin(string) error
 ```
 
-DockerLogin authenticates with a Docker registry using the provided username
-and token. It executes the 'docker login' command.
+DockerLogin authenticates with a Docker registry using the provided
+username, password, and server. It constructs an auth string for
+the registry.
 
 **Parameters:**
 
 username: The username for the Docker registry.
-token: The access token for the Docker registry.
+password: The password for the Docker registry.
+server: The server address of the Docker registry.
 
 **Returns:**
 
+string: The base64 encoded auth string.
 error: An error if any issue occurs during the login process.
 
 ---
 
-### DockerManifestCreate(string, []string)
+### DockerClient.DockerManifestCreate(string, []string)
 
 ```go
 DockerManifestCreate(string, []string) error
@@ -58,7 +61,7 @@ error: An error if the manifest creation fails.
 
 ---
 
-### DockerManifestPush(string)
+### DockerClient.DockerManifestPush(string)
 
 ```go
 DockerManifestPush(string) error
@@ -77,18 +80,19 @@ error: An error if the push operation fails.
 
 ---
 
-### DockerPush(string)
+### DockerClient.DockerPush(string)
 
 ```go
 DockerPush(string) error
 ```
 
-DockerPush pushes a Docker image to a registry. It executes the 'docker push'
-command with the specified image name.
+DockerPush pushes a Docker image to a registry using the provided
+auth string.
 
 **Parameters:**
 
-image: The name of the image to push.
+containerImage: The name of the image to push.
+authStr: The auth string for the Docker registry.
 
 **Returns:**
 
@@ -96,14 +100,13 @@ error: An error if the push operation fails.
 
 ---
 
-### DockerTag(string)
+### DockerClient.DockerTag(string)
 
 ```go
 DockerTag(string) error
 ```
 
-DockerTag tags a Docker image with a new name. It performs the operation
-using the 'docker tag' command.
+DockerTag tags a Docker image with a new name.
 
 **Parameters:**
 
@@ -113,6 +116,40 @@ targetImage: The new name to assign to the image.
 **Returns:**
 
 error: An error if the tagging operation fails.
+
+---
+
+### DockerClient.TagAndPushImages([]packer.PackerTemplate, string, map[string]string)
+
+```go
+TagAndPushImages([]packer.PackerTemplate, string, map[string]string) error
+```
+
+TagAndPushImages tags and pushes images specified in packer templates.
+
+**Parameters:**
+
+packerTemplates: A slice of PackerTemplate containing the images to tag
+and push.
+
+**Returns:**
+
+error: An error if any operation fails during tagging or pushing.
+
+---
+
+### NewDockerClient()
+
+```go
+NewDockerClient() *DockerClient, error
+```
+
+NewDockerClient creates a new Docker client.
+
+**Returns:**
+
+*DockerClient: A DockerClient instance.
+error: An error if any issue occurs while creating the client.
 
 ---
 

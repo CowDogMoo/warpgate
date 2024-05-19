@@ -140,7 +140,7 @@ jobs:
           ls -la "$provision_path"
 
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
-          wg imageBuilder \
+          timeout 2h wg imageBuilder \
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"

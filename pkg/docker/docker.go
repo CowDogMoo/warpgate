@@ -2,49 +2,148 @@ package docker
 
 import (
 	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os/exec"
+
+	"github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
+	"github.com/spf13/viper"
 )
 
-// DockerLogin authenticates with a Docker registry using the provided username
-// and token. It executes the 'docker login' command.
+// DockerClientInterface represents an interface for Docker client
+// operations.
+//
+// **Methods:**
+//
+// DockerLogin: Authenticates with a Docker registry.
+// DockerPush: Pushes a Docker image to a registry.
+// DockerTag: Tags a Docker image with a new name.
+// DockerManifestCreate: Creates a Docker manifest.
+// DockerManifestPush: Pushes a Docker manifest to a registry.
+type DockerClientInterface interface {
+	DockerLogin(username, password, server string) (string, error)
+	DockerPush(image, authStr string) error
+	DockerTag(sourceImage, targetImage string) error
+	DockerManifestCreate(manifest string, images []string) error
+	DockerManifestPush(manifest string) error
+}
+
+// DockerClient represents a Docker client.
+//
+// **Attributes:**
+//
+// CLI: API client for Docker operations.
+// AuthStr: Auth string for the Docker registry.
+type DockerClient struct {
+	CLI     client.APIClient
+	AuthStr string
+}
+
+// NewDockerClient creates a new Docker client.
+//
+// **Returns:**
+//
+// *DockerClient: A DockerClient instance.
+// error: An error if any issue occurs while creating the client.
+func NewDockerClient() (*DockerClient, error) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, err
+	}
+	return &DockerClient{CLI: cli}, nil
+}
+
+// DockerLogin authenticates with a Docker registry using the provided
+// username, password, and server. It constructs an auth string for
+// the registry.
 //
 // **Parameters:**
 //
 // username: The username for the Docker registry.
-// token: The access token for the Docker registry.
+// password: The password for the Docker registry.
+// server: The server address of the Docker registry.
 //
 // **Returns:**
 //
+// string: The base64 encoded auth string.
 // error: An error if any issue occurs during the login process.
-func DockerLogin(username, token string) error {
-	cmd := exec.Command("docker", "login", "ghcr.io", "-u", username, "-p", token)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker login failed: %s", out.String())
+func (d *DockerClient) DockerLogin(username, password, server string) error {
+	if username == "" || password == "" || server == "" {
+		return errors.New("username, password, and server must not be empty")
 	}
+
+	authConfig := map[string]string{
+		"username":      username,
+		"password":      password,
+		"serveraddress": server,
+	}
+
+	encodedJSON, err := json.Marshal(authConfig)
+	if err != nil {
+		return err
+	}
+
+	d.AuthStr = base64.URLEncoding.EncodeToString(encodedJSON)
+
 	return nil
 }
 
-// DockerPush pushes a Docker image to a registry. It executes the 'docker push'
-// command with the specified image name.
+// DockerTag tags a Docker image with a new name.
 //
 // **Parameters:**
 //
-// image: The name of the image to push.
+// sourceImage: The current name of the image.
+// targetImage: The new name to assign to the image.
+//
+// **Returns:**
+//
+// error: An error if the tagging operation fails.
+func (d *DockerClient) DockerTag(sourceImage, targetImage string) error {
+	if sourceImage == "" || targetImage == "" {
+		return errors.New("sourceImage and targetImage must not be empty")
+	}
+
+	ctx := context.Background()
+	return d.CLI.ImageTag(ctx, sourceImage, targetImage)
+}
+
+// DockerPush pushes a Docker image to a registry using the provided
+// auth string.
+//
+// **Parameters:**
+//
+// containerImage: The name of the image to push.
+// authStr: The auth string for the Docker registry.
 //
 // **Returns:**
 //
 // error: An error if the push operation fails.
-func DockerPush(image string) error {
-	cmd := exec.Command("docker", "push", image)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker push failed for %s: %s", image, out.String())
+func (d *DockerClient) DockerPush(containerImage string) error {
+	if d.AuthStr == "" {
+		return errors.New("error: docker client is not authenticated with a registry")
 	}
-	return nil
+
+	if containerImage == "" {
+		return errors.New("containerImage must not be empty")
+	}
+
+	ctx := context.Background()
+	resp, err := d.CLI.ImagePush(ctx, containerImage, image.PushOptions{
+		RegistryAuth: d.AuthStr,
+	})
+	if err != nil {
+		return err
+	}
+	defer resp.Close()
+
+	_, err = io.ReadAll(resp)
+	return err
 }
 
 // DockerManifestCreate creates a Docker manifest that references multiple
@@ -59,17 +158,28 @@ func DockerPush(image string) error {
 // **Returns:**
 //
 // error: An error if the manifest creation fails.
-func DockerManifestCreate(manifest string, images []string) error {
+func (d *DockerClient) DockerManifestCreate(manifest string, images []string) error {
+	if manifest == "" {
+		return errors.New("manifest must not be empty")
+	}
+
+	if len(images) == 0 {
+		return errors.New("images must not be empty")
+	}
+
 	args := []string{"manifest", "create", manifest}
 	for _, image := range images {
 		args = append(args, "--amend", image)
 	}
+
 	cmd := exec.Command("docker", args...)
 	var out bytes.Buffer
 	cmd.Stderr = &out
+
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("docker manifest create failed for %s: %s", manifest, out.String())
 	}
+
 	return nil
 }
 
@@ -83,33 +193,123 @@ func DockerManifestCreate(manifest string, images []string) error {
 // **Returns:**
 //
 // error: An error if the push operation fails.
-func DockerManifestPush(manifest string) error {
+func (d *DockerClient) DockerManifestPush(manifest string) error {
+	if manifest == "" {
+		return errors.New("manifest must not be empty")
+	}
+
 	cmd := exec.Command("docker", "manifest", "push", manifest)
 	var out bytes.Buffer
 	cmd.Stderr = &out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("docker manifest push failed for %s: %s", manifest, out.String())
 	}
+
 	return nil
 }
 
-// DockerTag tags a Docker image with a new name. It performs the operation
-// using the 'docker tag' command.
+// TagAndPushImages tags and pushes images specified in packer templates.
 //
 // **Parameters:**
 //
-// sourceImage: The current name of the image.
-// targetImage: The new name to assign to the image.
+// packerTemplates: A slice of PackerTemplate containing the images to tag
+// and push.
 //
 // **Returns:**
 //
-// error: An error if the tagging operation fails.
-func DockerTag(sourceImage, targetImage string) error {
-	cmd := exec.Command("docker", "tag", sourceImage, targetImage)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker tag failed for %s to %s: %s", sourceImage, targetImage, out.String())
+// error: An error if any operation fails during tagging or pushing.
+func (d *DockerClient) TagAndPushImages(packerTemplates []packer.PackerTemplate, token, bpName string, imageHashes map[string]string) error {
+	if len(packerTemplates) == 0 {
+		return errors.New("packer templates must be provided for the blueprint")
 	}
+
+	if token == "" {
+		return errors.New("token used to authenticate with the registry must not be empty")
+	}
+
+	for _, pTmpl := range packerTemplates {
+		pTmpl.Container.ImageHashes = imageHashes
+		pTmpl.Container.Registry.Credential = token
+		if err := d.processTemplate(pTmpl, bpName); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName string) error {
+	pTmpl.Container.Registry.Server = viper.GetString("container.registry.server")
+	pTmpl.Container.Registry.Username = viper.GetString("container.registry.username")
+
+	if bpName == "" {
+		return errors.New("image name in packer template must not be empty")
+	}
+
+	if pTmpl.Container.Registry.Username == "" || pTmpl.Container.Registry.Credential == "" || pTmpl.Container.Registry.Server == "" {
+		return errors.New("registry server, username, and token must not be empty")
+	}
+
+	if d.AuthStr == "" {
+		if err := d.DockerLogin(pTmpl.Container.Registry.Username,
+			pTmpl.Container.Registry.Credential, pTmpl.Container.Registry.Server); err != nil {
+			return fmt.Errorf("failed to login to %s: %v", pTmpl.Container.Registry.Server, err)
+		}
+	}
+
+	fmt.Printf("Processing %s image...\n", bpName)
+
+	var imageTags []string
+
+	for arch, hash := range pTmpl.Container.ImageHashes {
+		fmt.Printf("Processing image name: %s, arch: %s, hash: %s\n", bpName, arch, hash)
+		err := d.processImageTag(bpName, arch, hash, pTmpl.Container.Registry.Server, &imageTags)
+		if err != nil {
+			return err
+		}
+	}
+
+	fmt.Printf("Image tags: %v\n", imageTags)
+	if len(imageTags) > 0 { // Ensure manifest creation proceeds with one or more tags
+		manifestName := fmt.Sprintf("%s/%s:latest", pTmpl.Container.Registry.Server, bpName)
+		if err := d.DockerManifestCreate(manifestName, imageTags); err != nil {
+			return err
+		}
+		if err := d.DockerManifestPush(manifestName); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("Not enough images for manifest creation: %v\n", imageTags)
+	}
+
+	return nil
+}
+
+func (d *DockerClient) processImageTag(imageName, arch, hash, registryServer string, imageTags *[]string) error {
+	if arch == "" || hash == "" {
+		return errors.New("arch and hash must not be empty")
+	}
+
+	localTag := fmt.Sprintf("sha256:%s", hash)
+	remoteTag := fmt.Sprintf("%s/%s:%s", registryServer, imageName, arch)
+
+	fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
+
+	if err := d.DockerTag(localTag, remoteTag); err != nil {
+		return err
+	}
+
+	if remoteTag == "" || d.AuthStr == "" {
+		return errors.New("containerImage and authStr must not be empty")
+	}
+
+	fmt.Printf("Pushing image: %s\n", remoteTag)
+
+	if err := d.DockerPush(remoteTag); err != nil {
+		return err
+	}
+
+	// Add the tag to the list for the manifest
+	*imageTags = append(*imageTags, remoteTag)
 	return nil
 }

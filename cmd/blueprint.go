@@ -145,28 +145,38 @@ func processCfgInputs(cmd *cobra.Command) error {
 	return nil
 }
 
-func generatePackerTemplate(templateName, baseInput, tagName, tagVersion string, systemd bool) packer.BlueprintPacker {
+func generatePackerTemplate(templateName, baseInput, tagName, tagVersion string, systemd bool) packer.PackerTemplate {
 	parts := strings.Split(baseInput, ":")
-	return packer.BlueprintPacker{
-		Base: packer.BlueprintBase{
+	return packer.PackerTemplate{
+		AMI: packer.AMI{
+			InstanceType: "",
+			Region:       "",
+			SSHUser:      "",
+		},
+		Container: packer.Container{
+			ImageHashes: map[string]string{},
+			Registry: packer.ContainerImageRegistry{
+				Server:     "",
+				Username:   "",
+				Credential: "",
+			},
+		},
+		ImageValues: packer.ImageValues{
 			Name:    parts[0],
 			Version: parts[1],
 		},
+		User:    "root",
 		Systemd: systemd,
-		Tag: packer.BlueprintTag{
-			Name:    tagName,
-			Version: tagVersion,
-		},
 	}
 }
 
-func createCfg(data bp.Data) error {
+func createCfg(blueprint bp.Blueprint) error {
 	// Parse the input config template
 	tmpl := template.Must(
 		template.ParseFiles(filepath.Join("templates", "config.yaml.tmpl")))
 
 	// Create the templated config file for the new blueprint
-	cfgFile := filepath.Join("blueprints", data.Blueprint.Name, "config.yaml")
+	cfgFile := filepath.Join("blueprints", blueprint.Name, "config.yaml")
 	f, err := os.Create(cfgFile)
 	if err != nil {
 		return fmt.Errorf(color.RedString("failed to create config file: %v", err))
@@ -174,59 +184,62 @@ func createCfg(data bp.Data) error {
 
 	defer f.Close()
 
-	if err := tmpl.Execute(f, data); err != nil {
+	if err := tmpl.Execute(f, blueprint); err != nil {
 		return fmt.Errorf(color.RedString("failed to create config.yaml: %v", err))
 	}
 
 	return nil
 }
 
-func createPacker(data bp.Data) error {
+func createPacker(blueprint bp.Blueprint) error {
 	// Parse the input config template
 	tmpl := template.Must(
 		template.ParseFiles(filepath.Join("templates", "packer.pkr.hcl.tmpl")))
-	newBPPath := filepath.Join("blueprints", data.Blueprint.Name)
+	newBPPath := filepath.Join("blueprints", blueprint.Name)
 
 	viper.AddConfigPath(newBPPath)
 	viper.SetConfigName("config.yaml")
 	if err := viper.MergeInConfig(); err != nil {
-		log.L().Errorf("Failed to merge %s blueprint config into the existing config: %v", data.Blueprint.Name, err)
+		log.L().Errorf("Failed to merge %s blueprint config into the existing config: %v", blueprint.Name, err)
 		return err
 	}
+
+	blueprint.PackerTemplates = packerTemplates
 
 	// Create the templated config file for the new blueprint
 	packerDir := filepath.Join(newBPPath, "packer_templates")
 
 	// Get blueprint information
-	if err := viper.UnmarshalKey("container", &data.Container); err != nil {
+	if err := viper.UnmarshalKey("container", &blueprint.PackerTemplates[0].Container); err != nil {
 		log.L().Errorf("Failed to unmarshal container data from config file: %v", err)
 		cobra.CheckErr(err)
 	}
 
 	set := false
-	data.Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
+	blueprint.PackerTemplates[0].Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
+	// ContainerImageRegistry.Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
 	if !set {
 		return errors.New("required env var $GITHUB_TOKEN is not set, please " +
 			"set it with a correct Personal Access Token and try again")
 	}
 
-	for _, pkr := range data.PackerTemplates {
+	for _, pkr := range blueprint.PackerTemplates {
 		tmplData := struct {
 			Blueprint      bp.Blueprint
-			PackerTemplate packer.BlueprintPacker
-			Container      packer.BlueprintContainer
+			PackerTemplate packer.PackerTemplate
+			Container      packer.Container
 		}{
-			Blueprint:      data.Blueprint,
+			Blueprint:      bp.Blueprint{},
 			PackerTemplate: pkr,
-			Container:      data.Container,
+			Container:      packer.Container{},
 		}
-		f, err := os.Create(filepath.Join(packerDir, data.Blueprint.Name))
+		f, err := os.Create(filepath.Join(packerDir, blueprint.Name))
 		if err != nil {
-			return fmt.Errorf(color.RedString("failed to create %s: %v", filepath.Join(packerDir, data.Blueprint.Name), err))
+			return fmt.Errorf(color.RedString("failed to create %s: %v", filepath.Join(packerDir, blueprint.Name), err))
 		}
 		defer f.Close()
 		if err := tmpl.Execute(f, tmplData); err != nil {
-			return fmt.Errorf(color.RedString("failed to populate %s with templated data: %v", filepath.Join(packerDir, data.Blueprint.Name), err))
+			return fmt.Errorf(color.RedString("failed to populate %s with templated data: %v", filepath.Join(packerDir, blueprint.Name), err))
 		}
 	}
 
@@ -274,24 +287,19 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 		cobra.CheckErr(err)
 	}
 
-	// Create data to hold the blueprint and
-	// associated packer templates.
-	data := bp.Data{
-		Blueprint:       blueprint,
-		PackerTemplates: packerTemplates,
-	}
+	blueprint.PackerTemplates = packerTemplates
 
-	if err := createCfg(data); err != nil {
+	if err := createCfg(blueprint); err != nil {
 		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
 
-	if err := createPacker(data); err != nil {
+	if err := createPacker(blueprint); err != nil {
 		log.L().Error(err)
 		cobra.CheckErr(err)
 	}
 
-	if err := createScript(data.Blueprint.Name); err != nil {
+	if err := createScript(blueprint.Name); err != nil {
 		log.L().Error(err)
 		cobra.CheckErr(err)
 	}

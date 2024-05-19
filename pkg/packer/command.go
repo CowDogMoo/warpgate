@@ -1,6 +1,7 @@
 package packer
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -36,61 +37,74 @@ type PackerCommandRunner interface {
 // **Returns:**
 //
 // error: An error if the command fails.
-func (p *BlueprintPacker) runCommand(
+func (p *PackerTemplate) runCommand(
 	subCmd string, args []string, dir string,
-	outputHandler func(string)) error {
+	outputHandler func(string)) (string, error) {
 
+	var outputBuffer bytes.Buffer
 	cmd := sys.Cmd{
-		CmdString:     "packer",
-		Args:          append([]string{subCmd}, args...),
-		Dir:           dir,
-		OutputHandler: outputHandler,
+		CmdString: "packer",
+		Args:      append([]string{subCmd}, args...),
+		Dir:       dir,
+		OutputHandler: func(s string) {
+			outputHandler(s)
+			outputBuffer.WriteString(s + "\n") // Capture output
+		},
 	}
 
 	fmt.Printf(
-		"executing command: %s %v in directory: %s",
+		"executing command: %s %v in directory: %s\n",
 		cmd.CmdString, cmd.Args, cmd.Dir)
 
 	if _, err := cmd.RunCmd(); err != nil {
-		return fmt.Errorf("error running %s command: %v", subCmd, err)
+		return "", fmt.Errorf("error running %s command: %v", subCmd, err)
 	}
 
-	if subCmd == "build" && p.Container.Registry.Server != "" {
-		p.ParseImageHashes("")
-	}
-
-	return nil
+	return outputBuffer.String(), nil
 }
 
-// RunBuild runs the Packer build command with the provided arguments.
+// RunBuild runs the Packer build command and captures the output to parse image
+// hashes and AMI details.
 //
 // **Parameters:**
 //
-// args: A slice of strings representing the build command arguments.
-// dir: The directory in which to run the command. If empty, the current
-// directory is used.
+// args: A slice of strings containing the arguments to pass to the Packer build command.
+// dir: The directory to run the Packer build command in.
 //
 // **Returns:**
 //
+// map[string]string: A map of image hashes parsed from the build output.
+// string: The AMI ID parsed from the build output.
 // error: An error if the build command fails.
-func (p *BlueprintPacker) RunBuild(args []string, dir string) error {
+func (p *PackerTemplate) RunBuild(args []string, dir string) (map[string]string, string, error) {
 	if dir == "" {
 		dir = "."
 	}
 
-	fmt.Printf("Running Packer build command from the %s directory...", dir)
+	fmt.Printf("Running Packer build command from the %s directory...\n", dir)
+
+	var outputBuffer bytes.Buffer
 	outputHandler := func(s string) {
 		fmt.Println(s)
-		if p.Container.Registry.Server != "" {
-			p.ParseImageHashes(s)
-		}
+		outputBuffer.WriteString(s)
 	}
 
 	if len(args) > 0 && args[0] == "build" {
 		args = args[1:]
 	}
 
-	return p.runCommand("build", args, dir, outputHandler)
+	output, err := p.runCommand("build", args, dir, outputHandler) // Capture output
+	if err != nil {
+		return nil, "", err
+	}
+
+	if p.Container.Registry.Server != "" {
+		imageHashes := p.ParseImageHashes(output)
+		amiID := p.ParseAMIDetails(output)
+		return imageHashes, amiID, nil
+	}
+
+	return nil, "", nil
 }
 
 // RunInit runs the Packer init command with the provided arguments.
@@ -104,7 +118,7 @@ func (p *BlueprintPacker) RunBuild(args []string, dir string) error {
 // **Returns:**
 //
 // error: An error if the init command fails.
-func (p *BlueprintPacker) RunInit(args []string, dir string) error {
+func (p *PackerTemplate) RunInit(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -113,7 +127,12 @@ func (p *BlueprintPacker) RunInit(args []string, dir string) error {
 		fmt.Println(s)
 	}
 
-	return p.runCommand("init", args, dir, outputHandler)
+	_, err := p.runCommand("init", args, dir, outputHandler)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // RunValidate runs the Packer validate command with the provided arguments.
@@ -127,7 +146,7 @@ func (p *BlueprintPacker) RunInit(args []string, dir string) error {
 // **Returns:**
 //
 // error: An error if the validate command fails.
-func (p *BlueprintPacker) RunValidate(args []string, dir string) error {
+func (p *PackerTemplate) RunValidate(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -136,7 +155,12 @@ func (p *BlueprintPacker) RunValidate(args []string, dir string) error {
 		fmt.Println(s)
 	}
 
-	return p.runCommand("validate", args, dir, outputHandler)
+	_, err := p.runCommand("validate", args, dir, outputHandler)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // RunVersion runs the Packer version command and returns the Packer version.
@@ -145,13 +169,13 @@ func (p *BlueprintPacker) RunValidate(args []string, dir string) error {
 //
 // string: The version of Packer.
 // error: An error if the version command fails.
-func (p *BlueprintPacker) RunVersion() (string, error) {
+func (p *PackerTemplate) RunVersion() (string, error) {
 	var versionOutput strings.Builder
 	outputHandler := func(s string) {
 		versionOutput.WriteString(s)
 	}
 
-	err := p.runCommand("version", []string{}, "", outputHandler)
+	_, err := p.runCommand("version", []string{}, "", outputHandler)
 	if err != nil {
 		return "", err
 	}
