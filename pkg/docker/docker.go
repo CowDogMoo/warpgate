@@ -168,9 +168,7 @@ func (d *DockerClient) DockerManifestCreate(manifest string, images []string) er
 	}
 
 	args := []string{"manifest", "create", manifest}
-	for _, image := range images {
-		args = append(args, "--amend", image)
-	}
+	args = append(args, images...)
 
 	cmd := exec.Command("docker", args...)
 	var out bytes.Buffer
