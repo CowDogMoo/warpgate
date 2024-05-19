@@ -50,6 +50,20 @@ error: An error if the initialization fails.
 
 ---
 
+### Blueprint.LoadPackerTemplates()
+
+```go
+LoadPackerTemplates() error
+```
+
+LoadPackerTemplates loads Packer templates from the blueprint.
+
+**Returns:**
+
+error: An error if any issue occurs while loading the Packer templates.
+
+---
+
 ### Blueprint.ParseCommandLineFlags(*cobra.Command)
 
 ```go

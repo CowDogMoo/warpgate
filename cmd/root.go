@@ -31,7 +31,7 @@ var (
 	cfg              config.Config
 
 	blueprint       = bp.Blueprint{}
-	packerTemplates = []packer.BlueprintPacker{}
+	packerTemplates = []packer.PackerTemplate{}
 
 	rootCmd = &cobra.Command{
 		Use:   "wg",

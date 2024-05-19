@@ -30,24 +30,23 @@ const (
 // ProvisioningRepo: Path to the repository containing provisioning logic.
 // BuildDir: Path to the temporary build directory.
 type Blueprint struct {
-	Name             string `mapstructure:"name"`
-	Path             string `mapstructure:"path"`
-	ProvisioningRepo string `mapstructure:"provisioning_repo"`
-	BuildDir         string `mapstructure:"build_dir"`
+	Name             string                  `mapstructure:"name"`
+	BuildDir         string                  `mapstructure:"build_dir"`
+	PackerTemplates  []packer.PackerTemplate `mapstructure:"packer_templates"`
+	Path             string                  `mapstructure:"path"`
+	ProvisioningRepo string                  `mapstructure:"provisioning_repo"`
+	Tag              Tag                     `mapstructure:"tag"`
 }
 
-// Data holds a blueprint and its associated Packer templates and container
-// configuration.
+// Tag represents the tag configuration for the image built by Packer.
 //
 // **Attributes:**
 //
-// Blueprint: The blueprint configuration.
-// PackerTemplates: A slice of Packer templates associated with the blueprint.
-// Container: The container configuration for the blueprint.
-type Data struct {
-	Blueprint       Blueprint
-	PackerTemplates []packer.BlueprintPacker
-	Container       packer.BlueprintContainer
+// Name: Name of the tag.
+// Version: Version of the tag.
+type Tag struct {
+	Name    string `mapstructure:"name"`
+	Version string `mapstructure:"version"`
 }
 
 // ParseCommandLineFlags parses command line flags for a Blueprint.
@@ -204,6 +203,41 @@ func (b *Blueprint) CreateBuildDir() error {
 
 	b.BuildDir = buildDir
 	b.Path = filepath.Join(buildDir, "blueprints", b.Name)
+
+	return nil
+}
+
+// LoadPackerTemplates loads Packer templates from the blueprint.
+//
+// **Returns:**
+//
+// error: An error if any issue occurs while loading the Packer templates.
+func (b *Blueprint) LoadPackerTemplates() error {
+	configFile := viper.ConfigFileUsed()
+	if configFile == "" {
+		return fmt.Errorf("no config file used by viper")
+	}
+	fmt.Printf("Config file used by viper: %s\n", configFile)
+
+	if err := viper.UnmarshalKey("packer_templates", &b.PackerTemplates); err != nil {
+		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
+	}
+
+	if len(b.PackerTemplates) == 0 {
+		return fmt.Errorf("no packer templates found")
+	}
+
+	// Check and load AMI and container settings if available
+	for i, tmpl := range b.PackerTemplates {
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &tmpl.AMI); err == nil {
+			b.PackerTemplates[i] = tmpl // Update the templates slice with the AMI settings
+		}
+		var containerConfig packer.Container
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container", i), &containerConfig); err == nil {
+			tmpl.Container = containerConfig
+			b.PackerTemplates[i] = tmpl // Update the templates slice with the container settings
+		}
+	}
 
 	return nil
 }

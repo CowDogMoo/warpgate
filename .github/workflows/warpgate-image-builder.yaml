@@ -90,7 +90,7 @@ jobs:
           cache-dependency-path: "**/*.sum"
 
       - name: Cache Go Modules
-        uses: actions/cache@8492260343ad570701412c2f464a5877dc76bace # v2
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4
         with:
           path: ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
@@ -140,7 +140,7 @@ jobs:
           ls -la "$provision_path"
 
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
-          wg imageBuilder \
+          timeout 2h wg imageBuilder \
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"

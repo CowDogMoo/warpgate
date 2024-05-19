@@ -1,15 +1,14 @@
 ---
 blueprint:
   name: atomic-red-team
+  tag:
+    name: l50/atomic-red-team
+    version: latest
 
 packer_templates:
-  - name: atomic-red-team.pkr.hcl
-    base:
+  - image_values:
       name: ubuntu
       version: jammy
-    tag:
-      name: l50/atomic-red-team
-      version: latest
     user: root
 
 # AMI specific configurations
