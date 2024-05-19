@@ -104,7 +104,8 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return fmt.Errorf("no packer templates found")
 	}
 
-	if err := buildPackerImages(blueprint, blueprint.PackerTemplates); err != nil {
+	imageHashes, err := buildPackerImages(blueprint, blueprint.PackerTemplates)
+	if err != nil {
 		return err
 	}
 
@@ -113,7 +114,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return err
 	}
 
-	if err := dockerClient.TagAndPushImages(blueprint.PackerTemplates, githubToken, blueprint.Name); err != nil {
+	if err := dockerClient.TagAndPushImages(blueprint.PackerTemplates, githubToken, blueprint.Name, imageHashes); err != nil {
 		return err
 	}
 
@@ -148,13 +149,14 @@ func validatePackerTemplate(blueprint bp.Blueprint) error {
 	return nil
 }
 
-func buildPackerImages(blueprint bp.Blueprint, packerTemplates []packer.PackerTemplate) error {
+func buildPackerImages(blueprint bp.Blueprint, packerTemplates []packer.PackerTemplate) (map[string]string, error) {
 	errChan := make(chan error, len(packerTemplates))
+	imageHashesChan := make(chan map[string]string, len(packerTemplates))
 	var wg sync.WaitGroup
 
 	for _, pTmpl := range packerTemplates {
 		if err := validatePackerTemplate(blueprint); err != nil {
-			return err
+			return nil, err
 		}
 
 		wg.Add(1)
@@ -162,14 +164,20 @@ func buildPackerImages(blueprint bp.Blueprint, packerTemplates []packer.PackerTe
 			defer wg.Done()
 
 			log.L().Printf("Building %s packer template as part of the %s blueprint", pTmpl.ImageValues.Name, blueprint.Name)
-			if err := buildPackerImage(&pTmpl, blueprint); err != nil {
+			hashes, err := buildPackerImage(&pTmpl, blueprint)
+			if err != nil {
 				errChan <- fmt.Errorf("error building %s: %v", pTmpl.ImageValues.Name, err)
+				return
 			}
+			imageHashesChan <- hashes
 		}(pTmpl, blueprint)
 	}
 
-	wg.Wait()
-	close(errChan)
+	go func() {
+		wg.Wait()
+		close(imageHashesChan)
+		close(errChan)
+	}()
 
 	var errOccurred bool
 	for err := range errChan {
@@ -179,41 +187,52 @@ func buildPackerImages(blueprint bp.Blueprint, packerTemplates []packer.PackerTe
 		}
 	}
 
+	imageHashes := make(map[string]string)
+	for hashes := range imageHashesChan {
+		for k, v := range hashes {
+			imageHashes[k] = v
+		}
+	}
+
 	if errOccurred {
-		return fmt.Errorf("errors occurred while building packer images")
+		return nil, fmt.Errorf("errors occurred while building packer images")
 	}
 
 	log.L().Printf(color.GreenString("All packer templates in %s blueprint built successfully!\n", blueprint.Name))
-	return nil
+	return imageHashes, nil
 }
 
-func buildPackerImage(pTmpl *packer.PackerTemplate, blueprint bp.Blueprint) error {
+func buildPackerImage(pTmpl *packer.PackerTemplate, blueprint bp.Blueprint) (map[string]string, error) {
 	if err := blueprint.Initialize(); err != nil {
 		log.L().Errorf("Failed to initialize blueprint: %v", err)
-		return err
+		return nil, err
 	}
 
 	const maxRetries = 3
 	var lastError error
+	imageHashes := make(map[string]string)
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if err := buildImageAttempt(pTmpl, blueprint, attempt); err != nil {
+		hashes, err := buildImageAttempt(pTmpl, blueprint, attempt)
+		if err != nil {
 			lastError = err
 			continue // retry
 		}
 
 		log.L().Printf("Successfully built container image from the %s packer template", blueprint.Name)
-
-		return nil // success
+		for k, v := range hashes {
+			imageHashes[k] = v
+		}
+		return imageHashes, nil // success
 	}
 
 	// If the loop completes, it means all attempts failed
-	return fmt.Errorf("all attempts failed to build container image from %s packer template: %v", blueprint.Name, lastError)
+	return nil, fmt.Errorf("all attempts failed to build container image from %s packer template: %v", blueprint.Name, lastError)
 }
 
-func buildImageAttempt(pTmpl *packer.PackerTemplate, blueprint bp.Blueprint, attempt int) error {
+func buildImageAttempt(pTmpl *packer.PackerTemplate, blueprint bp.Blueprint, attempt int) (map[string]string, error) {
 	if err := viper.UnmarshalKey(bp.ContainerKey, &pTmpl.Container); err != nil {
 		log.L().Errorf("Failed to unmarshal container parameters from %s config file: %v", blueprint.Name, err)
-		return err
+		return nil, err
 	}
 
 	args := preparePackerArgs(pTmpl, blueprint)
@@ -223,7 +242,7 @@ func buildImageAttempt(pTmpl *packer.PackerTemplate, blueprint bp.Blueprint, att
 	// Initialize the packer templates directory
 	log.L().Printf("Initializing %s packer template", blueprint.Name)
 	if err := pTmpl.RunInit([]string{"."}, filepath.Join(blueprint.Path, "packer_templates")); err != nil {
-		return fmt.Errorf("error initializing packer command: %v", err)
+		return nil, fmt.Errorf("error initializing packer command: %v", err)
 	}
 
 	// Verify the template directory contents
@@ -235,16 +254,26 @@ func buildImageAttempt(pTmpl *packer.PackerTemplate, blueprint bp.Blueprint, att
 
 	if _, err := cmd.RunCmd(); err != nil {
 		log.L().Errorf("Failed to list contents of template directory: %v", err)
-		return err
+		return nil, err
 	}
 
 	// Run the build command
 	log.L().Printf("Building %s packer template", blueprint.Name)
-	if err := pTmpl.RunBuild(args, filepath.Join(blueprint.Path, "packer_templates")); err != nil {
-		return fmt.Errorf("error running build command: %v", err)
+	hashes, amiID, err := pTmpl.RunBuild(args, filepath.Join(blueprint.Path, "packer_templates"))
+	if err != nil {
+		return nil, fmt.Errorf("error running build command: %v", err)
 	}
 
-	return nil
+	switch {
+	case len(hashes) > 0:
+		log.L().Printf("Image hashes: %v", hashes)
+	case amiID != "":
+		log.L().Printf("Built AMI ID: %s", amiID)
+	default:
+		log.L().Printf("No container image or AMI found in the build output")
+	}
+
+	return hashes, nil
 }
 
 func preparePackerArgs(pTmpl *packer.PackerTemplate, blueprint bp.Blueprint) []string {

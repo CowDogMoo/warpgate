@@ -2,6 +2,7 @@ package packer
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -22,15 +23,19 @@ type AMI struct {
 //
 // **Attributes:**
 //
+// BaseImageValues: Name and version of the base image.
 // Entrypoint: Entrypoint for the container.
+// ImageHashes: Hashes of the images built by Packer.
 // Registry: Container registry configuration.
 // Workdir: Working directory in the container.
+// DockerClient: Docker client to use for the container.
 type Container struct {
 	BaseImageValues ImageValues            `mapstructure:"base_image_values"`
 	Entrypoint      string                 `mapstructure:"entrypoint"`
 	ImageHashes     map[string]string      `mapstructure:"image_hashes"`
 	Registry        ContainerImageRegistry `mapstructure:"registry"`
 	Workdir         string                 `mapstructure:"workdir"`
+	DockerClient    string                 `mapstructure:"docker_client"`
 }
 
 // ContainerImageRegistry represents the container registry configuration for a Packer template.
@@ -62,12 +67,9 @@ type ImageValues struct {
 // **Attributes:**
 //
 // AMI: Optional AMI configuration.
-// Base: Base image configuration for the template.
 // Container: Container configuration for the template.
-// ImageHashes: Hashes of the image layers for the container.
-// Name: Name of the Packer template.
+// ImageValues: Name and version of the image.
 // Systemd: Indicates if systemd is used in the container.
-// Tag: Tag configuration for the generated image.
 // User: User to run commands as in the container.
 type PackerTemplate struct {
 	AMI         AMI         `mapstructure:"ami,omitempty"`
@@ -83,25 +85,55 @@ type PackerTemplate struct {
 // **Parameters:**
 //
 // output: The output from the Packer build command.
-func (p *PackerTemplate) ParseImageHashes(output string) {
+//
+// **Returns:**
+//
+// map[string]string: A map of image hashes parsed from the build output.
+func (p *PackerTemplate) ParseImageHashes(output string) map[string]string {
 	if p.Container.ImageHashes == nil {
 		p.Container.ImageHashes = make(map[string]string)
 	}
 
-	if strings.Contains(output, "Imported Docker image: sha256:") {
-		parts := strings.Split(output, " ")
-		for i := 0; i < len(parts)-1; i++ {
-			if parts[i] == "sha256:" {
-				hash := parts[i+1]
-				if i > 0 {
-					archParts := strings.Split(parts[i-1], ".")
-					if len(archParts) > 1 {
-						arch := strings.TrimSuffix(archParts[1], ":")
-						p.Container.ImageHashes[arch] = hash
-						fmt.Printf("Updated ImageHashes: %v\n", p.Container.ImageHashes)
-					}
+	// Regular expression to match and remove ANSI escape sequences
+	re := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+	cleanOutput := re.ReplaceAllString(output, "")
+
+	lines := strings.Split(cleanOutput, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Digest: sha256:") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				hash := strings.TrimPrefix(parts[2], "sha256:")
+				archParts := strings.Split(parts[0], ".")
+				if len(archParts) > 1 {
+					arch := strings.TrimSuffix(archParts[1], ":")
+					p.Container.ImageHashes[arch] = hash
+					fmt.Printf("Updated ImageHashes: %v\n", p.Container.ImageHashes)
 				}
 			}
 		}
 	}
+
+	return p.Container.ImageHashes
+}
+
+// ParseAMIDetails extracts the AMI ID from the output of a Packer build command.
+//
+// **Parameters:**
+//
+// output: The output from the Packer build command.
+//
+// **Returns:**
+//
+// string: The AMI ID if found in the output.
+func (p *PackerTemplate) ParseAMIDetails(output string) string {
+	if strings.Contains(output, "AMI:") {
+		parts := strings.Split(output, " ")
+		for i := 0; i < len(parts)-1; i++ {
+			if parts[i] == "AMI:" {
+				return parts[i+1]
+			}
+		}
+	}
+	return ""
 }

@@ -39,9 +39,10 @@ type DockerClientInterface interface {
 // **Attributes:**
 //
 // CLI: API client for Docker operations.
+// AuthStr: Auth string for the Docker registry.
 type DockerClient struct {
 	CLI     client.APIClient
-	AuthStr string // Auth string to track the login session
+	AuthStr string
 }
 
 // NewDockerClient creates a new Docker client.
@@ -217,7 +218,7 @@ func (d *DockerClient) DockerManifestPush(manifest string) error {
 // **Returns:**
 //
 // error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) TagAndPushImages(packerTemplates []packer.PackerTemplate, token, bpName string) error {
+func (d *DockerClient) TagAndPushImages(packerTemplates []packer.PackerTemplate, token, bpName string, imageHashes map[string]string) error {
 	if len(packerTemplates) == 0 {
 		return errors.New("packer templates must be provided for the blueprint")
 	}
@@ -227,11 +228,13 @@ func (d *DockerClient) TagAndPushImages(packerTemplates []packer.PackerTemplate,
 	}
 
 	for _, pTmpl := range packerTemplates {
+		pTmpl.Container.ImageHashes = imageHashes
 		pTmpl.Container.Registry.Credential = token
 		if err := d.processTemplate(pTmpl, bpName); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -260,13 +263,14 @@ func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName strin
 
 	for arch, hash := range pTmpl.Container.ImageHashes {
 		fmt.Printf("Processing image name: %s, arch: %s, hash: %s\n", bpName, arch, hash)
-		if err := d.processImageTag(bpName, arch, hash, pTmpl.Container.Registry.Server, &imageTags); err != nil {
+		err := d.processImageTag(bpName, arch, hash, pTmpl.Container.Registry.Server, &imageTags)
+		if err != nil {
 			return err
 		}
 	}
 
 	fmt.Printf("Image tags: %v\n", imageTags)
-	if len(imageTags) > 1 {
+	if len(imageTags) > 0 { // Ensure manifest creation proceeds with one or more tags
 		manifestName := fmt.Sprintf("%s/%s:latest", pTmpl.Container.Registry.Server, bpName)
 		if err := d.DockerManifestCreate(manifestName, imageTags); err != nil {
 			return err

@@ -17,10 +17,28 @@ The `packer` package is a part of the WarpGate.
 
 ## Functions
 
+### PackerTemplate.ParseAMIDetails(string)
+
+```go
+ParseAMIDetails(string) string
+```
+
+ParseAMIDetails extracts the AMI ID from the output of a Packer build command.
+
+**Parameters:**
+
+output: The output from the Packer build command.
+
+**Returns:**
+
+string: The AMI ID if found in the output.
+
+---
+
 ### PackerTemplate.ParseImageHashes(string)
 
 ```go
-ParseImageHashes(string)
+ParseImageHashes(string) map[string]string
 ```
 
 ParseImageHashes extracts the image hashes from the output of a Packer build
@@ -30,24 +48,30 @@ command and updates the provided Packer blueprint with the new hashes.
 
 output: The output from the Packer build command.
 
+**Returns:**
+
+map[string]string: A map of image hashes parsed from the build output.
+
 ---
 
 ### PackerTemplate.RunBuild([]string, string)
 
 ```go
-RunBuild([]string, string) error
+RunBuild([]string, string) map[string]string, string, error
 ```
 
-RunBuild runs the Packer build command with the provided arguments.
+RunBuild runs the Packer build command and captures the output to parse image
+hashes and AMI details.
 
 **Parameters:**
 
-args: A slice of strings representing the build command arguments.
-dir: The directory in which to run the command. If empty, the current
-directory is used.
+args: A slice of strings containing the arguments to pass to the Packer build command.
+dir: The directory to run the Packer build command in.
 
 **Returns:**
 
+map[string]string: A map of image hashes parsed from the build output.
+string: The AMI ID parsed from the build output.
 error: An error if the build command fails.
 
 ---

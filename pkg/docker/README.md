@@ -119,10 +119,10 @@ error: An error if the tagging operation fails.
 
 ---
 
-### DockerClient.TagAndPushImages([]packer.PackerTemplate, string)
+### DockerClient.TagAndPushImages([]packer.PackerTemplate, string, map[string]string)
 
 ```go
-TagAndPushImages([]packer.PackerTemplate, string) error
+TagAndPushImages([]packer.PackerTemplate, string, map[string]string) error
 ```
 
 TagAndPushImages tags and pushes images specified in packer templates.

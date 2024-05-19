@@ -352,7 +352,7 @@ func TestTagAndPushImages(t *testing.T) {
 				AuthStr: "test-auth-token",
 			}
 
-			err := client.TagAndPushImages(tc.packerTemplates, client.AuthStr, "test-image")
+			err := client.TagAndPushImages(tc.packerTemplates, client.AuthStr, "test-image", tc.packerTemplates[0].Container.ImageHashes)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("TagAndPushImages() error = %v, wantErr %v", err, tc.wantErr)
 			} else if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.expectedErrMsg) {

@@ -69,7 +69,7 @@ func TestRunBuild(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			packerTemplate := packer.PackerTemplate{}
-			err := packerTemplate.RunBuild(tc.args, tc.dir)
+			_, _, err := packerTemplate.RunBuild(tc.args, tc.dir)
 			if tc.expectedError {
 				assert.Error(t, err)
 			} else {

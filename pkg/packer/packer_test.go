@@ -3,9 +3,8 @@ package packer_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseImageHashes(t *testing.T) {
@@ -15,9 +14,11 @@ func TestParseImageHashes(t *testing.T) {
 		expectedHashes map[string]string
 	}{
 		{
-			name:           "valid output with hashes",
-			output:         "Imported Docker image: sha256: null.example: sha256: ad5246ae942c8c9169eda8726e7e330bba72e4e6f8815e7f1e7112844caca4c3",
-			expectedHashes: map[string]string{"example": "ad5246ae942c8c9169eda8726e7e330bba72e4e6f8815e7f1e7112844caca4c3"},
+			name: "valid output with hashes",
+			output: `==> docker.arm64: Pulling Docker image: ubuntu:jammy
+docker.arm64: Digest: sha256:a6d2b38300ce017add71440577d5b0a90460d0e57fd7aec21dd0d1b0761bbfb2
+==> docker.arm64: Status: Image is up to date for ubuntu:jammy`,
+			expectedHashes: map[string]string{"arm64": "a6d2b38300ce017add71440577d5b0a90460d0e57fd7aec21dd0d1b0761bbfb2"},
 		},
 		{
 			name:           "invalid output without hashes",
@@ -25,7 +26,6 @@ func TestParseImageHashes(t *testing.T) {
 			expectedHashes: map[string]string{},
 		},
 	}
-
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			pTmpl := &packer.PackerTemplate{}
