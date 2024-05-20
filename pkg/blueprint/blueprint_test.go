@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestParseCommandLineFlags(t *testing.T) {
@@ -236,19 +238,7 @@ func TestCreateBuildDir(t *testing.T) {
 	}
 }
 
-func setupBlueprint(t *testing.T, blueprintName string, tempDir string) bp.Blueprint {
-	blueprintPath := filepath.Join(tempDir, "blueprints", blueprintName)
-	if _, err := os.Stat(blueprintPath); os.IsNotExist(err) {
-		t.Fatalf("blueprint directory does not exist at %s", blueprintPath)
-	}
-
-	return bp.Blueprint{
-		Name: blueprintName,
-		Path: blueprintPath,
-	}
-}
-
-func setupConfig(t *testing.T, blueprint bp.Blueprint, configContent string) string {
+func setupConfig(t *testing.T, blueprint *bp.Blueprint, configContent string) string {
 	configPath := filepath.Join(blueprint.Path, "config.yaml")
 	if configContent != "" {
 		err := os.WriteFile(configPath, []byte(configContent), 0644)
@@ -262,6 +252,19 @@ func setupConfig(t *testing.T, blueprint bp.Blueprint, configContent string) str
 	}
 	return configPath
 }
+
+func setupBlueprint(t *testing.T, blueprintName string, tempDir string) *bp.Blueprint {
+	blueprintPath := filepath.Join(tempDir, "blueprints", blueprintName)
+	if _, err := os.Stat(blueprintPath); os.IsNotExist(err) {
+		t.Fatalf("blueprint directory does not exist at %s", blueprintPath)
+	}
+
+	return &bp.Blueprint{
+		Name: blueprintName,
+		Path: blueprintPath,
+	}
+}
+
 func TestLoadPackerTemplates(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "repo_copy")
 	if err != nil {
@@ -301,7 +304,7 @@ func TestLoadPackerTemplates(t *testing.T) {
 							"amd64": "hash1",
 							"arm64": "hash2",
 						},
-						Registry: packer.ContainerImageRegistry{
+						ImageRegistry: packer.ContainerImageRegistry{
 							Server:     "testserver",
 							Username:   "testuser",
 							Credential: "testtoken",
@@ -323,7 +326,7 @@ func TestLoadPackerTemplates(t *testing.T) {
 			expectedResult: []packer.PackerTemplate{
 				{
 					Container: packer.Container{
-						Registry: packer.ContainerImageRegistry{
+						ImageRegistry: packer.ContainerImageRegistry{
 							Server:     "testserver",
 							Username:   "testuser",
 							Credential: "testtoken",
@@ -386,6 +389,294 @@ func TestLoadPackerTemplates(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, blueprint.PackerTemplates)
+			}
+		})
+	}
+}
+
+func TestBuildPackerImages(t *testing.T) {
+	// Set up blueprint and config for testing
+	tempDir, err := os.MkdirTemp("", "repo_copy")
+	if err != nil {
+		t.Fatalf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repoRoot, err := gitutils.RepoRoot()
+	if err != nil {
+		t.Fatalf("failed to get repo root: %v", err)
+	}
+	err = sys.Cp(repoRoot, tempDir)
+	if err != nil {
+		t.Fatalf("failed to copy repo: %v", err)
+	}
+
+	blueprint := setupBlueprint(t, "sliver", tempDir)
+	setupConfig(t, blueprint, `
+packer_templates:
+  - ami:
+      instance_type: "t2.micro"
+      region: "us-west-2"
+      ssh_user: "ubuntu"
+    container:
+      image_hashes:
+        amd64: "hash1"
+        arm64: "hash2"
+      image_registry:
+        server: "testserver"
+        username: "testuser"
+        credential: "testtoken"
+      workdir: "/tmp"
+    image_values:
+      name: "ubuntu"
+      version: "jammy"
+    user: "ubuntu"
+`)
+
+	t.Run("BuildPackerImages", func(t *testing.T) {
+		hashes, err := blueprint.BuildPackerImages()
+		assert.NoError(t, err)
+		assert.NotNil(t, hashes)
+	})
+}
+
+func TestBuildPackerImage(t *testing.T) {
+	// Set up blueprint and config for testing
+	tempDir, err := os.MkdirTemp("", "repo_copy")
+	if err != nil {
+		t.Fatalf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repoRoot, err := gitutils.RepoRoot()
+	if err != nil {
+		t.Fatalf("failed to get repo root: %v", err)
+	}
+	err = sys.Cp(repoRoot, tempDir)
+	if err != nil {
+		t.Fatalf("failed to copy repo: %v", err)
+	}
+
+	blueprint := setupBlueprint(t, "sliver", tempDir)
+	setupConfig(t, blueprint, `
+packer_templates:
+  - ami:
+      instance_type: "t2.micro"
+      region: "us-west-2"
+      ssh_user: "ubuntu"
+    container:
+      image_hashes:
+        amd64: "hash1"
+        arm64: "hash2"
+      image_registry:
+        server: "testserver"
+        username: "testuser"
+        credential: "testtoken"
+      workdir: "/tmp"
+    image_values:
+      name: "ubuntu"
+      version: "jammy"
+    user: "ubuntu"
+`)
+
+	// Test BuildPackerImage
+	t.Run("BuildPackerImages", func(t *testing.T) {
+		hashes, err := blueprint.BuildPackerImages()
+		assert.NoError(t, err)
+		assert.NotNil(t, hashes)
+	})
+}
+
+// MockCmdRunner is a function that runs a command using the sys.Cmd struct.
+// This will be used to replace the actual command runner with a mock function.
+var MockCmdRunner func(c sys.Cmd) (string, error)
+
+// RunCommandWithMock runs the command using the mock function if set,
+// otherwise it uses the real implementation.
+func RunCommandWithMock(c sys.Cmd) (string, error) {
+	if MockCmdRunner != nil {
+		return MockCmdRunner(c)
+	}
+	return c.RunCmd()
+}
+
+// MockSysCmd is a mock of sys.Cmd
+type MockSysCmd struct {
+	mock.Mock
+	CmdString     string
+	Args          []string
+	Dir           string
+	Timeout       time.Duration
+	OutputHandler func(string)
+}
+
+func (m *MockSysCmd) RunCmd() (string, error) {
+	args := m.Called()
+	return args.String(0), args.Error(1)
+}
+
+// MockPackerTemplate is a mock of packer.PackerTemplate
+type MockPackerTemplate struct {
+	mock.Mock
+}
+
+func (m *MockPackerTemplate) RunInit(args []string, dir string) error {
+	calledArgs := m.Called(args, dir)
+	return calledArgs.Error(0)
+}
+
+func (m *MockPackerTemplate) RunBuild(args []string, dir string) (map[string]string, string, error) {
+	calledArgs := m.Called(args, dir)
+	return calledArgs.Get(0).(map[string]string), calledArgs.String(1), calledArgs.Error(2)
+}
+
+func TestBuildImageAttempt(t *testing.T) {
+	tests := []struct {
+		name           string
+		blueprintName  string
+		configContent  string
+		expectedErr    string
+		expectedResult map[string]string
+	}{
+		{
+			name:          "valid blueprint",
+			blueprintName: "sliver",
+			configContent: `
+packer_templates:
+  - ami:
+      instance_type: "t2.micro"
+      region: "us-west-2"
+      ssh_user: "ubuntu"
+    container:
+      image_hashes:
+        amd64: "hash1"
+        arm64: "hash2"
+      image_registry:
+        server: "testserver"
+        username: "testuser"
+        credential: "testtoken"
+      workdir: "/tmp"
+    image_values:
+      name: "ubuntu"
+      version: "jammy"
+    user: "ubuntu"
+`,
+			expectedErr:    "",
+			expectedResult: map[string]string{"amd64": "hash1", "arm64": "hash2"},
+		},
+		{
+			name:          "no packer templates",
+			blueprintName: "sliver",
+			configContent: ``,
+			expectedErr:   "no packer templates found",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tempDir, err := os.MkdirTemp("", "repo_copy")
+			if err != nil {
+				t.Fatalf("failed to create temp directory: %v", err)
+			}
+			defer os.RemoveAll(tempDir)
+
+			repoRoot, err := gitutils.RepoRoot()
+			if err != nil {
+				t.Fatalf("failed to get repo root: %v", err)
+			}
+			err = sys.Cp(repoRoot, tempDir)
+			if err != nil {
+				t.Fatalf("failed to copy repo: %v", err)
+			}
+
+			blueprint := setupBlueprint(t, tc.blueprintName, tempDir)
+			setupConfig(t, blueprint, tc.configContent)
+
+			mockCmd := new(MockSysCmd)
+			mockCmd.On("RunCmd").Return("mocked output", nil)
+
+			mockPackerTemplate := new(mocks.PackerTemplate)
+			mockPackerTemplate.On("RunInit", mock.Anything, mock.Anything).Return(nil)
+			mockPackerTemplate.On("RunBuild", mock.Anything, mock.Anything).Return(tc.expectedResult, "", nil)
+
+			// Replace actual implementations with mocks
+			originalPackerTemplates := blueprint.PackerTemplates
+			blueprint.PackerTemplates = []packer.PackerTemplate{mockPackerTemplate}
+
+			MockCmdRunner = func(c sys.Cmd) (string, error) {
+				if c.CmdString == "ls" {
+					return mockCmd.RunCmd()
+				}
+				return "", nil
+			}
+
+			defer func() {
+				blueprint.PackerTemplates = originalPackerTemplates
+				MockCmdRunner = nil
+			}()
+
+			err = blueprint.LoadPackerTemplates()
+			if err != nil && tc.expectedErr == "" {
+				t.Fatalf("unexpected error loading packer templates: %v", err)
+			}
+
+			hashes, err := blueprint.BuildImageAttempt(1)
+			if tc.expectedErr != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedErr)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, hashes)
+				assert.Equal(t, tc.expectedResult, hashes)
+			}
+		})
+	}
+}
+
+func TestValidatePackerTemplate(t *testing.T) {
+	tests := []struct {
+		name          string
+		blueprint     *bp.Blueprint
+		expectedError string
+	}{
+		{
+			name: "valid template",
+			blueprint: &bp.Blueprint{
+				Name:             "test-blueprint",
+				Path:             "test-path",
+				ProvisioningRepo: "test-repo",
+				PackerTemplates: []packer.PackerTemplate{
+					{
+						ImageValues: packer.ImageValues{Name: "test-image", Version: "1.0"},
+						User:        "test-user",
+						Container:   packer.Container{Workdir: "test-workdir"},
+					},
+				},
+			},
+		},
+		{
+			name: "missing fields",
+			blueprint: &bp.Blueprint{
+				Name: "test-blueprint",
+				Path: "test-path",
+				PackerTemplates: []packer.PackerTemplate{
+					{
+						ImageValues: packer.ImageValues{Name: "", Version: ""},
+						User:        "",
+					},
+				},
+			},
+			expectedError: "packer template 'test-blueprint' has uninitialized fields: ImageValues.Name, ImageValues.Version, User, Blueprint.ProvisioningRepo",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.blueprint.ValidatePackerTemplate()
+			if tc.expectedError != "" {
+				assert.EqualError(t, err, tc.expectedError)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}

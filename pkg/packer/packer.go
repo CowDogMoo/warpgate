@@ -33,7 +33,7 @@ type Container struct {
 	BaseImageValues ImageValues            `mapstructure:"base_image_values"`
 	Entrypoint      string                 `mapstructure:"entrypoint"`
 	ImageHashes     map[string]string      `mapstructure:"image_hashes"`
-	Registry        ContainerImageRegistry `mapstructure:"registry"`
+	ImageRegistry   ContainerImageRegistry `mapstructure:"registry"`
 	Workdir         string                 `mapstructure:"workdir"`
 	DockerClient    string                 `mapstructure:"docker_client"`
 }

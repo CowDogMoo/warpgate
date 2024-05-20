@@ -98,7 +98,7 @@ func (p *PackerTemplate) RunBuild(args []string, dir string) (map[string]string,
 		return nil, "", err
 	}
 
-	if p.Container.Registry.Server != "" {
+	if p.Container.ImageRegistry.Server != "" {
 		imageHashes := p.ParseImageHashes(output)
 		amiID := p.ParseAMIDetails(output)
 		return imageHashes, amiID, nil
