@@ -155,7 +155,7 @@ func generatePackerTemplate(templateName, baseInput, tagName, tagVersion string,
 		},
 		Container: packer.Container{
 			ImageHashes: map[string]string{},
-			Registry: packer.ContainerImageRegistry{
+			ImageRegistry: packer.ContainerImageRegistry{
 				Server:     "",
 				Username:   "",
 				Credential: "",
@@ -216,8 +216,7 @@ func createPacker(blueprint bp.Blueprint) error {
 	}
 
 	set := false
-	blueprint.PackerTemplates[0].Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
-	// ContainerImageRegistry.Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
+	blueprint.PackerTemplates[0].Container.ImageRegistry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
 	if !set {
 		return errors.New("required env var $GITHUB_TOKEN is not set, please " +
 			"set it with a correct Personal Access Token and try again")
