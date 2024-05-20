@@ -10,7 +10,7 @@
       "args": [
         "imageBuilder",
         "-b",
-        "ttpforge",
+        "atomic-red-team",
         "-p",
         "${env:HOME}/security/ansible-collection-arsenal",
         "-t",

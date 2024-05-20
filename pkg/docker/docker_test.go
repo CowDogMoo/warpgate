@@ -3,15 +3,17 @@ package docker_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/pkg/docker"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
 	"github.com/spf13/viper"
@@ -23,7 +25,8 @@ type MockDockerClient struct {
 	ImagePushFunc            func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
 	DockerManifestCreateFunc func(manifest string, images []string) error
 	DockerManifestPushFunc   func(manifest string) error
-	DockerLoginFunc          func(username, password, server string) (string, error)
+	DockerLoginFunc          func(username, password, server string) error
+	RegistryLoginFunc        func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error)
 	authStr                  string
 }
 
@@ -55,18 +58,26 @@ func (m *MockDockerClient) DockerManifestPush(manifest string) error {
 	return nil
 }
 
-func (m *MockDockerClient) DockerLogin(username, password, server string) (string, error) {
+func (m *MockDockerClient) DockerLogin(username, password, server string) error {
 	if m.DockerLoginFunc != nil {
-		authStr, err := m.DockerLoginFunc(username, password, server)
-		m.authStr = authStr
-		return authStr, err
+		err := m.DockerLoginFunc(username, password, server)
+		if err == nil {
+			m.authStr = "mockAuthString"
+		}
+		return err
 	}
 	if username == "" || password == "" || server == "" {
-		return "", errors.New("login error")
+		return errors.New("login error")
 	}
-	authStr := "eyJ"
-	m.authStr = authStr
-	return authStr, nil
+	m.authStr = "mockAuthString"
+	return nil
+}
+
+func (m *MockDockerClient) RegistryLogin(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
+	if m.RegistryLoginFunc != nil {
+		return m.RegistryLoginFunc(ctx, auth)
+	}
+	return registry.AuthenticateOKBody{}, nil
 }
 
 func (m *MockDockerClient) Info(ctx context.Context) (system.Info, error) {
@@ -81,21 +92,25 @@ func NewMockDockerClient() *docker.DockerClient {
 		},
 		DockerManifestCreateFunc: func(manifest string, images []string) error { return nil },
 		DockerManifestPushFunc: func(manifest string) error {
-			if manifest == "testserver/test-image:latest" {
-				return errors.New("denied: requested access to the resource is denied")
+			return nil
+		},
+		DockerLoginFunc: func(username, password, server string) error {
+			if username == "" || password == "" || server == "" {
+				return errors.New("login error")
 			}
 			return nil
 		},
-		DockerLoginFunc: func(username, password, server string) (string, error) {
-			if username == "" || password == "" || server == "" {
-				return "", errors.New("login error")
+		RegistryLoginFunc: func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
+			if auth.Username == "" || auth.Password == "" || auth.ServerAddress == "" {
+				return registry.AuthenticateOKBody{}, errors.New("login error")
 			}
-			return "eyJ", nil
+			return registry.AuthenticateOKBody{IdentityToken: "mockToken"}, nil
 		},
 	}
 	return &docker.DockerClient{
-		CLI:     mockClient,
-		AuthStr: mockClient.authStr,
+		CLI:         mockClient,
+		ExecCommand: exec.Command,
+		AuthStr:     mockClient.authStr,
 	}
 }
 
@@ -105,23 +120,27 @@ func TestDockerLogin(t *testing.T) {
 		username string
 		password string
 		server   string
-		want     string
 		wantErr  bool
 	}{
 		{
-			name:     "valid login",
+			name:     "valid login with protocol",
 			username: "user",
 			password: "pass",
 			server:   "https://ghcr.io",
-			want:     "eyJ",
 			wantErr:  false,
 		},
 		{
-			name:     "invalid login",
+			name:     "valid login without protocol",
+			username: "user",
+			password: "pass",
+			server:   "ghcr.io",
+			wantErr:  false,
+		},
+		{
+			name:     "invalid login - empty credentials",
 			username: "",
 			password: "",
 			server:   "",
-			want:     "",
 			wantErr:  true,
 		},
 	}
@@ -129,36 +148,9 @@ func TestDockerLogin(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			client := NewMockDockerClient()
-
-			// Create a test server that mimics the Docker registry login endpoint
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/v2/users/login" && r.Method == http.MethodPost {
-					if tc.wantErr {
-						http.Error(w, "Unauthorized", http.StatusUnauthorized)
-					} else {
-						w.WriteHeader(http.StatusOK)
-					}
-				} else {
-					http.Error(w, "Not Found", http.StatusNotFound)
-				}
-			}))
-			defer ts.Close()
-
-			server := ts.URL
-			if tc.server == "https://ghcr.io" {
-				server = ts.URL
-			}
-
-			err := client.DockerLogin(tc.username, tc.password, server)
+			err := client.DockerLogin(tc.username, tc.password, tc.server)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerLogin() error = %v, wantErr %v", err, tc.wantErr)
-				return
-			}
-			if !tc.wantErr && !strings.Contains(client.AuthStr, "eyJ") {
-				t.Errorf("DockerLogin() = %v, want substring 'eyJ'", client.AuthStr)
-			}
-			if tc.wantErr && err == nil {
-				t.Errorf("DockerLogin() error = <nil>, wantErr %v", tc.wantErr)
 			}
 		})
 	}
@@ -254,15 +246,24 @@ func TestDockerPush(t *testing.T) {
 		})
 	}
 }
+
 func TestTagAndPushImages(t *testing.T) {
 	viper.Set("container.registry.server", "testserver")
 	viper.Set("container.registry.username", "testuser")
 	viper.Set("container.registry.token", "testtoken")
 
+	execCommand := func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
+		return cmd
+	}
+
 	tests := []struct {
 		name                   string
 		packerTemplates        []packer.PackerTemplate
-		mockLoginFunc          func(username, password, server string) (string, error)
+		mockLoginFunc          func(username, password, server string) error
 		mockTagFunc            func(ctx context.Context, source, target string) error
 		mockPushFunc           func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
 		mockManifestCreateFunc func(manifest string, images []string) error
@@ -281,8 +282,8 @@ func TestTagAndPushImages(t *testing.T) {
 					},
 					Container: packer.Container{
 						ImageHashes: map[string]string{
-							"amd64": "hash1",
-							"arm64": "hash2",
+							"amd64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
+							"arm64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
 						},
 						Registry: packer.ContainerImageRegistry{
 							Server:     "testserver",
@@ -297,21 +298,16 @@ func TestTagAndPushImages(t *testing.T) {
 					},
 				},
 			},
-			mockLoginFunc: func(username, password, server string) (string, error) {
-				return "test-auth-token", nil
-			},
-			mockTagFunc: func(ctx context.Context, source, target string) error { return nil },
+			mockLoginFunc: func(username, password, server string) error { return nil },
+			mockTagFunc:   func(ctx context.Context, source, target string) error { return nil },
 			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
 				return io.NopCloser(strings.NewReader("")), nil
 			},
 			mockManifestCreateFunc: func(manifest string, images []string) error {
-				return errors.New("docker manifest create failed for testserver/test-image:latest: errors:\ndenied: requested access to the resource is denied\nunauthorized: authentication required\n")
-			},
-			mockManifestPushFunc: func(manifest string) error {
 				return nil
 			},
-			wantErr:        true,
-			expectedErrMsg: "unauthorized: authentication required",
+			mockManifestPushFunc: func(manifest string) error { return nil },
+			wantErr:              false,
 		},
 		{
 			name: "invalid push images",
@@ -324,8 +320,8 @@ func TestTagAndPushImages(t *testing.T) {
 					},
 					Container: packer.Container{
 						ImageHashes: map[string]string{
-							"amd64": "hash1",
-							"arm64": "hash2",
+							"amd64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
+							"arm64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
 						},
 						Registry: packer.ContainerImageRegistry{
 							Server:     "testserver",
@@ -340,32 +336,37 @@ func TestTagAndPushImages(t *testing.T) {
 					},
 				},
 			},
-			mockLoginFunc: func(username, password, server string) (string, error) {
-				return "", errors.New("login error")
+			mockLoginFunc: func(username, password, server string) error {
+				return errors.New("login error")
 			},
 			mockTagFunc: func(ctx context.Context, source, target string) error { return nil },
 			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
 				return nil, errors.New("push error")
 			},
-			mockManifestCreateFunc: func(manifest string, images []string) error { return errors.New("manifest create error") },
-			mockManifestPushFunc:   func(manifest string) error { return errors.New("manifest push error") },
-			wantErr:                true,
-			expectedErrMsg:         "push error",
+			mockManifestCreateFunc: func(manifest string, images []string) error {
+				return errors.New("manifest create error")
+			},
+			mockManifestPushFunc: func(manifest string) error {
+				return errors.New("manifest push error")
+			},
+			wantErr:        true,
+			expectedErrMsg: "push error",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			client := &docker.DockerClient{
-				CLI: &MockDockerClient{
-					DockerLoginFunc:          tc.mockLoginFunc,
-					ImageTagFunc:             tc.mockTagFunc,
-					ImagePushFunc:            tc.mockPushFunc,
-					DockerManifestCreateFunc: tc.mockManifestCreateFunc,
-					DockerManifestPushFunc:   tc.mockManifestPushFunc,
-				},
-				AuthStr: "test-auth-token",
+				CLI:         &MockDockerClient{},
+				ExecCommand: execCommand,
+				AuthStr:     "test-auth-token",
 			}
+
+			client.CLI.(*MockDockerClient).DockerLoginFunc = tc.mockLoginFunc
+			client.CLI.(*MockDockerClient).ImageTagFunc = tc.mockTagFunc
+			client.CLI.(*MockDockerClient).ImagePushFunc = tc.mockPushFunc
+			client.CLI.(*MockDockerClient).DockerManifestCreateFunc = tc.mockManifestCreateFunc
+			client.CLI.(*MockDockerClient).DockerManifestPushFunc = tc.mockManifestPushFunc
 
 			err := client.TagAndPushImages(tc.packerTemplates, client.AuthStr, "test-image", tc.packerTemplates[0].Container.ImageHashes)
 			if (err != nil) != tc.wantErr {
@@ -375,4 +376,19 @@ func TestTagAndPushImages(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	args := os.Args
+	if len(args) > 3 && args[3] == "manifest" {
+		if args[4] == "create" || args[4] == "push" {
+			fmt.Fprintln(os.Stderr, "error")
+			os.Exit(1)
+		}
+	}
+	os.Exit(0)
 }

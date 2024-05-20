@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os/exec"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/spf13/viper"
 )
@@ -41,10 +41,12 @@ type DockerClientInterface interface {
 // **Attributes:**
 //
 // CLI: API client for Docker operations.
+// ExecCommand: Command for executing Docker commands.
 // AuthStr: Auth string for the Docker registry.
 type DockerClient struct {
-	CLI     client.APIClient
-	AuthStr string
+	AuthStr     string
+	CLI         client.APIClient
+	ExecCommand func(name string, arg ...string) *exec.Cmd
 }
 
 // NewDockerClient creates a new Docker client.
@@ -58,7 +60,7 @@ func NewDockerClient() (*DockerClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DockerClient{CLI: cli}, nil
+	return &DockerClient{CLI: cli, ExecCommand: exec.Command}, nil
 }
 
 // DockerLogin authenticates with a Docker registry using the provided
@@ -80,40 +82,26 @@ func (d *DockerClient) DockerLogin(username, password, server string) error {
 		return errors.New("username, password, and server must not be empty")
 	}
 
-	authConfig := map[string]string{
-		"username":      username,
-		"password":      password,
-		"serveraddress": server,
+	authConfig := registry.AuthConfig{
+		Username:      username,
+		Password:      password,
+		ServerAddress: server,
 	}
 
-	authJSON, err := json.Marshal(authConfig)
+	authBytes, err := json.Marshal(authConfig)
 	if err != nil {
 		return err
 	}
+	d.AuthStr = base64.URLEncoding.EncodeToString(authBytes)
 
-	d.AuthStr = base64.URLEncoding.EncodeToString(authJSON)
-
-	url := "https://index.docker.io/v1/users/login"
-	if server != "https://index.docker.io/v1/" {
-		url = server + "/v2/users/login"
-	}
-
-	req, err := http.NewRequest("POST", url, bytes.NewReader(authJSON))
+	ctx := context.Background()
+	_, err = d.CLI.RegistryLogin(ctx, registry.AuthConfig{
+		Username:      username,
+		Password:      password,
+		ServerAddress: server,
+	})
 	if err != nil {
 		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return errors.New("failed to login to Docker registry")
 	}
 
 	return nil
@@ -199,7 +187,7 @@ func (d *DockerClient) DockerManifestCreate(manifest string, images []string) er
 
 	fmt.Printf("Executing command: docker %s\n", strings.Join(args, " "))
 
-	cmd := exec.Command("docker", args...)
+	cmd := d.ExecCommand("docker", args...)
 	var out bytes.Buffer
 	cmd.Stderr = &out
 
@@ -225,7 +213,7 @@ func (d *DockerClient) DockerManifestPush(manifest string) error {
 		return errors.New("manifest must not be empty")
 	}
 
-	cmd := exec.Command("docker", "manifest", "push", manifest)
+	cmd := d.ExecCommand("docker", "manifest", "push", manifest)
 	var out bytes.Buffer
 	cmd.Stderr = &out
 	if err := cmd.Run(); err != nil {
