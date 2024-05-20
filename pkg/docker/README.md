@@ -17,10 +17,10 @@ The `docker` package is a part of the WarpGate.
 
 ## Functions
 
-### DockerClient.DockerLogin(string)
+### DockerClient.DockerLogin(packer.ContainerImageRegistry)
 
 ```go
-DockerLogin(string) error
+DockerLogin(packer.ContainerImageRegistry) error
 ```
 
 DockerLogin authenticates with a Docker registry using the provided
@@ -46,9 +46,7 @@ error: An error if any issue occurs during the login process.
 DockerManifestCreate(string, []string) error
 ```
 
-DockerManifestCreate creates a Docker manifest that references multiple
-platform-specific versions of an image. It builds the manifest using the
-'docker manifest create' command.
+DockerManifestCreate creates a Docker manifest that references multiple platform-specific versions of an image.
 
 **Parameters:**
 
@@ -150,6 +148,33 @@ NewDockerClient creates a new Docker client.
 
 *DockerClient: A DockerClient instance.
 error: An error if any issue occurs while creating the client.
+
+---
+
+### credentialStore.Basic(*url.URL)
+
+```go
+Basic(*url.URL) string, string
+```
+
+
+---
+
+### credentialStore.RefreshToken(*url.URL, string)
+
+```go
+RefreshToken(*url.URL, string) string
+```
+
+
+---
+
+### credentialStore.SetRefreshToken(*url.URL, string)
+
+```go
+SetRefreshToken(*url.URL, string)
+```
+
 
 ---
 

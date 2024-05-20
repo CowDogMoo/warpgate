@@ -1,20 +1,28 @@
 package docker
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os/exec"
-	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/distribution/reference"
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/ocischema"
+	"github.com/docker/distribution/registry/client"
+	"github.com/docker/distribution/registry/client/auth"
+	"github.com/docker/distribution/registry/client/auth/challenge"
+	"github.com/docker/distribution/registry/client/transport"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
-	"github.com/docker/docker/client"
+	dockerClient "github.com/docker/docker/client"
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/viper"
 )
 
@@ -29,7 +37,7 @@ import (
 // DockerManifestCreate: Creates a Docker manifest.
 // DockerManifestPush: Pushes a Docker manifest to a registry.
 type DockerClientInterface interface {
-	DockerLogin(username, password, server string) (string, error)
+	DockerLogin(containerImageRegistry packer.ContainerImageRegistry) error
 	DockerPush(image, authStr string) error
 	DockerTag(sourceImage, targetImage string) error
 	DockerManifestCreate(manifest string, images []string) error
@@ -44,9 +52,11 @@ type DockerClientInterface interface {
 // ExecCommand: Command for executing Docker commands.
 // AuthStr: Auth string for the Docker registry.
 type DockerClient struct {
-	AuthStr     string
-	CLI         client.APIClient
-	ExecCommand func(name string, arg ...string) *exec.Cmd
+	AuthStr                string
+	CLI                    dockerClient.APIClient
+	ExecCommand            func(name string, arg ...string) *exec.Cmd
+	ManifestList           distribution.Manifest
+	ContainerImageRegistry packer.ContainerImageRegistry
 }
 
 // NewDockerClient creates a new Docker client.
@@ -56,7 +66,7 @@ type DockerClient struct {
 // *DockerClient: A DockerClient instance.
 // error: An error if any issue occurs while creating the client.
 func NewDockerClient() (*DockerClient, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := dockerClient.NewClientWithOpts(dockerClient.FromEnv, dockerClient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
 	}
@@ -77,15 +87,15 @@ func NewDockerClient() (*DockerClient, error) {
 //
 // string: The base64 encoded auth string.
 // error: An error if any issue occurs during the login process.
-func (d *DockerClient) DockerLogin(username, password, server string) error {
-	if username == "" || password == "" || server == "" {
+func (d *DockerClient) DockerLogin(containerImageRegistry packer.ContainerImageRegistry) error {
+	if containerImageRegistry.Username == "" || containerImageRegistry.Credential == "" || containerImageRegistry.Server == "" {
 		return errors.New("username, password, and server must not be empty")
 	}
 
 	authConfig := registry.AuthConfig{
-		Username:      username,
-		Password:      password,
-		ServerAddress: server,
+		Username:      containerImageRegistry.Username,
+		Password:      containerImageRegistry.Credential,
+		ServerAddress: containerImageRegistry.Server,
 	}
 
 	authBytes, err := json.Marshal(authConfig)
@@ -95,11 +105,7 @@ func (d *DockerClient) DockerLogin(username, password, server string) error {
 	d.AuthStr = base64.URLEncoding.EncodeToString(authBytes)
 
 	ctx := context.Background()
-	_, err = d.CLI.RegistryLogin(ctx, registry.AuthConfig{
-		Username:      username,
-		Password:      password,
-		ServerAddress: server,
-	})
+	_, err = d.CLI.RegistryLogin(ctx, authConfig)
 	if err != nil {
 		return err
 	}
@@ -171,30 +177,84 @@ func (d *DockerClient) DockerPush(containerImage string) error {
 // **Returns:**
 //
 // error: An error if the manifest creation fails.
+// credentialStore implements auth.CredentialStore
+type credentialStore struct {
+	authConfig registry.AuthConfig
+}
+
+func (cs *credentialStore) Basic(u *url.URL) (string, string) {
+	return cs.authConfig.Username, cs.authConfig.Password
+}
+
+func (cs *credentialStore) RefreshToken(u *url.URL, service string) string {
+	return ""
+}
+
+func (cs *credentialStore) SetRefreshToken(u *url.URL, service, refreshToken string) {
+}
+
+// DockerManifestCreate creates a Docker manifest that references multiple platform-specific versions of an image.
+//
+// **Parameters:**
+//
+// manifest: The name of the manifest to create.
+// images: A slice of image names to include in the manifest.
+//
+// **Returns:**
+//
+// error: An error if the manifest creation fails.
 func (d *DockerClient) DockerManifestCreate(manifest string, images []string) error {
-	if manifest == "" {
-		return errors.New("manifest must not be empty")
+	ctx := context.Background()
+
+	builder := ocischema.NewManifestBuilder(nil, nil, nil)
+
+	for _, img := range images {
+		imgRef, err := reference.ParseNormalizedNamed(img)
+		if err != nil {
+			return fmt.Errorf("failed to parse image reference: %v", err)
+		}
+
+		imgRepo, err := client.NewRepository(imgRef, d.ContainerImageRegistry.Server, http.DefaultTransport)
+		if err != nil {
+			return fmt.Errorf("failed to create image repository: %v", err)
+		}
+
+		imgManifestService, err := imgRepo.Manifests(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get image manifest service: %v", err)
+		}
+
+		tagsService := imgRepo.Tags(ctx)
+		imgDigest, err := tagsService.Get(ctx, "latest")
+		if err != nil {
+			return fmt.Errorf("failed to get image digest: %v", err)
+		}
+
+		digestValue := digest.Digest(imgDigest.Digest)
+		imgDescriptor, err := imgManifestService.Get(ctx, digestValue)
+		if err != nil {
+			return fmt.Errorf("failed to get image manifest: %v", err)
+		}
+
+		deserializedManifest, ok := imgDescriptor.(*ocischema.DeserializedManifest)
+		if !ok {
+			return fmt.Errorf("failed to assert type: %v", err)
+		}
+
+		for _, descriptor := range deserializedManifest.References() {
+			err = builder.AppendReference(descriptor)
+			if err != nil {
+				return fmt.Errorf("failed to append image reference: %v", err)
+			}
+		}
 	}
 
-	if len(images) == 0 {
-		return errors.New("images must not be empty")
+	finalManifest, err := builder.Build(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to build manifest: %v", err)
 	}
 
-	args := []string{"manifest", "create", manifest}
-	for _, image := range images {
-		args = append(args, "--amend", image)
-	}
-
-	fmt.Printf("Executing command: docker %s\n", strings.Join(args, " "))
-
-	cmd := d.ExecCommand("docker", args...)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker manifest create failed for %s: %s", manifest, out.String())
-	}
-
+	d.ManifestList = finalManifest
 	return nil
 }
 
@@ -209,15 +269,44 @@ func (d *DockerClient) DockerManifestCreate(manifest string, images []string) er
 //
 // error: An error if the push operation fails.
 func (d *DockerClient) DockerManifestPush(manifest string) error {
-	if manifest == "" {
-		return errors.New("manifest must not be empty")
+	ctx := context.Background()
+
+	ref, err := reference.ParseNormalizedNamed(manifest)
+	if err != nil {
+		return fmt.Errorf("failed to parse manifest reference: %v", err)
 	}
 
-	cmd := d.ExecCommand("docker", "manifest", "push", manifest)
-	var out bytes.Buffer
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker manifest push failed for %s: %s", manifest, out.String())
+	authConfig := registry.AuthConfig{
+		Username:      d.ContainerImageRegistry.Username,
+		Password:      d.ContainerImageRegistry.Credential,
+		ServerAddress: d.ContainerImageRegistry.Server,
+	}
+	creds := &credentialStore{authConfig: authConfig}
+	challengeManager := challenge.NewSimpleManager()
+	tokenHandler := auth.NewTokenHandler(nil, creds, "repository", "pull", "push")
+	basicHandler := auth.NewBasicHandler(creds)
+	authorizer := auth.NewAuthorizer(challengeManager, tokenHandler, basicHandler)
+	tr := transport.NewTransport(http.DefaultTransport, authorizer)
+	repo, err := client.NewRepository(ref, d.ContainerImageRegistry.Server, tr)
+	if err != nil {
+		return fmt.Errorf("failed to create repository: %v", err)
+	}
+
+	manifestService, err := repo.Manifests(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get manifest service: %v", err)
+	}
+
+	builder := ocischema.NewManifestBuilder(nil, nil, nil)
+
+	finalManifest, err := builder.Build(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to build manifest: %v", err)
+	}
+
+	_, err = manifestService.Put(ctx, finalManifest)
+	if err != nil {
+		return fmt.Errorf("failed to put manifest: %v", err)
 	}
 
 	return nil
@@ -266,8 +355,7 @@ func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName strin
 	}
 
 	if d.AuthStr == "" {
-		if err := d.DockerLogin(pTmpl.Container.Registry.Username,
-			pTmpl.Container.Registry.Credential, pTmpl.Container.Registry.Server); err != nil {
+		if err := d.DockerLogin(pTmpl.Container.Registry); err != nil {
 			return fmt.Errorf("failed to login to %s: %v", pTmpl.Container.Registry.Server, err)
 		}
 	}

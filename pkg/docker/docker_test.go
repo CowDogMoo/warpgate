@@ -148,7 +148,12 @@ func TestDockerLogin(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			client := NewMockDockerClient()
-			err := client.DockerLogin(tc.username, tc.password, tc.server)
+			containerImageRegistry := packer.ContainerImageRegistry{
+				Username:   tc.username,
+				Credential: tc.password,
+				Server:     tc.server,
+			}
+			err := client.DockerLogin(containerImageRegistry)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerLogin() error = %v, wantErr %v", err, tc.wantErr)
 			}
