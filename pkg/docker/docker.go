@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/distribution/reference"
@@ -23,7 +24,6 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	dockerClient "github.com/docker/docker/client"
 	"github.com/opencontainers/go-digest"
-	"github.com/spf13/viper"
 )
 
 // DockerClientInterface represents an interface for Docker client
@@ -52,11 +52,11 @@ type DockerClientInterface interface {
 // ExecCommand: Command for executing Docker commands.
 // AuthStr: Auth string for the Docker registry.
 type DockerClient struct {
-	AuthStr                string
-	CLI                    dockerClient.APIClient
-	ExecCommand            func(name string, arg ...string) *exec.Cmd
-	ManifestList           distribution.Manifest
-	ContainerImageRegistry packer.ContainerImageRegistry
+	AuthStr      string
+	CLI          dockerClient.APIClient
+	ExecCommand  func(name string, arg ...string) *exec.Cmd
+	ManifestList distribution.Manifest
+	Container    packer.Container
 }
 
 // NewDockerClient creates a new Docker client.
@@ -87,15 +87,15 @@ func NewDockerClient() (*DockerClient, error) {
 //
 // string: The base64 encoded auth string.
 // error: An error if any issue occurs during the login process.
-func (d *DockerClient) DockerLogin(containerImageRegistry packer.ContainerImageRegistry) error {
-	if containerImageRegistry.Username == "" || containerImageRegistry.Credential == "" || containerImageRegistry.Server == "" {
+func (d *DockerClient) DockerLogin() error {
+	if d.Container.ImageRegistry.Username == "" || d.Container.ImageRegistry.Credential == "" || d.Container.ImageRegistry.Server == "" {
 		return errors.New("username, password, and server must not be empty")
 	}
 
 	authConfig := registry.AuthConfig{
-		Username:      containerImageRegistry.Username,
-		Password:      containerImageRegistry.Credential,
-		ServerAddress: containerImageRegistry.Server,
+		Username:      d.Container.ImageRegistry.Username,
+		Password:      d.Container.ImageRegistry.Credential,
+		ServerAddress: d.Container.ImageRegistry.Server,
 	}
 
 	authBytes, err := json.Marshal(authConfig)
@@ -203,18 +203,24 @@ func (cs *credentialStore) SetRefreshToken(u *url.URL, service, refreshToken str
 // **Returns:**
 //
 // error: An error if the manifest creation fails.
-func (d *DockerClient) DockerManifestCreate(manifest string, images []string) error {
+func (d *DockerClient) DockerManifestCreate(manifest string, imageTags *[]string) error {
 	ctx := context.Background()
 
 	builder := ocischema.NewManifestBuilder(nil, nil, nil)
 
-	for _, img := range images {
+	for _, img := range *imageTags {
 		imgRef, err := reference.ParseNormalizedNamed(img)
 		if err != nil {
 			return fmt.Errorf("failed to parse image reference: %v", err)
 		}
 
-		imgRepo, err := client.NewRepository(imgRef, d.ContainerImageRegistry.Server, http.DefaultTransport)
+		serverURL := d.Container.ImageRegistry.Server
+		if !strings.HasPrefix(serverURL, "http://") && !strings.HasPrefix(serverURL, "https://") {
+			serverURL = "https://" + serverURL
+		}
+
+		// Create image repository with serverURL
+		imgRepo, err := client.NewRepository(imgRef, serverURL, http.DefaultTransport)
 		if err != nil {
 			return fmt.Errorf("failed to create image repository: %v", err)
 		}
@@ -277,9 +283,9 @@ func (d *DockerClient) DockerManifestPush(manifest string) error {
 	}
 
 	authConfig := registry.AuthConfig{
-		Username:      d.ContainerImageRegistry.Username,
-		Password:      d.ContainerImageRegistry.Credential,
-		ServerAddress: d.ContainerImageRegistry.Server,
+		Username:      d.Container.ImageRegistry.Username,
+		Password:      d.Container.ImageRegistry.Credential,
+		ServerAddress: d.Container.ImageRegistry.Server,
 	}
 	creds := &credentialStore{authConfig: authConfig}
 	challengeManager := challenge.NewSimpleManager()
@@ -287,7 +293,7 @@ func (d *DockerClient) DockerManifestPush(manifest string) error {
 	basicHandler := auth.NewBasicHandler(creds)
 	authorizer := auth.NewAuthorizer(challengeManager, tokenHandler, basicHandler)
 	tr := transport.NewTransport(http.DefaultTransport, authorizer)
-	repo, err := client.NewRepository(ref, d.ContainerImageRegistry.Server, tr)
+	repo, err := client.NewRepository(ref, d.Container.ImageRegistry.Server, tr)
 	if err != nil {
 		return fmt.Errorf("failed to create repository: %v", err)
 	}
@@ -322,8 +328,8 @@ func (d *DockerClient) DockerManifestPush(manifest string) error {
 // **Returns:**
 //
 // error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) TagAndPushImages(packerTemplates []packer.PackerTemplate, token, bpName string, imageHashes map[string]string) error {
-	if len(packerTemplates) == 0 {
+func (d *DockerClient) TagAndPushImages(pTmpl []packer.PackerTemplate, token, bpName string, imageHashes map[string]string) error {
+	if len(pTmpl) == 0 {
 		return errors.New("packer templates must be provided for the blueprint")
 	}
 
@@ -331,10 +337,8 @@ func (d *DockerClient) TagAndPushImages(packerTemplates []packer.PackerTemplate,
 		return errors.New("token used to authenticate with the registry must not be empty")
 	}
 
-	for _, pTmpl := range packerTemplates {
-		pTmpl.Container.ImageHashes = imageHashes
-		pTmpl.Container.Registry.Credential = token
-		if err := d.processTemplate(pTmpl, bpName); err != nil {
+	for _, p := range pTmpl {
+		if err := d.ProcessTemplate(p, bpName); err != nil {
 			return err
 		}
 	}
@@ -342,21 +346,22 @@ func (d *DockerClient) TagAndPushImages(packerTemplates []packer.PackerTemplate,
 	return nil
 }
 
-func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName string) error {
-	pTmpl.Container.Registry.Server = viper.GetString("container.registry.server")
-	pTmpl.Container.Registry.Username = viper.GetString("container.registry.username")
-
+func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, bpName string) error {
 	if bpName == "" {
 		return errors.New("image name in packer template must not be empty")
 	}
 
-	if pTmpl.Container.Registry.Username == "" || pTmpl.Container.Registry.Credential == "" || pTmpl.Container.Registry.Server == "" {
-		return errors.New("registry server, username, and token must not be empty")
+	if pTmpl.Container.ImageRegistry.Server == "" {
+		return errors.New("registry server must not be empty")
+	}
+
+	if pTmpl.Container.ImageRegistry.Username == "" || pTmpl.Container.ImageRegistry.Credential == "" {
+		return errors.New("registry username and token must not be empty")
 	}
 
 	if d.AuthStr == "" {
-		if err := d.DockerLogin(pTmpl.Container.Registry); err != nil {
-			return fmt.Errorf("failed to login to %s: %v", pTmpl.Container.Registry.Server, err)
+		if err := d.DockerLogin(); err != nil {
+			return fmt.Errorf("failed to login to %s: %v", d.Container.ImageRegistry.Server, err)
 		}
 	}
 
@@ -364,9 +369,10 @@ func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName strin
 
 	var imageTags []string
 
-	for arch, hash := range pTmpl.Container.ImageHashes {
+	// Create tags for each image hash and push them to the registry
+	for arch, hash := range d.Container.ImageHashes {
 		fmt.Printf("Processing image name: %s, arch: %s, hash: %s\n", bpName, arch, hash)
-		err := d.processImageTag(bpName, arch, hash, pTmpl.Container.Registry, &imageTags)
+		err := d.ProcessImageTag(bpName, arch, hash, &imageTags)
 		if err != nil {
 			return err
 		}
@@ -374,8 +380,8 @@ func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName strin
 
 	fmt.Printf("Image tags: %v\n", imageTags)
 	if len(imageTags) > 0 { // Ensure manifest creation proceeds with one or more tags
-		manifestName := fmt.Sprintf("%s/%s/%s:latest", pTmpl.Container.Registry.Server, pTmpl.Container.Registry.Username, bpName)
-		if err := d.DockerManifestCreate(manifestName, imageTags); err != nil {
+		manifestName := fmt.Sprintf("%s/%s/%s:latest", d.Container.ImageRegistry.Server, d.Container.ImageRegistry.Username, bpName)
+		if err := d.DockerManifestCreate(manifestName, &imageTags); err != nil {
 			return err
 		}
 		if err := d.DockerManifestPush(manifestName); err != nil {
@@ -388,14 +394,25 @@ func (d *DockerClient) processTemplate(pTmpl packer.PackerTemplate, bpName strin
 	return nil
 }
 
-func (d *DockerClient) processImageTag(imageName, arch, hash string, containerImageRegistry packer.ContainerImageRegistry, imageTags *[]string) error {
+// ProcessImageTag tags and pushes an image to a registry.
+//
+// **Parameters:**
+//
+// imageName: The name of the image to tag and push.
+// arch: The architecture of the image.
+// hash: The hash of the image.
+// imageTags: A slice of image tags to append the new tag to.
+//
+// **Returns:**
+//
+// error: An error if the tagging or pushing operation fails.
+func (d *DockerClient) ProcessImageTag(imageName, arch, hash string, imageTags *[]string) error {
 	if arch == "" || hash == "" {
 		return errors.New("arch and hash must not be empty")
 	}
 
 	localTag := fmt.Sprintf("sha256:%s", hash)
-	remoteTag := fmt.Sprintf("%s/%s/%s:%s", containerImageRegistry.Server, containerImageRegistry.Username, imageName, arch)
-
+	remoteTag := fmt.Sprintf("%s/%s/%s:%s", d.Container.ImageRegistry.Server, d.Container.ImageRegistry.Username, imageName, arch)
 	fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
 
 	if err := d.DockerTag(localTag, remoteTag); err != nil {

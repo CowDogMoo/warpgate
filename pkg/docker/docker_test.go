@@ -3,7 +3,6 @@ package docker_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -91,9 +90,7 @@ func NewMockDockerClient() *docker.DockerClient {
 			return io.NopCloser(strings.NewReader("")), nil
 		},
 		DockerManifestCreateFunc: func(manifest string, images []string) error { return nil },
-		DockerManifestPushFunc: func(manifest string) error {
-			return nil
-		},
+		DockerManifestPushFunc:   func(manifest string) error { return nil },
 		DockerLoginFunc: func(username, password, server string) error {
 			if username == "" || password == "" || server == "" {
 				return errors.New("login error")
@@ -110,7 +107,14 @@ func NewMockDockerClient() *docker.DockerClient {
 	return &docker.DockerClient{
 		CLI:         mockClient,
 		ExecCommand: exec.Command,
-		AuthStr:     mockClient.authStr,
+		AuthStr:     "test-auth-token",
+		Container: packer.Container{
+			ImageRegistry: packer.ContainerImageRegistry{
+				Server:     "https://ghcr.io",
+				Username:   "testuser",
+				Credential: "testtoken",
+			},
+		},
 	}
 }
 
@@ -148,12 +152,10 @@ func TestDockerLogin(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			client := NewMockDockerClient()
-			containerImageRegistry := packer.ContainerImageRegistry{
-				Username:   tc.username,
-				Credential: tc.password,
-				Server:     tc.server,
-			}
-			err := client.DockerLogin(containerImageRegistry)
+			client.Container.ImageRegistry.Username = tc.username
+			client.Container.ImageRegistry.Credential = tc.password
+			client.Container.ImageRegistry.Server = tc.server
+			err := client.DockerLogin()
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerLogin() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -290,7 +292,7 @@ func TestTagAndPushImages(t *testing.T) {
 							"amd64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
 							"arm64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
 						},
-						Registry: packer.ContainerImageRegistry{
+						ImageRegistry: packer.ContainerImageRegistry{
 							Server:     "testserver",
 							Username:   "testuser",
 							Credential: "testtoken",
@@ -328,7 +330,7 @@ func TestTagAndPushImages(t *testing.T) {
 							"amd64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
 							"arm64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
 						},
-						Registry: packer.ContainerImageRegistry{
+						ImageRegistry: packer.ContainerImageRegistry{
 							Server:     "testserver",
 							Username:   "testuser",
 							Credential: "testtoken",
@@ -373,27 +375,39 @@ func TestTagAndPushImages(t *testing.T) {
 			client.CLI.(*MockDockerClient).DockerManifestCreateFunc = tc.mockManifestCreateFunc
 			client.CLI.(*MockDockerClient).DockerManifestPushFunc = tc.mockManifestPushFunc
 
-			err := client.TagAndPushImages(tc.packerTemplates, client.AuthStr, "test-image", tc.packerTemplates[0].Container.ImageHashes)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("TagAndPushImages() error = %v, wantErr %v", err, tc.wantErr)
-			} else if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.expectedErrMsg) {
-				t.Errorf("TagAndPushImages() error = %v, expectedErrMsg %v", err, tc.expectedErrMsg)
+			for i := range tc.packerTemplates {
+				client.Container = tc.packerTemplates[i].Container
+				err := client.TagAndPushImages(tc.packerTemplates, client.AuthStr, "test-image", tc.packerTemplates[i].Container.ImageHashes)
+				if (err != nil) != tc.wantErr {
+					t.Errorf("TagAndPushImages() error = %v, wantErr %v", err, tc.wantErr)
+				} else if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.expectedErrMsg) {
+					t.Errorf("TagAndPushImages() error = %v, expectedErrMsg %v", err, tc.expectedErrMsg)
+				}
 			}
 		})
 	}
 }
 
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
+func TestProcessImageTag(t *testing.T) {
+	client := NewMockDockerClient()
+	imageName := "test-image"
+	arch := "amd64"
+	hash := "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d"
+	imageTags := []string{}
+
+	err := client.ProcessImageTag(imageName, arch, hash, &imageTags)
+	if err != nil {
+		t.Errorf("ProcessImageTag() error = %v", err)
 	}
 
-	args := os.Args
-	if len(args) > 3 && args[3] == "manifest" {
-		if args[4] == "create" || args[4] == "push" {
-			fmt.Fprintln(os.Stderr, "error")
-			os.Exit(1)
-		}
+	// Verify that the image tag was added to the list
+	if len(imageTags) != 1 {
+		t.Errorf("ProcessImageTag() expected 1 image tag, got %d", len(imageTags))
 	}
-	os.Exit(0)
+
+	// Verify the correctness of the image tag
+	expectedTag := "https://ghcr.io/testuser/test-image:amd64"
+	if imageTags[0] != expectedTag {
+		t.Errorf("ProcessImageTag() expected image tag %s, got %s", expectedTag, imageTags[0])
+	}
 }
