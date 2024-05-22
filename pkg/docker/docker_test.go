@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -11,14 +12,18 @@ import (
 
 	"github.com/cowdogmoo/warpgate/pkg/docker"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/distribution/reference"
+	"github.com/docker/distribution"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/mock"
 )
 
 type MockDockerClient struct {
+	mock.Mock
 	client.Client
 	ImageTagFunc             func(ctx context.Context, source, target string) error
 	ImagePushFunc            func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
@@ -41,6 +46,11 @@ func (m *MockDockerClient) ImagePush(ctx context.Context, ref string, options im
 		return m.ImagePushFunc(ctx, ref, options)
 	}
 	return io.NopCloser(strings.NewReader("")), nil
+}
+
+func (m *MockDockerClient) NewRepository(ref reference.Named, registry string, tr http.RoundTripper) (distribution.Repository, error) {
+	args := m.Called(ref, registry, tr)
+	return args.Get(0).(distribution.Repository), args.Error(1)
 }
 
 func (m *MockDockerClient) DockerManifestCreate(manifest string, images []string) error {
@@ -212,7 +222,7 @@ func TestDockerTag(t *testing.T) {
 	}
 }
 
-func TestDockerPush(t *testing.T) {
+func TestPushImage(t *testing.T) {
 	tests := []struct {
 		name           string
 		containerImage string
@@ -246,7 +256,7 @@ func TestDockerPush(t *testing.T) {
 			client.AuthStr = tc.authStr
 			client.CLI.(*MockDockerClient).ImagePushFunc = tc.mockPushFunc
 
-			err := client.DockerPush(tc.containerImage)
+			err := client.PushImage(tc.containerImage)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerPush() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -254,7 +264,7 @@ func TestDockerPush(t *testing.T) {
 	}
 }
 
-func TestTagAndPushImages(t *testing.T) {
+func TestProcessPackerTemplates(t *testing.T) {
 	viper.Set("container.registry.server", "testserver")
 	viper.Set("container.registry.username", "testuser")
 	viper.Set("container.registry.token", "testtoken")
@@ -377,11 +387,11 @@ func TestTagAndPushImages(t *testing.T) {
 
 			for i := range tc.packerTemplates {
 				client.Container = tc.packerTemplates[i].Container
-				err := client.TagAndPushImages(tc.packerTemplates, client.AuthStr, "test-image", tc.packerTemplates[i].Container.ImageHashes)
+				err := client.ProcessPackerTemplates(tc.packerTemplates, "test-image")
 				if (err != nil) != tc.wantErr {
-					t.Errorf("TagAndPushImages() error = %v, wantErr %v", err, tc.wantErr)
+					t.Errorf("ProcessPackerTemplates() error = %v, wantErr %v", err, tc.wantErr)
 				} else if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.expectedErrMsg) {
-					t.Errorf("TagAndPushImages() error = %v, expectedErrMsg %v", err, tc.expectedErrMsg)
+					t.Errorf("ProcessPackerTemplates() error = %v, expectedErrMsg %v", err, tc.expectedErrMsg)
 				}
 			}
 		})
@@ -395,7 +405,7 @@ func TestProcessImageTag(t *testing.T) {
 	hash := "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d"
 	imageTags := []string{}
 
-	err := client.ProcessImageTag(imageName, arch, hash, &imageTags)
+	err := client.TagAndPushImages(imageName, arch, hash, &imageTags)
 	if err != nil {
 		t.Errorf("ProcessImageTag() error = %v", err)
 	}
@@ -411,3 +421,127 @@ func TestProcessImageTag(t *testing.T) {
 		t.Errorf("ProcessImageTag() expected image tag %s, got %s", expectedTag, imageTags[0])
 	}
 }
+
+// type MockTagsService struct {
+// 	mock.Mock
+// }
+
+// // Tag implements distribution.TagService.
+// func (m *MockTagsService) Tag(ctx context.Context, tag string, desc distribution.Descriptor) error {
+// 	panic("unimplemented")
+// }
+
+// // Untag implements distribution.TagService.
+// func (m *MockTagsService) Untag(ctx context.Context, tag string) error {
+// 	panic("unimplemented")
+// }
+
+// func (m *MockTagsService) Get(ctx context.Context, tag string) (distribution.Descriptor, error) {
+// 	args := m.Called(ctx, tag)
+// 	return args.Get(0).(distribution.Descriptor), args.Error(1)
+// }
+
+// type MockManifestsService struct {
+// 	mock.Mock
+// }
+
+// // Delete implements distribution.ManifestService.
+// func (m *MockManifestsService) Delete(ctx context.Context, dgst digest.Digest) error {
+// 	panic("unimplemented")
+// }
+
+// // Exists implements distribution.ManifestService.
+// func (m *MockManifestsService) Exists(ctx context.Context, dgst digest.Digest) (bool, error) {
+// 	panic("unimplemented")
+// }
+
+// // Put implements distribution.ManifestService.
+// func (m *MockManifestsService) Put(ctx context.Context, manifest distribution.Manifest, options ...distribution.ManifestServiceOption) (digest.Digest, error) {
+// 	panic("unimplemented")
+// }
+
+// func (m *MockManifestsService) Get(ctx context.Context, dgst digest.Digest, options ...distribution.ManifestServiceOption) (distribution.Manifest, error) {
+// 	args := m.Called(ctx, dgst)
+// 	return args.Get(0).(distribution.Manifest), args.Error(1)
+// }
+
+// func (m *MockTagsService) All(ctx context.Context) ([]string, error) {
+// 	args := m.Called(ctx)
+// 	return args.Get(0).([]string), args.Error(1)
+// }
+
+// func (m *MockTagsService) Lookup(ctx context.Context, digest distribution.Descriptor) ([]string, error) {
+// 	args := m.Called(ctx, digest)
+// 	return args.Get(0).([]string), args.Error(1)
+// }
+
+// type MockRepository struct {
+// 	distribution.Repository
+// 	TagsService      *MockTagsService
+// 	ManifestsService *MockManifestsService
+// }
+
+// func (r *MockRepository) Tags(ctx context.Context) distribution.TagService {
+// 	return r.TagsService
+// }
+
+// func (r *MockRepository) Manifests(ctx context.Context, options ...distribution.ManifestServiceOption) (distribution.ManifestService, error) {
+// 	return r.ManifestsService, nil
+// }
+
+// func TestDockerManifestCreate(t *testing.T) {
+// 	tests := []struct {
+// 		name        string
+// 		imageTags   []string
+// 		wantErr     bool
+// 		expectedErr string
+// 	}{
+// 		{
+// 			name:      "valid manifest creation",
+// 			imageTags: []string{"docker.io/library/testimage:latest", "docker.io/library/testimage:arm64"},
+// 			wantErr:   false,
+// 		},
+// 		{
+// 			name:        "invalid manifest creation",
+// 			imageTags:   []string{"docker.io/library/invalidimage"},
+// 			wantErr:     true,
+// 			expectedErr: "failed to get image digest",
+// 		},
+// 	}
+
+// 	for _, tc := range tests {
+// 		t.Run(tc.name, func(t *testing.T) {
+// 			mockTagsService := new(MockTagsService)
+// 			mockManifestsService := new(MockManifestsService)
+// 			mockTagsService.On("Get", mock.Anything, "latest").Return(distribution.Descriptor{Digest: digest.Digest("sha256:mockdigest")}, nil)
+// 			mockTagsService.On("Get", mock.Anything, "arm64").Return(distribution.Descriptor{Digest: digest.Digest("sha256:mockdigest")}, nil)
+// 			mockTagsService.On("Get", mock.Anything, "invalidimage").Return(distribution.Descriptor{}, errors.New("failed to get image digest"))
+
+// 			mockRepo := &MockRepository{
+// 				TagsService:      mockTagsService,
+// 				ManifestsService: mockManifestsService,
+// 			}
+
+// 			mockDockerClient := new(MockDockerClient)
+// 			repoName, _ := reference.WithName("docker.io/library/testimage")
+// 			mockDockerClient.On("NewRepository", repoName, "https://docker.io", mock.Anything).Return(mockRepo, nil)
+
+// 			client := &docker.DockerClient{
+// 				CLI: mockDockerClient,
+// 			}
+
+// 			err := client.DockerManifestCreate("testmanifest", &tc.imageTags)
+
+// 			if (err != nil) != tc.wantErr {
+// 				t.Errorf("DockerManifestCreate() error = %v, wantErr %v", err, tc.wantErr)
+// 			}
+// 			if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.expectedErr) {
+// 				t.Errorf("DockerManifestCreate() error = %v, expectedErr %v", err, tc.expectedErr)
+// 			}
+
+// 			// mockTagsService.AssertExpectations(t)
+// 			// mockManifestsService.AssertExpectations(t)
+// 			// mockDockerClient.AssertExpectations(t)
+// 		})
+// 	}
+// }
