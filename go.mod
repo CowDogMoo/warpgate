@@ -5,7 +5,7 @@ go 1.22.0
 toolchain go1.22.2
 
 require (
-	github.com/docker/docker v26.1.1+incompatible
+	github.com/docker/docker v26.1.3+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/l50/goutils/v2 v2.2.6
 	github.com/magefile/mage v1.15.0
