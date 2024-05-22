@@ -217,20 +217,23 @@ func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bl
 		return errors.New("blueprint tag name and version must not be empty")
 	}
 
-	if d.Container.ImageRegistry.Server == "" || d.Container.ImageRegistry.Username == "" || d.Container.ImageRegistry.Credential == "" {
-		return errors.New("registry server, username, and credential must not be empty")
+	if pTmpl.Container.ImageRegistry.Server == "" || pTmpl.Container.ImageRegistry.Username == "" || pTmpl.Container.ImageRegistry.Credential == "" {
+		return fmt.Errorf("registry server '%s', username '%s', and credential must not be empty", pTmpl.Container.ImageRegistry.Server, pTmpl.Container.ImageRegistry.Username)
 	}
+
+	// Set the image registry for the Docker client
+	d.Container.ImageRegistry = pTmpl.Container.ImageRegistry
 
 	if d.AuthStr == "" {
 		if err := d.DockerLogin(); err != nil {
-			return fmt.Errorf("failed to login to %s: %v", d.Container.ImageRegistry.Server, err)
+			return fmt.Errorf("failed to login to %s: %v", pTmpl.Container.ImageRegistry.Server, err)
 		}
 	}
 
 	fmt.Printf("Processing %s image...\n", blueprint.Name)
 
-	platforms := []string{"linux/amd64", "linux/arm64"} // Example platforms, adjust as needed
-	tags := []string{fmt.Sprintf("%s/%s:%s", d.Container.ImageRegistry.Server, blueprint.Tag.Name, blueprint.Tag.Version)}
+	platforms := []string{"linux/amd64", "linux/arm64"}
+	tags := []string{fmt.Sprintf("%s/%s:%s", pTmpl.Container.ImageRegistry.Server, blueprint.Tag.Name, blueprint.Tag.Version)}
 
 	// Use BuildKit to build and push multi-architecture images
 	if err := d.PushMultiArchImage(blueprint.BuildDir, platforms, tags); err != nil {

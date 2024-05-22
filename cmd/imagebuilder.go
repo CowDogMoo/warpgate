@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/docker"
@@ -18,9 +19,7 @@ var (
 		Use:   "imageBuilder",
 		Short: "Build a container image using packer and a provisioning repo",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var err error
-
-			blueprint.Name, err = cmd.Flags().GetString("blueprint")
+			blueprintName, err := cmd.Flags().GetString("blueprint")
 			if err != nil {
 				return err
 			}
@@ -28,6 +27,33 @@ var (
 			githubToken, err = cmd.Flags().GetString("github-token")
 			if err != nil {
 				return err
+			}
+
+			if blueprintName == "" {
+				return fmt.Errorf("blueprint name must not be empty")
+			}
+
+			// Read the specific blueprint configuration file
+			blueprintConfigFile := filepath.Join("blueprints", blueprintName, "config.yaml")
+			viper.SetConfigFile(blueprintConfigFile)
+
+			if err := viper.ReadInConfig(); err != nil {
+				return fmt.Errorf("error reading blueprint config file: %w", err)
+			}
+
+			tagName := viper.GetString("blueprint.tag.name")
+			tagVersion := viper.GetString("blueprint.tag.version")
+
+			if tagName == "" || tagVersion == "" {
+				return fmt.Errorf("blueprint tag name and version must not be empty")
+			}
+
+			blueprint := bp.Blueprint{
+				Name: blueprintName,
+				Tag: bp.Tag{
+					Name:    tagName,
+					Version: tagVersion,
+				},
 			}
 
 			if err := blueprint.CreateBuildDir(); err != nil {
@@ -90,7 +116,7 @@ func init() {
 //
 // - error: An error if any issue occurs while building the images.
 func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) error {
-	if err := blueprint.LoadPackerTemplates(); err != nil {
+	if err := blueprint.LoadPackerTemplates(githubToken); err != nil {
 		return fmt.Errorf("no packer templates found: %v", err)
 	}
 
@@ -98,7 +124,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return fmt.Errorf("no packer templates found")
 	}
 
-	imageHashes, err := blueprint.BuildPackerImages()
+	_, err := blueprint.BuildPackerImages()
 	if err != nil {
 		return err
 	}
@@ -108,7 +134,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return err
 	}
 
-	if err := dockerClient.TagAndPushImages(blueprint.PackerTemplates, githubToken, blueprint.Name, imageHashes); err != nil {
+	if err := dockerClient.ProcessPackerTemplates(blueprint.PackerTemplates, blueprint); err != nil {
 		return err
 	}
 

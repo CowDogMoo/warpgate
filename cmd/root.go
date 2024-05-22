@@ -30,6 +30,7 @@ var (
 	warpConfigFile   string
 	cfg              config.Config
 
+	// Global variables
 	blueprint       = bp.Blueprint{}
 	packerTemplates = []packer.PackerTemplate{}
 

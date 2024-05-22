@@ -213,7 +213,7 @@ func (b *Blueprint) CreateBuildDir() error {
 // **Returns:**
 //
 // error: An error if any issue occurs while loading the Packer templates.
-func (b *Blueprint) LoadPackerTemplates() error {
+func (b *Blueprint) LoadPackerTemplates(githubToken string) error {
 	configFile := viper.ConfigFileUsed()
 	if configFile == "" {
 		return fmt.Errorf("no config file used by viper")
@@ -238,6 +238,14 @@ func (b *Blueprint) LoadPackerTemplates() error {
 			tmpl.Container = containerConfig
 			b.PackerTemplates[i] = tmpl // Update the templates slice with the container settings
 		}
+
+		// Ensure ImageRegistry is properly initialized
+		if tmpl.Container.ImageRegistry == (packer.ContainerImageRegistry{}) {
+			tmpl.Container.ImageRegistry = packer.ContainerImageRegistry{}
+		}
+
+		tmpl.Container.ImageRegistry.Credential = githubToken // Set the registry credential
+		b.PackerTemplates[i] = tmpl                           // Update the templates slice
 	}
 
 	return nil
@@ -355,7 +363,7 @@ func (b *Blueprint) buildPackerImage() (map[string]string, error) {
 			continue // retry
 		}
 
-		fmt.Printf("Successfully built container image from the %s packer template", b.Name)
+		fmt.Printf("Successfully built container image from the %s packer template\n", b.Name)
 		for k, v := range hashes {
 			imageHashes[k] = v
 		}
