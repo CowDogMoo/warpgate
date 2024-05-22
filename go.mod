@@ -2,7 +2,7 @@ module github.com/cowdogmoo/warpgate
 
 go 1.22.0
 
-toolchain go1.22.2
+toolchain go1.22.3
 
 require (
 	github.com/docker/docker v26.1.1+incompatible
