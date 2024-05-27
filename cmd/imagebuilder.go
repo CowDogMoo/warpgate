@@ -129,7 +129,8 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return err
 	}
 
-	dockerClient, err := docker.NewDockerClient()
+	// New DockerClient initialization with username and token
+	dockerClient, err := docker.NewDockerClient(viper.GetString("container.registry.server"), githubToken)
 	if err != nil {
 		return err
 	}

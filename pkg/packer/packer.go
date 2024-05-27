@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/spf13/viper"
 )
 
 // AMI represents the AMI configuration for a Packer template.
@@ -19,23 +21,38 @@ type AMI struct {
 	SSHUser      string `mapstructure:"ssh_user"`
 }
 
+// ImageHash represents the hash of an image built by Packer.
+//
+// **Attributes:**
+//
+// Arch: Architecture of the image.
+// OS: Operating system of the image.
+// Hash: Hash of the image.
+type ImageHash struct {
+	Arch string `mapstructure:"arch"`
+	OS   string `mapstructure:"os"`
+	Hash string
+}
+
 // Container represents the container configuration for a Packer template.
 //
 // **Attributes:**
 //
 // BaseImageValues: Name and version of the base image.
+// DockerClient: Docker client to use for the container.
 // Entrypoint: Entrypoint for the container.
 // ImageHashes: Hashes of the images built by Packer.
-// Registry: Container registry configuration.
+// ImageRegistry: Container registry configuration.
+// OperatingSystem: Operating system of the container.
 // Workdir: Working directory in the container.
-// DockerClient: Docker client to use for the container.
 type Container struct {
-	BaseImageValues ImageValues            `mapstructure:"base_image_values"`
-	Entrypoint      string                 `mapstructure:"entrypoint"`
-	ImageHashes     map[string]string      `mapstructure:"image_hashes"`
-	ImageRegistry   ContainerImageRegistry `mapstructure:"registry"`
-	Workdir         string                 `mapstructure:"workdir"`
-	DockerClient    string                 `mapstructure:"docker_client"`
+	BaseImageValues ImageValues `mapstructure:"base_image_values"`
+	DockerClient    string      `mapstructure:"docker_client"`
+	Entrypoint      string      `mapstructure:"entrypoint"`
+	// ImageHashes     map[string]string      `mapstructure:"image_hashes"`
+	ImageHashes   []ImageHash            `mapstructure:"image_hashes"`
+	ImageRegistry ContainerImageRegistry `mapstructure:"registry"`
+	Workdir       string                 `mapstructure:"workdir"`
 }
 
 // ContainerImageRegistry represents the container registry configuration for a Packer template.
@@ -88,11 +105,13 @@ type PackerTemplate struct {
 //
 // **Returns:**
 //
-// map[string]string: A map of image hashes parsed from the build output.
-func (p *PackerTemplate) ParseImageHashes(output string) map[string]string {
+// []ImageHash: A slice of ImageHash structs parsed from the build output.
+func (p *PackerTemplate) ParseImageHashes(output string) []ImageHash {
 	if p.Container.ImageHashes == nil {
-		p.Container.ImageHashes = make(map[string]string)
+		p.Container.ImageHashes = []ImageHash{}
 	}
+
+	imageHashesConfig := viper.Get("container.image_hashes").([]interface{})
 
 	// Regular expression to match and remove ANSI escape sequences
 	re := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
@@ -107,13 +126,28 @@ func (p *PackerTemplate) ParseImageHashes(output string) map[string]string {
 				archParts := strings.Split(parts[1], ".")
 				if len(archParts) > 1 {
 					arch := strings.TrimSuffix(archParts[1], ":")
-					p.Container.ImageHashes[arch] = hash
-					fmt.Printf("Updated ImageHashes: %v\n", p.Container.ImageHashes)
+					for _, ihConfig := range imageHashesConfig {
+						ih := ihConfig.(map[string]interface{})
+						if ih["arch"].(string) == arch {
+							imageHash := ImageHash{
+								Arch: arch,
+								OS:   ih["os"].(string),
+								Hash: hash,
+							}
+							// Ensure that the hash is not empty
+							if imageHash.Hash != "" {
+								p.Container.ImageHashes = append(p.Container.ImageHashes, imageHash)
+								fmt.Printf("Updated ImageHashes: %v\n", p.Container.ImageHashes)
+							} else {
+								fmt.Printf("Warning: Skipping empty hash for arch: %s, os: %s\n", arch, ih["os"].(string))
+							}
+							break
+						}
+					}
 				}
 			}
 		}
 	}
-
 	return p.Container.ImageHashes
 }
 

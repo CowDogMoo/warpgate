@@ -33,8 +33,6 @@ type DockerClientInterface interface {
 	DockerLogin() error
 	DockerPush(image string) error
 	DockerTag(sourceImage, targetImage string) error
-	DockerBuild(contextDir, dockerfile string, platforms []string, tags []string) error
-	RemoveImage(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error)
 }
 
 // DockerClient represents a Docker client.
@@ -61,6 +59,10 @@ type DockerRegistry struct {
 }
 
 func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
+	if registryURL == "" {
+		return nil, errors.New("registry URL must not be empty")
+	}
+
 	storeOpts, err := storage.DefaultStoreOptions()
 	if err != nil {
 		return nil, err
@@ -109,26 +111,12 @@ func NewDockerClient(registryURL, authToken string) (*DockerClient, error) {
 		CLI: cli,
 		Container: packer.Container{
 			ImageRegistry: packer.ContainerImageRegistry{},
-			ImageHashes:   make(map[string]string),
+			ImageHashes:   []packer.ImageHash{},
 		},
 		Registry: dockerRegistry,
 	}, nil
 }
 
-// DockerLogin authenticates with a Docker registry using the provided
-// username, password, and server. It constructs an auth string for
-// the registry.
-//
-// **Parameters:**
-//
-// username: The username for the Docker registry.
-// password: The password for the Docker registry.
-// server: The server address of the Docker registry.
-//
-// **Returns:**
-//
-// string: The base64 encoded auth string.
-// error: An error if any issue occurs during the login process.
 func (d *DockerClient) DockerLogin() error {
 	if d.Container.ImageRegistry.Username == "" || d.Container.ImageRegistry.Credential == "" || d.Container.ImageRegistry.Server == "" {
 		return errors.New("username, password, and server must not be empty")
@@ -267,15 +255,15 @@ func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, erro
 
 	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes) // Debugging line
 
-	for arch, hash := range d.Container.ImageHashes {
-		if arch == "" || hash == "" {
-			return imageTags, errors.New("arch and hash must not be empty")
+	for _, hash := range d.Container.ImageHashes {
+		if hash.Arch == "" || hash.Hash == "" || hash.OS == "" {
+			return imageTags, errors.New("arch, hash, and OS must not be empty")
 		}
 
-		localTag := fmt.Sprintf("sha256:%s", hash)
+		localTag := fmt.Sprintf("sha256:%s", hash.Hash)
 		remoteTag := fmt.Sprintf("%s/%s:%s",
 			strings.TrimPrefix(d.Container.ImageRegistry.Server, "https://"),
-			blueprint.Tag.Name, arch)
+			blueprint.Tag.Name, hash.Arch)
 		fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
 
 		if err := d.DockerTag(localTag, remoteTag); err != nil {
@@ -331,6 +319,13 @@ func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bp
 		}
 	}
 
+	// Remove any entries with empty ImageHashes
+	for i := 0; i < len(d.Container.ImageHashes); i++ {
+		if d.Container.ImageHashes[i].Hash == "" {
+			d.Container.ImageHashes = append(d.Container.ImageHashes[:i], d.Container.ImageHashes[i+1:]...)
+			i--
+		}
+	}
 	fmt.Printf("Processing %s image with the following hashes: %+v\n", blueprint.Name, d.Container.ImageHashes) // Debugging line
 
 	imageTags, err := d.TagAndPushImages(&blueprint)

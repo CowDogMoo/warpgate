@@ -8,124 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"strings"
 
-	"github.com/containers/common/libimage"
-	"github.com/containers/common/libimage/manifests"
-	"github.com/containers/storage"
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
-	"github.com/docker/docker/api/types"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
-
-type ManifestList struct {
-	image *libimage.Image
-	list  manifests.List
-	store storage.Store
-}
-
-// Remove removes the manifest list.
-func (m *ManifestList) Remove(ctx context.Context) error {
-	_, err := m.store.DeleteImage(m.image.ID(), true)
-	return err
-}
-
-func (m *ManifestList) saveAndReload() error {
-	newID, err := m.list.SaveToImage(m.store, m.image.ID(), nil, "")
-	if err != nil {
-		return err
-	}
-
-	_, list, err := manifests.LoadFromImage(m.store, newID)
-	if err != nil {
-		return err
-	}
-	m.list = list
-	return nil
-}
-
-// RemoveInstance removes the instance specified by `d` from the manifest list.
-func (m *ManifestList) RemoveInstance(ctx context.Context, d digest.Digest) error {
-	if err := m.list.Remove(d); err != nil {
-		return err
-	}
-
-	// Write the changes to disk.
-	return m.saveAndReload()
-}
-
-// RemoveManifestList removes a manifest list specified by `name`.
-// func (d *DockerClient) RemoveManifestList(ctx context.Context, name string) error {
-// 	mList, err := d.Registry.Runtime.LookupManifestList(name)
-// 	if err != nil {
-// 		// If the manifest list is not found, consider it removed
-// 		if errors.Is(err, storage.ErrImageUnknown) || errors.Is(err, libimage.ErrNotAManifestList) {
-// 			fmt.Printf("Manifest list '%s' not found, skipping removal.\n", name)
-// 			return nil
-// 		}
-// 		return err
-// 	}
-
-// 	for _, result := range results {
-// 		if result != nil {
-// 			return fmt.Errorf("failed to remove manifest list: %v", result)
-// 		}
-// 	}
-
-// 	for _, result := range results {
-// 		if result.Error != nil {
-// 			return fmt.Errorf("failed to remove manifest list: %v", result.Error)
-// 		}
-// 	}
-
-// 	// listInspect, err := mList.Inspect()
-// 	// if err != nil {
-// 	// 	return err
-// 	// }
-
-// 	// if len(listInspect.Manifests) == 0 {
-// 	// 	fmt.Printf("Manifest list '%s' not found, skipping removal.\n", name)
-// 	// 	return nil
-// 	// }
-
-// 	// Lock the image record where this list lives.
-// 	locker, err := manifests.LockerForImage(*d.Registry.Store, mList.ID())
-// 	if err != nil {
-// 		return err
-// 	}
-// 	locker.Lock()
-// 	defer locker.Unlock()
-
-// 	// for _, instance := range listInspect.Manifests {
-// 	// 	if err := mList.RemoveInstance(digest.Digest(instance.Digest)); err != nil {
-// 	// 		return err
-// 	// 	}
-// 	// }
-
-// 	// Remove the manifest list itself
-// 	// if err := mList.RemoveInstance(digest.Digest(mList.ID())); err != nil {
-// 	// 	return err
-// 	// }
-
-// 	return nil
-// }
-
-func (d *DockerClient) removeImageIfExists(imageName string) error {
-	_, err := d.CLI.ImageRemove(context.Background(), imageName, types.ImageRemoveOptions{Force: true})
-	if err != nil {
-		rootErr := unwrapError(err)
-		if strings.Contains(rootErr.Error(), "No such image") {
-			fmt.Printf("No such image: %s, continuing...\n", imageName)
-			return nil
-		}
-		return fmt.Errorf("failed to remove existing image: %s, root error: %v", imageName, rootErr)
-	}
-	fmt.Printf("Successfully removed existing image: %s\n", imageName)
-	return nil
-}
 
 func unwrapError(err error) error {
 	for {
@@ -178,25 +67,21 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 		return fmt.Errorf("failed to push manifest list for %s, error: %v", targetImage, rootErr)
 	}
 
-	// Remove existing manifest list and image with the same name
-	// if err := d.RemoveManifestList(context.Background(), targetImage); err != nil {
-	// 	return fmt.Errorf("error removing existing manifest list: %v", err)
-	// }
-
-	// if err := d.removeImageIfExists(targetImage); err != nil {
-	// 	return fmt.Errorf("error removing existing image: %v", err)
-	// }
-
-	// for _, instance := range listInspect.Manifests {
-	// 	fmt.Printf("  Digest: %s, Platform: %s/%s\n", instance.Digest, instance.Platform.Architecture, instance.Platform.OS)
-	// }
-
-	// fmt.Printf("Created and pushed manifest list: %s\n", manifestDigest.String())
-
 	return nil
 }
 
-// ManifestCreate creates a manifest list and adds the image tags.
+// ManifestCreate creates a manifest list with the input image tags
+// and the specified target image.
+//
+// **Parameters:**
+//
+// ctx: The context within which the manifest list is created.
+// targetImage: The name of the image to create the manifest list for.
+// imageTags: A slice of image tags to include in the manifest list.
+//
+// **Returns:**
+//
+// ocispec.Index: The manifest list created with the input image tags.
 func (d *DockerClient) ManifestCreate(ctx context.Context, targetImage string, imageTags []string) (ocispec.Index, error) {
 	fmt.Printf("Creating manifest list for %s with %v tags\n", targetImage, imageTags)
 
@@ -208,26 +93,36 @@ func (d *DockerClient) ManifestCreate(ctx context.Context, targetImage string, i
 		Manifests: []ocispec.Descriptor{},
 	}
 
+	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes)
 	// Fetch digests for each image tag and add to the manifest list
-	for arch, hash := range d.Container.ImageHashes {
-		size, err := d.getImageSize(hash)
+	for _, imgHash := range d.Container.ImageHashes {
+		size, err := d.GetImageSize(imgHash.Hash)
 		if err != nil {
-			return manifestList, fmt.Errorf("failed to get size for %s: %v", hash, err)
+			return manifestList, fmt.Errorf("failed to get size for %s: %v", imgHash.Hash, err)
 		}
 
 		manifestList.Manifests = append(manifestList.Manifests, ocispec.Descriptor{
 			MediaType: ocispec.MediaTypeImageManifest,
-			Digest:    digest.Digest(hash),
+			Digest:    digest.Digest(imgHash.Hash),
 			Size:      size,
-			Platform:  &ocispec.Platform{OS: "linux", Architecture: arch},
+			Platform:  &ocispec.Platform{OS: imgHash.OS, Architecture: imgHash.Arch},
 		})
 	}
 
 	return manifestList, nil
 }
 
-// getImageSize fetches the image size for the given image reference.
-func (d *DockerClient) getImageSize(imageRef string) (int64, error) {
+// GetImageSize returns the size of the image with the input reference.
+//
+// **Parameters:**
+//
+// imageRef: The reference of the image to get the size of.
+//
+// **Returns:**
+//
+// int64: The size of the image in bytes
+// error: An error if any operation fails during the size retrieval
+func (d *DockerClient) GetImageSize(imageRef string) (int64, error) {
 	ctx := context.Background()
 	imageInspect, contents, err := d.CLI.ImageInspectWithRaw(ctx, imageRef)
 	if err != nil {
@@ -240,28 +135,15 @@ func (d *DockerClient) getImageSize(imageRef string) (int64, error) {
 	return imageInspect.Size, nil
 }
 
-// FetchDigest dynamically fetches the image digest using Docker CLI.
-func FetchDigest(image string) (string, error) {
-	cmd := exec.Command("docker", "buildx", "imagetools", "inspect", image, "--format", "{{.Digest}}")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to inspect image: %v", err)
-	}
-	return strings.TrimSpace(string(output)), nil
-}
-
-// PushManifestList pushes the manifest list to the registry.
+// PushManifestList pushes the input manifest list to the registry.
 //
 // **Parameters:**
 //
-// ctx: The context within which the manifest list is pushed.
-// manifestID: The ID of the manifest list to push.
-// destination: The destination image name.
-// all, quiet, rm: Additional push options.
+// imageName: The name of the image to push the manifest list for.
+// manifestList: The manifest list to push.
 //
 // **Returns:**
 //
-// string: The manifest digest of the pushed manifest list.
 // error: An error if any operation fails during the push.
 func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index) error {
 	manifestBytes, err := json.Marshal(manifestList)
@@ -274,34 +156,30 @@ func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index
 	if len(parts) < 3 {
 		return fmt.Errorf("invalid repository name: %s", imageName)
 	}
-	// repo := strings.Join(parts[1:], "/")
-	// tag := parts[len(parts)-1]
 
-	token, err := d.getAuthToken(parts[1], parts[2])
+	repoParts := strings.Split(parts[len(parts)-1], ":")
+	repo := fmt.Sprintf("%s/%s", parts[1], repoParts[0])
+	tag := "latest"
+	if len(repoParts) > 1 {
+		tag = repoParts[1]
+	}
+
+	token, err := d.getAuthToken(repo, tag)
 	if err != nil {
 		return fmt.Errorf("failed to get auth token: %v", err)
 	}
-	// token := d.AuthStr
 
 	// URL to push the manifest
-	// url := fmt.Sprintf("https://ghcr.io/v2/%s/manifests/%s", repo, tag)
-	// url := "https://ghcr.io/v2/l50/atomic-red-team/latest"
-	url := "https://ghcr.io/v2/l50/atomic-red-team/manifests/latest"
+	url := fmt.Sprintf("https://ghcr.io/v2/%s/manifests/%s", repo, tag)
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(manifestBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %v", err)
 	}
-	// url := "https://ghcr.io/v2/l50/manifests/atomic-red-team:latest"
-	// req, err := http.NewRequest("PUT", url, bytes.NewBuffer(manifestBytes))
-	// if err != nil {
-	// 	return fmt.Errorf("failed to create request: %v", err)
-	// }
 
-	// Set headers
+	// Set request headers
 	req.Header.Set("Content-Type", "application/vnd.oci.image.index.v1+json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	fmt.Println("TOKEN:", token)
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -318,7 +196,7 @@ func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index
 		return fmt.Errorf("failed to push manifest list: %s, response: %s", resp.Status, body)
 	}
 
-	fmt.Println("Manifest list pushed successfully")
+	fmt.Printf("Manifest list for %s pushed successfully\n", imageName)
 	return nil
 }
 
