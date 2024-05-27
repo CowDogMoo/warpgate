@@ -200,7 +200,7 @@ func (b *Blueprint) CreateBuildDir() error {
 		return fmt.Errorf("failed to copy repo to build directory: %v", err)
 	}
 
-	fmt.Printf("Successfully copied repo from %s to build directory %s", repoRoot, buildDir)
+	fmt.Printf("Successfully copied repo from %s to build directory %s\n", repoRoot, buildDir)
 
 	b.BuildDir = buildDir
 	b.Path = filepath.Join(buildDir, "blueprints", b.Name)

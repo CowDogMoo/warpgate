@@ -8,26 +8,17 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/docker/buildx/util/progress"
-
 	"strings"
-	"time"
 
-	"github.com/cowdogmoo/warpgate/pkg/blueprint"
+	"github.com/containers/storage"
+
+	"github.com/containers/common/libimage"
+	"github.com/containers/image/v5/types"
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
-	"github.com/docker/cli/cli/config"
 	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/registry"
+	dockerRegistry "github.com/docker/docker/api/types/registry"
 	dockerClient "github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/auth/authprovider"
-	"github.com/moby/buildkit/util/progress/progresswriter"
-	"google.golang.org/grpc"
 )
 
 // DockerClientInterface represents an interface for Docker client
@@ -43,6 +34,7 @@ type DockerClientInterface interface {
 	DockerPush(image string) error
 	DockerTag(sourceImage, targetImage string) error
 	DockerBuild(contextDir, dockerfile string, platforms []string, tags []string) error
+	RemoveImage(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error)
 }
 
 // DockerClient represents a Docker client.
@@ -52,10 +44,48 @@ type DockerClientInterface interface {
 // AuthStr: The base64 encoded auth string for the Docker registry.
 // CLI: API client for Docker operations.
 // Container: A packer.Container instance.
+// Registry: A distribution.Namespace instance.
 type DockerClient struct {
 	AuthStr   string
-	CLI       dockerClient.APIClient
+	CLI       *dockerClient.Client
 	Container packer.Container
+	Registry  *DockerRegistry
+}
+
+// DockerRegistry represents a Docker registry with runtime and storage information.
+type DockerRegistry struct {
+	Runtime     *libimage.Runtime
+	Store       storage.Store
+	RegistryURL string
+	AuthToken   string
+}
+
+func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
+	storeOpts, err := storage.DefaultStoreOptions()
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeOpts := &libimage.RuntimeOptions{
+		SystemContext: &types.SystemContext{},
+	}
+
+	runtime, err := libimage.RuntimeFromStoreOptions(runtimeOpts, &storeOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	store, err := storage.GetStore(storeOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DockerRegistry{
+		Runtime:     runtime,
+		Store:       store,
+		RegistryURL: registryURL,
+		AuthToken:   authToken,
+	}, nil
 }
 
 // NewDockerClient creates a new Docker client.
@@ -64,17 +94,24 @@ type DockerClient struct {
 //
 // *DockerClient: A DockerClient instance.
 // error: An error if any issue occurs while creating the client.
-func NewDockerClient() (*DockerClient, error) {
+func NewDockerClient(registryURL, authToken string) (*DockerClient, error) {
 	cli, err := dockerClient.NewClientWithOpts(dockerClient.FromEnv, dockerClient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
 	}
+
+	dockerRegistry, err := NewDockerRegistry(registryURL, authToken)
+	if err != nil {
+		return nil, err
+	}
+
 	return &DockerClient{
 		CLI: cli,
 		Container: packer.Container{
 			ImageRegistry: packer.ContainerImageRegistry{},
 			ImageHashes:   make(map[string]string),
 		},
+		Registry: dockerRegistry,
 	}, nil
 }
 
@@ -97,7 +134,7 @@ func (d *DockerClient) DockerLogin() error {
 		return errors.New("username, password, and server must not be empty")
 	}
 
-	authConfig := registry.AuthConfig{
+	authConfig := dockerRegistry.AuthConfig{
 		Username:      d.Container.ImageRegistry.Username,
 		Password:      d.Container.ImageRegistry.Credential,
 		ServerAddress: d.Container.ImageRegistry.Server,
@@ -116,8 +153,6 @@ func (d *DockerClient) DockerLogin() error {
 	}
 
 	fmt.Printf("Successfully logged in to %s as %s\n", d.Container.ImageRegistry.Server, d.Container.ImageRegistry.Username)
-	fmt.Printf("CREDENTIAL:%s", authConfig)
-
 	return nil
 }
 
@@ -138,6 +173,27 @@ func (d *DockerClient) DockerTag(sourceImage, targetImage string) error {
 
 	ctx := context.Background()
 	return d.CLI.ImageTag(ctx, sourceImage, targetImage)
+}
+
+func (d *DockerClient) SetRegistry(registry *DockerRegistry) {
+	d.Registry = registry
+}
+
+// RemoveImage removes an image from the Docker client.
+//
+// **Parameters:**
+//
+// ctx: The context within which the image is to be removed.
+// imageID: The ID of the image to be removed.
+// options: Options for the image removal operation.
+//
+// **Returns:**
+//
+// error: An error if any issue occurs during the image removal process.
+// []image.DeleteResponse: A slice of image.DeleteResponse instances.
+func (d *DockerClient) RemoveImage(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
+	fmt.Println("Removing image:", imageID)
+	return d.CLI.ImageRemove(ctx, imageID, options)
 }
 
 // DockerPush pushes a Docker image to a registry using the provided
@@ -197,6 +253,51 @@ func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blu
 	return nil
 }
 
+// TagAndPushImages tags and pushes images to a registry.
+//
+// **Parameters:**
+//
+// blueprint: The blueprint containing image tag information.
+//
+// **Returns:**
+//
+// error: An error if any operation fails during tagging or pushing.
+func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, error) {
+	var imageTags []string
+
+	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes) // Debugging line
+
+	for arch, hash := range d.Container.ImageHashes {
+		if arch == "" || hash == "" {
+			return imageTags, errors.New("arch and hash must not be empty")
+		}
+
+		localTag := fmt.Sprintf("sha256:%s", hash)
+		remoteTag := fmt.Sprintf("%s/%s:%s",
+			strings.TrimPrefix(d.Container.ImageRegistry.Server, "https://"),
+			blueprint.Tag.Name, arch)
+		fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
+
+		if err := d.DockerTag(localTag, remoteTag); err != nil {
+			return imageTags, err
+		}
+
+		fmt.Printf("Pushing image: %s\n", remoteTag)
+
+		if err := d.PushImage(remoteTag); err != nil {
+			return imageTags, err
+		}
+
+		imageTags = append(imageTags, remoteTag)
+	}
+
+	if len(imageTags) == 0 {
+		return imageTags, errors.New("no images were tagged and pushed")
+	}
+
+	return imageTags, nil
+}
+
 // ProcessTemplate processes a Packer template by tagging and pushing images
 // to a registry.
 //
@@ -208,7 +309,7 @@ func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blu
 // **Returns:**
 //
 // error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint blueprint.Blueprint) error {
+func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bp.Blueprint) error {
 	if blueprint.Name == "" {
 		return errors.New("blueprint name must not be empty")
 	}
@@ -221,8 +322,8 @@ func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bl
 		return fmt.Errorf("registry server '%s', username '%s', and credential must not be empty", pTmpl.Container.ImageRegistry.Server, pTmpl.Container.ImageRegistry.Username)
 	}
 
-	// Set the image registry for the Docker client
 	d.Container.ImageRegistry = pTmpl.Container.ImageRegistry
+	d.Container.ImageHashes = pTmpl.Container.ImageHashes
 
 	if d.AuthStr == "" {
 		if err := d.DockerLogin(); err != nil {
@@ -230,236 +331,16 @@ func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bl
 		}
 	}
 
-	fmt.Printf("Processing %s image...\n", blueprint.Name)
+	fmt.Printf("Processing %s image with the following hashes: %+v\n", blueprint.Name, d.Container.ImageHashes) // Debugging line
 
-	platforms := []string{"linux/amd64", "linux/arm64"}
-	tags := []string{fmt.Sprintf("%s/%s:%s", pTmpl.Container.ImageRegistry.Server, blueprint.Tag.Name, blueprint.Tag.Version)}
-
-	// Use BuildKit to build and push multi-architecture images
-	if err := d.PushMultiArchImage(blueprint.BuildDir, platforms, tags); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// TagAndPushImages tags and pushes images to a registry.
-//
-// **Parameters:**
-//
-// blueprint: The blueprint containing image tag information.
-//
-// **Returns:**
-//
-// error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) TagAndPushImages(blueprint blueprint.Blueprint) error {
-	var imageTags []string
-
-	logger := func(status *client.SolveStatus) {}
-
-	for arch, hash := range d.Container.ImageHashes {
-		if arch == "" || hash == "" {
-			return errors.New("arch and hash must not be empty")
-		}
-
-		localTag := fmt.Sprintf("sha256:%s", hash)
-		remoteTag := fmt.Sprintf("%s/%s:%s",
-			strings.TrimPrefix(d.Container.ImageRegistry.Server, "https://"),
-			blueprint.Tag.Name, arch)
-		fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
-
-		if err := d.DockerTag(localTag, remoteTag); err != nil {
-			return err
-		}
-
-		fmt.Printf("Pushing image: %s\n", remoteTag)
-
-		if err := progress.Wrap("Pushing image", logger, func(l progress.SubLogger) error {
-			return d.pushWithMoby(context.Background(), remoteTag, l)
-		}); err != nil {
-			return err
-		}
-
-		imageTags = append(imageTags, remoteTag)
-	}
-
-	latestTag := fmt.Sprintf("%s/%s:latest",
-		strings.TrimPrefix(d.Container.ImageRegistry.Server, "https://"),
-		blueprint.Tag.Name)
-
-	for _, remoteTag := range imageTags {
-		fmt.Printf("Tagging image: %s as %s\n", remoteTag, latestTag)
-
-		if err := d.DockerTag(remoteTag, latestTag); err != nil {
-			return err
-		}
-
-		fmt.Printf("Pushing image: %s\n", latestTag)
-
-		if err := progress.Wrap("Pushing image", logger, func(l progress.SubLogger) error {
-			return d.pushWithMoby(context.Background(), latestTag, l)
-		}); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (d *DockerClient) PushMultiArchImage(contextDir string, platforms []string, tags []string) error {
-	ctx := context.Background()
-
-	// Load Docker configuration
-	dockerConfig := config.LoadDefaultConfigFile(os.Stderr)
-	tlsConfigs := map[string]*authprovider.AuthTLSConfig{}
-	// Set up session for authentication
-	attachable := []session.Attachable{authprovider.NewDockerAuthProvider(dockerConfig, tlsConfigs)}
-
-	// Set up progress writer
-	pw, err := progresswriter.NewPrinter(ctx, os.Stdout, "plain")
-	if err != nil {
-		return fmt.Errorf("failed to create progress writer: %v", err)
-	}
-
-	// Define the solve options
-	solveOpt := client.SolveOpt{
-		Exports: []client.ExportEntry{
-			{
-				Type: client.ExporterImage,
-				Attrs: map[string]string{
-					"name": strings.Join(tags, ","),
-					"push": "true",
-				},
-			},
-		},
-		LocalDirs: map[string]string{
-			"context": contextDir,
-		},
-		Session: attachable,
-	}
-
-	// Create BuildKit client with custom gRPC options to handle large payloads
-	bkClient, err := client.New(ctx, "unix:///var/run/docker.sock", client.WithGRPCDialOption(grpc.WithDefaultCallOptions(
-		grpc.MaxCallRecvMsgSize(1024*1024*100), // 100MB
-		grpc.MaxCallSendMsgSize(1024*1024*100), // 100MB
-	)))
-	if err != nil {
-		return fmt.Errorf("failed to create BuildKit client: %v", err)
-	}
-
-	// Marshal the state (using busybox as an example here)
-	st := llb.Image("busybox").Run(llb.Shlex("echo 'hello world'"))
-	def, err := st.Marshal(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to marshal LLB: %v", err)
-	}
-
-	// Solve the build and push the image
-	_, err = bkClient.Solve(ctx, def, solveOpt, pw.Status())
-	if err != nil {
-		return fmt.Errorf("failed to solve build: %v", err)
-	}
-
-	return nil
-}
-
-// RegistryAuth is a helper struct to implement the imagetools.Auth interface.
-type RegistryAuth struct {
-	authConfig registry.AuthConfig
-}
-
-// GetAuthConfig returns the auth configuration.
-func (ra *RegistryAuth) GetAuthConfig(_ string) (registry.AuthConfig, error) {
-	return ra.authConfig, nil
-}
-
-// pushWithMoby pushes the image using the Docker API and manages progress logging.
-func (d *DockerClient) pushWithMoby(ctx context.Context, name string, l progress.SubLogger) error {
-	api := d.CLI
-	if api == nil {
-		return errors.New("invalid empty Docker API reference")
-	}
-
-	creds := &RegistryAuth{
-		authConfig: registry.AuthConfig{
-			Username:      d.Container.ImageRegistry.Username,
-			Password:      d.Container.ImageRegistry.Credential,
-			ServerAddress: d.Container.ImageRegistry.Server,
-		},
-	}
-
-	authStr, err := json.Marshal(creds.authConfig)
+	imageTags, err := d.TagAndPushImages(&blueprint)
 	if err != nil {
 		return err
 	}
 
-	rc, err := api.ImagePush(ctx, name, image.PushOptions{
-		RegistryAuth: base64.URLEncoding.EncodeToString(authStr),
-	})
-	if err != nil {
+	if err := d.CreateAndPushManifest(&blueprint, imageTags); err != nil {
 		return err
 	}
 
-	started := map[string]*client.VertexStatus{}
-
-	defer func() {
-		for _, st := range started {
-			if st.Completed == nil {
-				now := time.Now()
-				st.Completed = &now
-				l.SetStatus(st)
-			}
-		}
-	}()
-
-	dec := json.NewDecoder(rc)
-	var parsedError error
-	for {
-		var jm jsonmessage.JSONMessage
-		if err := dec.Decode(&jm); err != nil {
-			if parsedError != nil {
-				return parsedError
-			}
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-		if jm.ID != "" {
-			id := "pushing layer " + jm.ID
-			st, ok := started[id]
-			if !ok {
-				if jm.Progress != nil || jm.Status == "Pushed" {
-					now := time.Now()
-					st = &client.VertexStatus{
-						ID:      id,
-						Started: &now,
-					}
-					started[id] = st
-				} else {
-					continue
-				}
-			}
-			st.Timestamp = time.Now()
-			if jm.Progress != nil {
-				st.Current = jm.Progress.Current
-				st.Total = jm.Progress.Total
-			}
-			if jm.Error != nil {
-				now := time.Now()
-				st.Completed = &now
-			}
-			if jm.Status == "Pushed" {
-				now := time.Now()
-				st.Completed = &now
-				st.Current = st.Total
-			}
-			l.SetStatus(st)
-		}
-		if jm.Error != nil {
-			parsedError = jm.Error
-		}
-	}
 	return nil
-
 }
