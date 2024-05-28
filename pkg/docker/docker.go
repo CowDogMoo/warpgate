@@ -97,7 +97,9 @@ func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
 	}
 
 	store, err := storage.GetStore(storeOpts)
-	if err != nil {
+	if err != nil && os.IsPermission(err) {
+		fmt.Println("Warning: Permission denied for chown operation. Continuing without changing ownership.")
+	} else if err != nil {
 		return nil, err
 	}
 
