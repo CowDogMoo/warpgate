@@ -48,7 +48,15 @@ type DockerClient struct {
 	Registry  *DockerRegistry
 }
 
-// DockerRegistry represents a Docker registry with runtime and storage information.
+// DockerRegistry represents a Docker registry with runtime and
+// storage information.
+//
+// **Attributes:**
+//
+// Runtime: A libimage.Runtime instance.
+// Store: A storage.Store instance.
+// RegistryURL: URL of the Docker registry.
+// AuthToken: Authentication token for the registry.
 type DockerRegistry struct {
 	Runtime     *libimage.Runtime
 	Store       storage.Store
@@ -56,6 +64,17 @@ type DockerRegistry struct {
 	AuthToken   string
 }
 
+// NewDockerRegistry creates a new Docker registry.
+//
+// **Parameters:**
+//
+// registryURL: The URL of the Docker registry.
+// authToken: The authentication token for the registry.
+//
+// **Returns:**
+//
+// *DockerRegistry: A DockerRegistry instance.
+// error: An error if any issue occurs while creating the registry.
 func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
 	if registryURL == "" {
 		return nil, errors.New("registry URL must not be empty")
@@ -115,6 +134,12 @@ func NewDockerClient(registryURL, authToken string) (*DockerClient, error) {
 	}, nil
 }
 
+// DockerLogin authenticates with a Docker registry using the provided
+// credentials.
+//
+// **Returns:**
+//
+// error: An error if the login operation fails.
 func (d *DockerClient) DockerLogin() error {
 	if d.Container.ImageRegistry.Username == "" || d.Container.ImageRegistry.Credential == "" || d.Container.ImageRegistry.Server == "" {
 		return errors.New("username, password, and server must not be empty")
@@ -156,6 +181,11 @@ func (d *DockerClient) DockerTag(sourceImage, targetImage string) error {
 	return d.CLI.ImageTag(ctx, sourceImage, targetImage)
 }
 
+// SetRegistry sets the DockerRegistry for the DockerClient.
+//
+// **Parameters:**
+//
+// registry: A pointer to the DockerRegistry to be set.
 func (d *DockerClient) SetRegistry(registry *DockerRegistry) {
 	d.Registry = registry
 }
@@ -210,6 +240,17 @@ func (d *DockerClient) PushImage(containerImage string) error {
 	return err
 }
 
+// ProcessPackerTemplates processes a list of Packer templates by
+// tagging and pushing images to a registry.
+//
+// **Parameters:**
+//
+// pTmpl: A slice of PackerTemplate instances to process.
+// blueprint: The blueprint containing tag information.
+//
+// **Returns:**
+//
+// error: An error if any operation fails during tagging or pushing.
 func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blueprint bp.Blueprint) error {
 	if len(pTmpl) == 0 {
 		return errors.New("packer templates must be provided for the blueprint")
@@ -224,6 +265,17 @@ func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blu
 	return nil
 }
 
+// TagAndPushImages tags and pushes images to a registry based on
+// the provided blueprint.
+//
+// **Parameters:**
+//
+// blueprint: The blueprint containing tag information.
+//
+// **Returns:**
+//
+// []string: A slice of image tags that were successfully pushed.
+// error: An error if any operation fails during tagging or pushing.
 func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, error) {
 	var imageTags []string
 

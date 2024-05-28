@@ -27,9 +27,11 @@ const (
 // **Attributes:**
 //
 // Name: Name of the blueprint.
+// BuildDir: Path to the temporary build directory.
+// PackerTemplates: A slice of Packer templates for building images.
 // Path: Path to the blueprint configuration.
 // ProvisioningRepo: Path to the repository containing provisioning logic.
-// BuildDir: Path to the temporary build directory.
+// Tag: Tag configuration for the image built by Packer.
 type Blueprint struct {
 	Name             string                  `mapstructure:"name"`
 	BuildDir         string                  `mapstructure:"build_dir"`
@@ -156,11 +158,6 @@ func (b *Blueprint) Initialize() error {
 	return nil
 }
 
-// CreateBuildDir creates a temporary build directory and copies the repo into it.
-//
-// **Returns:**
-//
-// error: An error if the build directory creation or repo copy fails.
 // CreateBuildDir creates a temporary build directory and copies the repo into it.
 //
 // **Returns:**
@@ -304,6 +301,11 @@ func (b *Blueprint) BuildPackerImages() (map[string]string, error) {
 	return imageHashes, nil
 }
 
+// PreparePackerArgs prepares the arguments for the packer build command.
+//
+// **Returns:**
+//
+// []string: A slice of arguments for the packer build command.
 func (b *Blueprint) PreparePackerArgs() []string {
 	pTmpl := b.PackerTemplates[0]
 	args := []string{
@@ -368,6 +370,11 @@ func (b *Blueprint) buildPackerImage() (map[string]string, error) {
 	return nil, fmt.Errorf("all attempts failed to build container image from %s packer template: %v", b.Name, lastError)
 }
 
+// ValidatePackerTemplate validates the Packer template for the blueprint.
+//
+// **Returns:**
+//
+// error: An error if the Packer template is invalid.
 func (b *Blueprint) ValidatePackerTemplate() error {
 	for _, pTmpl := range b.PackerTemplates {
 		requiredFields := map[string]string{

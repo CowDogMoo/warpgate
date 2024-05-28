@@ -17,84 +17,37 @@ The `docker` package is a part of the WarpGate.
 
 ## Functions
 
-### DockerClient.DockerLogin(packer.ContainerImageRegistry)
+### DockerClient.CreateAndPushManifest(*bp.Blueprint, []string)
 
 ```go
-DockerLogin(packer.ContainerImageRegistry) error
+CreateAndPushManifest(*bp.Blueprint, []string) error
+```
+
+CreateAndPushManifest creates a manifest list and pushes it to a registry.
+
+**Parameters:**
+
+blueprint: The blueprint containing image tag information.
+imageTags: A slice of image tags to include in the manifest list.
+
+**Returns:**
+
+error: An error if any operation fails during manifest creation or pushing.
+
+---
+
+### DockerClient.DockerLogin()
+
+```go
+DockerLogin() error
 ```
 
 DockerLogin authenticates with a Docker registry using the provided
-username, password, and server. It constructs an auth string for
-the registry.
-
-**Parameters:**
-
-username: The username for the Docker registry.
-password: The password for the Docker registry.
-server: The server address of the Docker registry.
+credentials.
 
 **Returns:**
 
-string: The base64 encoded auth string.
-error: An error if any issue occurs during the login process.
-
----
-
-### DockerClient.DockerManifestCreate(string, []string)
-
-```go
-DockerManifestCreate(string, []string) error
-```
-
-DockerManifestCreate creates a Docker manifest that references multiple platform-specific versions of an image.
-
-**Parameters:**
-
-manifest: The name of the manifest to create.
-images: A slice of image names to include in the manifest.
-
-**Returns:**
-
-error: An error if the manifest creation fails.
-
----
-
-### DockerClient.DockerManifestPush(string)
-
-```go
-DockerManifestPush(string) error
-```
-
-DockerManifestPush pushes a Docker manifest to a registry. It uses the
-'docker manifest push' command.
-
-**Parameters:**
-
-manifest: The name of the manifest to push.
-
-**Returns:**
-
-error: An error if the push operation fails.
-
----
-
-### DockerClient.DockerPush(string)
-
-```go
-DockerPush(string) error
-```
-
-DockerPush pushes a Docker image to a registry using the provided
-auth string.
-
-**Parameters:**
-
-containerImage: The name of the image to push.
-authStr: The auth string for the Docker registry.
-
-**Returns:**
-
-error: An error if the push operation fails.
+error: An error if the login operation fails.
 
 ---
 
@@ -117,18 +70,60 @@ error: An error if the tagging operation fails.
 
 ---
 
-### DockerClient.TagAndPushImages([]packer.PackerTemplate, string, map[string]string)
+### DockerClient.GetImageSize(string)
 
 ```go
-TagAndPushImages([]packer.PackerTemplate, string, map[string]string) error
+GetImageSize(string) int64, error
 ```
 
-TagAndPushImages tags and pushes images specified in packer templates.
+GetImageSize returns the size of the image with the input reference.
 
 **Parameters:**
 
-packerTemplates: A slice of PackerTemplate containing the images to tag
-and push.
+imageRef: The reference of the image to get the size of.
+
+**Returns:**
+
+int64: The size of the image in bytes
+error: An error if any operation fails during the size retrieval
+
+---
+
+### DockerClient.ManifestCreate(context.Context, string, []string)
+
+```go
+ManifestCreate(context.Context, string, []string) ocispec.Index, error
+```
+
+ManifestCreate creates a manifest list with the input image tags
+and the specified target image.
+
+**Parameters:**
+
+ctx: The context within which the manifest list is created.
+targetImage: The name of the image to create the manifest list for.
+imageTags: A slice of image tags to include in the manifest list.
+
+**Returns:**
+
+ocispec.Index: The manifest list created with the input image tags.
+error: An error if any operation fails during the manifest list creation.
+
+---
+
+### DockerClient.ProcessPackerTemplates([]packer.PackerTemplate, bp.Blueprint)
+
+```go
+ProcessPackerTemplates([]packer.PackerTemplate, bp.Blueprint) error
+```
+
+ProcessPackerTemplates processes a list of Packer templates by
+tagging and pushing images to a registry.
+
+**Parameters:**
+
+pTmpl: A slice of PackerTemplate instances to process.
+blueprint: The blueprint containing tag information.
 
 **Returns:**
 
@@ -136,10 +131,124 @@ error: An error if any operation fails during tagging or pushing.
 
 ---
 
-### NewDockerClient()
+### DockerClient.ProcessTemplate(packer.PackerTemplate, bp.Blueprint)
 
 ```go
-NewDockerClient() *DockerClient, error
+ProcessTemplate(packer.PackerTemplate, bp.Blueprint) error
+```
+
+ProcessTemplate processes a Packer template by tagging and pushing images
+to a registry.
+
+**Parameters:**
+
+pTmpl: A PackerTemplate containing the image to process.
+blueprint: The blueprint containing tag information.
+
+**Returns:**
+
+error: An error if any operation fails during tagging or pushing.
+
+---
+
+### DockerClient.PushImage(string)
+
+```go
+PushImage(string) error
+```
+
+DockerPush pushes a Docker image to a registry using the provided
+auth string.
+
+**Parameters:**
+
+containerImage: The name of the image to push.
+authStr: The auth string for the Docker registry.
+
+**Returns:**
+
+error: An error if the push operation fails.
+
+---
+
+### DockerClient.PushManifest(string, ocispec.Index)
+
+```go
+PushManifest(string, ocispec.Index) error
+```
+
+PushManifestList pushes the input manifest list to the registry.
+
+**Parameters:**
+
+imageName: The name of the image to push the manifest list for.
+manifestList: The manifest list to push.
+
+**Returns:**
+
+error: An error if any operation fails during the push.
+
+---
+
+### DockerClient.RemoveImage(context.Context, string, image.RemoveOptions)
+
+```go
+RemoveImage(context.Context string image.RemoveOptions) []image.DeleteResponse error
+```
+
+RemoveImage removes an image from the Docker client.
+
+**Parameters:**
+
+ctx: The context within which the image is to be removed.
+imageID: The ID of the image to be removed.
+options: Options for the image removal operation.
+
+**Returns:**
+
+error: An error if any issue occurs during the image removal process.
+[]image.DeleteResponse: A slice of image.DeleteResponse instances.
+
+---
+
+### DockerClient.SetRegistry(*DockerRegistry)
+
+```go
+SetRegistry(*DockerRegistry)
+```
+
+SetRegistry sets the DockerRegistry for the DockerClient.
+
+**Parameters:**
+
+registry: A pointer to the DockerRegistry to be set.
+
+---
+
+### DockerClient.TagAndPushImages(*bp.Blueprint)
+
+```go
+TagAndPushImages(*bp.Blueprint) []string, error
+```
+
+TagAndPushImages tags and pushes images to a registry based on
+the provided blueprint.
+
+**Parameters:**
+
+blueprint: The blueprint containing tag information.
+
+**Returns:**
+
+[]string: A slice of image tags that were successfully pushed.
+error: An error if any operation fails during tagging or pushing.
+
+---
+
+### NewDockerClient(string)
+
+```go
+NewDockerClient(string) *DockerClient, error
 ```
 
 NewDockerClient creates a new Docker client.
@@ -151,30 +260,23 @@ error: An error if any issue occurs while creating the client.
 
 ---
 
-### credentialStore.Basic(*url.URL)
+### NewDockerRegistry(string)
 
 ```go
-Basic(*url.URL) string, string
+NewDockerRegistry(string) *DockerRegistry, error
 ```
 
+NewDockerRegistry creates a new Docker registry.
 
----
+**Parameters:**
 
-### credentialStore.RefreshToken(*url.URL, string)
+registryURL: The URL of the Docker registry.
+authToken: The authentication token for the registry.
 
-```go
-RefreshToken(*url.URL, string) string
-```
+**Returns:**
 
-
----
-
-### credentialStore.SetRefreshToken(*url.URL, string)
-
-```go
-SetRefreshToken(*url.URL, string)
-```
-
+*DockerRegistry: A DockerRegistry instance.
+error: An error if any issue occurs while creating the registry.
 
 ---
 

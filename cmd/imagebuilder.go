@@ -108,13 +108,13 @@ func init() {
 //
 // **Parameters:**
 //
-// - cmd: A Cobra command object containing flags and arguments for the command.
-// - args: A slice of strings containing additional arguments passed to the command.
-// - blueprint: A Blueprint struct containing the blueprint configuration.
+// cmd: A Cobra command object containing flags and arguments for the command.
+// args: A slice of strings containing additional arguments passed to the command.
+// blueprint: A Blueprint struct containing the blueprint configuration.
 //
 // **Returns:**
 //
-// - error: An error if any issue occurs while building the images.
+// error: An error if any issue occurs while building the images.
 func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) error {
 	if err := blueprint.LoadPackerTemplates(githubToken); err != nil {
 		return fmt.Errorf("no packer templates found: %v", err)

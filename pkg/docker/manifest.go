@@ -82,6 +82,7 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 // **Returns:**
 //
 // ocispec.Index: The manifest list created with the input image tags.
+// error: An error if any operation fails during the manifest list creation.
 func (d *DockerClient) ManifestCreate(ctx context.Context, targetImage string, imageTags []string) (ocispec.Index, error) {
 	fmt.Printf("Creating manifest list for %s with %v tags\n", targetImage, imageTags)
 

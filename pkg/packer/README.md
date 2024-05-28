@@ -38,7 +38,7 @@ string: The AMI ID if found in the output.
 ### PackerTemplate.ParseImageHashes(string)
 
 ```go
-ParseImageHashes(string) map[string]string
+ParseImageHashes(string) []ImageHash
 ```
 
 ParseImageHashes extracts the image hashes from the output of a Packer build
@@ -50,14 +50,14 @@ output: The output from the Packer build command.
 
 **Returns:**
 
-map[string]string: A map of image hashes parsed from the build output.
+[]ImageHash: A slice of ImageHash structs parsed from the build output.
 
 ---
 
 ### PackerTemplate.RunBuild([]string, string)
 
 ```go
-RunBuild([]string, string) map[string]string, string, error
+RunBuild([]string, string) []ImageHash, string, error
 ```
 
 RunBuild runs the Packer build command and captures the output to parse image
