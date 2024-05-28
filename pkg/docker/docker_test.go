@@ -6,10 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net"
 	"net/http"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/containers/common/libimage"
 	"github.com/containers/storage"
@@ -31,7 +30,7 @@ type MockDockerAPIClient struct {
 // RegistryLogin is the mock implementation of the Docker RegistryLogin function.
 func (m *MockDockerAPIClient) RegistryLogin(ctx context.Context, authConfig registry.AuthConfig) (registry.AuthenticateOKBody, error) {
 	args := m.Called(ctx, authConfig)
-	return registry.AuthenticateOKBody{}, args.Error(0)
+	return args.Get(0).(registry.AuthenticateOKBody), args.Error(1)
 }
 
 // ImageTag is the mock implementation of the Docker ImageTag function.
@@ -90,11 +89,11 @@ func TestNewDockerRegistry(t *testing.T) {
 	}
 }
 
-type MockHTTPClient struct {
+type MockHTTPRoundTripper struct {
 	mock.Mock
 }
 
-func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+func (m *MockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	args := m.Called(req)
 	resp, _ := args.Get(0).(*http.Response)
 	return resp, args.Error(1)
@@ -109,41 +108,19 @@ type MockDockerClient struct {
 	authStr           string
 }
 
-func NewMockDockerClient() (*docker.DockerClient, *MockDockerAPIClient, *MockHTTPClient) {
-	mockHTTPClient := new(MockHTTPClient)
-	transport := &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		DialContext:         (&net.Dialer{Timeout: 30 * time.Second}).DialContext,
-		ForceAttemptHTTP2:   true,
-		TLSHandshakeTimeout: 10 * time.Second,
-	}
-	httpClient := &http.Client{
-		Transport: transport,
-	}
-	mockHTTPClient.On("RoundTrip", mock.Anything).Return(nil, nil)
+// NewMockDockerClient creates a mock Docker client for testing.
+func NewMockDockerClient() (*docker.DockerClient, *MockDockerAPIClient, *MockHTTPRoundTripper) {
+	mockRoundTripper := new(MockHTTPRoundTripper)
+	httpClient := &http.Client{Transport: mockRoundTripper}
+	cli, _ := client.NewClientWithOpts(client.WithHTTPClient(httpClient))
 
-	cli, _ := client.NewClientWithOpts(client.FromEnv, client.WithHTTPClient(httpClient))
-
-	mockAPIClient := &MockDockerAPIClient{Client: *cli}
-	mockClient := &MockDockerClient{
-		DockerLoginFunc: func(username, password, server string) error {
-			if username == "" || password == "" || server == "" {
-				return errors.New("login error")
-			}
-			return nil
-		},
-		RegistryLoginFunc: func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
-			if auth.Username == "" || auth.Password == "" || auth.ServerAddress == "" {
-				return registry.AuthenticateOKBody{}, errors.New("login error")
-			}
-			return registry.AuthenticateOKBody{IdentityToken: "mockToken"}, nil
-		},
+	mockAPIClient := new(MockDockerAPIClient)
+	dockerClient := &docker.DockerClient{
+		CLI:     cli,
+		AuthStr: "",
 	}
 
-	return &docker.DockerClient{
-		CLI:     &mockAPIClient.Client,
-		AuthStr: mockClient.authStr,
-	}, mockAPIClient, mockHTTPClient
+	return dockerClient, mockAPIClient, mockRoundTripper
 }
 
 func (m *MockDockerClient) ImageTag(ctx context.Context, source, target string) error {
@@ -201,7 +178,7 @@ func TestDockerLogin(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client, mockAPIClient, mockHTTPClient := NewMockDockerClient()
+			client, mockAPIClient, mockRoundTripper := NewMockDockerClient()
 			client.Container = packer.Container{
 				ImageRegistry: packer.ContainerImageRegistry{
 					Username:   tc.username,
@@ -223,70 +200,83 @@ func TestDockerLogin(t *testing.T) {
 			client.AuthStr = base64.URLEncoding.EncodeToString(authBytes)
 
 			if tc.wantErr {
-				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).Return(errors.New("invalid credentials"))
+				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).
+					Return(registry.AuthenticateOKBody{}, errors.New("invalid credentials")).Once()
 			} else {
-				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).Return(nil)
+				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).
+					Return(registry.AuthenticateOKBody{IdentityToken: "mockToken"}, nil).Once()
 			}
+
+			mockRoundTripper.On("RoundTrip", mock.Anything).
+				Return(&http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+				}, nil).Once()
 
 			err = client.DockerLogin()
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerLogin() error = %v, wantErr %v", err, tc.wantErr)
 			}
-
-			mockAPIClient.AssertExpectations(t)
-			mockHTTPClient.AssertExpectations(t)
 		})
 	}
 }
 
-// func ensureImagePulled(t *testing.T, cli *client.Client, containerImage string) {
-// 	_, _, err := cli.ImageInspectWithRaw(context.Background(), containerImage)
-// 	if client.IsErrNotFound(err) {
-// 		_, err = cli.ImagePull(context.Background(), containerImage, image.PullOptions{})
-// 		if err != nil {
-// 			t.Fatalf("Failed to pull image %s: %v", containerImage, err)
-// 		}
-// 	}
-// }
+func ensureImagePulled(t *testing.T, cli *client.Client, containerImage string) {
+	_, _, err := cli.ImageInspectWithRaw(context.Background(), containerImage)
+	if client.IsErrNotFound(err) {
+		_, err = cli.ImagePull(context.Background(), containerImage, image.PullOptions{})
+		if err != nil {
+			t.Fatalf("Failed to pull image %s: %v", containerImage, err)
+		}
+	}
+}
 
-// func TestDockerTag(t *testing.T) {
-// 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-// 	if err != nil {
-// 		t.Fatalf("Failed to create Docker client: %v", err)
-// 	}
+func TestDockerTag(t *testing.T) {
+	tests := []struct {
+		name        string
+		sourceImage string
+		targetImage string
+		wantErr     bool
+	}{
+		{
+			name:        "valid tag",
+			sourceImage: "busybox:latest",
+			targetImage: "busybox:tagged",
+			wantErr:     false,
+		},
+		{
+			name:        "invalid tag",
+			sourceImage: "",
+			targetImage: "busybox:tagged",
+			wantErr:     true,
+		},
+	}
 
-// 	ensureImagePulled(t, cli, "busybox:latest")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, mockAPIClient, mockRoundTripper := NewMockDockerClient()
 
-// 	tests := []struct {
-// 		name        string
-// 		sourceImage string
-// 		targetImage string
-// 		wantErr     bool
-// 	}{
-// 		{
-// 			name:        "valid tag",
-// 			sourceImage: "busybox:latest",
-// 			targetImage: "busybox:tagged",
-// 			wantErr:     false,
-// 		},
-// 		{
-// 			name:        "invalid tag",
-// 			sourceImage: "",
-// 			targetImage: "busybox:tagged",
-// 			wantErr:     true,
-// 		},
-// 	}
+			if tc.wantErr {
+				mockAPIClient.On("ImageTag", mock.Anything, tc.sourceImage, tc.targetImage).
+					Return(errors.New("invalid source image")).Once()
+			} else {
+				mockAPIClient.On("ImageTag", mock.Anything, tc.sourceImage, tc.targetImage).
+					Return(nil).Once()
+			}
 
-// 	for _, tc := range tests {
-// 		t.Run(tc.name, func(t *testing.T) {
-// 			client, _ := docker.NewDockerClient()
-// 			err := client.DockerTag(tc.sourceImage, tc.targetImage)
-// 			if (err != nil) != tc.wantErr {
-// 				t.Errorf("DockerTag() error = %v, wantErr %v", err, tc.wantErr)
-// 			}
-// 		})
-// 	}
-// }
+			mockRoundTripper.On("RoundTrip", mock.Anything).
+				Return(&http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+				}, nil).Once()
+
+			err := client.CLI.ImageTag(context.Background(), tc.sourceImage, tc.targetImage)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("DockerTag() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
 
 // func TestPushImage(t *testing.T) {
 // 	tests := []struct {

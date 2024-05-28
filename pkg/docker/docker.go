@@ -2,8 +2,6 @@ package docker
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -128,17 +126,12 @@ func (d *DockerClient) DockerLogin() error {
 		ServerAddress: d.Container.ImageRegistry.Server,
 	}
 
-	authBytes, err := json.Marshal(authConfig)
+	resp, err := d.CLI.RegistryLogin(context.Background(), authConfig)
 	if err != nil {
 		return err
 	}
-	d.AuthStr = base64.URLEncoding.EncodeToString(authBytes)
 
-	ctx := context.Background()
-	_, err = d.CLI.RegistryLogin(ctx, authConfig)
-	if err != nil {
-		return err
-	}
+	d.AuthStr = resp.IdentityToken
 
 	fmt.Printf("Successfully logged in to %s as %s\n", d.Container.ImageRegistry.Server, d.Container.ImageRegistry.Username)
 	return nil
