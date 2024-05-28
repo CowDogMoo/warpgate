@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -156,10 +158,36 @@ func (d *DockerClient) DockerLogin() error {
 		return err
 	}
 
-	d.AuthStr = resp.IdentityToken
+	if resp.Status != "Login Succeeded" {
+		return fmt.Errorf("failed to login to Docker registry %s:%v", d.Container.ImageRegistry.Server, resp.Status)
+	}
+
+	// Use the identity token if it is available
+	if resp.IdentityToken != "" {
+		d.AuthStr = resp.IdentityToken
+		fmt.Printf("Successfully logged in to %s and retrieved identity token as %s\n", d.Container.ImageRegistry.Server, d.AuthStr)
+	}
+
+	// If no identity token is available, encode the authConfig to base64
+	if d.AuthStr == "" {
+		fmt.Println("No identity token retrieved from registry, encoding input token...")
+		d.AuthStr, err = encodeAuthToBase64(authConfig)
+		if err != nil {
+			return err
+		}
+	}
 
 	fmt.Printf("Successfully logged in to %s as %s\n", d.Container.ImageRegistry.Server, d.Container.ImageRegistry.Username)
 	return nil
+}
+
+// encodeAuthToBase64 encodes the authConfig to a base64 string.
+func encodeAuthToBase64(authConfig dockerRegistry.AuthConfig) (string, error) {
+	authJSON, err := json.Marshal(authConfig)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(authJSON), nil
 }
 
 // DockerTag tags a Docker image with a new name.
