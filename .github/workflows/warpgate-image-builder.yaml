@@ -145,6 +145,12 @@ jobs:
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
+      - name: Configure containers storage to ignore chown errors
+        run: |
+          mkdir -p $HOME/.config/containers
+          echo "[storage.options]" > $HOME/.config/containers/storage.conf
+          echo "  ignore_chown_errors = \"true\"" >> $HOME/.config/containers/storage.conf
+
       - name: Run image builder for each blueprint
         run: |
           blueprint_name="${{ matrix.blueprint.blueprint }}"
@@ -177,6 +183,9 @@ jobs:
 
           echo "Verifying ownership of $overlay_dir"
           ls -ld "$overlay_dir"
+
+          # export STORAGE_DRIVER=vfs
+          # export STORAGE_OPTS="--storage-opt overlay.mount_program=/usr/bin/fuse-overlayfs"
 
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
           timeout 2h wg imageBuilder \
