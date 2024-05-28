@@ -100,6 +100,7 @@ func (m *MockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 }
 
 type MockDockerClient struct {
+	mock.Mock
 	client.Client
 	ImageTagFunc      func(ctx context.Context, source, target string) error
 	ImagePushFunc     func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
@@ -112,7 +113,10 @@ type MockDockerClient struct {
 func NewMockDockerClient() (*docker.DockerClient, *MockDockerAPIClient, *MockHTTPRoundTripper) {
 	mockRoundTripper := new(MockHTTPRoundTripper)
 	httpClient := &http.Client{Transport: mockRoundTripper}
-	cli, _ := client.NewClientWithOpts(client.WithHTTPClient(httpClient))
+	cli, err := client.NewClientWithOpts(client.WithHTTPClient(httpClient))
+	if err != nil {
+		panic(err)
+	}
 
 	mockAPIClient := new(MockDockerAPIClient)
 	dockerClient := &docker.DockerClient{
@@ -329,107 +333,3 @@ func TestPushImage(t *testing.T) {
 		})
 	}
 }
-
-// func TestProcessPackerTemplates(t *testing.T) {
-// 	tests := []struct {
-// 		name            string
-// 		packerTemplates []packer.PackerTemplate
-// 		mockLoginFunc   func() error
-// 		mockTagFunc     func(ctx context.Context, source, target string) error
-// 		mockPushFunc    func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
-// 		wantErr         bool
-// 		expectedErrMsg  string
-// 	}{
-// 		{
-// 			name: "valid push images",
-// 			packerTemplates: []packer.PackerTemplate{
-// 				{
-// 					AMI: packer.AMI{
-// 						InstanceType: "t2.micro",
-// 						Region:       "us-west-2",
-// 						SSHUser:      "ec2-user",
-// 					},
-// 					Container: packer.Container{
-// 						ImageHashes: []packer.ImageHash{
-// 							{Arch: "amd64", OS: "linux", Hash: "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d"},
-// 							{Arch: "arm64", OS: "linux", Hash: "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d"},
-// 						},
-// 						ImageRegistry: packer.ContainerImageRegistry{
-// 							Server:     "testserver",
-// 							Username:   "testuser",
-// 							Credential: "testtoken",
-// 						},
-// 						Workdir: "/tmp",
-// 					},
-// 					ImageValues: packer.ImageValues{
-// 						Name:    "test-image",
-// 						Version: "latest",
-// 					},
-// 				},
-// 			},
-// 			mockLoginFunc: func() error { return nil },
-// 			mockTagFunc:   func(ctx context.Context, source, target string) error { return nil },
-// 			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
-// 				return io.NopCloser(strings.NewReader("")), nil
-// 			},
-// 			wantErr: false,
-// 		},
-// 		{
-// 			name: "invalid push images",
-// 			packerTemplates: []packer.PackerTemplate{
-// 				{
-// 					AMI: packer.AMI{
-// 						InstanceType: "t2.micro",
-// 						Region:       "us-west-2",
-// 						SSHUser:      "ec2-user",
-// 					},
-// 					Container: packer.Container{
-// 						ImageHashes: []packer.ImageHash{
-// 							{Arch: "amd64", OS: "linux", Hash: "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d"},
-// 							{Arch: "arm64", OS: "linux", Hash: "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d"},
-// 						},
-// 						ImageRegistry: packer.ContainerImageRegistry{
-// 							Server:     "testserver",
-// 							Username:   "testuser",
-// 							Credential: "testtoken",
-// 						},
-// 						Workdir: "/tmp",
-// 					},
-// 					ImageValues: packer.ImageValues{
-// 						Name:    "test-image",
-// 						Version: "latest",
-// 					},
-// 				},
-// 			},
-// 			mockLoginFunc: func() error {
-// 				return errors.New("login error")
-// 			},
-// 			mockTagFunc: func(ctx context.Context, source, target string) error { return nil },
-// 			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
-// 				return nil, errors.New("push error")
-// 			},
-// 			wantErr:        true,
-// 			expectedErrMsg: "push error",
-// 		},
-// 	}
-
-// 	for _, tc := range tests {
-// 		t.Run(tc.name, func(t *testing.T) {
-// 			client := NewMockDockerClient()
-// 			dockerClient := &docker.DockerClient{
-// 				CLI: client,
-// 			}
-
-// 			client.On("DockerLogin").Return(tc.mockLoginFunc())
-// 			client.On("DockerTag", mock.Anything, mock.Anything).Return(tc.mockTagFunc)
-// 			client.On("ImagePush", mock.Anything, mock.Anything, mock.Anything).Return(tc.mockPushFunc)
-
-// 			err := dockerClient.ProcessPackerTemplates(tc.packerTemplates, packer.Blueprint{Name: "test-image"})
-// 			if (err != nil) != tc.wantErr {
-// 				t.Errorf("ProcessPackerTemplates() error = %v, wantErr %v", err, tc.wantErr)
-// 			} else if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.expectedErrMsg) {
-// 				t.Errorf("ProcessPackerTemplates() error = %v, expectedErrMsg %v", err, tc.expectedErrMsg)
-// 			}
-// 		})
-// 	}
-// }

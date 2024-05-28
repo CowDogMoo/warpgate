@@ -210,16 +210,6 @@ func (d *DockerClient) PushImage(containerImage string) error {
 	return err
 }
 
-// ProcessPackerTemplates tags and pushes images specified in packer templates.
-//
-// **Parameters:**
-//
-// packerTemplates: A slice of PackerTemplate containing the images to tag
-// and push.
-//
-// **Returns:**
-//
-// error: An error if any operation fails during tagging or pushing.
 func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blueprint bp.Blueprint) error {
 	if len(pTmpl) == 0 {
 		return errors.New("packer templates must be provided for the blueprint")
@@ -234,15 +224,6 @@ func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blu
 	return nil
 }
 
-// TagAndPushImages tags and pushes images to a registry.
-//
-// **Parameters:**
-//
-// blueprint: The blueprint containing image tag information.
-//
-// **Returns:**
-//
-// error: An error if any operation fails during tagging or pushing.
 func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, error) {
 	var imageTags []string
 
