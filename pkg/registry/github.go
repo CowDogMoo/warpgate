@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 )
 
 // HttpClient is an interface that defines the Do method for making HTTP requests.
@@ -53,10 +52,7 @@ var Client HttpClient = &http.Client{}
 // the GITHUB_TOKEN environment variable is not set.
 func ValidateToken(token string) error {
 	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
-		if token == "" {
-			return fmt.Errorf("no token provided and GITHUB_TOKEN env var is not set")
-		}
+		return fmt.Errorf("no personal access token provided")
 	}
 
 	url := "https://api.github.com/user"

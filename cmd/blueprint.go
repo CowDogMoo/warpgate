@@ -110,7 +110,6 @@ func processCfgInputs(cmd *cobra.Command) error {
 		log.L().Error("Tag info must be in the format 'name:version'")
 		return errors.New("invalid tag format")
 	}
-	tagName, tagVersion := parts[0], parts[1]
 
 	systemd, err := cmd.Flags().GetBool("systemd")
 	if err != nil {
@@ -126,17 +125,17 @@ func processCfgInputs(cmd *cobra.Command) error {
 
 	if systemd {
 		// Systemd enabled; prepare both systemd and standard templates
-		packerTemplates = append(packerTemplates, generatePackerTemplate(blueprint.Name+"-systemd.pkr.hcl", baseInput[0], tagName+"-systemd", tagVersion, true))
+		packerTemplates = append(packerTemplates, generatePackerTemplate(baseInput[0], true))
 		if len(baseInput) > 1 {
 			// Create non-systemd templates for the rest of the base inputs
 			for _, base := range baseInput[1:] {
-				packerTemplates = append(packerTemplates, generatePackerTemplate(blueprint.Name+".pkr.hcl", base, tagName, tagVersion, false))
+				packerTemplates = append(packerTemplates, generatePackerTemplate(base, false))
 			}
 		}
 	} else {
 		// No systemd; create standard templates for all base inputs
 		for _, base := range baseInput {
-			packerTemplates = append(packerTemplates, generatePackerTemplate(blueprint.Name+".pkr.hcl", base, tagName, tagVersion, false))
+			packerTemplates = append(packerTemplates, generatePackerTemplate(base, false))
 		}
 	}
 
@@ -145,7 +144,7 @@ func processCfgInputs(cmd *cobra.Command) error {
 	return nil
 }
 
-func generatePackerTemplate(templateName, baseInput, tagName, tagVersion string, systemd bool) packer.PackerTemplate {
+func generatePackerTemplate(baseInput string, systemd bool) packer.PackerTemplate {
 	parts := strings.Split(baseInput, ":")
 	return packer.PackerTemplate{
 		AMI: packer.AMI{
@@ -154,8 +153,13 @@ func generatePackerTemplate(templateName, baseInput, tagName, tagVersion string,
 			SSHUser:      "",
 		},
 		Container: packer.Container{
-			ImageHashes: map[string]string{},
-			Registry: packer.ContainerImageRegistry{
+			ImageHashes: []packer.ImageHash{
+				{
+					OS:   "",
+					Arch: "",
+				},
+			},
+			ImageRegistry: packer.ContainerImageRegistry{
 				Server:     "",
 				Username:   "",
 				Credential: "",
@@ -165,7 +169,7 @@ func generatePackerTemplate(templateName, baseInput, tagName, tagVersion string,
 			Name:    parts[0],
 			Version: parts[1],
 		},
-		User:    "root",
+		User:    "",
 		Systemd: systemd,
 	}
 }
@@ -216,8 +220,7 @@ func createPacker(blueprint bp.Blueprint) error {
 	}
 
 	set := false
-	blueprint.PackerTemplates[0].Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
-	// ContainerImageRegistry.Container.Registry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
+	blueprint.PackerTemplates[0].Container.ImageRegistry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
 	if !set {
 		return errors.New("required env var $GITHUB_TOKEN is not set, please " +
 			"set it with a correct Personal Access Token and try again")

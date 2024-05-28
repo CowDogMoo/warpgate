@@ -19,6 +19,11 @@ ami:
 # Container specific configurations
 container:
   workdir: /home/ubuntu
+  image_hashes:
+    - arch: amd64
+      os: linux
+    - arch: arm64
+      os: linux
   registry:
     server: ghcr.io
     username: l50

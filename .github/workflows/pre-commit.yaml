@@ -26,15 +26,24 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
         with:
-          go-version: "1.22"
+          go-version: "1.22.2"
 
       - name: Install go module dependencies
         run: |
           go install mvdan.cc/sh/v3/cmd/shfmt@latest
           go install github.com/magefile/mage@latest
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential \
+                                  btrfs-progs \
+                                  libgpgme-dev \
+                                  libbtrfs-dev \
+                                  pkg-config
+
       - name: Install pre-commit
-        run: pip3 install pre-commit
+        run: python3 -m pip install pre-commit
 
       - name: Run go mod tidy - necessary to avoid errors with renovatebot PRs
         run: go mod tidy
