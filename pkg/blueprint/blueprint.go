@@ -450,16 +450,24 @@ func (b *Blueprint) BuildImageAttempt(attempt int) ([]packer.ImageHash, error) {
 		return nil, fmt.Errorf("error running build command: %v", err)
 	}
 
+	// Filter out entries without a hash
+	validHashes := []packer.ImageHash{}
+	for _, hash := range hashes {
+		if hash.Hash != "" {
+			validHashes = append(validHashes, hash)
+		}
+	}
+
 	switch {
-	case len(hashes) > 0:
-		fmt.Printf("image hashes: %v\n", hashes)
+	case len(validHashes) > 0:
+		fmt.Printf("image hashes: %v\n", validHashes)
 	case amiID != "":
 		fmt.Printf("built AMI ID: %s\n", amiID)
 	default:
 		fmt.Printf("no container image or AMI found in the build output\n")
 	}
 
-	return hashes, nil
+	return validHashes, nil
 }
 
 func hideSensitiveArgs(args []string) []string {
