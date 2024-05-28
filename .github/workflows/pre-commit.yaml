@@ -33,8 +33,17 @@ jobs:
           go install mvdan.cc/sh/v3/cmd/shfmt@latest
           go install github.com/magefile/mage@latest
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential \
+                                  btrfs-progs \
+                                  libgpgme-dev \
+                                  libbtrfs-dev \
+                                  pkg-config
+
       - name: Install pre-commit
-        run: pip3 install pre-commit
+        run: python3 -m pip install pre-commit
 
       - name: Run go mod tidy - necessary to avoid errors with renovatebot PRs
         run: go mod tidy
@@ -52,3 +61,7 @@ jobs:
 
       - name: Run pre-commit
         run: mage runPreCommit
+
+      - name: Run tmate if the job fails
+        if: failure()
+        uses: mxschmitt/action-tmate@v3
