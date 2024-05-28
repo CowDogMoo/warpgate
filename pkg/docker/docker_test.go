@@ -221,16 +221,6 @@ func TestDockerLogin(t *testing.T) {
 	}
 }
 
-func ensureImagePulled(t *testing.T, cli *client.Client, containerImage string) {
-	_, _, err := cli.ImageInspectWithRaw(context.Background(), containerImage)
-	if client.IsErrNotFound(err) {
-		_, err = cli.ImagePull(context.Background(), containerImage, image.PullOptions{})
-		if err != nil {
-			t.Fatalf("Failed to pull image %s: %v", containerImage, err)
-		}
-	}
-}
-
 func TestDockerTag(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -278,51 +268,67 @@ func TestDockerTag(t *testing.T) {
 	}
 }
 
-// func TestPushImage(t *testing.T) {
-// 	tests := []struct {
-// 		name           string
-// 		containerImage string
-// 		authStr        string
-// 		mockPushFunc   func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
-// 		wantErr        bool
-// 	}{
-// 		{
-// 			name:           "valid push",
-// 			containerImage: "busybox:latest",
-// 			authStr:        "dGVzdDp0ZXN0",
-// 			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
-// 				return io.NopCloser(strings.NewReader("")), nil
-// 			},
-// 			wantErr: false,
-// 		},
-// 		{
-// 			name:           "invalid push",
-// 			containerImage: "invalidimage",
-// 			authStr:        "dGVzdDp0ZXN0",
-// 			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
-// 				return nil, errors.New("push error")
-// 			},
-// 			wantErr: true,
-// 		},
-// 	}
+func TestPushImage(t *testing.T) {
+	tests := []struct {
+		name           string
+		containerImage string
+		authStr        string
+		mockPushFunc   func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
+		wantErr        bool
+	}{
+		{
+			name:           "valid push",
+			containerImage: "busybox:latest",
+			authStr:        "dGVzdDp0ZXN0",
+			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader("")), nil
+			},
+			wantErr: false,
+		},
+		{
+			name:           "invalid push",
+			containerImage: "invalidimage",
+			authStr:        "dGVzdDp0ZXN0",
+			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
+				return nil, errors.New("push error")
+			},
+			wantErr: true,
+		},
+	}
 
-// 	for _, tc := range tests {
-// 		t.Run(tc.name, func(t *testing.T) {
-// 			client := NewMockDockerClient()
-// 			client.AuthStr = tc.authStr
-// 			dockerClient := &docker.DockerClient{
-// 				CLI:     client,
-// 				AuthStr: tc.authStr,
-// 			}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, mockAPIClient, mockRoundTripper := NewMockDockerClient()
+			client.AuthStr = tc.authStr
+			dockerClient := &docker.DockerClient{
+				CLI:     client.CLI,
+				AuthStr: tc.authStr,
+			}
 
-// 			client.On("ImagePush", context.Background(), tc.containerImage, image.PushOptions{RegistryAuth: tc.authStr}).Return(tc.mockPushFunc(context.Background(), tc.containerImage, image.PushOptions{RegistryAuth: tc.authStr}))
-// 			err := dockerClient.PushImage(tc.containerImage)
-// 			if (err != nil) != tc.wantErr {
-// 				t.Errorf("PushImage() error = %v, wantErr %v", err, tc.wantErr)
-// 			}
-// 		})
-// 	}
-// }
+			mockAPIClient.On("ImagePush", mock.Anything, tc.containerImage, image.PushOptions{RegistryAuth: tc.authStr}).
+				Return(tc.mockPushFunc(context.Background(), tc.containerImage, image.PushOptions{RegistryAuth: tc.authStr})).Once()
+
+			if tc.wantErr {
+				mockRoundTripper.On("RoundTrip", mock.Anything).
+					Return(&http.Response{
+						StatusCode: http.StatusInternalServerError,
+						Body:       io.NopCloser(strings.NewReader(`{"message": "push error"}`)),
+					}, nil).Once()
+			} else {
+				mockRoundTripper.On("RoundTrip", mock.Anything).
+					Return(&http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{}`)),
+					}, nil).Once()
+			}
+
+			err := dockerClient.PushImage(tc.containerImage)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("PushImage() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
 
 // func TestProcessPackerTemplates(t *testing.T) {
 // 	tests := []struct {
