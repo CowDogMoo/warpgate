@@ -3,8 +3,10 @@ package docker_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
@@ -24,16 +26,35 @@ func (m *MockDockerClient) CreateAndPushManifest(
 	return args.Error(0)
 }
 
-func (m *MockDockerClient) ManifestCreate(
-	ctx context.Context, targetImage string, imageTags []string,
-) (ocispec.Index, error) {
-	args := m.Called(ctx, targetImage, imageTags)
-	return args.Get(0).(ocispec.Index), args.Error(1)
+func convertToInt64(val interface{}) (int64, error) {
+	switch v := val.(type) {
+	case int:
+		return int64(v), nil
+	case int8:
+		return int64(v), nil
+	case int16:
+		return int64(v), nil
+	case int32:
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case float32:
+		return int64(v), nil
+	case float64:
+		return int64(v), nil
+	default:
+		return 0, fmt.Errorf("unsupported type: %v", reflect.TypeOf(val))
+	}
 }
 
 func (m *MockDockerClient) GetImageSize(imageRef string) (int64, error) {
 	args := m.Called(imageRef)
-	return args.Get(0).(int64), args.Error(1)
+	val := args.Get(0)
+	i64Val, err := convertToInt64(val)
+	if err != nil {
+		return 0, err
+	}
+	return i64Val, args.Error(1)
 }
 
 func (m *MockDockerClient) PushManifest(
