@@ -145,11 +145,15 @@ jobs:
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-      - name: Configure containers storage to ignore chown errors
+      - name: Configure containers storage to use vfs driver and ignore chown errors
         run: |
           mkdir -p $HOME/.config/containers
-          echo "[storage.options]" > $HOME/.config/containers/storage.conf
-          echo "  ignore_chown_errors = \"true\"" >> $HOME/.config/containers/storage.conf
+          cat <<EOF > $HOME/.config/containers/storage.conf
+          [storage]
+            driver = "vfs"
+          [storage.options.vfs]
+            ignore_chown_errors = "true"
+          EOF
 
       - name: Run image builder for each blueprint
         run: |
@@ -166,26 +170,6 @@ jobs:
             echo "Unknown blueprint: ${{ matrix.blueprint.blueprint }}"
             exit 1
           fi
-
-          echo "Using provision path: $provision_path"
-          ls -la "$provision_path"
-
-          current_user=$(id -u -n)
-          current_group=$(id -g -n)
-
-          overlay_dir="$HOME/.local/share/containers/storage/overlay/l"
-          if [[ ! -d $overlay_dir ]]; then
-            mkdir -p $overlay_dir
-          fi
-
-          echo "Attempting to change ownership of $overlay_dir to $current_user:$current_group"
-          sudo chown -R "$current_user:$current_group" "$overlay_dir" || echo "Permission denied for chown. Continuing without changing ownership."
-
-          echo "Verifying ownership of $overlay_dir"
-          ls -ld "$overlay_dir"
-
-          # export STORAGE_DRIVER=vfs
-          # export STORAGE_OPTS="--storage-opt overlay.mount_program=/usr/bin/fuse-overlayfs"
 
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
           timeout 2h wg imageBuilder \
