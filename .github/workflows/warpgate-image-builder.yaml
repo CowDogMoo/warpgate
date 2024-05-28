@@ -169,11 +169,11 @@ jobs:
 
           overlay_dir="$HOME/.local/share/containers/storage/overlay/l"
           if [[ ! -d $overlay_dir ]]; then
-            sudo mkdir -p $overlay_dir
+            mkdir -p $overlay_dir
           fi
 
           echo "Attempting to change ownership of $overlay_dir to $current_user:$current_group"
-          sudo chown -R "$current_user:$current_group" "$overlay_dir"
+          sudo chown -R "$current_user:$current_group" "$overlay_dir" || echo "Permission denied for chown. Continuing without changing ownership."
 
           echo "Verifying ownership of $overlay_dir"
           ls -ld "$overlay_dir"

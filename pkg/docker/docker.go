@@ -84,7 +84,7 @@ func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
 
 	storeOpts, err := storage.DefaultStoreOptions()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting default store options: %v", err)
 	}
 
 	runtimeOpts := &libimage.RuntimeOptions{
@@ -93,14 +93,16 @@ func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
 
 	runtime, err := libimage.RuntimeFromStoreOptions(runtimeOpts, &storeOpts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting runtime from store options: %v", err)
 	}
 
 	store, err := storage.GetStore(storeOpts)
-	if err != nil && os.IsPermission(err) {
-		fmt.Println("Warning: Permission denied for chown operation. Continuing without changing ownership.")
-	} else if err != nil {
-		return nil, err
+	if err != nil {
+		if os.IsPermission(err) {
+			fmt.Println("Warning: Permission denied for chown operation. Continuing without changing ownership.")
+		} else {
+			return nil, fmt.Errorf("error getting storage store: %v", err)
+		}
 	}
 
 	return &DockerRegistry{
@@ -120,12 +122,12 @@ func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
 func NewDockerClient(registryURL, authToken string) (*DockerClient, error) {
 	cli, err := dockerClient.NewClientWithOpts(dockerClient.FromEnv, dockerClient.WithAPIVersionNegotiation())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating Docker client: %v", err)
 	}
 
 	dockerRegistry, err := NewDockerRegistry(registryURL, authToken)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating Docker registry: %v", err)
 	}
 
 	return &DockerClient{
@@ -157,7 +159,7 @@ func (d *DockerClient) DockerLogin() error {
 
 	resp, err := d.CLI.RegistryLogin(context.Background(), authConfig)
 	if err != nil {
-		return err
+		return fmt.Errorf("error logging into Docker registry %s: %v", d.Container.ImageRegistry.Server, err)
 	}
 
 	if resp.Status != "Login Succeeded" {
@@ -175,7 +177,7 @@ func (d *DockerClient) DockerLogin() error {
 		fmt.Println("No identity token retrieved from registry, encoding input token...")
 		d.AuthStr, err = encodeAuthToBase64(authConfig)
 		if err != nil {
-			return err
+			return fmt.Errorf("error encoding authConfig to base64: %v", err)
 		}
 	}
 
@@ -187,7 +189,7 @@ func (d *DockerClient) DockerLogin() error {
 func encodeAuthToBase64(authConfig dockerRegistry.AuthConfig) (string, error) {
 	authJSON, err := json.Marshal(authConfig)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error marshalling authConfig to JSON: %v", err)
 	}
 	return base64.URLEncoding.EncodeToString(authJSON), nil
 }
@@ -262,12 +264,12 @@ func (d *DockerClient) PushImage(containerImage string) error {
 		RegistryAuth: d.AuthStr,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("error pushing image %s: %v", containerImage, err)
 	}
 	defer resp.Close()
 
 	_, err = io.Copy(os.Stdout, resp)
-	return err
+	return fmt.Errorf("error copying response to stdout: %v", err)
 }
 
 // ProcessPackerTemplates processes a list of Packer templates by
@@ -288,7 +290,7 @@ func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blu
 
 	for _, p := range pTmpl {
 		if err := d.ProcessTemplate(p, blueprint); err != nil {
-			return err
+			return fmt.Errorf("error processing Packer template: %v", err)
 		}
 	}
 

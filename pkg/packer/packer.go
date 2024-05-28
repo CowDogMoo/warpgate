@@ -46,13 +46,12 @@ type ImageHash struct {
 // OperatingSystem: Operating system of the container.
 // Workdir: Working directory in the container.
 type Container struct {
-	BaseImageValues ImageValues `mapstructure:"base_image_values"`
-	DockerClient    string      `mapstructure:"docker_client"`
-	Entrypoint      string      `mapstructure:"entrypoint"`
-	// ImageHashes     map[string]string      `mapstructure:"image_hashes"`
-	ImageHashes   []ImageHash            `mapstructure:"image_hashes"`
-	ImageRegistry ContainerImageRegistry `mapstructure:"registry"`
-	Workdir       string                 `mapstructure:"workdir"`
+	BaseImageValues ImageValues            `mapstructure:"base_image_values"`
+	DockerClient    string                 `mapstructure:"docker_client"`
+	Entrypoint      string                 `mapstructure:"entrypoint"`
+	ImageHashes     []ImageHash            `mapstructure:"image_hashes"`
+	ImageRegistry   ContainerImageRegistry `mapstructure:"registry"`
+	Workdir         string                 `mapstructure:"workdir"`
 }
 
 // ContainerImageRegistry represents the container registry configuration for a Packer template.
