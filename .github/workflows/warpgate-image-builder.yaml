@@ -151,7 +151,7 @@ jobs:
           cat <<EOF > $HOME/.config/containers/storage.conf
           [storage]
             driver = "vfs"
-          [storage.options.vfs]
+          [storage.options]
             ignore_chown_errors = "true"
           EOF
 
