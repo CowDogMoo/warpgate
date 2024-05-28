@@ -61,7 +61,3 @@ jobs:
 
       - name: Run pre-commit
         run: mage runPreCommit
-
-      - name: Run tmate if the job fails
-        if: failure()
-        uses: mxschmitt/action-tmate@v3
