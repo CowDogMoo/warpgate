@@ -21,6 +21,19 @@ import (
 	dockerClient "github.com/docker/docker/client"
 )
 
+// GetStoreFunc represents a function that returns a storage.Store
+// instance.
+//
+// **Parameters:**
+//
+// options: Storage options for the store.
+//
+// **Returns:**
+//
+// storage.Store: A storage.Store instance.
+// error: An error if any issue occurs while getting the store.
+type GetStoreFunc func(options storage.StoreOptions) (storage.Store, error)
+
 // DockerClientInterface represents an interface for Docker client
 // operations.
 //
@@ -77,7 +90,7 @@ type DockerRegistry struct {
 //
 // *DockerRegistry: A DockerRegistry instance.
 // error: An error if any issue occurs while creating the registry.
-func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
+func NewDockerRegistry(registryURL, authToken string, getStore GetStoreFunc) (*DockerRegistry, error) {
 	if registryURL == "" {
 		return nil, errors.New("registry URL must not be empty")
 	}
@@ -96,13 +109,14 @@ func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
 		return nil, fmt.Errorf("error getting runtime from store options: %v", err)
 	}
 
-	store, err := storage.GetStore(storeOpts)
-	if err != nil {
-		if os.IsPermission(err) {
-			fmt.Println("Warning: Permission denied for chown operation. Continuing without changing ownership.")
-		} else {
-			return nil, fmt.Errorf("error getting storage store: %v", err)
-		}
+	store, err := getStore(storeOpts)
+	switch {
+	case err != nil && os.IsPermission(err):
+		fmt.Println("Warning: Permission denied for chown operation. Continuing without changing ownership.")
+	case err != nil && strings.Contains(err.Error(), "operation not permitted"):
+		fmt.Println("Warning: Ignoring chown errors as configured.")
+	case err != nil:
+		return nil, fmt.Errorf("error getting storage store: %v", err)
 	}
 
 	return &DockerRegistry{
@@ -111,6 +125,21 @@ func NewDockerRegistry(registryURL, authToken string) (*DockerRegistry, error) {
 		RegistryURL: registryURL,
 		AuthToken:   authToken,
 	}, nil
+}
+
+// DefaultGetStore returns a storage.Store instance with the provided
+// options.
+//
+// **Parameters:**
+//
+// options: Storage options for the store.
+//
+// **Returns:**
+//
+// storage.Store: A storage.Store instance.
+// error: An error if any issue occurs while getting the store.
+func DefaultGetStore(options storage.StoreOptions) (storage.Store, error) {
+	return storage.GetStore(options)
 }
 
 // NewDockerClient creates a new Docker client.
@@ -125,7 +154,7 @@ func NewDockerClient(registryURL, authToken string) (*DockerClient, error) {
 		return nil, fmt.Errorf("error creating Docker client: %v", err)
 	}
 
-	dockerRegistry, err := NewDockerRegistry(registryURL, authToken)
+	dockerRegistry, err := NewDockerRegistry(registryURL, authToken, DefaultGetStore)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Docker registry: %v", err)
 	}
@@ -269,7 +298,11 @@ func (d *DockerClient) PushImage(containerImage string) error {
 	defer resp.Close()
 
 	_, err = io.Copy(os.Stdout, resp)
-	return fmt.Errorf("error copying response to stdout: %v", err)
+	if err != nil {
+		return fmt.Errorf("error copying response to stdout: %v", err)
+	}
+
+	return nil
 }
 
 // ProcessPackerTemplates processes a list of Packer templates by

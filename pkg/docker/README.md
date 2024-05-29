@@ -17,6 +17,26 @@ The `docker` package is a part of the WarpGate.
 
 ## Functions
 
+### DefaultGetStore(storage.StoreOptions)
+
+```go
+DefaultGetStore(storage.StoreOptions) storage.Store, error
+```
+
+DefaultGetStore returns a storage.Store instance with the provided
+options.
+
+**Parameters:**
+
+options: Storage options for the store.
+
+**Returns:**
+
+storage.Store: A storage.Store instance.
+error: An error if any issue occurs while getting the store.
+
+---
+
 ### DockerClient.CreateAndPushManifest(*bp.Blueprint, []string)
 
 ```go
@@ -260,10 +280,10 @@ error: An error if any issue occurs while creating the client.
 
 ---
 
-### NewDockerRegistry(string)
+### NewDockerRegistry(string, GetStoreFunc)
 
 ```go
-NewDockerRegistry(string) *DockerRegistry, error
+NewDockerRegistry(string, GetStoreFunc) *DockerRegistry, error
 ```
 
 NewDockerRegistry creates a new Docker registry.

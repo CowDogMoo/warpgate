@@ -31,12 +31,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
 
-      - name: Set up Go
-        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
-        with:
-          go-version: "1.22"
-          cache-dependency-path: "**/*.sum"
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -45,6 +39,12 @@ jobs:
                                   libgpgme-dev \
                                   libbtrfs-dev \
                                   pkg-config
+
+      - name: Set up Go
+        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: "**/*.sum"
 
       - name: Setup warpgate
         run: |
@@ -92,6 +92,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential \
+                                  btrfs-progs \
+                                  libgpgme-dev \
+                                  libbtrfs-dev \
+                                  pkg-config
+
       - name: Set up Go
         uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
         with:
@@ -106,15 +115,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
             ${{ runner.os }}-go-
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential \
-                                  btrfs-progs \
-                                  libgpgme-dev \
-                                  libbtrfs-dev \
-                                  pkg-config
 
       - name: Setup `packer`
         uses: hashicorp/setup-packer@main
@@ -145,17 +145,17 @@ jobs:
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-      - name: Reset and configure containers storage
+      - name: Configure containers storage to use vfs driver and ignore chown errors
         run: |
           # Clean up any existing storage configuration and files
           sudo podman system reset -f
-          sudo rm -rf $HOME/.local/share/containers/storage
-          sudo rm -rf $HOME/.config/containers/storage.conf
           sudo rm -rf /var/lib/containers/storage
+          sudo rm -rf $HOME/.local/share/containers/storage
 
           # Create the necessary directories
           mkdir -p $HOME/.config/containers
           mkdir -p $HOME/.local/share/containers/storage/vfs/dir
+          sudo chown -R $USER:$USER $HOME/.local/share/containers/storage/vfs/dir
 
           # Create the storage.conf file
           cat <<EOF > $HOME/.config/containers/storage.conf
