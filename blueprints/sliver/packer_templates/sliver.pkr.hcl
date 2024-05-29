@@ -49,7 +49,7 @@ source "amazon-ebs" "ubuntu" {
   region        = "${var.ami_region}"
   source_ami_filter {
     filters = {
-      name = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
+      name                = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
@@ -57,6 +57,16 @@ source "amazon-ebs" "ubuntu" {
     most_recent = true
   }
   ssh_username = "${var.ssh_username}"
+
+  // Add the following block to specify the disk size
+  launch_block_device_mappings = [
+    {
+      device_name           = "/dev/sda1"
+      volume_size           = "${var.disk_size}"
+      volume_type           = "gp2"
+      delete_on_termination = true
+    }
+  ]
 }
 
 build {

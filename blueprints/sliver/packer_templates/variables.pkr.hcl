@@ -63,6 +63,12 @@ variable "blueprint_name" {
   description = "Name of the blueprint."
 }
 
+variable "disk_size" {
+  type        = number
+  description = "Disk size in GB for building the AMI."
+  default     = 50
+}
+
 variable "pkr_build_dir" {
   type        = string
   description = "Directory that packer will execute the transferred provisioning logic from within the container."
