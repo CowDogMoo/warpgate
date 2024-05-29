@@ -145,15 +145,28 @@ jobs:
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-      - name: Configure containers storage to use vfs driver and ignore chown errors
+      - name: Reset and configure containers storage
         run: |
+          # Clean up any existing storage configuration and files
+          sudo podman system reset -f
+          sudo rm -rf $HOME/.local/share/containers/storage
+          sudo rm -rf $HOME/.config/containers/storage.conf
+          sudo rm -rf /var/lib/containers/storage
+
+          # Create the necessary directories
           mkdir -p $HOME/.config/containers
+          mkdir -p $HOME/.local/share/containers/storage/vfs/dir
+
+          # Create the storage.conf file
           cat <<EOF > $HOME/.config/containers/storage.conf
           [storage]
             driver = "vfs"
           [storage.options]
             ignore_chown_errors = "true"
           EOF
+
+      - name: Test podman is working
+        run: podman run --rm -it alpine sh -c "echo 'Podman container running successfully'"
 
       - name: Run image builder for each blueprint
         run: |
