@@ -193,4 +193,4 @@ jobs:
 
       - name: Run tmate if a failure occurs
         if: failure()
-        uses: mxschmitt/action-tmate@v3
+        uses: mxschmitt/action-tmate@a283f9441d2d96eb62436dc46d7014f5d357ac22 # v3
