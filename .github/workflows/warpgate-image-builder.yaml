@@ -187,12 +187,8 @@ jobs:
           fi
 
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
-          timeout 2h wg imageBuilder \
+          timeout 2h sudo wg imageBuilder \
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"
         working-directory: ${{ github.workspace }}
-
-      - name: Run tmate if a failure occurs
-        if: failure()
-        uses: mxschmitt/action-tmate@v3
