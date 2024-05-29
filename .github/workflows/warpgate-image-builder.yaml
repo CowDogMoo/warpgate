@@ -153,17 +153,16 @@ jobs:
           sudo rm -rf $HOME/.local/share/containers/storage
 
           # Create the necessary directories
-          mkdir -p $HOME/.config/containers
-          mkdir -p $HOME/.local/share/containers/storage/vfs/dir
-          sudo chown -R $USER:$USER $HOME/.local/share/containers/storage/vfs/dir
+          sudo mkdir -p /root/.config/containers
+          sudo mkdir -p /root/.local/share/containers/storage/vfs/dir
 
           # Create the storage.conf file
-          cat <<EOF > $HOME/.config/containers/storage.conf
+          sudo bash -c 'cat <<EOF > /root/.config/containers/storage.conf
           [storage]
             driver = "vfs"
           [storage.options]
             ignore_chown_errors = "true"
-          EOF
+          EOF'
 
       - name: Test podman is working
         run: podman run --rm -it alpine sh -c "echo 'Podman container running successfully'"
@@ -187,7 +186,7 @@ jobs:
           fi
 
           # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
-          timeout 2h sudo wg imageBuilder \
+          timeout 2h sudo -E wg imageBuilder \
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"
