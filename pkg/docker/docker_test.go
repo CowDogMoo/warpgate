@@ -49,40 +49,54 @@ type MockDockerRegistry struct {
 
 func TestNewDockerRegistry(t *testing.T) {
 	tests := []struct {
-		name        string
-		registryURL string
-		authToken   string
-		getStore    docker.GetStoreFunc
-		wantErr     bool
+		name              string
+		registryURL       string
+		authToken         string
+		getStore          docker.GetStoreFunc
+		ignoreChownErrors bool
+		wantErr           bool
 	}{
 		{
-			name:        "valid registry",
+			name:              "valid registry",
+			registryURL:       "https://example.com",
+			authToken:         "testToken",
+			getStore:          docker.DefaultGetStore,
+			ignoreChownErrors: false,
+			wantErr:           false,
+		},
+		{
+			name:              "invalid registry URL",
+			registryURL:       "",
+			authToken:         "testToken",
+			getStore:          docker.DefaultGetStore,
+			ignoreChownErrors: false,
+			wantErr:           true,
+		},
+		{
+			name:        "chown error - ignored",
 			registryURL: "https://example.com",
 			authToken:   "testToken",
-			getStore:    docker.DefaultGetStore,
-			wantErr:     false,
+			getStore: func(options storage.StoreOptions) (storage.Store, error) {
+				return nil, errors.New("operation not permitted")
+			},
+			ignoreChownErrors: true,
+			wantErr:           false,
 		},
 		{
-			name:        "invalid registry URL",
-			registryURL: "",
-			authToken:   "testToken",
-			getStore:    docker.DefaultGetStore,
-			wantErr:     true,
-		},
-		{
-			name:        "chown error",
+			name:        "chown error - not ignored",
 			registryURL: "https://example.com",
 			authToken:   "testToken",
 			getStore: func(options storage.StoreOptions) (storage.Store, error) {
 				return nil, errors.New("chown /home/runner/.local/share/containers/storage/vfs/dir: operation not permitted")
 			},
-			wantErr: true,
+			ignoreChownErrors: false,
+			wantErr:           true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			registry, err := docker.NewDockerRegistry(tc.registryURL, tc.authToken, tc.getStore)
+			registry, err := docker.NewDockerRegistry(tc.registryURL, tc.authToken, tc.getStore, tc.ignoreChownErrors)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("NewDockerRegistry() error = %v, wantErr %v", err, tc.wantErr)
 				return
@@ -349,55 +363,6 @@ func TestPushImage(t *testing.T) {
 			err := dockerClient.PushImage(tc.containerImage)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("PushImage() error = %v, wantErr %v", err, tc.wantErr)
-			}
-		})
-	}
-}
-
-func TestNewDockerRegistry_ChownError(t *testing.T) {
-	tests := []struct {
-		name        string
-		registryURL string
-		authToken   string
-		getStore    docker.GetStoreFunc
-		wantErr     bool
-	}{
-		{
-			name:        "valid registry",
-			registryURL: "https://example.com",
-			authToken:   "testToken",
-			getStore:    docker.DefaultGetStore,
-			wantErr:     false,
-		},
-		{
-			name:        "invalid registry URL",
-			registryURL: "",
-			authToken:   "testToken",
-			getStore:    docker.DefaultGetStore,
-			wantErr:     true,
-		},
-		{
-			name:        "chown error",
-			registryURL: "https://example.com",
-			authToken:   "testToken",
-			getStore: func(options storage.StoreOptions) (storage.Store, error) {
-				return nil, errors.New("chown /home/runner/.local/share/containers/storage/vfs/dir: operation not permitted")
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			registry, err := docker.NewDockerRegistry(tc.registryURL, tc.authToken, tc.getStore)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("NewDockerRegistry() error = %v, wantErr %v", err, tc.wantErr)
-				return
-			}
-
-			if registry != nil {
-				require.Equal(t, tc.registryURL, registry.RegistryURL)
-				require.Equal(t, tc.authToken, registry.AuthToken)
 			}
 		})
 	}

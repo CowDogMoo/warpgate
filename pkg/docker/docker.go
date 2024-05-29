@@ -90,7 +90,7 @@ type DockerRegistry struct {
 //
 // *DockerRegistry: A DockerRegistry instance.
 // error: An error if any issue occurs while creating the registry.
-func NewDockerRegistry(registryURL, authToken string, getStore GetStoreFunc) (*DockerRegistry, error) {
+func NewDockerRegistry(registryURL, authToken string, getStore GetStoreFunc, ignoreChownErrors bool) (*DockerRegistry, error) {
 	if registryURL == "" {
 		return nil, errors.New("registry URL must not be empty")
 	}
@@ -110,13 +110,14 @@ func NewDockerRegistry(registryURL, authToken string, getStore GetStoreFunc) (*D
 	}
 
 	store, err := getStore(storeOpts)
-	switch {
-	case err != nil && os.IsPermission(err):
-		fmt.Println("Warning: Permission denied for chown operation. Continuing without changing ownership.")
-	case err != nil && strings.Contains(err.Error(), "operation not permitted"):
-		fmt.Println("Warning: Ignoring chown errors as configured.")
-	case err != nil:
-		return nil, fmt.Errorf("error getting storage store: %v", err)
+	if err != nil {
+		if ignoreChownErrors && (os.IsPermission(err) || strings.Contains(err.Error(), "operation not permitted")) {
+			fmt.Println("Warning: Ignoring chown errors as configured.")
+			// Continue without changing ownership
+			store = nil // ensure store is not nil to avoid nil dereference
+		} else {
+			return nil, fmt.Errorf("error getting storage store: %v", err)
+		}
 	}
 
 	return &DockerRegistry{
@@ -154,7 +155,7 @@ func NewDockerClient(registryURL, authToken string) (*DockerClient, error) {
 		return nil, fmt.Errorf("error creating Docker client: %v", err)
 	}
 
-	dockerRegistry, err := NewDockerRegistry(registryURL, authToken, DefaultGetStore)
+	dockerRegistry, err := NewDockerRegistry(registryURL, authToken, DefaultGetStore, true)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Docker registry: %v", err)
 	}

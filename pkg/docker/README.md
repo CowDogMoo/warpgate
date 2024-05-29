@@ -280,10 +280,10 @@ error: An error if any issue occurs while creating the client.
 
 ---
 
-### NewDockerRegistry(string, GetStoreFunc)
+### NewDockerRegistry(string, GetStoreFunc, bool)
 
 ```go
-NewDockerRegistry(string, GetStoreFunc) *DockerRegistry, error
+NewDockerRegistry(string, GetStoreFunc, bool) *DockerRegistry, error
 ```
 
 NewDockerRegistry creates a new Docker registry.
