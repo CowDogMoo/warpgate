@@ -164,9 +164,6 @@ jobs:
             ignore_chown_errors = "true"
           EOF'
 
-      - name: Test podman is working
-        run: podman run --rm -it alpine sh -c "echo 'Podman container running successfully'"
-
       - name: Run image builder for each blueprint
         run: |
           blueprint_name="${{ matrix.blueprint.blueprint }}"
