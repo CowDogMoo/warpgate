@@ -1,23 +1,24 @@
 ---
 blueprint:
-  name: sliver
+  name: test
   tag:
-    name: l50/sliver
+    name: l50/test
     version: latest
 
 packer_templates:
   - image_values:
       name: ubuntu
       version: jammy
-    user: sliver
+    user: ubuntu
 
 # AMI specific configurations
 ami:
   instance_type: t3.medium
   region: us-east-1
+  ssh_username: ubuntu
 
 container:
-  workdir: /home/sliver
+  workdir: /home/ubuntu
   image_hashes:
     - arch: amd64
       os: linux

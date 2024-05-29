@@ -1,10 +1,9 @@
 #########################################################################################
-# atomic-red-team packer template
+# test packer template
 #
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
-# Description: Create a docker image provisioned with
-# https://github.com/l50/ansible-collection-arsenal/tree/main/playbooks/atomic_red_team
+# Description: Create a docker image provisioned with a basic bash script.
 #########################################################################################
 source "docker" "amd64" {
   commit     = true
@@ -62,23 +61,20 @@ build {
   sources = [
     "source.docker.amd64",
     "source.docker.arm64",
-    # "source.amazon-ebs.ubuntu",
   ]
 
-  provisioner "file" {
-    source      = "${var.provision_repo_path}"
-    destination = "${var.pkr_build_dir}"
+  provisioner "shell" {
+    inline = [
+      "mkdir -p ${var.pkr_build_dir}",
+    ]
   }
 
   provisioner "file" {
-    source      = "../scripts/provision.sh"
+    source      = "${var.provision_repo_path}"
     destination = "${var.pkr_build_dir}/provision.sh"
   }
 
   provisioner "shell" {
-    environment_vars = [
-      "PKR_BUILD_DIR=${var.pkr_build_dir}",
-    ]
     inline = [
       "chmod +x ${var.pkr_build_dir}/provision.sh",
       "${var.pkr_build_dir}/provision.sh"

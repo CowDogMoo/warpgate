@@ -76,7 +76,7 @@ func (p *PackerTemplate) runCommand(
 // map[string]string: A map of image hashes parsed from the build output.
 // string: The AMI ID parsed from the build output.
 // error: An error if the build command fails.
-func (p *PackerTemplate) RunBuild(args []string, dir string) (map[string]string, string, error) {
+func (p *PackerTemplate) RunBuild(args []string, dir string) ([]ImageHash, string, error) {
 	if dir == "" {
 		dir = "."
 	}
@@ -98,7 +98,7 @@ func (p *PackerTemplate) RunBuild(args []string, dir string) (map[string]string,
 		return nil, "", err
 	}
 
-	if p.Container.Registry.Server != "" {
+	if p.Container.ImageRegistry.Server != "" {
 		imageHashes := p.ParseImageHashes(output)
 		amiID := p.ParseAMIDetails(output)
 		return imageHashes, amiID, nil

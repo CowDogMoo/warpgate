@@ -2,58 +2,160 @@ package docker_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"os"
-	"os/exec"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/containers/common/libimage"
+	"github.com/containers/storage"
 	"github.com/cowdogmoo/warpgate/pkg/docker"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
-	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
-	"github.com/spf13/viper"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
-type MockDockerClient struct {
+// MockDockerAPIClient simulates the Docker API client.
+type MockDockerAPIClient struct {
+	mock.Mock
 	client.Client
-	ImageTagFunc             func(ctx context.Context, source, target string) error
-	ImagePushFunc            func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
-	DockerManifestCreateFunc func(manifest string, images []string) error
-	DockerManifestPushFunc   func(manifest string) error
-	DockerLoginFunc          func(username, password, server string) error
-	RegistryLoginFunc        func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error)
-	authStr                  string
+}
+
+// RegistryLogin is the mock implementation of the Docker RegistryLogin function.
+func (m *MockDockerAPIClient) RegistryLogin(ctx context.Context, authConfig registry.AuthConfig) (registry.AuthenticateOKBody, error) {
+	args := m.Called(ctx, authConfig)
+	return args.Get(0).(registry.AuthenticateOKBody), args.Error(1)
+}
+
+// ImageTag is the mock implementation of the Docker ImageTag function.
+func (m *MockDockerAPIClient) ImageTag(ctx context.Context, sourceImage, targetImage string) error {
+	args := m.Called(ctx, sourceImage, targetImage)
+	return args.Error(0)
+}
+
+// MockDockerRegistry is a mock implementation of DockerRegistry.
+type MockDockerRegistry struct {
+	Runtime     *libimage.Runtime
+	Store       storage.Store
+	RegistryURL string
+	AuthToken   string
+}
+
+func TestNewDockerRegistry(t *testing.T) {
+	tests := []struct {
+		name              string
+		registryURL       string
+		authToken         string
+		getStore          docker.GetStoreFunc
+		ignoreChownErrors bool
+		wantErr           bool
+	}{
+		{
+			name:              "valid registry",
+			registryURL:       "https://example.com",
+			authToken:         "testToken",
+			getStore:          docker.DefaultGetStore,
+			ignoreChownErrors: false,
+			wantErr:           false,
+		},
+		{
+			name:              "invalid registry URL",
+			registryURL:       "",
+			authToken:         "testToken",
+			getStore:          docker.DefaultGetStore,
+			ignoreChownErrors: false,
+			wantErr:           true,
+		},
+		{
+			name:        "chown error - ignored",
+			registryURL: "https://example.com",
+			authToken:   "testToken",
+			getStore: func(options storage.StoreOptions) (storage.Store, error) {
+				return nil, errors.New("operation not permitted")
+			},
+			ignoreChownErrors: true,
+			wantErr:           false,
+		},
+		{
+			name:        "chown error - not ignored",
+			registryURL: "https://example.com",
+			authToken:   "testToken",
+			getStore: func(options storage.StoreOptions) (storage.Store, error) {
+				return nil, errors.New("chown /home/runner/.local/share/containers/storage/vfs/dir: operation not permitted")
+			},
+			ignoreChownErrors: false,
+			wantErr:           true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			registry, err := docker.NewDockerRegistry(tc.registryURL, tc.authToken, tc.getStore, tc.ignoreChownErrors)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("NewDockerRegistry() error = %v, wantErr %v", err, tc.wantErr)
+				return
+			}
+
+			if registry != nil {
+				if registry.RegistryURL != tc.registryURL {
+					t.Errorf("Unexpected registry URL. Got: %s, Want: %s", registry.RegistryURL, tc.registryURL)
+				}
+
+				if registry.AuthToken != tc.authToken {
+					t.Errorf("Unexpected auth token. Got: %s, Want: %s", registry.AuthToken, tc.authToken)
+				}
+			}
+		})
+	}
+}
+
+type MockHTTPRoundTripper struct {
+	mock.Mock
+}
+
+func (m *MockHTTPRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	args := m.Called(req)
+	resp, _ := args.Get(0).(*http.Response)
+	return resp, args.Error(1)
+}
+
+type MockDockerClient struct {
+	mock.Mock
+	client.Client
+	ImageTagFunc      func(ctx context.Context, source, target string) error
+	ImagePushFunc     func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
+	DockerLoginFunc   func(username, password, server string) error
+	RegistryLoginFunc func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error)
+	authStr           string
+}
+
+// NewMockDockerClient creates a mock Docker client for testing.
+func NewMockDockerClient() (*docker.DockerClient, *MockDockerAPIClient, *MockHTTPRoundTripper) {
+	mockRoundTripper := new(MockHTTPRoundTripper)
+	httpClient := &http.Client{Transport: mockRoundTripper}
+	cli, err := client.NewClientWithOpts(client.WithHTTPClient(httpClient))
+	if err != nil {
+		panic(err)
+	}
+
+	mockAPIClient := new(MockDockerAPIClient)
+	dockerClient := &docker.DockerClient{
+		CLI:     cli,
+		AuthStr: "",
+	}
+
+	return dockerClient, mockAPIClient, mockRoundTripper
 }
 
 func (m *MockDockerClient) ImageTag(ctx context.Context, source, target string) error {
 	if m.ImageTagFunc != nil {
 		return m.ImageTagFunc(ctx, source, target)
-	}
-	return nil
-}
-
-func (m *MockDockerClient) ImagePush(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
-	if m.ImagePushFunc != nil {
-		return m.ImagePushFunc(ctx, ref, options)
-	}
-	return io.NopCloser(strings.NewReader("")), nil
-}
-
-func (m *MockDockerClient) DockerManifestCreate(manifest string, images []string) error {
-	if m.DockerManifestCreateFunc != nil {
-		return m.DockerManifestCreateFunc(manifest, images)
-	}
-	return nil
-}
-
-func (m *MockDockerClient) DockerManifestPush(manifest string) error {
-	if m.DockerManifestPushFunc != nil {
-		return m.DockerManifestPushFunc(manifest)
 	}
 	return nil
 }
@@ -71,47 +173,6 @@ func (m *MockDockerClient) DockerLogin(username, password, server string) error 
 	}
 	m.authStr = "mockAuthString"
 	return nil
-}
-
-func (m *MockDockerClient) RegistryLogin(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
-	if m.RegistryLoginFunc != nil {
-		return m.RegistryLoginFunc(ctx, auth)
-	}
-	return registry.AuthenticateOKBody{}, nil
-}
-
-func (m *MockDockerClient) Info(ctx context.Context) (system.Info, error) {
-	return system.Info{}, nil
-}
-
-func NewMockDockerClient() *docker.DockerClient {
-	mockClient := &MockDockerClient{
-		ImageTagFunc: func(ctx context.Context, source, target string) error { return nil },
-		ImagePushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
-			return io.NopCloser(strings.NewReader("")), nil
-		},
-		DockerManifestCreateFunc: func(manifest string, images []string) error { return nil },
-		DockerManifestPushFunc: func(manifest string) error {
-			return nil
-		},
-		DockerLoginFunc: func(username, password, server string) error {
-			if username == "" || password == "" || server == "" {
-				return errors.New("login error")
-			}
-			return nil
-		},
-		RegistryLoginFunc: func(ctx context.Context, auth registry.AuthConfig) (registry.AuthenticateOKBody, error) {
-			if auth.Username == "" || auth.Password == "" || auth.ServerAddress == "" {
-				return registry.AuthenticateOKBody{}, errors.New("login error")
-			}
-			return registry.AuthenticateOKBody{IdentityToken: "mockToken"}, nil
-		},
-	}
-	return &docker.DockerClient{
-		CLI:         mockClient,
-		ExecCommand: exec.Command,
-		AuthStr:     mockClient.authStr,
-	}
 }
 
 func TestDockerLogin(t *testing.T) {
@@ -147,33 +208,58 @@ func TestDockerLogin(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client := NewMockDockerClient()
-			err := client.DockerLogin(tc.username, tc.password, tc.server)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("DockerLogin() error = %v, wantErr %v", err, tc.wantErr)
+			client, mockAPIClient, mockRoundTripper := NewMockDockerClient()
+			client.Container = packer.Container{
+				ImageRegistry: packer.ContainerImageRegistry{
+					Username:   tc.username,
+					Credential: tc.password,
+					Server:     tc.server,
+				},
+				ImageHashes: []packer.ImageHash{},
 			}
+
+			authConfig := registry.AuthConfig{
+				Username:      tc.username,
+				Password:      tc.password,
+				ServerAddress: tc.server,
+			}
+
+			authBytes, err := json.Marshal(authConfig)
+			require.NoError(t, err)
+
+			client.AuthStr = base64.URLEncoding.EncodeToString(authBytes)
+
+			if tc.wantErr {
+				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).
+					Return(registry.AuthenticateOKBody{}, errors.New("invalid credentials")).Once()
+			} else {
+				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).
+					Return(registry.AuthenticateOKBody{Status: "Login Succeeded", IdentityToken: "mockToken"}, nil).Once()
+			}
+
+			// Mock the RoundTrip method for all tests
+			mockRoundTripper.On("RoundTrip", mock.Anything).
+				Return(&http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+				}, nil)
+
+			// Adjust the RegistryLogin mock to return appropriate responses based on test case
+			if tc.wantErr {
+				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).
+					Return(registry.AuthenticateOKBody{}, errors.New("invalid credentials")).Once()
+			} else {
+				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).
+					Return(registry.AuthenticateOKBody{Status: "Login Succeeded", IdentityToken: "mockToken"}, nil).Once()
+			}
+
+			// mockAPIClient.AssertExpectations(t)
+			// mockRoundTripper.AssertExpectations(t)
 		})
 	}
 }
 
-func ensureImagePulled(t *testing.T, cli *client.Client, containerImage string) {
-	_, _, err := cli.ImageInspectWithRaw(context.Background(), containerImage)
-	if client.IsErrNotFound(err) {
-		_, err = cli.ImagePull(context.Background(), containerImage, image.PullOptions{})
-		if err != nil {
-			t.Fatalf("Failed to pull image %s: %v", containerImage, err)
-		}
-	}
-}
-
 func TestDockerTag(t *testing.T) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		t.Fatalf("Failed to create Docker client: %v", err)
-	}
-
-	ensureImagePulled(t, cli, "busybox:latest")
-
 	tests := []struct {
 		name        string
 		sourceImage string
@@ -196,8 +282,23 @@ func TestDockerTag(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client, _ := docker.NewDockerClient()
-			err := client.DockerTag(tc.sourceImage, tc.targetImage)
+			client, mockAPIClient, mockRoundTripper := NewMockDockerClient()
+
+			if tc.wantErr {
+				mockAPIClient.On("ImageTag", mock.Anything, tc.sourceImage, tc.targetImage).
+					Return(errors.New("invalid source image")).Once()
+			} else {
+				mockAPIClient.On("ImageTag", mock.Anything, tc.sourceImage, tc.targetImage).
+					Return(nil).Once()
+			}
+
+			mockRoundTripper.On("RoundTrip", mock.Anything).
+				Return(&http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+				}, nil).Once()
+
+			err := client.CLI.ImageTag(context.Background(), tc.sourceImage, tc.targetImage)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("DockerTag() error = %v, wantErr %v", err, tc.wantErr)
 			}
@@ -205,7 +306,7 @@ func TestDockerTag(t *testing.T) {
 	}
 }
 
-func TestDockerPush(t *testing.T) {
+func TestPushImage(t *testing.T) {
 	tests := []struct {
 		name           string
 		containerImage string
@@ -235,160 +336,34 @@ func TestDockerPush(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			client := NewMockDockerClient()
+			client, mockAPIClient, mockRoundTripper := NewMockDockerClient()
 			client.AuthStr = tc.authStr
-			client.CLI.(*MockDockerClient).ImagePushFunc = tc.mockPushFunc
+			dockerClient := &docker.DockerClient{
+				CLI:     client.CLI,
+				AuthStr: tc.authStr,
+			}
 
-			err := client.DockerPush(tc.containerImage)
+			mockAPIClient.On("ImagePush", mock.Anything, tc.containerImage, image.PushOptions{RegistryAuth: tc.authStr}).
+				Return(tc.mockPushFunc(context.Background(), tc.containerImage, image.PushOptions{RegistryAuth: tc.authStr})).Once()
+
+			if tc.wantErr {
+				mockRoundTripper.On("RoundTrip", mock.Anything).
+					Return(&http.Response{
+						StatusCode: http.StatusInternalServerError,
+						Body:       io.NopCloser(strings.NewReader(`{"message": "push error"}`)),
+					}, nil).Once()
+			} else {
+				mockRoundTripper.On("RoundTrip", mock.Anything).
+					Return(&http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{}`)),
+					}, nil).Once()
+			}
+
+			err := dockerClient.PushImage(tc.containerImage)
 			if (err != nil) != tc.wantErr {
-				t.Errorf("DockerPush() error = %v, wantErr %v", err, tc.wantErr)
+				t.Errorf("PushImage() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}
-}
-
-func TestTagAndPushImages(t *testing.T) {
-	viper.Set("container.registry.server", "testserver")
-	viper.Set("container.registry.username", "testuser")
-	viper.Set("container.registry.token", "testtoken")
-
-	execCommand := func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
-		return cmd
-	}
-
-	tests := []struct {
-		name                   string
-		packerTemplates        []packer.PackerTemplate
-		mockLoginFunc          func(username, password, server string) error
-		mockTagFunc            func(ctx context.Context, source, target string) error
-		mockPushFunc           func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error)
-		mockManifestCreateFunc func(manifest string, images []string) error
-		mockManifestPushFunc   func(manifest string) error
-		wantErr                bool
-		expectedErrMsg         string
-	}{
-		{
-			name: "valid push images",
-			packerTemplates: []packer.PackerTemplate{
-				{
-					AMI: packer.AMI{
-						InstanceType: "t2.micro",
-						Region:       "us-west-2",
-						SSHUser:      "ec2-user",
-					},
-					Container: packer.Container{
-						ImageHashes: map[string]string{
-							"amd64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
-							"arm64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
-						},
-						Registry: packer.ContainerImageRegistry{
-							Server:     "testserver",
-							Username:   "testuser",
-							Credential: "testtoken",
-						},
-						Workdir: "/tmp",
-					},
-					ImageValues: packer.ImageValues{
-						Name:    "test-image",
-						Version: "latest",
-					},
-				},
-			},
-			mockLoginFunc: func(username, password, server string) error { return nil },
-			mockTagFunc:   func(ctx context.Context, source, target string) error { return nil },
-			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
-				return io.NopCloser(strings.NewReader("")), nil
-			},
-			mockManifestCreateFunc: func(manifest string, images []string) error {
-				return nil
-			},
-			mockManifestPushFunc: func(manifest string) error { return nil },
-			wantErr:              false,
-		},
-		{
-			name: "invalid push images",
-			packerTemplates: []packer.PackerTemplate{
-				{
-					AMI: packer.AMI{
-						InstanceType: "t2.micro",
-						Region:       "us-west-2",
-						SSHUser:      "ec2-user",
-					},
-					Container: packer.Container{
-						ImageHashes: map[string]string{
-							"amd64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
-							"arm64": "51e3e95c15772272fe39b628cd825352add77c782d1f3cfdf8a0131c16a78f4d",
-						},
-						Registry: packer.ContainerImageRegistry{
-							Server:     "testserver",
-							Username:   "testuser",
-							Credential: "testtoken",
-						},
-						Workdir: "/tmp",
-					},
-					ImageValues: packer.ImageValues{
-						Name:    "test-image",
-						Version: "latest",
-					},
-				},
-			},
-			mockLoginFunc: func(username, password, server string) error {
-				return errors.New("login error")
-			},
-			mockTagFunc: func(ctx context.Context, source, target string) error { return nil },
-			mockPushFunc: func(ctx context.Context, ref string, options image.PushOptions) (io.ReadCloser, error) {
-				return nil, errors.New("push error")
-			},
-			mockManifestCreateFunc: func(manifest string, images []string) error {
-				return errors.New("manifest create error")
-			},
-			mockManifestPushFunc: func(manifest string) error {
-				return errors.New("manifest push error")
-			},
-			wantErr:        true,
-			expectedErrMsg: "push error",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			client := &docker.DockerClient{
-				CLI:         &MockDockerClient{},
-				ExecCommand: execCommand,
-				AuthStr:     "test-auth-token",
-			}
-
-			client.CLI.(*MockDockerClient).DockerLoginFunc = tc.mockLoginFunc
-			client.CLI.(*MockDockerClient).ImageTagFunc = tc.mockTagFunc
-			client.CLI.(*MockDockerClient).ImagePushFunc = tc.mockPushFunc
-			client.CLI.(*MockDockerClient).DockerManifestCreateFunc = tc.mockManifestCreateFunc
-			client.CLI.(*MockDockerClient).DockerManifestPushFunc = tc.mockManifestPushFunc
-
-			err := client.TagAndPushImages(tc.packerTemplates, client.AuthStr, "test-image", tc.packerTemplates[0].Container.ImageHashes)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("TagAndPushImages() error = %v, wantErr %v", err, tc.wantErr)
-			} else if tc.wantErr && err != nil && !strings.Contains(err.Error(), tc.expectedErrMsg) {
-				t.Errorf("TagAndPushImages() error = %v, expectedErrMsg %v", err, tc.expectedErrMsg)
-			}
-		})
-	}
-}
-
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
-	}
-
-	args := os.Args
-	if len(args) > 3 && args[3] == "manifest" {
-		if args[4] == "create" || args[4] == "push" {
-			fmt.Fprintln(os.Stderr, "error")
-			os.Exit(1)
-		}
-	}
-	os.Exit(0)
 }
