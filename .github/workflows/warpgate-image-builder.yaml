@@ -29,7 +29,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
@@ -41,7 +41,7 @@ jobs:
                                   pkg-config
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
+        uses: actions/setup-go@v5
         with:
           go-version: "1.22"
           cache-dependency-path: "**/*.sum"
@@ -55,9 +55,9 @@ jobs:
       - name: Generate list of blueprints
         id: set-matrix
         run: |
-          blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$' | grep -v '^sliver$')
-          # blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$')
-          matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" --arg PWD "$PWD" 'split("\n")[:-1] | map({blueprint: ., path: ($PWD + "/blueprints/" + .)})' | jq -c .)
+          matrix_json=$(echo '[
+            {"blueprint": "test", "path": "'"${PWD}/blueprints/test"'"}
+          ]' | jq -c .)
           echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
 
   image-builder:
@@ -70,23 +70,23 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout
-        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
           role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
           role-session-name: WarpgateAMIBuilder
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3
+        uses: docker/setup-buildx-action@v3
 
       - name: Cache Docker layers
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4
+        uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
@@ -103,7 +103,7 @@ jobs:
                                   pkg-config
 
       - name: Set up Go
-        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
+        uses: actions/setup-go@v5
         with:
           go-version: "1.22"
           cache-dependency-path: "**/*.sum"
@@ -154,16 +154,24 @@ jobs:
           sudo rm -rf $HOME/.local/share/containers/storage
 
           # Create the necessary directories
-          sudo mkdir -p /root/.config/containers
-          sudo mkdir -p /root/.local/share/containers/storage/vfs/dir
+          mkdir -p $HOME/.config/containers
+          mkdir -p $HOME/.local/share/containers/storage/vfs/dir
 
           # Create the storage.conf file
-          sudo bash -c 'cat <<EOF > /root/.config/containers/storage.conf
+          cat <<EOF > $HOME/.config/containers/storage.conf
           [storage]
             driver = "vfs"
           [storage.options]
             ignore_chown_errors = "true"
-          EOF'
+          EOF
+
+          # Ensure the storage directory has the correct ownership
+          sudo chown -R runner:docker $HOME/.local/share/containers/storage
+          sudo chmod -R 755 $HOME/.local/share/containers/storage
+
+      - name: Docker login
+        run: |
+          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
       - name: Run image builder for each blueprint
         run: |
@@ -172,21 +180,24 @@ jobs:
           provision_path=""
 
           echo "Blueprint name: ${{ matrix.blueprint.blueprint }}"
-          if [[ "${{ matrix.blueprint.blueprint }}" == "runzero-explorer" ]]; then
-            provision_path="${{ github.workspace }}/ansible-collection-workstation"
-          # elif [[ "${{ matrix.blueprint.blueprint }}" == "sliver" || "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]]; then
-          elif [[ "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]]; then
-            provision_path="${{ github.workspace }}/ansible-collection-arsenal"
-          elif [[ "${{ matrix.blueprint.blueprint }}" == "test" ]]; then
+          if [[ "${{ matrix.blueprint.blueprint }}" == "test" ]]; then
             provision_path="${{ matrix.blueprint.path }}/scripts/provision.sh"
           else
             echo "Unknown blueprint: ${{ matrix.blueprint.blueprint }}"
             exit 1
           fi
 
-          # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
-          timeout 2h sudo -E wg imageBuilder \
+          # Ensure the storage directory has the correct ownership
+          sudo chown -R runner:docker $HOME/.local/share/containers/storage
+          sudo chmod -R 755 $HOME/.local/share/containers/storage
+
+          timeout 2h wg imageBuilder \
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"
         working-directory: ${{ github.workspace }}
+
+      - name: Verify pushed images
+        run: |
+          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+          docker pull ghcr.io/l50/test:latest

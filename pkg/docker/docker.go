@@ -113,7 +113,11 @@ func NewDockerRegistry(registryURL, authToken string, getStore GetStoreFunc, ign
 	if err != nil {
 		if ignoreChownErrors && (os.IsPermission(err) || strings.Contains(err.Error(), "operation not permitted")) {
 			fmt.Println("Warning: Ignoring chown errors as configured.")
-			store, _ = getStore(storeOpts) // retry without failing
+			// Retry getting the store with ignored errors
+			store, err = getStore(storeOpts)
+			if err != nil {
+				return nil, fmt.Errorf("retry error getting storage store: %v", err)
+			}
 		} else {
 			return nil, fmt.Errorf("error getting storage store: %v", err)
 		}
