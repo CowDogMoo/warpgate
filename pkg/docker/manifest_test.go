@@ -82,11 +82,12 @@ func TestCreateManifest(t *testing.T) {
 		{
 			name:        "successful manifest creation",
 			targetImage: "example/latest",
-			imageTags:   []string{"sha256:1234", "sha256:5678"},
+			imageTags: []string{"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"},
 			setupMocks: func(dc *docker.DockerClient) {
 				dc.Container.ImageHashes = []packer.ImageHash{
-					{Hash: "sha256:1234", OS: "linux", Arch: "amd64"},
-					{Hash: "sha256:5678", OS: "linux", Arch: "arm64"},
+					{Hash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", OS: "linux", Arch: "amd64"},
+					{Hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", OS: "linux", Arch: "arm64"},
 				}
 			},
 			expectedIndex: ocispec.Index{
@@ -97,7 +98,7 @@ func TestCreateManifest(t *testing.T) {
 				Manifests: []ocispec.Descriptor{
 					{
 						MediaType: ocispec.MediaTypeImageManifest,
-						Digest:    digest.Digest("sha256:1234"),
+						Digest:    digest.Digest("sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
 						Size:      1024,
 						Platform: &ocispec.Platform{
 							Architecture: "amd64",
@@ -106,7 +107,7 @@ func TestCreateManifest(t *testing.T) {
 					},
 					{
 						MediaType: ocispec.MediaTypeImageManifest,
-						Digest:    digest.Digest("sha256:5678"),
+						Digest:    digest.Digest("sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"),
 						Size:      2048,
 						Platform: &ocispec.Platform{
 							Architecture: "arm64",
@@ -120,11 +121,12 @@ func TestCreateManifest(t *testing.T) {
 		{
 			name:        "error fetching image size",
 			targetImage: "example/latest",
-			imageTags:   []string{"sha256:1234", "sha256:5678"},
+			imageTags: []string{"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"},
 			setupMocks: func(dc *docker.DockerClient) {
 				dc.Container.ImageHashes = []packer.ImageHash{
-					{Hash: "sha256:1234", OS: "linux", Arch: "amd64"},
-					{Hash: "sha256:5678", OS: "linux", Arch: "arm64"},
+					{Hash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", OS: "linux", Arch: "amd64"},
+					{Hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", OS: "linux", Arch: "arm64"},
 				}
 			},
 			expectedIndex: ocispec.Index{},
@@ -140,14 +142,14 @@ func TestCreateManifest(t *testing.T) {
 			// Set up a test HTTP server for mocking the Docker API responses
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
-				case "/v1.45/images/sha256:1234/json":
+				case "/v1.45/images/sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef/json":
 					if tc.expectErr {
 						w.WriteHeader(http.StatusNotFound)
 					} else {
 						w.WriteHeader(http.StatusOK)
 						_, _ = w.Write([]byte(`{"Size": 1024}`))
 					}
-				case "/v1.45/images/sha256:5678/json":
+				case "/v1.45/images/sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890/json":
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(`{"Size": 2048}`))
 				default:

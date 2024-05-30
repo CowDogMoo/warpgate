@@ -60,7 +60,6 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 		fmt.Printf("  Size: %d\n", instance.Size)
 	}
 
-	// Push the manifest list
 	fmt.Printf("Pushing manifest list for %s\n", targetImage)
 	if err := d.PushManifest(targetImage, manifestList); err != nil {
 		rootErr := unwrapError(err)
@@ -95,16 +94,21 @@ func (d *DockerClient) CreateManifest(ctx context.Context, targetImage string, i
 	}
 
 	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes)
-	// Fetch digests for each image tag and add to the manifest list
 	for _, imgHash := range d.Container.ImageHashes {
-		size, err := d.GetImageSize(imgHash.Hash)
+		// Ensure the digest has the correct format
+		parsedDigest, err := digest.Parse(fmt.Sprintf("sha256:%s", imgHash.Hash))
+		if err != nil {
+			return manifestList, fmt.Errorf("failed to parse digest sha256:%s: %v", imgHash.Hash, err)
+		}
+
+		size, err := d.GetImageSize(parsedDigest.String())
 		if err != nil {
 			return manifestList, fmt.Errorf("failed to get size for %s: %v", imgHash.Hash, err)
 		}
 
 		manifestList.Manifests = append(manifestList.Manifests, ocispec.Descriptor{
 			MediaType: ocispec.MediaTypeImageManifest,
-			Digest:    digest.Digest(imgHash.Hash),
+			Digest:    parsedDigest,
 			Size:      size,
 			Platform:  &ocispec.Platform{OS: imgHash.OS, Architecture: imgHash.Arch},
 		})
@@ -147,41 +151,34 @@ func (d *DockerClient) GetImageSize(imageRef string) (int64, error) {
 //
 // error: An error if any operation fails during the push.
 func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index) error {
-	return pushManifest(d.Registry, imageName, manifestList)
-}
-
-func pushManifest(registry *DockerRegistry, imageName string, manifestList ocispec.Index) error {
 	manifestBytes, err := json.Marshal(manifestList)
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest list: %v", err)
 	}
 
-	// Extract repository and tag from imageName
 	parts := strings.Split(imageName, "/")
 	if len(parts) < 3 {
 		return fmt.Errorf("invalid repository name: %s", imageName)
 	}
 
 	repoParts := strings.Split(parts[len(parts)-1], ":")
-	repo := strings.Join(parts[:len(parts)-1], "/")
+	repo := fmt.Sprintf("%s/%s", parts[1], repoParts[0])
 	tag := "latest"
 	if len(repoParts) > 1 {
 		tag = repoParts[1]
 	}
 
-	token, err := getAuthToken(*registry, repo, tag)
+	token, err := d.getAuthToken(repo, tag)
 	if err != nil {
 		return fmt.Errorf("failed to get auth token: %v", err)
 	}
 
-	// URL to push the manifest
 	url := fmt.Sprintf("https://ghcr.io/v2/%s/manifests/%s", repo, tag)
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(manifestBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %v", err)
 	}
 
-	// Set request headers
 	req.Header.Set("Content-Type", "application/vnd.oci.image.index.v1+json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
@@ -192,7 +189,6 @@ func pushManifest(registry *DockerRegistry, imageName string, manifestList ocisp
 	}
 	defer resp.Body.Close()
 
-	// Check for successful response
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -205,47 +201,7 @@ func pushManifest(registry *DockerRegistry, imageName string, manifestList ocisp
 	return nil
 }
 
-func getAuthToken(registry DockerRegistry, repo, tag string) (string, error) {
-	authURL := fmt.Sprintf("https://ghcr.io/token?service=ghcr.io&scope=repository:%s/%s:pull,push", repo, tag)
-	req, err := http.NewRequest("GET", authURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.SetBasicAuth(registry.AuthToken, "")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get auth token, status: %s", resp.Status)
-	}
-
-	var authResp struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
-		return "", err
-	}
-
-	return authResp.Token, nil
-}
-
-// GetAuthToken retrieves an authentication token for the input repository and tag.
-//
-// **Parameters:**
-//
-// repo: The repository to get the authentication token for.
-// tag: The tag to get the authentication token for.
-//
-// **Returns:**
-//
-// string: The authentication token for the repository and tag.
-// error: An error if any operation fails during the token retrieval.
-func (d *DockerClient) GetAuthToken(repo, tag string) (string, error) {
+func (d *DockerClient) getAuthToken(repo, tag string) (string, error) {
 	authURL := fmt.Sprintf("https://ghcr.io/token?service=ghcr.io&scope=repository:%s/%s:pull,push", repo, tag)
 	req, err := http.NewRequest("GET", authURL, nil)
 	if err != nil {

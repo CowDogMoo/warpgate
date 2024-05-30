@@ -112,26 +112,6 @@ error: An error if the tagging operation fails.
 
 ---
 
-### DockerClient.GetAuthToken(string)
-
-```go
-GetAuthToken(string) string, error
-```
-
-GetAuthToken retrieves an authentication token for the input repository and tag.
-
-**Parameters:**
-
-repo: The repository to get the authentication token for.
-tag: The tag to get the authentication token for.
-
-**Returns:**
-
-string: The authentication token for the repository and tag.
-error: An error if any operation fails during the token retrieval.
-
----
-
 ### DockerClient.GetImageSize(string)
 
 ```go
