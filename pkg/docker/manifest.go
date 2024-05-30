@@ -103,7 +103,7 @@ func (d *DockerClient) CreateManifest(ctx context.Context, targetImage string, i
 
 		size, err := d.GetImageSize(parsedDigest.String())
 		if err != nil {
-			return manifestList, fmt.Errorf("failed to get size for %s: %v", imgHash.Hash, err)
+			return manifestList, fmt.Errorf("failed to get size for sha256:%s: %v", imgHash.Hash, err)
 		}
 
 		manifestList.Manifests = append(manifestList.Manifests, ocispec.Descriptor{
