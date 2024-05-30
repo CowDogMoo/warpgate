@@ -56,6 +56,28 @@ error: An error if any operation fails during manifest creation or pushing.
 
 ---
 
+### DockerClient.CreateManifest(context.Context, string, []string)
+
+```go
+CreateManifest(context.Context, string, []string) ocispec.Index, error
+```
+
+CreateManifest creates a manifest list with the input image tags
+and the specified target image.
+
+**Parameters:**
+
+ctx: The context within which the manifest list is created.
+targetImage: The name of the image to create the manifest list for.
+imageTags: A slice of image tags to include in the manifest list.
+
+**Returns:**
+
+ocispec.Index: The manifest list created with the input image tags.
+error: An error if any operation fails during the manifest list creation.
+
+---
+
 ### DockerClient.DockerLogin()
 
 ```go
@@ -90,6 +112,26 @@ error: An error if the tagging operation fails.
 
 ---
 
+### DockerClient.GetAuthToken(string)
+
+```go
+GetAuthToken(string) string, error
+```
+
+GetAuthToken retrieves an authentication token for the input repository and tag.
+
+**Parameters:**
+
+repo: The repository to get the authentication token for.
+tag: The tag to get the authentication token for.
+
+**Returns:**
+
+string: The authentication token for the repository and tag.
+error: An error if any operation fails during the token retrieval.
+
+---
+
 ### DockerClient.GetImageSize(string)
 
 ```go
@@ -106,28 +148,6 @@ imageRef: The reference of the image to get the size of.
 
 int64: The size of the image in bytes
 error: An error if any operation fails during the size retrieval
-
----
-
-### DockerClient.ManifestCreate(context.Context, string, []string)
-
-```go
-ManifestCreate(context.Context, string, []string) ocispec.Index, error
-```
-
-ManifestCreate creates a manifest list with the input image tags
-and the specified target image.
-
-**Parameters:**
-
-ctx: The context within which the manifest list is created.
-targetImage: The name of the image to create the manifest list for.
-imageTags: A slice of image tags to include in the manifest list.
-
-**Returns:**
-
-ocispec.Index: The manifest list created with the input image tags.
-error: An error if any operation fails during the manifest list creation.
 
 ---
 

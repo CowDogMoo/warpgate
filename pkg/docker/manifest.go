@@ -47,7 +47,7 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 		blueprint.Tag.Name, blueprint.Tag.Version)
 
 	fmt.Printf("Creating manifest list for %s with %v tags\n", targetImage, imageTags)
-	manifestList, err := d.ManifestCreate(context.Background(), targetImage, imageTags)
+	manifestList, err := d.CreateManifest(context.Background(), targetImage, imageTags)
 	if err != nil {
 		rootErr := unwrapError(err)
 		return fmt.Errorf("failed to create manifest list for %s: %v", targetImage, rootErr)
@@ -70,7 +70,7 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 	return nil
 }
 
-// ManifestCreate creates a manifest list with the input image tags
+// CreateManifest creates a manifest list with the input image tags
 // and the specified target image.
 //
 // **Parameters:**
@@ -83,7 +83,7 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 //
 // ocispec.Index: The manifest list created with the input image tags.
 // error: An error if any operation fails during the manifest list creation.
-func (d *DockerClient) ManifestCreate(ctx context.Context, targetImage string, imageTags []string) (ocispec.Index, error) {
+func (d *DockerClient) CreateManifest(ctx context.Context, targetImage string, imageTags []string) (ocispec.Index, error) {
 	fmt.Printf("Creating manifest list for %s with %v tags\n", targetImage, imageTags)
 
 	manifestList := ocispec.Index{
@@ -147,6 +147,10 @@ func (d *DockerClient) GetImageSize(imageRef string) (int64, error) {
 //
 // error: An error if any operation fails during the push.
 func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index) error {
+	return pushManifest(d.Registry, imageName, manifestList)
+}
+
+func pushManifest(registry *DockerRegistry, imageName string, manifestList ocispec.Index) error {
 	manifestBytes, err := json.Marshal(manifestList)
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest list: %v", err)
@@ -159,13 +163,13 @@ func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index
 	}
 
 	repoParts := strings.Split(parts[len(parts)-1], ":")
-	repo := fmt.Sprintf("%s/%s", parts[1], repoParts[0])
+	repo := strings.Join(parts[:len(parts)-1], "/")
 	tag := "latest"
 	if len(repoParts) > 1 {
 		tag = repoParts[1]
 	}
 
-	token, err := d.getAuthToken(repo, tag)
+	token, err := getAuthToken(*registry, repo, tag)
 	if err != nil {
 		return fmt.Errorf("failed to get auth token: %v", err)
 	}
@@ -201,7 +205,47 @@ func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index
 	return nil
 }
 
-func (d *DockerClient) getAuthToken(repo, tag string) (string, error) {
+func getAuthToken(registry DockerRegistry, repo, tag string) (string, error) {
+	authURL := fmt.Sprintf("https://ghcr.io/token?service=ghcr.io&scope=repository:%s/%s:pull,push", repo, tag)
+	req, err := http.NewRequest("GET", authURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.SetBasicAuth(registry.AuthToken, "")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to get auth token, status: %s", resp.Status)
+	}
+
+	var authResp struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
+		return "", err
+	}
+
+	return authResp.Token, nil
+}
+
+// GetAuthToken retrieves an authentication token for the input repository and tag.
+//
+// **Parameters:**
+//
+// repo: The repository to get the authentication token for.
+// tag: The tag to get the authentication token for.
+//
+// **Returns:**
+//
+// string: The authentication token for the repository and tag.
+// error: An error if any operation fails during the token retrieval.
+func (d *DockerClient) GetAuthToken(repo, tag string) (string, error) {
 	authURL := fmt.Sprintf("https://ghcr.io/token?service=ghcr.io&scope=repository:%s/%s:pull,push", repo, tag)
 	req, err := http.NewRequest("GET", authURL, nil)
 	if err != nil {

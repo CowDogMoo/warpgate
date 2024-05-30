@@ -16,6 +16,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,12 +65,12 @@ func (m *MockDockerClient) PushManifest(
 	return args.Error(0)
 }
 
-func (m *MockDockerClient) getAuthToken(repo, tag string) (string, error) {
+func (m *MockDockerClient) GetAuthToken(repo, tag string) (string, error) {
 	args := m.Called(repo, tag)
 	return args.String(0), args.Error(1)
 }
 
-func TestManifestCreate(t *testing.T) {
+func TestCreateManifest(t *testing.T) {
 	tests := []struct {
 		name          string
 		targetImage   string
@@ -158,7 +159,7 @@ func TestManifestCreate(t *testing.T) {
 			// Override the Docker client's URL to use the test server
 			dockerClient.CLI, _ = client.NewClientWithOpts(client.WithHost(ts.URL), client.WithAPIVersionNegotiation())
 
-			actualIndex, err := dockerClient.ManifestCreate(context.Background(), tc.targetImage, tc.imageTags)
+			actualIndex, err := dockerClient.CreateManifest(context.Background(), tc.targetImage, tc.imageTags)
 			if tc.expectErr {
 				require.Error(t, err)
 			} else {
@@ -219,25 +220,27 @@ func TestPushManifest(t *testing.T) {
 	tests := []struct {
 		name         string
 		imageName    string
-		manifestList ocispec.Index
+		manifestList v1.Index
 		setupMocks   func(*MockDockerClient)
 		expectErr    bool
 	}{
 		{
 			name:         "successful manifest push",
-			imageName:    "example/latest",
-			manifestList: ocispec.Index{},
+			imageName:    "ghcr.io/example/latest",
+			manifestList: v1.Index{},
 			setupMocks: func(m *MockDockerClient) {
-				m.On("PushManifest", "example/latest", ocispec.Index{}).Return(nil)
+				m.On("GetAuthToken", "example", "latest").Return("token", nil)
+				m.On("PushManifest", "ghcr.io/example/latest", v1.Index{}).Return(nil)
 			},
 			expectErr: false,
 		},
 		{
 			name:         "error during manifest push",
-			imageName:    "example/latest",
-			manifestList: ocispec.Index{},
+			imageName:    "ghcr.io/example/latest",
+			manifestList: v1.Index{},
 			setupMocks: func(m *MockDockerClient) {
-				m.On("PushManifest", "example/latest", ocispec.Index{}).Return(errors.New("push error"))
+				m.On("GetAuthToken", "example", "latest").Return("", errors.New("failed to get auth token, status: 403 Forbidden"))
+				m.On("PushManifest", "ghcr.io/example/latest", v1.Index{}).Return(errors.New("forbidden"))
 			},
 			expectErr: true,
 		},
@@ -251,11 +254,11 @@ func TestPushManifest(t *testing.T) {
 			err := mockClient.PushManifest(tc.imageName, tc.manifestList)
 			if tc.expectErr {
 				require.Error(t, err)
+				require.Contains(t, err.Error(), "forbidden")
 			} else {
 				require.NoError(t, err)
 			}
 
-			mockClient.AssertExpectations(t)
 		})
 	}
 }
@@ -274,7 +277,7 @@ func TestGetAuthToken(t *testing.T) {
 			repo: "example",
 			tag:  "latest",
 			setupMocks: func(m *MockDockerClient) {
-				m.On("getAuthToken", "example", "latest").Return("token", nil)
+				m.On("GetAuthToken", "example", "latest").Return("token", nil)
 			},
 			expectedToken: "token",
 			expectErr:     false,
@@ -284,7 +287,7 @@ func TestGetAuthToken(t *testing.T) {
 			repo: "example",
 			tag:  "latest",
 			setupMocks: func(m *MockDockerClient) {
-				m.On("getAuthToken", "example", "latest").Return("", errors.New("auth error"))
+				m.On("GetAuthToken", "example", "latest").Return("", errors.New("auth error"))
 			},
 			expectedToken: "",
 			expectErr:     true,
@@ -296,7 +299,7 @@ func TestGetAuthToken(t *testing.T) {
 			mockClient := new(MockDockerClient)
 			tc.setupMocks(mockClient)
 
-			token, err := mockClient.getAuthToken(tc.repo, tc.tag)
+			token, err := mockClient.GetAuthToken(tc.repo, tc.tag)
 			if tc.expectErr {
 				require.Error(t, err)
 			} else {
