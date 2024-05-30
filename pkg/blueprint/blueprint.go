@@ -433,7 +433,6 @@ func (b *Blueprint) BuildImageAttempt(attempt int) ([]packer.ImageHash, error) {
 	}
 
 	// Verify the template directory contents
-	fmt.Printf("contents of the %s build directory\n", b.Name)
 	cmd := sys.Cmd{
 		CmdString: "ls",
 		Args:      []string{"-la", b.Path},
@@ -444,7 +443,6 @@ func (b *Blueprint) BuildImageAttempt(attempt int) ([]packer.ImageHash, error) {
 	}
 
 	// Run the build command
-	fmt.Printf("building %s packer template\n", b.Name)
 	hashes, amiID, err := b.PackerTemplates[0].RunBuild(args, filepath.Join(b.Path, "packer_templates"))
 	if err != nil {
 		return nil, fmt.Errorf("error running build command: %v", err)

@@ -58,15 +58,12 @@ source "amazon-ebs" "ubuntu" {
   }
   ssh_username = "${var.ssh_username}"
 
-  // Add the following block to specify the disk size
-  launch_block_device_mappings = [
-    {
-      device_name           = "/dev/sda1"
-      volume_size           = "${var.disk_size}"
-      volume_type           = "gp2"
-      delete_on_termination = true
-    }
-  ]
+   launch_block_device_mappings {
+    device_name           = "/dev/sda1"
+    volume_size           = "${var.disk_size}"
+    volume_type           = "gp2"
+    delete_on_termination = true
+  }
 }
 
 build {
@@ -89,6 +86,7 @@ build {
   provisioner "shell" {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
+      "DISK_SIZE=${var.disk_size}",
     ]
     inline = [
       "chmod +x ${var.pkr_build_dir}/provision.sh",
