@@ -17,6 +17,7 @@ env:
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
   TZ: UTC
 
+# Required for OIDC
 permissions:
   id-token: write
   contents: read
@@ -28,7 +29,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
 
       - name: Install system dependencies
         run: |
@@ -40,17 +41,16 @@ jobs:
                                   libbtrfs-dev \
                                   pkg-config \
                                   slirp4netns \
-                                  uidmap \
                                   uidmap
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
-          export XDG_CONFIG_HOME=$HOME/.config
-          export XDG_DATA_HOME=$HOME/.local/share
+          export XDG_CONFIG_HOME=/root/.config
+          export XDG_DATA_HOME=/root/.local/share
           echo "export XDG_RUNTIME_DIR=/run/user/$(id -u)" >> $GITHUB_ENV
-          echo "export XDG_CONFIG_HOME=$HOME/.config" >> $GITHUB_ENV
-          echo "export XDG_DATA_HOME=$HOME/.local/share" >> $GITHUB_ENV
+          echo "export XDG_CONFIG_HOME=/root/.config" >> $GITHUB_ENV
+          echo "export XDG_DATA_HOME=/root/.local/share" >> $GITHUB_ENV
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
         with:
           go-version: "1.22"
           cache-dependency-path: "**/*.sum"
@@ -64,9 +64,9 @@ jobs:
       - name: Generate list of blueprints
         id: set-matrix
         run: |
-          matrix_json=$(echo '[
-            {"blueprint": "test", "path": "'"${PWD}/blueprints/test"'"}
-          ]' | jq -c .)
+          blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$' | grep -v '^sliver$')
+          # blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$')
+          matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" --arg PWD "$PWD" 'split("\n")[:-1] | map({blueprint: ., path: ($PWD + "/blueprints/" + .)})' | jq -c .)
           echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
 
   image-builder:
@@ -79,23 +79,23 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4
         with:
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
           role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
           role-session-name: WarpgateAMIBuilder
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3
 
       - name: Cache Docker layers
-        uses: actions/cache@v4
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4
         with:
           path: /tmp/.buildx-cache
           key: ${{ runner.os }}-buildx-${{ github.sha }}
@@ -115,14 +115,14 @@ jobs:
                                   uidmap \
                                   uidmap
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
-          export XDG_CONFIG_HOME=$HOME/.config
-          export XDG_DATA_HOME=$HOME/.local/share
+          export XDG_CONFIG_HOME=/root/.config
+          export XDG_DATA_HOME=/root/.local/share
           echo "export XDG_RUNTIME_DIR=/run/user/$(id -u)" >> $GITHUB_ENV
-          echo "export XDG_CONFIG_HOME=$HOME/.config" >> $GITHUB_ENV
-          echo "export XDG_DATA_HOME=$HOME/.local/share" >> $GITHUB_ENV
+          echo "export XDG_CONFIG_HOME=/root/.config" >> $GITHUB_ENV
+          echo "export XDG_DATA_HOME=/root/.local/share" >> $GITHUB_ENV
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5
         with:
           go-version: "1.22"
           cache-dependency-path: "**/*.sum"
@@ -167,34 +167,25 @@ jobs:
 
       - name: Configure containers storage to use vfs driver and ignore chown errors
         run: |
+          # Clean up any existing storage configuration and files
           sudo rm -rf /var/lib/containers/storage
-          sudo rm -rf $HOME/.local/share/containers/storage
+          sudo rm -rf /root/.local/share/containers/storage
 
-          mkdir -p $HOME/.config/containers
-          mkdir -p $HOME/.local/share/containers/storage/vfs/dir
+          # Create the necessary directories
+          sudo mkdir -p /root/.config/containers
+          sudo mkdir -p /root/.local/share/containers/storage/vfs/dir
 
-          cat <<EOF > $HOME/.config/containers/storage.conf
+          # Create the storage.conf file
+          sudo bash -c 'cat <<EOF > /root/.config/containers/storage.conf
           [storage]
             driver = "vfs"
             runroot = "/run/user/$(id -u)/containers"
-            graphroot = "$HOME/.local/share/containers/storage"
+            graphroot = /root/.local/share/containers/storage"
           [storage.options]
             mount_program = "/usr/bin/fuse-overlayfs"
           [storage.options.overlay]
             ignore_chown_errors = "true"
-          EOF
-
-          sudo chown -R runner:docker $HOME/.local/share/containers/storage
-          sudo chmod -R 755 $HOME/.local/share/containers/storage
-
-      - name: Configure UID/GID mappings
-        run: |
-          sudo sh -c 'echo "root:1000000:65536" > /etc/subuid'
-          sudo sh -c 'echo "root:1000000:65536" > /etc/subgid'
-
-      - name: Docker login
-        run: |
-          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+          EOF'
 
       - name: Run image builder for each blueprint
         run: |
@@ -203,14 +194,20 @@ jobs:
           provision_path=""
 
           echo "Blueprint name: ${{ matrix.blueprint.blueprint }}"
-          if [[ "${{ matrix.blueprint.blueprint }}" == "test" ]]; then
+          if [[ "${{ matrix.blueprint.blueprint }}" == "runzero-explorer" ]]; then
+            provision_path="${{ github.workspace }}/ansible-collection-workstation"
+          # elif [[ "${{ matrix.blueprint.blueprint }}" == "sliver" || "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]]; then
+          elif [[ "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]]; then
+            provision_path="${{ github.workspace }}/ansible-collection-arsenal"
+          elif [[ "${{ matrix.blueprint.blueprint }}" == "test" ]]; then
             provision_path="${{ matrix.blueprint.path }}/scripts/provision.sh"
           else
             echo "Unknown blueprint: ${{ matrix.blueprint.blueprint }}"
             exit 1
           fi
 
-          timeout 2h wg imageBuilder \
+          # Run the wg imageBuilder command with the correct paths for the current matrix blueprint.
+          timeout 2h sudo -E wg imageBuilder \
             -b "$blueprint_name" \
             -p "$provision_path" \
             -t "${{ secrets.BOT_TOKEN }}"
