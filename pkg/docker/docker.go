@@ -100,6 +100,11 @@ func NewDockerRegistry(registryURL, authToken string, getStore GetStoreFunc, ign
 		return nil, fmt.Errorf("error getting default store options: %v", err)
 	}
 
+	// Check if the driver is vfs and remove ignore_chown_errors if necessary
+	if storeOpts.GraphDriverName == "vfs" {
+		ignoreChownErrors = false
+	}
+
 	runtimeOpts := &libimage.RuntimeOptions{
 		SystemContext: &types.SystemContext{},
 	}
@@ -113,7 +118,6 @@ func NewDockerRegistry(registryURL, authToken string, getStore GetStoreFunc, ign
 	if err != nil {
 		if ignoreChownErrors && (os.IsPermission(err) || strings.Contains(err.Error(), "operation not permitted")) {
 			fmt.Println("Warning: Ignoring chown errors as configured.")
-			// Retry getting the store with ignored errors
 			store, err = getStore(storeOpts)
 			if err != nil {
 				return nil, fmt.Errorf("retry error getting storage store: %v", err)

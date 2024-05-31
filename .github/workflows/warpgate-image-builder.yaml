@@ -17,7 +17,6 @@ env:
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
   TZ: UTC
 
-# Required for OIDC
 permissions:
   id-token: write
   contents: read
@@ -36,9 +35,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential \
                                   btrfs-progs \
+                                  fuse-overlayfs \
                                   libgpgme-dev \
                                   libbtrfs-dev \
-                                  pkg-config
+                                  pkg-config \
+                                  slirp4netns \
+                                  uidmap
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -98,9 +100,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential \
                                   btrfs-progs \
+                                  fuse-overlayfs \
                                   libgpgme-dev \
                                   libbtrfs-dev \
-                                  pkg-config
+                                  pkg-config \
+                                  slirp4netns \
+                                  uidmap
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -148,24 +153,21 @@ jobs:
 
       - name: Configure containers storage to use vfs driver and ignore chown errors
         run: |
-          # Clean up any existing storage configuration and files
-          sudo podman system reset -f
           sudo rm -rf /var/lib/containers/storage
           sudo rm -rf $HOME/.local/share/containers/storage
 
-          # Create the necessary directories
           mkdir -p $HOME/.config/containers
           mkdir -p $HOME/.local/share/containers/storage/vfs/dir
 
-          # Create the storage.conf file
           cat <<EOF > $HOME/.config/containers/storage.conf
           [storage]
-            driver = "vfs"
+            driver = "overlay"
           [storage.options]
+            mount_program = "/usr/bin/fuse-overlayfs"
+          [storage.options.overlay]
             ignore_chown_errors = "true"
           EOF
 
-          # Ensure the storage directory has the correct ownership
           sudo chown -R runner:docker $HOME/.local/share/containers/storage
           sudo chmod -R 755 $HOME/.local/share/containers/storage
 
@@ -186,10 +188,6 @@ jobs:
             echo "Unknown blueprint: ${{ matrix.blueprint.blueprint }}"
             exit 1
           fi
-
-          # Ensure the storage directory has the correct ownership
-          sudo chown -R runner:docker $HOME/.local/share/containers/storage
-          sudo chmod -R 755 $HOME/.local/share/containers/storage
 
           timeout 2h wg imageBuilder \
             -b "$blueprint_name" \
