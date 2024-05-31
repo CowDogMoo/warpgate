@@ -40,7 +40,14 @@ jobs:
                                   libbtrfs-dev \
                                   pkg-config \
                                   slirp4netns \
+                                  uidmap \
                                   uidmap
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export XDG_CONFIG_HOME=$HOME/.config
+          export XDG_DATA_HOME=$HOME/.local/share
+          echo "export XDG_RUNTIME_DIR=/run/user/$(id -u)" >> $GITHUB_ENV
+          echo "export XDG_CONFIG_HOME=$HOME/.config" >> $GITHUB_ENV
+          echo "export XDG_DATA_HOME=$HOME/.local/share" >> $GITHUB_ENV
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -105,7 +112,14 @@ jobs:
                                   libbtrfs-dev \
                                   pkg-config \
                                   slirp4netns \
+                                  uidmap \
                                   uidmap
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          export XDG_CONFIG_HOME=$HOME/.config
+          export XDG_DATA_HOME=$HOME/.local/share
+          echo "export XDG_RUNTIME_DIR=/run/user/$(id -u)" >> $GITHUB_ENV
+          echo "export XDG_CONFIG_HOME=$HOME/.config" >> $GITHUB_ENV
+          echo "export XDG_DATA_HOME=$HOME/.local/share" >> $GITHUB_ENV
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -161,7 +175,9 @@ jobs:
 
           cat <<EOF > $HOME/.config/containers/storage.conf
           [storage]
-            driver = "overlay"
+            driver = "vfs"
+            runroot = "/run/user/$(id -u)/containers"
+            graphroot = "$HOME/.local/share/containers/storage"
           [storage.options]
             mount_program = "/usr/bin/fuse-overlayfs"
           [storage.options.overlay]
@@ -170,6 +186,11 @@ jobs:
 
           sudo chown -R runner:docker $HOME/.local/share/containers/storage
           sudo chmod -R 755 $HOME/.local/share/containers/storage
+
+      - name: Configure UID/GID mappings
+        run: |
+          sudo sh -c 'echo "root:1000000:65536" > /etc/subuid'
+          sudo sh -c 'echo "root:1000000:65536" > /etc/subgid'
 
       - name: Docker login
         run: |

@@ -100,8 +100,10 @@ func NewDockerRegistry(registryURL, authToken string, getStore GetStoreFunc, ign
 		return nil, fmt.Errorf("error getting default store options: %v", err)
 	}
 
-	// Check if the driver is vfs and remove ignore_chown_errors if necessary
-	if storeOpts.GraphDriverName == "vfs" {
+	if storeOpts.GraphDriverName == "overlay" {
+		storeOpts.GraphDriverOptions = append(storeOpts.GraphDriverOptions, "overlay.mount_program=/usr/bin/fuse-overlayfs")
+		storeOpts.GraphDriverOptions = append(storeOpts.GraphDriverOptions, "ignore_chown_errors=true")
+	} else if storeOpts.GraphDriverName == "vfs" {
 		ignoreChownErrors = false
 	}
 
@@ -352,7 +354,7 @@ func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blu
 func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, error) {
 	var imageTags []string
 
-	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes) // Debugging line
+	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes)
 
 	for _, hash := range d.Container.ImageHashes {
 		if hash.Arch == "" || hash.Hash == "" || hash.OS == "" {
