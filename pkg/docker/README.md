@@ -56,10 +56,10 @@ error: An error if any operation fails during manifest creation or pushing.
 
 ---
 
-### DockerClient.CreateManifest(context.Context, string, []string)
+### DockerClient.CreateManifest(context.Context, string, []string, authn.Keychain)
 
 ```go
-CreateManifest(context.Context, string, []string) v1.ImageIndex, error
+CreateManifest(context.Context string []string authn.Keychain) v1.ImageIndex error
 ```
 
 CreateManifest creates a manifest list with the input image tags
@@ -70,10 +70,11 @@ and the specified target image.
 ctx: The context within which the manifest list is created.
 targetImage: The name of the image to create the manifest list for.
 imageTags: A slice of image tags to include in the manifest list.
+keychain: The keychain to use for authentication.
 
 **Returns:**
 
-ocispec.Index: The manifest list created with the input image tags.
+v1.ImageIndex: The manifest list created with the input image tags.
 error: An error if any operation fails during the manifest list creation.
 
 ---
@@ -191,10 +192,10 @@ error: An error if the push operation fails.
 
 ---
 
-### DockerClient.PushManifest(string, v1.ImageIndex)
+### DockerClient.PushManifest(string, v1.ImageIndex, authn.Keychain)
 
 ```go
-PushManifest(string, v1.ImageIndex) error
+PushManifest(string, v1.ImageIndex, authn.Keychain) error
 ```
 
 PushManifest pushes the input manifest list to the registry.
@@ -203,6 +204,7 @@ PushManifest pushes the input manifest list to the registry.
 
 imageName: The name of the image to push the manifest list for.
 manifestList: The manifest list to push.
+keychain: The keychain to use for authentication.
 
 **Returns:**
 
@@ -292,11 +294,22 @@ NewDockerRegistry creates a new Docker registry.
 
 registryURL: The URL of the Docker registry.
 authToken: The authentication token for the registry.
+getStore: A function that returns a storage.Store instance.
+ignoreChownErrors: A boolean indicating whether to ignore chown errors.
 
 **Returns:**
 
 *DockerRegistry: A DockerRegistry instance.
 error: An error if any issue occurs while creating the registry.
+
+---
+
+### customHelper.Get(string)
+
+```go
+Get(string) string, string, error
+```
+
 
 ---
 

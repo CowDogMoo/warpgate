@@ -6,6 +6,7 @@ import (
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/docker"
+	packer "github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/cowdogmoo/warpgate/pkg/registry"
 	log "github.com/l50/goutils/v2/logging"
 	"github.com/spf13/cobra"
@@ -129,8 +130,15 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return err
 	}
 
+	// Create ContainerImageRegistry object
+	registryConfig := packer.ContainerImageRegistry{
+		Server:     viper.GetString("container.registry.server"),
+		Username:   viper.GetString("container.registry.username"),
+		Credential: githubToken,
+	}
+
 	// New DockerClient initialization with username and token
-	dockerClient, err := docker.NewDockerClient(viper.GetString("container.registry.server"), githubToken)
+	dockerClient, err := docker.NewDockerClient(viper.GetString("container.registry.server"), githubToken, registryConfig)
 	if err != nil {
 		return err
 	}

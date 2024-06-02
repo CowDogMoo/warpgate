@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/containers/storage"
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
@@ -28,6 +29,39 @@ func unwrapError(err error) error {
 	return err
 }
 
+// customHelper provides authentication details for Docker registry.
+type customHelper struct {
+	authn.AuthConfig
+}
+
+// Get retrieves the username and password for the input registry.
+//
+// **Parameters:**
+//
+// registry: The registry to get the username and password for.
+//
+// **Returns:**
+//
+// string: The username for the registry.
+// string: The password for the registry.
+// error: An error if any operation fails during the retrieval.
+func (h *customHelper) Get(registry string) (string, string, error) {
+	return h.Username, h.Password, nil
+}
+
+// GetStoreFunc represents a function that returns a storage.Store
+// instance.
+//
+// **Parameters:**
+//
+// options: Storage options for the store.
+//
+// **Returns:**
+//
+// storage.Store: A storage.Store instance.
+// error: An error if any issue occurs while getting the store.
+type GetStoreFunc func(options storage.StoreOptions) (storage.Store, error)
+
 // CreateAndPushManifest creates a manifest list and pushes it to a registry.
 //
 // **Parameters:**
@@ -49,13 +83,19 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 
 	fmt.Printf("Creating manifest list for %s with %v tags\n", targetImage, imageTags)
 
-	manifestList, err := d.CreateManifest(context.Background(), targetImage, imageTags)
+	keychain := authn.NewMultiKeychain(
+		authn.DefaultKeychain,
+		github.Keychain,
+		authn.NewKeychainFromHelper(&customHelper{AuthConfig: authn.AuthConfig{Username: d.AuthConfig.Username, Password: d.AuthStr}}),
+	)
+
+	manifestList, err := d.CreateManifest(context.Background(), targetImage, imageTags, keychain)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest list for %s: %v", targetImage, unwrapError(err))
 	}
 
 	fmt.Println("Pushing manifest list")
-	if err := d.PushManifest(targetImage, manifestList); err != nil {
+	if err := d.PushManifest(targetImage, manifestList, keychain); err != nil {
 		return fmt.Errorf("failed to push manifest list for %s, error: %v", targetImage, unwrapError(err))
 	}
 
@@ -70,30 +110,24 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 // ctx: The context within which the manifest list is created.
 // targetImage: The name of the image to create the manifest list for.
 // imageTags: A slice of image tags to include in the manifest list.
+// keychain: The keychain to use for authentication.
 //
 // **Returns:**
 //
-// ocispec.Index: The manifest list created with the input image tags.
+// v1.ImageIndex: The manifest list created with the input image tags.
 // error: An error if any operation fails during the manifest list creation.
-func (d *DockerClient) CreateManifest(ctx context.Context, targetImage string, imageTags []string) (v1.ImageIndex, error) {
+func (d *DockerClient) CreateManifest(ctx context.Context, targetImage string, imageTags []string, keychain authn.Keychain) (v1.ImageIndex, error) {
 	index := empty.Index
 	withMediaType := mutate.IndexMediaType(index, types.OCIImageIndex)
 
-	// Set up keychain for authentication
-	keychain := authn.NewMultiKeychain(
-		authn.DefaultKeychain,
-		github.Keychain,
-	)
-
 	for _, tag := range imageTags {
-		// Use the tag directly instead of constructing the full image name
 		fullImageName := tag
 		ref, err := name.NewTag(fullImageName)
 		if err != nil {
 			return nil, fmt.Errorf("creating reference for image %s: %v", fullImageName, err)
 		}
 
-		image, err := remote.Image(ref, remote.WithAuthFromKeychain(keychain))
+		image, err := d.Remote.Image(ref, remote.WithAuthFromKeychain(keychain))
 		if err != nil {
 			return nil, fmt.Errorf("getting image %s: %v", fullImageName, err)
 		}
@@ -122,6 +156,7 @@ func (d *DockerClient) GetImageSize(imageRef string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	if contents == nil {
 		return 0, fmt.Errorf("image contents are nil")
 	}
@@ -135,21 +170,16 @@ func (d *DockerClient) GetImageSize(imageRef string) (int64, error) {
 //
 // imageName: The name of the image to push the manifest list for.
 // manifestList: The manifest list to push.
+// keychain: The keychain to use for authentication.
 //
 // **Returns:**
 //
 // error: An error if any operation fails during the push.
-func (d *DockerClient) PushManifest(imageName string, manifestList v1.ImageIndex) error {
+func (d *DockerClient) PushManifest(imageName string, manifestList v1.ImageIndex, keychain authn.Keychain) error {
 	targetRef, err := name.ParseReference(imageName)
 	if err != nil {
 		return fmt.Errorf("failed to parse target reference: %v", err)
 	}
-
-	// Set up keychain for authentication
-	keychain := authn.NewMultiKeychain(
-		authn.DefaultKeychain,
-		github.Keychain,
-	)
 
 	options := []remote.Option{
 		remote.WithAuthFromKeychain(keychain),

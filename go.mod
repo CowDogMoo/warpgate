@@ -5,6 +5,7 @@ go 1.22.0
 toolchain go1.22.2
 
 require (
+	bou.ke/monkey v1.0.2
 	github.com/containers/common v0.59.0
 	github.com/containers/image/v5 v5.31.0
 	github.com/containers/storage v1.54.0
@@ -14,16 +15,15 @@ require (
 	github.com/l50/goutils/v2 v2.2.6
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/opencontainers/image-spec v1.1.0
 	github.com/otiai10/copy v1.14.0
 	github.com/spf13/afero v1.11.0
 	github.com/spf13/cobra v1.8.0
-	github.com/spf13/viper v1.18.2
+	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.9.0
 )
 
 require (
-	github.com/opencontainers/go-digest v1.0.0
+	github.com/opencontainers/go-digest v1.0.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240528184218-531527333157 // indirect
 	google.golang.org/grpc v1.64.0 // indirect
 )
@@ -87,8 +87,8 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/itchyny/gojq v0.12.15 // indirect
-	github.com/itchyny/timefmt-go v0.1.5 // indirect
+	github.com/itchyny/gojq v0.12.16 // indirect
+	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -96,7 +96,7 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.8 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
-	github.com/letsencrypt/boulder v0.0.0-20240529224635-6b4577ecc491 // indirect
+	github.com/letsencrypt/boulder v0.0.0-20240601013439-764f6c2f7afe // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/manifoldco/promptui v0.9.0 // indirect
@@ -113,6 +113,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
+	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/opencontainers/runc v1.1.12 // indirect
 	github.com/opencontainers/runtime-spec v1.2.0 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect

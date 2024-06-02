@@ -113,7 +113,6 @@ jobs:
                                   libbtrfs-dev \
                                   pkg-config \
                                   slirp4netns \
-                                  uidmap \
                                   uidmap
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           export XDG_CONFIG_HOME=/root/.config
@@ -203,6 +202,8 @@ jobs:
             exit 1
           fi
 
+          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
           timeout 2h sudo -E wg imageBuilder \
             -b "$blueprint_name" \
             -p "$provision_path" \
@@ -211,5 +212,5 @@ jobs:
 
       - name: Verify pushed images
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u l50 --password-stdin
+          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           docker pull ghcr.io/l50/test:latest

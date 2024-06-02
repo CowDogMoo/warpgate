@@ -13,16 +13,19 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/docker"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/docker/docker/client"
-	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/image-spec/specs-go"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/authn/github"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
-func (m *MockDockerClient) CreateAndPushManifest(
-	blueprint *bp.Blueprint, imageTags []string,
-) error {
+func (m *MockDockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags []string) error {
 	args := m.Called(blueprint, imageTags)
 	return args.Error(0)
 }
@@ -58,9 +61,7 @@ func (m *MockDockerClient) GetImageSize(imageRef string) (int64, error) {
 	return i64Val, args.Error(1)
 }
 
-func (m *MockDockerClient) PushManifest(
-	imageName string, manifestList ocispec.Index,
-) error {
+func (m *MockDockerClient) PushManifest(imageName string, manifestList v1.ImageIndex) error {
 	args := m.Called(imageName, manifestList)
 	return args.Error(0)
 }
@@ -70,81 +71,96 @@ func (m *MockDockerClient) GetAuthToken(repo, tag string) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
+type MockRemoteClient struct {
+	mock.Mock
+}
+
+func (m *MockRemoteClient) Image(ref name.Reference, options ...remote.Option) (v1.Image, error) {
+	args := m.Called(ref)
+	img := args.Get(0)
+	if img == nil {
+		return nil, args.Error(1)
+	}
+	return img.(v1.Image), args.Error(1)
+}
+
+func mockImage() v1.Image {
+	return empty.Image
+}
+
 func TestCreateManifest(t *testing.T) {
 	tests := []struct {
 		name          string
 		targetImage   string
 		imageTags     []string
-		setupMocks    func(*docker.DockerClient)
-		expectedIndex ocispec.Index
+		setupMocks    func(*docker.DockerClient, *MockRemoteClient)
+		expectedIndex v1.ImageIndex
 		expectErr     bool
 	}{
 		{
 			name:        "successful manifest creation",
 			targetImage: "example/latest",
-			imageTags: []string{"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"},
-			setupMocks: func(dc *docker.DockerClient) {
+			imageTags: []string{
+				"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+			},
+			setupMocks: func(dc *docker.DockerClient, mockRemote *MockRemoteClient) {
 				dc.Container.ImageHashes = []packer.ImageHash{
 					{Hash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", OS: "linux", Arch: "amd64"},
 					{Hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", OS: "linux", Arch: "arm64"},
 				}
+				mockRemote.On("Image", mock.Anything).Return(mockImage(), nil)
 			},
-			expectedIndex: ocispec.Index{
-				Versioned: specs.Versioned{
-					SchemaVersion: 2,
-				},
-				MediaType: ocispec.MediaTypeImageIndex,
-				Manifests: []ocispec.Descriptor{
-					{
-						MediaType: ocispec.MediaTypeImageManifest,
-						Digest:    digest.Digest("sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
-						Size:      1024,
-						Platform: &ocispec.Platform{
-							Architecture: "amd64",
-							OS:           "linux",
-						},
-					},
-					{
-						MediaType: ocispec.MediaTypeImageManifest,
-						Digest:    digest.Digest("sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"),
-						Size:      2048,
-						Platform: &ocispec.Platform{
-							Architecture: "arm64",
-							OS:           "linux",
-						},
-					},
-				},
-			},
+			expectedIndex: func() v1.ImageIndex {
+				index := empty.Index
+				withMediaType := mutate.IndexMediaType(index, types.OCIImageIndex)
+				digest := v1.Hash{
+					Algorithm: "sha256",
+					Hex:       "732112270d7e59418a8c080b134b24cabd67d250d0d0147a97ed95ba5c280aa4",
+				}
+				descriptor := v1.Descriptor{
+					MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+					Size:      264,
+					Digest:    digest,
+				}
+				withMediaType = mutate.AppendManifests(withMediaType, mutate.IndexAddendum{Add: mockImage(), Descriptor: descriptor})
+				withMediaType = mutate.AppendManifests(withMediaType, mutate.IndexAddendum{Add: mockImage(), Descriptor: descriptor})
+				return withMediaType
+			}(),
 			expectErr: false,
 		},
 		{
 			name:        "error fetching image size",
 			targetImage: "example/latest",
-			imageTags: []string{"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"},
-			setupMocks: func(dc *docker.DockerClient) {
+			imageTags: []string{
+				"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+				"sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+			},
+			setupMocks: func(dc *docker.DockerClient, mockRemote *MockRemoteClient) {
 				dc.Container.ImageHashes = []packer.ImageHash{
 					{Hash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", OS: "linux", Arch: "amd64"},
 					{Hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", OS: "linux", Arch: "arm64"},
 				}
+				mockRemote.On("Image", mock.Anything).Return(nil, errors.New("unauthorized"))
 			},
-			expectedIndex: ocispec.Index{},
+			expectedIndex: empty.Index,
 			expectErr:     true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			dockerClient := &docker.DockerClient{}
-			tc.setupMocks(dockerClient)
+			mockRemote := &MockRemoteClient{}
+			dockerClient := &docker.DockerClient{
+				Remote: mockRemote,
+			}
+			tc.setupMocks(dockerClient, mockRemote)
 
-			// Set up a test HTTP server for mocking the Docker API responses
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/v1.45/images/sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef/json":
 					if tc.expectErr {
-						w.WriteHeader(http.StatusNotFound)
+						w.WriteHeader(http.StatusUnauthorized)
 					} else {
 						w.WriteHeader(http.StatusOK)
 						_, _ = w.Write([]byte(`{"Size": 1024}`))
@@ -158,18 +174,44 @@ func TestCreateManifest(t *testing.T) {
 			}))
 			defer ts.Close()
 
-			// Override the Docker client's URL to use the test server
-			dockerClient.CLI, _ = client.NewClientWithOpts(client.WithHost(ts.URL), client.WithAPIVersionNegotiation())
+			var err error
+			dockerClient.CLI, err = client.NewClientWithOpts(client.WithHost(ts.URL), client.WithAPIVersionNegotiation())
+			require.NoError(t, err)
 
-			actualIndex, err := dockerClient.CreateManifest(context.Background(), tc.targetImage, tc.imageTags)
+			keychain := authn.NewMultiKeychain(
+				authn.DefaultKeychain,
+				github.Keychain,
+				authn.NewKeychainFromHelper(authnHelperMock{}),
+			)
+
+			actualIndex, err := dockerClient.CreateManifest(context.Background(), tc.targetImage, tc.imageTags, keychain)
 			if tc.expectErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, tc.expectedIndex, actualIndex)
+
+				// Compare the manifests in a more suitable way
+				expectedManifest, err := tc.expectedIndex.IndexManifest()
+				require.NoError(t, err)
+				actualManifest, err := actualIndex.IndexManifest()
+				require.NoError(t, err)
+				require.Equal(t, expectedManifest, actualManifest)
 			}
+
+			mockRemote.AssertExpectations(t)
 		})
 	}
+}
+
+type authnHelperMock struct {
+	authn.Helper
+}
+
+func (authnHelperMock) Authenticator(repo name.Repository) (authn.Authenticator, error) {
+	return authn.FromConfig(authn.AuthConfig{
+		Username: "user",
+		Password: "password",
+	}), nil
 }
 
 func TestGetImageSize(t *testing.T) {
@@ -222,27 +264,27 @@ func TestPushManifest(t *testing.T) {
 	tests := []struct {
 		name         string
 		imageName    string
-		manifestList v1.Index
+		manifestList v1.ImageIndex
 		setupMocks   func(*MockDockerClient)
 		expectErr    bool
 	}{
 		{
 			name:         "successful manifest push",
 			imageName:    "ghcr.io/example/latest",
-			manifestList: v1.Index{},
+			manifestList: empty.Index,
 			setupMocks: func(m *MockDockerClient) {
 				m.On("GetAuthToken", "example", "latest").Return("token", nil)
-				m.On("PushManifest", "ghcr.io/example/latest", v1.Index{}).Return(nil)
+				m.On("PushManifest", "ghcr.io/example/latest", empty.Index).Return(nil)
 			},
 			expectErr: false,
 		},
 		{
 			name:         "error during manifest push",
 			imageName:    "ghcr.io/example/latest",
-			manifestList: v1.Index{},
+			manifestList: empty.Index,
 			setupMocks: func(m *MockDockerClient) {
 				m.On("GetAuthToken", "example", "latest").Return("", errors.New("failed to get auth token, status: 403 Forbidden"))
-				m.On("PushManifest", "ghcr.io/example/latest", v1.Index{}).Return(errors.New("forbidden"))
+				m.On("PushManifest", "ghcr.io/example/latest", empty.Index).Return(errors.New("forbidden"))
 			},
 			expectErr: true,
 		},
@@ -260,7 +302,6 @@ func TestPushManifest(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-
 		})
 	}
 }

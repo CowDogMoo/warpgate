@@ -54,6 +54,7 @@ func TestNewDockerRegistry(t *testing.T) {
 		authToken         string
 		getStore          docker.GetStoreFunc
 		ignoreChownErrors bool
+		registryConfig    packer.ContainerImageRegistry
 		wantErr           bool
 	}{
 		{
@@ -62,6 +63,7 @@ func TestNewDockerRegistry(t *testing.T) {
 			authToken:         "testToken",
 			getStore:          docker.DefaultGetStore,
 			ignoreChownErrors: false,
+			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testPass", Server: "https://example.com"},
 			wantErr:           false,
 		},
 		{
@@ -70,6 +72,7 @@ func TestNewDockerRegistry(t *testing.T) {
 			authToken:         "testToken",
 			getStore:          docker.DefaultGetStore,
 			ignoreChownErrors: false,
+			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testPass", Server: ""},
 			wantErr:           true,
 		},
 		{
@@ -77,9 +80,13 @@ func TestNewDockerRegistry(t *testing.T) {
 			registryURL: "https://example.com",
 			authToken:   "testToken",
 			getStore: func(options storage.StoreOptions) (storage.Store, error) {
-				return nil, errors.New("operation not permitted")
+				if options.GraphDriverName == "overlay" {
+					return nil, errors.New("operation not permitted")
+				}
+				return docker.DefaultGetStore(options)
 			},
 			ignoreChownErrors: true,
+			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testPass", Server: "https://example.com"},
 			wantErr:           false,
 		},
 		{
@@ -90,13 +97,14 @@ func TestNewDockerRegistry(t *testing.T) {
 				return nil, errors.New("chown /home/runner/.local/share/containers/storage/vfs/dir: operation not permitted")
 			},
 			ignoreChownErrors: false,
+			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testPass", Server: "https://example.com"},
 			wantErr:           true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			registry, err := docker.NewDockerRegistry(tc.registryURL, tc.authToken, tc.getStore, tc.ignoreChownErrors)
+			registry, err := docker.NewDockerRegistry(tc.registryURL, tc.authToken, tc.registryConfig, tc.getStore, tc.ignoreChownErrors)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("NewDockerRegistry() error = %v, wantErr %v", err, tc.wantErr)
 				return
@@ -252,9 +260,6 @@ func TestDockerLogin(t *testing.T) {
 				mockAPIClient.On("RegistryLogin", mock.Anything, authConfig).
 					Return(registry.AuthenticateOKBody{Status: "Login Succeeded", IdentityToken: "mockToken"}, nil).Once()
 			}
-
-			// mockAPIClient.AssertExpectations(t)
-			// mockRoundTripper.AssertExpectations(t)
 		})
 	}
 }
