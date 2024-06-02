@@ -8,11 +8,13 @@ import (
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/image-spec/specs-go"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 )
 
 func unwrapError(err error) error {
@@ -38,7 +40,7 @@ func unwrapError(err error) error {
 // error: An error if any operation fails during manifest creation or pushing.
 func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags []string) error {
 	if len(imageTags) == 0 {
-		return errors.New("no image tags provided for manifest creation")
+		return fmt.Errorf("no image tags provided for manifest creation")
 	}
 
 	targetImage := fmt.Sprintf("%s/%s:%s",
@@ -46,23 +48,15 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 		blueprint.Tag.Name, blueprint.Tag.Version)
 
 	fmt.Printf("Creating manifest list for %s with %v tags\n", targetImage, imageTags)
+
 	manifestList, err := d.CreateManifest(context.Background(), targetImage, imageTags)
 	if err != nil {
-		rootErr := unwrapError(err)
-		return fmt.Errorf("failed to create manifest list for %s: %v", targetImage, rootErr)
+		return fmt.Errorf("failed to create manifest list for %s: %v", targetImage, unwrapError(err))
 	}
 
-	fmt.Println("Manifest list contents:")
-	for _, instance := range manifestList.Manifests {
-		fmt.Printf("  Digest: %s\n", instance.Digest)
-		fmt.Printf("  Platform: %s/%s\n", instance.Platform.Architecture, instance.Platform.OS)
-		fmt.Printf("  Size: %d\n", instance.Size)
-	}
-
-	fmt.Printf("Pushing manifest list for %s\n", targetImage)
+	fmt.Println("Pushing manifest list")
 	if err := d.PushManifest(targetImage, manifestList); err != nil {
-		rootErr := unwrapError(err)
-		return fmt.Errorf("failed to push manifest list for %s, error: %v", targetImage, rootErr)
+		return fmt.Errorf("failed to push manifest list for %s, error: %v", targetImage, unwrapError(err))
 	}
 
 	return nil
@@ -81,38 +75,35 @@ func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags 
 //
 // ocispec.Index: The manifest list created with the input image tags.
 // error: An error if any operation fails during the manifest list creation.
-func (d *DockerClient) CreateManifest(ctx context.Context, targetImage string, imageTags []string) (ocispec.Index, error) {
-	fmt.Printf("Creating manifest list for %s with %v tags\n", targetImage, imageTags)
+func (d *DockerClient) CreateManifest(ctx context.Context, targetImage string, imageTags []string) (v1.ImageIndex, error) {
+	index := empty.Index
+	withMediaType := mutate.IndexMediaType(index, types.OCIImageIndex)
 
-	manifestList := ocispec.Index{
-		Versioned: specs.Versioned{
-			SchemaVersion: 2,
-		},
-		MediaType: ocispec.MediaTypeImageIndex,
-		Manifests: []ocispec.Descriptor{},
-	}
+	// Set up keychain for authentication
+	keychain := authn.NewMultiKeychain(
+		authn.DefaultKeychain,
+		github.Keychain,
+	)
 
-	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes)
-	for _, imgHash := range d.Container.ImageHashes {
-		parsedDigest, err := digest.Parse(fmt.Sprintf("sha256:%s", imgHash.Hash))
+	for _, tag := range imageTags {
+		// Use the tag directly instead of constructing the full image name
+		fullImageName := tag
+		ref, err := name.NewTag(fullImageName)
 		if err != nil {
-			return manifestList, fmt.Errorf("failed to parse digest sha256:%s: %v", imgHash.Hash, err)
+			return nil, fmt.Errorf("creating reference for image %s: %v", fullImageName, err)
 		}
 
-		size, err := d.GetImageSize(parsedDigest.String())
+		image, err := remote.Image(ref, remote.WithAuthFromKeychain(keychain))
 		if err != nil {
-			return manifestList, fmt.Errorf("failed to get size for sha256:%s: %v", imgHash.Hash, err)
+			return nil, fmt.Errorf("getting image %s: %v", fullImageName, err)
 		}
 
-		manifestList.Manifests = append(manifestList.Manifests, ocispec.Descriptor{
-			MediaType: ocispec.MediaTypeImageManifest,
-			Digest:    parsedDigest,
-			Size:      size,
-			Platform:  &ocispec.Platform{OS: imgHash.OS, Architecture: imgHash.Arch},
+		withMediaType = mutate.AppendManifests(withMediaType, mutate.IndexAddendum{
+			Add: image,
 		})
 	}
 
-	return manifestList, nil
+	return withMediaType, nil
 }
 
 // GetImageSize returns the size of the image with the input reference.
@@ -148,28 +139,23 @@ func (d *DockerClient) GetImageSize(imageRef string) (int64, error) {
 // **Returns:**
 //
 // error: An error if any operation fails during the push.
-func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index) error {
+func (d *DockerClient) PushManifest(imageName string, manifestList v1.ImageIndex) error {
 	targetRef, err := name.ParseReference(imageName)
 	if err != nil {
 		return fmt.Errorf("failed to parse target reference: %v", err)
 	}
 
-	idx, err := remote.Index(targetRef, remote.WithAuth(&authn.Basic{
-		Username: d.Container.ImageRegistry.Username,
-		Password: d.Container.ImageRegistry.Credential,
-	}))
-	if err != nil {
-		return fmt.Errorf("failed to parse manifest list: %v", err)
-	}
+	// Set up keychain for authentication
+	keychain := authn.NewMultiKeychain(
+		authn.DefaultKeychain,
+		github.Keychain,
+	)
 
 	options := []remote.Option{
-		remote.WithAuth(authn.FromConfig(authn.AuthConfig{
-			Username: d.Container.ImageRegistry.Username,
-			Password: d.Container.ImageRegistry.Credential,
-		})),
+		remote.WithAuthFromKeychain(keychain),
 	}
 
-	if err := remote.WriteIndex(targetRef, idx, options...); err != nil {
+	if err := remote.WriteIndex(targetRef, manifestList, options...); err != nil {
 		return fmt.Errorf("failed to push manifest list: %v", err)
 	}
 

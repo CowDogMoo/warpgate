@@ -59,7 +59,7 @@ error: An error if any operation fails during manifest creation or pushing.
 ### DockerClient.CreateManifest(context.Context, string, []string)
 
 ```go
-CreateManifest(context.Context, string, []string) ocispec.Index, error
+CreateManifest(context.Context, string, []string) v1.ImageIndex, error
 ```
 
 CreateManifest creates a manifest list with the input image tags
@@ -191,10 +191,10 @@ error: An error if the push operation fails.
 
 ---
 
-### DockerClient.PushManifest(string, ocispec.Index)
+### DockerClient.PushManifest(string, v1.ImageIndex)
 
 ```go
-PushManifest(string, ocispec.Index) error
+PushManifest(string, v1.ImageIndex) error
 ```
 
 PushManifest pushes the input manifest list to the registry.
