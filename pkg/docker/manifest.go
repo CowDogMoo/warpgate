@@ -1,16 +1,15 @@
 package docker
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -95,7 +94,6 @@ func (d *DockerClient) CreateManifest(ctx context.Context, targetImage string, i
 
 	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes)
 	for _, imgHash := range d.Container.ImageHashes {
-		// Ensure the digest has the correct format
 		parsedDigest, err := digest.Parse(fmt.Sprintf("sha256:%s", imgHash.Hash))
 		if err != nil {
 			return manifestList, fmt.Errorf("failed to parse digest sha256:%s: %v", imgHash.Hash, err)
@@ -140,7 +138,7 @@ func (d *DockerClient) GetImageSize(imageRef string) (int64, error) {
 	return imageInspect.Size, nil
 }
 
-// PushManifestList pushes the input manifest list to the registry.
+// PushManifest pushes the input manifest list to the registry.
 //
 // **Parameters:**
 //
@@ -151,81 +149,30 @@ func (d *DockerClient) GetImageSize(imageRef string) (int64, error) {
 //
 // error: An error if any operation fails during the push.
 func (d *DockerClient) PushManifest(imageName string, manifestList ocispec.Index) error {
-	manifestBytes, err := json.Marshal(manifestList)
+	targetRef, err := name.ParseReference(imageName)
 	if err != nil {
-		return fmt.Errorf("failed to marshal manifest list: %v", err)
+		return fmt.Errorf("failed to parse target reference: %v", err)
 	}
 
-	parts := strings.Split(imageName, "/")
-	if len(parts) < 3 {
-		return fmt.Errorf("invalid repository name: %s", imageName)
-	}
-
-	repoParts := strings.Split(parts[len(parts)-1], ":")
-	repo := fmt.Sprintf("%s/%s", parts[1], repoParts[0])
-	tag := "latest"
-	if len(repoParts) > 1 {
-		tag = repoParts[1]
-	}
-
-	token, err := d.getAuthToken(repo, tag)
+	idx, err := remote.Index(targetRef, remote.WithAuth(&authn.Basic{
+		Username: d.Container.ImageRegistry.Username,
+		Password: d.Container.ImageRegistry.Credential,
+	}))
 	if err != nil {
-		return fmt.Errorf("failed to get auth token: %v", err)
+		return fmt.Errorf("failed to parse manifest list: %v", err)
 	}
 
-	url := fmt.Sprintf("https://ghcr.io/v2/%s/manifests/%s", repo, tag)
-	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(manifestBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %v", err)
+	options := []remote.Option{
+		remote.WithAuth(authn.FromConfig(authn.AuthConfig{
+			Username: d.Container.ImageRegistry.Username,
+			Password: d.Container.ImageRegistry.Credential,
+		})),
 	}
 
-	req.Header.Set("Content-Type", "application/vnd.oci.image.index.v1+json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
+	if err := remote.WriteIndex(targetRef, idx, options...); err != nil {
 		return fmt.Errorf("failed to push manifest list: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to push manifest list: %s, error reading response body: %v", resp.Status, err)
-		}
-		return fmt.Errorf("failed to push manifest list: %s, response: %s", resp.Status, body)
 	}
 
 	fmt.Printf("Manifest list for %s pushed successfully\n", imageName)
 	return nil
-}
-
-func (d *DockerClient) getAuthToken(repo, tag string) (string, error) {
-	authURL := fmt.Sprintf("https://ghcr.io/token?service=ghcr.io&scope=repository:%s/%s:pull,push", repo, tag)
-	req, err := http.NewRequest("GET", authURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.SetBasicAuth(d.Container.ImageRegistry.Username, d.Container.ImageRegistry.Credential)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to get auth token, status: %s", resp.Status)
-	}
-
-	var authResp struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
-		return "", err
-	}
-
-	return authResp.Token, nil
 }

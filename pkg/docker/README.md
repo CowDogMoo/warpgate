@@ -197,7 +197,7 @@ error: An error if the push operation fails.
 PushManifest(string, ocispec.Index) error
 ```
 
-PushManifestList pushes the input manifest list to the registry.
+PushManifest pushes the input manifest list to the registry.
 
 **Parameters:**
 
