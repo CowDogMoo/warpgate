@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
@@ -55,6 +56,34 @@ type DockerClient struct {
 	Remote     RemoteInterface
 }
 
+// NewDockerClient creates a new Docker client.
+//
+// **Returns:**
+//
+// *DockerClient: A DockerClient instance.
+// error: An error if any issue occurs while creating the client.
+func NewDockerClient(registryURL, authToken string, registryConfig packer.ContainerImageRegistry) (*DockerClient, error) {
+	cli, err := dockerClient.NewClientWithOpts(dockerClient.FromEnv, dockerClient.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, fmt.Errorf("error creating Docker client: %v", err)
+	}
+
+	dockerRegistry, err := NewDockerRegistry(registryURL, authToken, registryConfig, DefaultGetStore, true)
+	if err != nil {
+		return nil, fmt.Errorf("error creating Docker registry: %v", err)
+	}
+
+	return &DockerClient{
+		CLI: cli,
+		Container: packer.Container{
+			ImageRegistry: registryConfig,
+			ImageHashes:   []packer.ImageHash{},
+		},
+		Registry: dockerRegistry,
+		Remote:   &RemoteClient{},
+	}, nil
+}
+
 // DockerLogin authenticates with a Docker registry using the provided
 // credentials.
 //
@@ -100,34 +129,6 @@ func (d *DockerClient) DockerLogin() error {
 	return nil
 }
 
-// NewDockerClient creates a new Docker client.
-//
-// **Returns:**
-//
-// *DockerClient: A DockerClient instance.
-// error: An error if any issue occurs while creating the client.
-func NewDockerClient(registryURL, authToken string, registryConfig packer.ContainerImageRegistry) (*DockerClient, error) {
-	cli, err := dockerClient.NewClientWithOpts(dockerClient.FromEnv, dockerClient.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, fmt.Errorf("error creating Docker client: %v", err)
-	}
-
-	dockerRegistry, err := NewDockerRegistry(registryURL, authToken, registryConfig, DefaultGetStore, true)
-	if err != nil {
-		return nil, fmt.Errorf("error creating Docker registry: %v", err)
-	}
-
-	return &DockerClient{
-		CLI: cli,
-		Container: packer.Container{
-			ImageRegistry: registryConfig,
-			ImageHashes:   []packer.ImageHash{},
-		},
-		Registry: dockerRegistry,
-		Remote:   &RemoteClient{},
-	}, nil
-}
-
 // DockerTag tags a Docker image with a new name.
 //
 // **Parameters:**
@@ -145,23 +146,6 @@ func (d *DockerClient) DockerTag(sourceImage, targetImage string) error {
 
 	ctx := context.Background()
 	return d.CLI.ImageTag(ctx, sourceImage, targetImage)
-}
-
-// RemoveImage removes an image from the Docker client.
-//
-// **Parameters:**
-//
-// ctx: The context within which the image is to be removed.
-// imageID: The ID of the image to be removed.
-// options: Options for the image removal operation.
-//
-// **Returns:**
-//
-// error: An error if any issue occurs during the image removal process.
-// []image.DeleteResponse: A slice of image.DeleteResponse instances.
-func (d *DockerClient) RemoveImage(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
-	fmt.Println("Removing image:", imageID)
-	return d.CLI.ImageRemove(ctx, imageID, options)
 }
 
 // DockerPush pushes a Docker image to a registry using the provided
@@ -199,4 +183,156 @@ func (d *DockerClient) PushImage(containerImage string) error {
 	}
 
 	return nil
+}
+
+// ProcessPackerTemplates processes a list of Packer templates by
+// tagging and pushing images to a registry.
+//
+// **Parameters:**
+//
+// pTmpl: A slice of PackerTemplate instances to process.
+// blueprint: The blueprint containing tag information.
+//
+// **Returns:**
+//
+// error: An error if any operation fails during tagging or pushing.
+func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blueprint bp.Blueprint) error {
+	if len(pTmpl) == 0 {
+		return errors.New("packer templates must be provided for the blueprint")
+	}
+
+	for _, p := range pTmpl {
+		if err := d.ProcessTemplate(p, blueprint); err != nil {
+			return fmt.Errorf("error processing Packer template: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// ProcessTemplate processes a Packer template by tagging and pushing images
+// to a registry.
+//
+// **Parameters:**
+//
+// pTmpl: A PackerTemplate containing the image to process.
+// blueprint: The blueprint containing tag information.
+//
+// **Returns:**
+//
+// error: An error if any operation fails during tagging or pushing.
+func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bp.Blueprint) error {
+	if blueprint.Name == "" {
+		return errors.New("blueprint name must not be empty")
+	}
+
+	if blueprint.Tag.Name == "" || blueprint.Tag.Version == "" {
+		return errors.New("blueprint tag name and version must not be empty")
+	}
+
+	if pTmpl.Container.ImageRegistry.Server == "" || pTmpl.Container.ImageRegistry.Username == "" || pTmpl.Container.ImageRegistry.Credential == "" {
+		return fmt.Errorf("registry server '%s', username '%s', and credential must not be empty", pTmpl.Container.ImageRegistry.Server, pTmpl.Container.ImageRegistry.Username)
+	}
+
+	d.Container.ImageRegistry = pTmpl.Container.ImageRegistry
+	d.Container.ImageHashes = pTmpl.Container.ImageHashes
+
+	if d.AuthStr == "" {
+		if err := d.DockerLogin(); err != nil {
+			return fmt.Errorf("failed to login to %s: %v", pTmpl.Container.ImageRegistry.Server, err)
+		}
+	}
+
+	// Remove any entries with empty ImageHashes
+	for i := 0; i < len(d.Container.ImageHashes); i++ {
+		if d.Container.ImageHashes[i].Hash == "" {
+			d.Container.ImageHashes = append(d.Container.ImageHashes[:i], d.Container.ImageHashes[i+1:]...)
+			i--
+		}
+	}
+	fmt.Printf("Processing %s image with the following hashes: %+v\n", blueprint.Name, d.Container.ImageHashes) // Debugging line
+
+	imageTags, err := d.TagAndPushImages(&blueprint)
+	if err != nil {
+		return err
+	}
+
+	if err := d.CreateAndPushManifest(&blueprint, imageTags); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// RemoveImage removes an image from the Docker client.
+//
+// **Parameters:**
+//
+// ctx: The context within which the image is to be removed.
+// imageID: The ID of the image to be removed.
+// options: Options for the image removal operation.
+//
+// **Returns:**
+//
+// error: An error if any issue occurs during the image removal process.
+// []image.DeleteResponse: A slice of image.DeleteResponse instances.
+func (d *DockerClient) RemoveImage(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
+	fmt.Println("Removing image:", imageID)
+	return d.CLI.ImageRemove(ctx, imageID, options)
+}
+
+// SetRegistry sets the DockerRegistry for the DockerClient.
+//
+// **Parameters:**
+//
+// registry: A pointer to the DockerRegistry to be set.
+func (d *DockerClient) SetRegistry(registry *DockerRegistry) {
+	d.Registry = registry
+}
+
+// TagAndPushImages tags and pushes images to a registry based on
+// the provided blueprint.
+//
+// **Parameters:**
+//
+// blueprint: The blueprint containing tag information.
+//
+// **Returns:**
+//
+// []string: A slice of image tags that were successfully pushed.
+// error: An error if any operation fails during tagging or pushing.
+func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, error) {
+	var imageTags []string
+
+	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes)
+
+	for _, hash := range d.Container.ImageHashes {
+		if hash.Arch == "" || hash.Hash == "" || hash.OS == "" {
+			return imageTags, errors.New("arch, hash, and OS must not be empty")
+		}
+
+		localTag := fmt.Sprintf("sha256:%s", hash.Hash)
+		remoteTag := fmt.Sprintf("%s/%s:%s",
+			strings.TrimPrefix(d.Container.ImageRegistry.Server, "https://"),
+			blueprint.Tag.Name, hash.Arch)
+		fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
+
+		if err := d.DockerTag(localTag, remoteTag); err != nil {
+			return imageTags, err
+		}
+
+		fmt.Printf("Pushing image: %s\n", remoteTag)
+
+		if err := d.PushImage(remoteTag); err != nil {
+			return imageTags, err
+		}
+
+		imageTags = append(imageTags, remoteTag)
+	}
+
+	if len(imageTags) == 0 {
+		return imageTags, errors.New("no images were tagged and pushed")
+	}
+
+	return imageTags, nil
 }

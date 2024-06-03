@@ -5,7 +5,6 @@ go 1.22.0
 toolchain go1.22.2
 
 require (
-	bou.ke/monkey v1.0.2
 	github.com/containers/common v0.59.0
 	github.com/containers/image/v5 v5.31.0
 	github.com/containers/storage v1.54.0

@@ -17,6 +17,16 @@ The `docker` package is a part of the WarpGate.
 
 ## Functions
 
+### CustomAuthenticator.Authorization()
+
+```go
+Authorization() *authn.AuthConfig, error
+```
+
+Authorization returns the value to use in an http transport's Authorization header.
+
+---
+
 ### DefaultGetStore(storage.StoreOptions)
 
 ```go
@@ -267,10 +277,10 @@ error: An error if any operation fails during tagging or pushing.
 
 ---
 
-### NewDockerClient(string)
+### NewDockerClient(string, packer.ContainerImageRegistry)
 
 ```go
-NewDockerClient(string) *DockerClient, error
+NewDockerClient(string, packer.ContainerImageRegistry) *DockerClient, error
 ```
 
 NewDockerClient creates a new Docker client.
@@ -282,10 +292,10 @@ error: An error if any issue occurs while creating the client.
 
 ---
 
-### NewDockerRegistry(string, GetStoreFunc, bool)
+### NewDockerRegistry(string, packer.ContainerImageRegistry, GetStoreFunc, bool)
 
 ```go
-NewDockerRegistry(string, GetStoreFunc, bool) *DockerRegistry, error
+NewDockerRegistry(string packer.ContainerImageRegistry GetStoreFunc bool) *DockerRegistry error
 ```
 
 NewDockerRegistry creates a new Docker registry.
@@ -294,6 +304,7 @@ NewDockerRegistry creates a new Docker registry.
 
 registryURL: The URL of the Docker registry.
 authToken: The authentication token for the registry.
+registryConfig: A packer.ContainerImageRegistry instance.
 getStore: A function that returns a storage.Store instance.
 ignoreChownErrors: A boolean indicating whether to ignore chown errors.
 
@@ -304,12 +315,43 @@ error: An error if any issue occurs while creating the registry.
 
 ---
 
+### RemoteClient.Image(name.Reference, ...remote.Option)
+
+```go
+Image(name.Reference, ...remote.Option) v1.Image, error
+```
+
+Image retrieves a container image from a registry.
+
+**Parameters:**
+
+ref: The name.Reference instance for the image.
+options: Options for the remote operation.
+
+**Returns:**
+
+v1.Image: The container image.
+error: An error if the operation fails.
+
+---
+
 ### customHelper.Get(string)
 
 ```go
 Get(string) string, string, error
 ```
 
+Get retrieves the username and password for the input registry.
+
+**Parameters:**
+
+registry: The registry to get the username and password for.
+
+**Returns:**
+
+string: The username for the registry.
+string: The password for the registry.
+error: An error if any operation fails during the retrieval.
 
 ---
 
