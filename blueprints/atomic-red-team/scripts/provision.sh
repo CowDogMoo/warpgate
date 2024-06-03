@@ -75,9 +75,36 @@ run_provision_logic() {
 }
 
 cleanup() {
-    # Remove build directory
     if [[ "${CLEANUP}" == "true" ]]; then
-        rm -rf "${PKR_BUILD_DIR}"
+        # Clean up apt cache
+        run_as_root apt-get clean
+        run_as_root rm -rf /var/lib/apt/lists/*
+
+        # Clean up pip cache
+        python3 -m pip cache purge
+
+        # Remove unused packages and their dependencies
+        run_as_root apt-get autoremove -y
+        run_as_root apt-get purge -y \
+            git \
+            gpg-agent \
+            libgmp-dev \
+            manpages \
+            man-db \
+            bsdmainutils
+
+        # Clean up cloud-init logs if running on EC2
+        if [[ -n "${AWS_DEFAULT_REGION}" ]]; then
+            run_as_root rm -rf /var/lib/cloud/instances/*
+            run_as_root rm -f /var/log/cloud-init.log
+            run_as_root rm -f /var/log/cloud-init-output.log
+        fi
+
+        # Remove temporary files
+        run_as_root rm -rf /tmp/* /var/tmp/*
+
+        # Remove any leftover logs
+        run_as_root rm -rf /var/log/*
     fi
 }
 

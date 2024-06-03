@@ -16,7 +16,7 @@ all
 # https://github.com/markdownlint/markdownlint/blob/master/docs/creating_styles.md#parameters
 
 # Ignore line length in code blocks.
-rule 'MD013', ignore_code_blocks: true
+rule 'MD013', :line_length => 120, :code_blocks => true, :tables => false
 
 #===============================================================================
 # Exclude the rules I disagree with.
