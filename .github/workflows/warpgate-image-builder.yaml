@@ -43,8 +43,7 @@ jobs:
                                   libbtrfs-dev \
                                   pkg-config \
                                   slirp4netns \
-                                  uidmap \
-                                  yq
+                                  uidmap
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           export XDG_CONFIG_HOME=/root/.config
           export XDG_DATA_HOME=/root/.local/share
@@ -57,6 +56,9 @@ jobs:
         with:
           go-version: "1.22"
           cache-dependency-path: "**/*.sum"
+
+      - name: Install yq
+        run: go install github.com/mikefarah/yq/v4@latest
 
       - name: Setup warpgate
         run: |
@@ -219,6 +221,6 @@ jobs:
           blueprint_name="${{ matrix.blueprint.blueprint }}"
           tag_name=$(yq e '.blueprint.tag.name' "${{ matrix.blueprint.path }}/config.yaml")
           repo_owner=$(echo "$tag_name" | cut -d'/' -f1)
-          image_name="ghcr.io/$repo_owner/${{ github.event.repository.name }}:$blueprint_name"
-          echo "Verifying image: $image_name:latest"
-          docker pull "$image_name:latest"
+          image_name="ghcr.io/$repo_owner/$blueprint_name:latest"
+          echo "Verifying image: $image_name"
+          docker pull "$image_name"
