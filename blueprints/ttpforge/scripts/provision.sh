@@ -75,10 +75,37 @@ run_provision_logic() {
 }
 
 cleanup() {
+    # Clean up apt cache
+    run_as_root apt-get clean
+    run_as_root rm -rf /var/lib/apt/lists/*
+
+    # Remove unused packages and their dependencies
+    run_as_root apt-get autoremove -y
+    run_as_root apt-get purge -y \
+        bash \
+        git \
+        gpg-agent \
+        python3-pip \
+        python3-setuptools \
+        build-essential \
+        libgmp-dev \
+        manpages \
+        man-db \
+        bsdmainutils
+
+    # Clean up pip cache
+    python3 -m pip cache purge
+
+    # Remove temporary files
+    run_as_root rm -rf /tmp/* /var/tmp/*
+
     # Remove build directory
     if [[ "${CLEANUP}" == "true" ]]; then
         rm -rf "${PKR_BUILD_DIR}"
     fi
+
+    # Remove any leftover logs
+    run_as_root rm -rf /var/log/*
 }
 
 install_dependencies

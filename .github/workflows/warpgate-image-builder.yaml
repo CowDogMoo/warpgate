@@ -22,7 +22,7 @@ env:
 permissions:
   id-token: write
   contents: read
-  packages: write 
+  packages: write
 
 jobs:
   generate-blueprints:
@@ -157,7 +157,7 @@ jobs:
         id: lower-repo
         run: |
           echo "repo_owner_lowercase=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-  
+
       - name: Free up disk space
         run: |
           sudo rm -rf /usr/share/dotnet
