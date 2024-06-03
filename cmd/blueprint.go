@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -44,7 +45,7 @@ func init() {
 	blueprintCmd.PersistentFlags().StringP(
 		"tag", "", "", "Tag information for the created container image.")
 
-	blueprintCmd.AddCommand(createBlueprintCmd, listBlueprintsCmd)
+	blueprintCmd.AddCommand(createBlueprintCmd, listBlueprintsCmd, showBlueprintCmd)
 }
 
 var createBlueprintCmd = &cobra.Command{
@@ -61,6 +62,15 @@ var listBlueprintsCmd = &cobra.Command{
 	Short: "List all blueprints.",
 	Run: func(cmd *cobra.Command, args []string) {
 		listBlueprints()
+	},
+}
+
+var showBlueprintCmd = &cobra.Command{
+	Use:   "show [blueprint name]",
+	Short: "Show details of a blueprint.",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		showBlueprint(args[0])
 	},
 }
 
@@ -321,5 +331,61 @@ func listBlueprints() {
 	for _, f := range files {
 		fmt.Println(f.Name())
 	}
+	os.Exit(0)
+}
+
+func showBlueprint(blueprintName string) {
+	var blueprint bp.Blueprint
+	blueprint.Name = blueprintName
+	blueprint.Path = filepath.Join("blueprints", blueprintName)
+
+	if err := blueprint.SetConfigPath(); err != nil {
+		log.L().Errorf("Failed to set config path for blueprint %s: %v", blueprintName, err)
+		cobra.CheckErr(err)
+	}
+
+	if err := viper.UnmarshalKey(bp.BlueprintKey, &blueprint); err != nil {
+		log.L().Errorf("Failed to unmarshal blueprint: %v", err)
+		cobra.CheckErr(err)
+	}
+
+	if err := viper.UnmarshalKey(bp.PackerTemplatesKey, &blueprint.PackerTemplates); err != nil {
+		log.L().Errorf("Failed to unmarshal packer templates: %v", err)
+		cobra.CheckErr(err)
+	}
+
+	for i := range blueprint.PackerTemplates {
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &blueprint.PackerTemplates[i].AMI); err != nil {
+			log.L().Errorf("Failed to unmarshal AMI information for template %d: %v", i, err)
+			cobra.CheckErr(err)
+		}
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container", i), &blueprint.PackerTemplates[i].Container); err != nil {
+			log.L().Errorf("Failed to unmarshal container information for template %d: %v", i, err)
+			cobra.CheckErr(err)
+		}
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container.base_image_values", i), &blueprint.PackerTemplates[i].Container.BaseImageValues); err != nil {
+			log.L().Errorf("Failed to unmarshal base image values for template %d: %v", i, err)
+			cobra.CheckErr(err)
+		}
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container.registry", i), &blueprint.PackerTemplates[i].Container.ImageRegistry); err != nil {
+			log.L().Errorf("Failed to unmarshal registry information for template %d: %v", i, err)
+			cobra.CheckErr(err)
+		}
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container.image_hashes", i), &blueprint.PackerTemplates[i].Container.ImageHashes); err != nil {
+			log.L().Errorf("Failed to unmarshal image hashes for template %d: %v", i, err)
+			cobra.CheckErr(err)
+		}
+		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container.workdir", i), &blueprint.PackerTemplates[i].Container.Workdir); err != nil {
+			log.L().Errorf("Failed to unmarshal workdir information for template %d: %v", i, err)
+			cobra.CheckErr(err)
+		}
+	}
+
+	blueprintJSON, err := json.MarshalIndent(blueprint, "", "  ")
+	if err != nil {
+		log.L().Errorf("Failed to marshal blueprint to JSON: %v", err)
+		cobra.CheckErr(err)
+	}
+	fmt.Println(string(blueprintJSON))
 	os.Exit(0)
 }
