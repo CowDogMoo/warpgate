@@ -85,13 +85,15 @@ cleanup() {
 
         # Remove unused packages and their dependencies
         run_as_root apt-get autoremove -y
-        run_as_root apt-get purge -y \
-            git \
-            gpg-agent \
-            libgmp-dev \
-            manpages \
-            man-db \
-            bsdmainutils
+
+        # Check if packages exist before purging them
+        for package in git gpg-agent libgmp-dev manpages man-db bsdmainutils; do
+            if dpkg -s $package &> /dev/null; then
+                run_as_root apt-get purge -y $package
+            else
+                echo "Package $package is not installed, skipping."
+            fi
+        done
 
         # Clean up cloud-init logs if running on EC2
         if [[ -n "${AWS_DEFAULT_REGION}" ]]; then
