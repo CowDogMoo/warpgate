@@ -69,7 +69,8 @@ jobs:
       - name: Generate list of blueprints
         id: set-matrix
         run: |
-          blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$' | grep -v '^sliver$')
+          # blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$' | grep -v '^sliver$')
+          blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$')
           matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" --arg PWD "$PWD" 'split("\n")[:-1] | map({blueprint: ., path: ($PWD + "/blueprints/" + .)})' | jq -c .)
           echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
 
@@ -198,7 +199,7 @@ jobs:
           echo "Blueprint name: ${{ matrix.blueprint.blueprint }}"
           if [[ "${{ matrix.blueprint.blueprint }}" == "runzero-explorer" ]]; then
             provision_path="${{ github.workspace }}/ansible-collection-workstation"
-          elif [[ "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]]; then
+          elif [[ "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]] || "${{ matrix.blueprint.blueprint }}" == "sliver" ]]; then
             provision_path="${{ github.workspace }}/ansible-collection-arsenal"
           elif [[ "${{ matrix.blueprint.blueprint }}" == "test" ]]; then
             provision_path="${{ matrix.blueprint.path }}/scripts/provision.sh"
