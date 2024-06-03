@@ -22,7 +22,7 @@ env:
 permissions:
   id-token: write
   contents: read
-  packages: write # Ensure the action has permission to push packages
+  packages: write 
 
 jobs:
   generate-blueprints:
@@ -157,7 +157,7 @@ jobs:
         id: lower-repo
         run: |
           echo "repo_owner_lowercase=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
+  
       - name: Free up disk space
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -189,6 +189,7 @@ jobs:
           blueprint_name="${{ matrix.blueprint.blueprint }}"
           export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
           provision_path=""
+          repo_owner=$(echo "${{ matrix.blueprint.tag_name }}" | cut -d'/' -f1)
 
           echo "Blueprint name: ${{ matrix.blueprint.blueprint }}"
           if [[ "${{ matrix.blueprint.blueprint }}" == "runzero-explorer" ]]; then
@@ -213,4 +214,8 @@ jobs:
       - name: Verify pushed images
         run: |
           echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          docker pull ghcr.io/l50/test:latest
+          blueprint_name="${{ matrix.blueprint.blueprint }}"
+          repo_owner=$(echo "${{ matrix.blueprint.tag_name }}" | cut -d'/' -f1)
+          image_name="ghcr.io/$repo_owner/${{ github.event.repository.name }}:$blueprint_name"
+          echo "Verifying image: $image_name:latest"
+          docker pull "$image_name:latest"
