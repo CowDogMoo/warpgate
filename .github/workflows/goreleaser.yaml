@@ -22,7 +22,14 @@ jobs:
                                   btrfs-progs \
                                   libgpgme-dev \
                                   libbtrfs-dev \
-                                  pkg-config
+                                  pkg-config \
+                                  slirp4netns \
+                                  uidmap
+          mkdir -p $HOME/.config
+          mkdir -p $HOME/.local/share
+          echo "export XDG_RUNTIME_DIR=$HOME/.run" >> $GITHUB_ENV
+          echo "export XDG_CONFIG_HOME=$HOME/.config" >> $GITHUB_ENV
+          echo "export XDG_DATA_HOME=$HOME/.local/share" >> $GITHUB_ENV
 
       - name: Fetch all tags
         run: git fetch --force --tags
@@ -34,7 +41,7 @@ jobs:
           cache-dependency-path: "**/*.sum"
 
       - name: Fix GOPATH
-        run: echo "PATH=$PATH:$(go env GOPATH)/bin" >> $GITHUB_ENV
+        run: echo "PATH=$(go env GOPATH)/bin:$PATH" >> $GITHUB_ENV
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@5742e2a039330cbb23ebf35f046f814d4c6ff811 # v5
@@ -43,4 +50,4 @@ jobs:
           version: latest
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BOT_TOKEN }}
