@@ -152,3 +152,42 @@ func GeneratePackageDocs() error {
 
 	return nil
 }
+
+// DeleteReleaseAndTag deletes a GitHub release and its corresponding tag.
+//
+// Example usage:
+//
+// ```go
+// mage deletereleaseandtag v1.0.5
+// ```
+//
+// **Parameters:**
+//
+// tag: the tag of the release to delete
+//
+// **Returns:**
+//
+// error: An error if any issue occurs while deleting the release or tag
+func DeleteReleaseAndTag(tag string) error {
+	fmt.Println(color.YellowString("Deleting GitHub release and tag:", tag))
+
+	// Delete the GitHub release
+	err := sh.RunV("gh", "release", "delete", tag, "--yes")
+	if err != nil {
+		return fmt.Errorf("failed to delete GitHub release: %v", err)
+	}
+
+	// Delete the GitHub tag
+	err = sh.RunV("git", "tag", "-d", tag)
+	if err != nil {
+		return fmt.Errorf("failed to delete local tag: %v", err)
+	}
+
+	err = sh.RunV("git", "push", "origin", "--delete", tag)
+	if err != nil {
+		return fmt.Errorf("failed to delete remote tag: %v", err)
+	}
+
+	fmt.Println(color.GreenString("Successfully deleted GitHub release and tag:", tag))
+	return nil
+}
