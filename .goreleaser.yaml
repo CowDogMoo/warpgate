@@ -1,16 +1,27 @@
 ---
+project_name: wg
+
+release:
+  github:
+    owner: CowDogMoo
+    name: warpgate
+
 builds:
   - id: "warpgate"
     binary: wg
-    goamd64:
-      - v2
-      - v3
-    goarch:
-      - amd64
-      - arm64
-    goarm:
-      - "6"
-      - "7"
     goos:
       - darwin
       - linux
+    goarch:
+      - amd64
+      - arm64
+    goamd64:
+      - v2
+      - v3
+    env:
+      - CGO_ENABLED=0
+    tags:
+      - containers_image_openpgp
+    goarm:
+      - "6"
+      - "7"
