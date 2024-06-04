@@ -1,6 +1,5 @@
 ---
 name: Warpgate Image Builder
-
 on:
   workflow_dispatch:
   push:
