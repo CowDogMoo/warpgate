@@ -191,3 +191,65 @@ func DeleteReleaseAndTag(tag string) error {
 	fmt.Println(color.GreenString("Successfully deleted GitHub release and tag:", tag))
 	return nil
 }
+
+// CreateRelease creates a new GitHub release and updates the CHANGELOG.
+//
+// Example usage:
+//
+// ```go
+// mage createrelease v1.0.6
+// ```
+//
+// **Parameters:**
+//
+// nextVersion: the version for the new release
+//
+// **Returns:**
+//
+// error: An error if any issue occurs while creating the release
+func CreateRelease(nextVersion string) error {
+	fmt.Println(color.YellowString("Creating new GitHub release:", nextVersion))
+
+	// Create the changelog
+	err := sh.RunV("gh", "changelog", "new", "--next-version", nextVersion)
+	if err != nil {
+		return fmt.Errorf("failed to create changelog: %v", err)
+	}
+
+	// Create the GitHub release
+	err = sh.RunV("gh", "release", "create", nextVersion, "-F", "CHANGELOG.md")
+	if err != nil {
+		return fmt.Errorf("failed to create GitHub release: %v", err)
+	}
+
+	fmt.Println(color.GreenString("Successfully created GitHub release:", nextVersion))
+	return nil
+}
+
+// FullReleaseProcess handles deleting the old release and tag, and creating a new release.
+//
+// Example usage:
+//
+// ```go
+// mage fullreleaseprocess v1.0.5 v1.0.6
+// ```
+//
+// **Parameters:**
+//
+// oldTag: the old tag to delete
+// newTag: the new tag for the release
+//
+// **Returns:**
+//
+// error: An error if any issue occurs during the process
+func FullReleaseProcess(oldTag, newTag string) error {
+	if err := DeleteReleaseAndTag(oldTag); err != nil {
+		return err
+	}
+
+	if err := CreateRelease(newTag); err != nil {
+		return err
+	}
+
+	return nil
+}
