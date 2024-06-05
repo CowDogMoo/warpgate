@@ -126,7 +126,7 @@ require (
 	github.com/sagikazarmark/locafero v0.5.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/samber/lo v1.39.0 // indirect
-	github.com/samber/slog-multi v1.0.3 // indirect
+	github.com/samber/slog-multi v1.1.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.8.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sigstore/fulcio v1.4.5 // indirect
