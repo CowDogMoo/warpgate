@@ -2,7 +2,7 @@ module github.com/cowdogmoo/warpgate
 
 go 1.22.0
 
-toolchain go1.22.2
+toolchain go1.22.4
 
 require (
 	github.com/containers/common v0.59.0
