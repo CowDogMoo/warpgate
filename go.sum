@@ -252,6 +252,8 @@ github.com/letsencrypt/boulder v0.0.0-20240614173440-063db40db29a h1:/JxmEQBFSuA
 github.com/letsencrypt/boulder v0.0.0-20240614173440-063db40db29a/go.mod h1:xN4NICCU1WBlUv60BGgMyGuungNTy/aQqjEntJWmgaM=
 github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec h1:2tTW6cDth2TSgRbAhD7yjZzTQmcN25sDRPEeinR51yQ=
 github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec/go.mod h1:TmwEoGCwIti7BCeJ9hescZgRtatxRE+A72pCoPfmcfk=
+github.com/letsencrypt/boulder v0.0.0-20240625201710-483062e0b19b h1:0IjbHxISFfQbzZWTJiwyZoT77zI7byXL7pXk/WFl3Zs=
+github.com/letsencrypt/boulder v0.0.0-20240625201710-483062e0b19b/go.mod h1:u4eUQ2BJ+QukDtixR8WQj7N0A28QgXcA4mnPydb/H3M=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
 github.com/magefile/mage v1.15.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
 github.com/magiconair/properties v1.8.7 h1:IeQXZAiQcpL9mgcAe1Nu6cX9LLw6ExEHKjN0VQdvPDY=
