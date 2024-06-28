@@ -1,0 +1,28 @@
+---
+blueprint:
+  name: windows
+  tag:
+    name: l50/windows
+    version: latest
+
+packer_templates:
+  - image_values:
+      name: Windows_Server
+      version: 2019
+    user: Administrator
+
+# AMI specific configurations
+ami:
+  instance_type: t3.medium
+  region: us-east-1
+  ssh_username: Administrator
+  ssh_password: SuperS3cr3t!!!!
+
+container:
+  workdir: C:\provision-scripts
+  image_hashes:
+    - arch: 64Bit
+      os: windows
+  registry:
+    server: ghcr.io
+    username: l50
