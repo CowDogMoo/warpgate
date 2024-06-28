@@ -18,6 +18,11 @@ variable "entrypoint" {
   description = "Optional entrypoint script."
 }
 
+variable "key_pair_name" {
+  type        = string
+  description = "Name of the key pair to use for SSH access."
+}
+
 variable "new_image_tag" {
   type    = string
   description = "Tag for the created image."
