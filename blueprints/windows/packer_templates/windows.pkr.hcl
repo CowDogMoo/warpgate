@@ -18,27 +18,26 @@ source "amazon-ebs" "windows" {
     most_recent = true
     owners      = ["amazon"]
   }
-  ssh_username            = var.ssh_username
-  ssh_password            = "S3cr3tP@ssw0rd"
-  communicator            = "ssh"
-  ssh_timeout             = var.ssh_timeout
-
   user_data_file = "${var.user_data_file}"
-  associate_public_ip_address = true
+  communicator = "ssh"
+  ssh_password = "SuperS3cr3t!!!!"
+  ssh_username = var.ssh_username
+  ssh_timeout = "10m"
 }
 
 build {
-  sources = [
-    "source.amazon-ebs.windows",
-  ]
+  name = "windows"
+  sources = ["source.amazon-ebs.windows"]
 
   provisioner "powershell" {
-    inline = [
-      "mkdir ${var.pkr_build_dir}",
-    ]
+    script = "scripts/choco.ps1"
   }
 
-  provisioner "powershell" {
-    script = "${var.provision_repo_path}/provision.ps1"
+  provisioner "windows-restart" {
+    max_retries = 3
   }
+
+  # provisioner "powershell" {
+  #   script = "scripts/imagePrep.ps1"
+  # }
 }

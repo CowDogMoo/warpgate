@@ -10,7 +10,7 @@ variable "ami_arch" {
 variable "ami_instance_type" {
   type        = string
   description = "The type of instance to use for the initial AMI creation."
-  default     = "t3.medium"
+  default     = "t3.small"
 }
 
 variable "ami_region" {
@@ -32,7 +32,7 @@ variable "base_image_version" {
 variable "instance_type" {
   type        = string
   description = "The type of instance to use for the initial AMI creation."
-  default     = "t3.medium"
+  default     = "t3.micro"
 }
 
 variable "user_data_file" {
@@ -40,24 +40,6 @@ variable "user_data_file" {
   description = "Path to the user data file for instance initialization."
   default     = "./scripts/bootstrap_win.txt"
 }
-
-# ############################################
-# #           Container variables            #
-# ############################################
-# variable "base_image" {
-#   type        = string
-#   description = "Base image."
-# }
-
-# variable "base_image_version" {
-#   type        = string
-#   description = "Version of the base image."
-# }
-
-# variable "workdir" {
-#   type        = string
-#   description = "Working directory for a new container."
-# }
 
 ############################################
 #           Global variables               #
@@ -70,7 +52,7 @@ variable "blueprint_name" {
 variable "pkr_build_dir" {
   type        = string
   description = "Directory that packer will execute the transferred provisioning logic from within the container."
-  default     = "C:/provision-scripts"
+  default     = "C:\\provision-scripts"
 }
 
 variable "provision_repo_path" {
@@ -92,16 +74,16 @@ variable "os_version" {
 
 variable "ssh_username" {
   type    = string
-  default = "packer"
+  default = "Administrator"
 }
 
 variable "ssh_timeout" {
   type    = string
-  default = "20m"
+  default = "10m"
 }
 
 variable "user" {
   type        = string
   description = "Default user for a blueprint."
-  default = "Administrator"
+  default     = "Administrator"
 }
