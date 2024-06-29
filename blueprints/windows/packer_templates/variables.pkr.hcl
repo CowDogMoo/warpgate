@@ -72,17 +72,12 @@ variable "os_version" {
   default     = "2022-English-Full-Base*"
 }
 
-variable "ssh_username" {
-  type    = string
-  default = "Administrator"
-}
-
 variable "ssh_timeout" {
   type    = string
   default = "10m"
 }
 
-variable "user" {
+variable "ssh_username" {
   type        = string
   description = "Default user for a blueprint."
   default     = "Administrator"
