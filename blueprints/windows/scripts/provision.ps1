@@ -20,7 +20,7 @@ function Enable-DownloadKeyTask {
         Enable-ScheduledTask "DownloadKey"
         Write-Output "DownloadKey task enabled."
     } else {
-        if ($env:ssh_interface -eq "session_manager") {
+        if ($env:SSH_INTERFACE -eq "session_manager") {
             Write-Output "Scheduled task 'DownloadKey' not found. Expected behavior when using Session Manager."
         } else {
             Write-Output "Scheduled task 'DownloadKey' not found."
