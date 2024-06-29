@@ -1,34 +1,40 @@
-<#
-.SYNOPSIS
-    Installs the SMB server feature on a Windows machine.
+$ErrorActionPreference = 'Stop'
 
-.DESCRIPTION
-    This script installs the SMB server feature using PowerShell, which allows the machine to share folders and files using the SMB protocol.
+function Install-Chocolatey {
+    Write-Output "Installing Chocolatey..."
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+    choco feature enable -n allowGlobalConfirmation
+}
 
-.EXAMPLE
-    ./Install-SMBServer.ps1
-#>
+function Cleanup-SSHKeys {
+    Write-Output "Cleaning up SSH keys..."
+    $openSSHAuthorizedKeys = Join-Path $env:ProgramData 'ssh\administrators_authorized_keys'
+    Remove-Item -Recurse -Force -Path $openSSHAuthorizedKeys
+}
 
-# Function to install SMB Server
-function Install-SMBServer {
-    # Check if SMB server feature is already installed
-    $feature = Get-WindowsFeature -Name FS-SMB1
-
-    if ($feature.Installed -eq $false) {
-        Write-Output "SMB Server feature not found. Installing SMB Server feature..."
-
-        # Install SMB Server feature
-        Install-WindowsFeature -Name FS-SMB1 -IncludeAllSubFeature -IncludeManagementTools
-
-        if ($? -eq $true) {
-            Write-Output "SMB Server feature installed successfully."
-        } else {
-            Write-Error "Failed to install SMB Server feature."
-        }
+function Enable-DownloadKeyTask {
+    Write-Output "Checking for DownloadKey task..."
+    if (Get-ScheduledTask -TaskName "DownloadKey" -ErrorAction SilentlyContinue) {
+        Enable-ScheduledTask "DownloadKey"
+        Write-Output "DownloadKey task enabled."
     } else {
-        Write-Output "SMB Server feature is already installed."
+        if ($env:ssh_interface -eq "session_manager") {
+            Write-Output "Scheduled task 'DownloadKey' not found. Expected behavior when using Session Manager."
+        } else {
+            Write-Output "Scheduled task 'DownloadKey' not found."
+        }
     }
 }
 
-# Execute the function
-Install-SMBServer
+function Run-Sysprep {
+    Write-Output "Running Sysprep..."
+    & "$Env:Programfiles\Amazon\EC2Launch\ec2launch.exe" sysprep
+}
+
+# Main script execution
+Install-Chocolatey
+Cleanup-SSHKeys
+Enable-DownloadKeyTask
+Run-Sysprep

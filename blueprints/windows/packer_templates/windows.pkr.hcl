@@ -11,6 +11,7 @@ source "amazon-ebs" "windows" {
   ami_name      = "${var.blueprint_name}-${local.timestamp}"
   instance_type = "${var.instance_type}"
   region        = "${var.ami_region}"
+
   source_ami_filter {
     filters = {
       name                = "${var.os}-${var.os_version}"
@@ -20,41 +21,50 @@ source "amazon-ebs" "windows" {
     most_recent = true
     owners      = ["amazon"]
   }
-  iam_instance_profile = "AmazonSSMInstanceProfileForInstances"
-  user_data_file = "${var.user_data_file}"
-  associate_public_ip_address = true
-  communicator = "ssh"
-  ssh_port = 22
-  ssh_username = var.ssh_username
-  ssh_file_transfer_method    = "sftp"
-  ssh_timeout = "20m"
-  ssh_interface = "session_manager"
 
-  snapshot_tags = {
-    Name      =  "${var.blueprint_name}"
-    BuildTime = "${local.timestamp}"
-  }
+  user_data_file = "${var.user_data_file}"
+  communicator   = "${var.communicator}"
+  run_tags       = "${var.run_tags}"
+
+  # SSH Configuration
+  ssh_port                 = "${var.communicator == "ssh" ? var.ssh_port : null}"
+  ssh_username             = "${var.communicator == "ssh" ? var.ssh_username : null}"
+  ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
+  ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
+
+  # WinRM Configuration
+  winrm_username = "${var.communicator == "winrm" ? var.winrm_username : null}"
+  winrm_password = "${var.communicator == "winrm" ? var.winrm_password : null}"
+  winrm_port     = "${var.communicator == "winrm" ? var.winrm_port : null}"
+  winrm_timeout  = "${var.communicator == "winrm" ? var.winrm_timeout : null}"
+
+  # SSM and IP Configuration
+  associate_public_ip_address = "${var.ssh_interface != "session_manager"}"
+  ssh_interface = "session_manager"
+  #ssh_interface               = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.ssh_interface : "public_ip"}"
+  iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
   tags = {
-    Name      =  "${var.blueprint_name}"
+    Name      = "${var.blueprint_name}-${local.timestamp}"
     BuildTime = "${local.timestamp}"
   }
 }
 
 build {
-  name = "windows"
+  name    = "windows"
   sources = ["source.amazon-ebs.windows"]
 
   provisioner "powershell" {
-    script = "scripts/choco.ps1"
+    environment_vars = [
+      "SSH_INTERFACE=${var.ssh_interface}"
+    ]
+    # TODO: script = "${pkr_build_dir}/provision.ps1"
+    script = "scripts/provision.ps1"
   }
 
+  # Restart the instance to ensure the AMI is in a clean state
   provisioner "windows-restart" {
-    restart_check_command = "powershell -command \"& { Write-Output 'Restarting...'; exit 1 }\""
-    max_retries = 3
+    restart_check_command = "${var.restart_check_command}"
+    max_retries           = "${var.max_retries}"
   }
-
-  # provisioner "powershell" {
-  #   script = "scripts/imagePrep.ps1"
-  # }
 }

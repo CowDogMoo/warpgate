@@ -2,8 +2,8 @@
 blueprint:
   name: windows
   tag:
-    name: l50/windows
-    version: latest
+    name: windows-server
+    version: 2019
 
 packer_templates:
   - image_values:
@@ -13,16 +13,39 @@ packer_templates:
 
 # AMI specific configurations
 ami:
-  instance_type: t3.medium
   region: us-east-1
-  ssh_username: Administrator
-  ssh_password: SuperS3cr3t!!!!
-
-container:
-  workdir: C:\provision-scripts
-  image_hashes:
-    - arch: 64Bit
-      os: windows
-  registry:
-    server: ghcr.io
-    username: l50
+# packages:
+#   - name: git
+#     version: latest
+#   - name: aws-cli
+#     version: latest
+# services:
+#   - name: sshd
+#     action: enable
+#   - name: winrm
+#     action: enable
+# files:
+#   - source: ./scripts
+#     destination: C:\provision-scripts
+#   - source: ./files
+#     destination: C:\provision-files
+#   - path: C:\provision-files\hello.txt
+#     content: Hello, World!
+# scripts:
+#   - name: install-git.ps1
+#     path: C:\provision-scripts\install-git.ps1
+# commands:
+#   - name: install-aws-cli
+#     command: aws --version
+# env:
+#   - name: AWS_ACCESS_KEY_ID
+#     value: AKIAIOSFODNN7EXAMPLE
+# users:
+#   - name: target_user
+#     password: SuperS3cr3t!!!!
+# groups:
+#   - name: target_group
+#     members:
+#       - target_user
+# directories:
+#   - path: C:\provision-scripts

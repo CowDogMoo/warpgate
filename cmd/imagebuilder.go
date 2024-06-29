@@ -117,16 +117,12 @@ func init() {
 //
 // error: An error if any issue occurs while building the images.
 func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) error {
-	if err := blueprint.LoadPackerTemplates(githubToken); err != nil {
+	err := blueprint.LoadPackerTemplates(githubToken)
+	if err != nil || len(blueprint.PackerTemplates) == 0 {
 		return fmt.Errorf("no packer templates found: %v", err)
 	}
 
-	if len(blueprint.PackerTemplates) == 0 {
-		return fmt.Errorf("no packer templates found")
-	}
-
-	_, err := blueprint.BuildPackerImages()
-	if err != nil {
+	if _, err := blueprint.BuildPackerImages(); err != nil {
 		return err
 	}
 
@@ -135,6 +131,10 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		Server:     viper.GetString("container.registry.server"),
 		Username:   viper.GetString("container.registry.username"),
 		Credential: githubToken,
+	}
+
+	if registryConfig.Server == "" || registryConfig.Username == "" || registryConfig.Credential == "" {
+		return fmt.Errorf("container registry configuration must not be empty")
 	}
 
 	// New DockerClient initialization with username and token
