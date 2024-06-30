@@ -32,7 +32,7 @@ var (
 
 	// Global variables
 	blueprint       = bp.Blueprint{}
-	packerTemplates = []packer.PackerTemplate{}
+	packerTemplates = packer.PackerTemplates{}
 
 	rootCmd = &cobra.Command{
 		Use:   "wg",

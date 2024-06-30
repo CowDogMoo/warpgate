@@ -47,17 +47,17 @@ error: An error if any issue occurs while getting the store.
 
 ---
 
-### DockerClient.CreateAndPushManifest(*bp.Blueprint, []string)
+### DockerClient.CreateAndPushManifest(*packer.PackerTemplates, []string)
 
 ```go
-CreateAndPushManifest(*bp.Blueprint, []string) error
+CreateAndPushManifest(*packer.PackerTemplates, []string) error
 ```
 
 CreateAndPushManifest creates a manifest list and pushes it to a registry.
 
 **Parameters:**
 
-blueprint: The blueprint containing image tag information.
+pTmpl: Packer templates containing the tag information.
 imageTags: A slice of image tags to include in the manifest list.
 
 **Returns:**
@@ -142,30 +142,10 @@ error: An error if any operation fails during the size retrieval
 
 ---
 
-### DockerClient.ProcessPackerTemplates([]packer.PackerTemplate, bp.Blueprint)
+### DockerClient.ProcessTemplates(packer.PackerTemplates, string)
 
 ```go
-ProcessPackerTemplates([]packer.PackerTemplate, bp.Blueprint) error
-```
-
-ProcessPackerTemplates processes a list of Packer templates by
-tagging and pushing images to a registry.
-
-**Parameters:**
-
-pTmpl: A slice of PackerTemplate instances to process.
-blueprint: The blueprint containing tag information.
-
-**Returns:**
-
-error: An error if any operation fails during tagging or pushing.
-
----
-
-### DockerClient.ProcessTemplate(packer.PackerTemplate, bp.Blueprint)
-
-```go
-ProcessTemplate(packer.PackerTemplate, bp.Blueprint) error
+ProcessTemplates(packer.PackerTemplates, string) error
 ```
 
 ProcessTemplate processes a Packer template by tagging and pushing images
@@ -257,18 +237,18 @@ registry: A pointer to the DockerRegistry to be set.
 
 ---
 
-### DockerClient.TagAndPushImages(*bp.Blueprint)
+### DockerClient.TagAndPushImages(*packer.PackerTemplates)
 
 ```go
-TagAndPushImages(*bp.Blueprint) []string, error
+TagAndPushImages(*packer.PackerTemplates) []string, error
 ```
 
 TagAndPushImages tags and pushes images to a registry based on
-the provided blueprint.
+the provided PackerTemplate.
 
 **Parameters:**
 
-blueprint: The blueprint containing tag information.
+pTmpl: The PackerTemplates containing image tag information.
 
 **Returns:**
 

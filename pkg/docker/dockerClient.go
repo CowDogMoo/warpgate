@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 
-	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/docker/docker/api/types/image"
 	dockerRegistry "github.com/docker/docker/api/types/registry"
@@ -32,7 +31,7 @@ type DockerClientInterface interface {
 	DockerLogin() error
 	DockerPush(image string) error
 	DockerTag(sourceImage, targetImage string) error
-	CreateAndPushManifest(blueprint *bp.Blueprint, imageTags []string) error
+	CreateAndPushManifest(pTmpl *packer.PackerTemplates, imageTags []string) error
 	CreateManifest(ctx context.Context, targetImage string, imageTags []string) (v1.ImageIndex, error)
 	GetImageSize(imageRef string) (int64, error)
 }
@@ -185,31 +184,6 @@ func (d *DockerClient) PushImage(containerImage string) error {
 	return nil
 }
 
-// ProcessPackerTemplates processes a list of Packer templates by
-// tagging and pushing images to a registry.
-//
-// **Parameters:**
-//
-// pTmpl: A slice of PackerTemplate instances to process.
-// blueprint: The blueprint containing tag information.
-//
-// **Returns:**
-//
-// error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blueprint bp.Blueprint) error {
-	if len(pTmpl) == 0 {
-		return errors.New("packer templates must be provided for the blueprint")
-	}
-
-	for _, p := range pTmpl {
-		if err := d.ProcessTemplate(p, blueprint); err != nil {
-			return fmt.Errorf("error processing Packer template: %v", err)
-		}
-	}
-
-	return nil
-}
-
 // ProcessTemplate processes a Packer template by tagging and pushing images
 // to a registry.
 //
@@ -221,17 +195,20 @@ func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blu
 // **Returns:**
 //
 // error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bp.Blueprint) error {
-	if blueprint.Name == "" {
+func (d *DockerClient) ProcessTemplates(pTmpl packer.PackerTemplates, blueprintName string) error {
+	if blueprintName == "" {
 		return errors.New("blueprint name must not be empty")
 	}
 
-	if blueprint.Tag.Name == "" || blueprint.Tag.Version == "" {
+	if pTmpl.Tag.Name == "" || pTmpl.Tag.Version == "" {
 		return errors.New("blueprint tag name and version must not be empty")
 	}
 
-	if pTmpl.Container.ImageRegistry.Server == "" || pTmpl.Container.ImageRegistry.Username == "" || pTmpl.Container.ImageRegistry.Credential == "" {
-		return fmt.Errorf("registry server '%s', username '%s', and credential must not be empty", pTmpl.Container.ImageRegistry.Server, pTmpl.Container.ImageRegistry.Username)
+	if pTmpl.Container.ImageRegistry.Server == "" ||
+		pTmpl.Container.ImageRegistry.Username == "" ||
+		pTmpl.Container.ImageRegistry.Credential == "" {
+		return fmt.Errorf("registry server '%s', username '%s', and credential must not be empty",
+			pTmpl.Container.ImageRegistry.Server, pTmpl.Container.ImageRegistry.Username)
 	}
 
 	d.Container.ImageRegistry = pTmpl.Container.ImageRegistry
@@ -250,14 +227,14 @@ func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bp
 			i--
 		}
 	}
-	fmt.Printf("Processing %s image with the following hashes: %+v\n", blueprint.Name, d.Container.ImageHashes) // Debugging line
+	// fmt.Printf("Processing %s image with the following hashes: %+v\n", blueprint.Name, d.Container.ImageHashes)
 
-	imageTags, err := d.TagAndPushImages(&blueprint)
+	imageTags, err := d.TagAndPushImages(&pTmpl)
 	if err != nil {
 		return err
 	}
 
-	if err := d.CreateAndPushManifest(&blueprint, imageTags); err != nil {
+	if err := d.CreateAndPushManifest(&pTmpl, imageTags); err != nil {
 		return err
 	}
 
@@ -291,17 +268,17 @@ func (d *DockerClient) SetRegistry(registry *DockerRegistry) {
 }
 
 // TagAndPushImages tags and pushes images to a registry based on
-// the provided blueprint.
+// the provided PackerTemplate.
 //
 // **Parameters:**
 //
-// blueprint: The blueprint containing tag information.
+// pTmpl: The PackerTemplates containing image tag information.
 //
 // **Returns:**
 //
 // []string: A slice of image tags that were successfully pushed.
 // error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, error) {
+func (d *DockerClient) TagAndPushImages(pTmpl *packer.PackerTemplates) ([]string, error) {
 	var imageTags []string
 
 	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes)
@@ -314,7 +291,7 @@ func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, erro
 		localTag := fmt.Sprintf("sha256:%s", hash.Hash)
 		remoteTag := fmt.Sprintf("%s/%s:%s",
 			strings.TrimPrefix(d.Container.ImageRegistry.Server, "https://"),
-			blueprint.Tag.Name, hash.Arch)
+			pTmpl.Tag.Name, hash.Arch)
 		fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
 
 		if err := d.DockerTag(localTag, remoteTag); err != nil {

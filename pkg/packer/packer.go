@@ -78,25 +78,57 @@ type ImageValues struct {
 	Version string `mapstructure:"version"`
 }
 
-// PackerTemplate represents a Packer template associated with a blueprint.
+// PackerTemplate represents a collection of Packer templates consumed by a blueprint.
 //
 // **Attributes:**
 //
-// AMI: Optional AMI configuration.
-// Container: Container configuration for the template.
+// Container: Configuration for container images.
 // ImageValues: Name and version of the image.
-// Systemd: Indicates if systemd is used in the container.
-// User: User to run commands as in the container.
-type PackerTemplate struct {
-	AMI         AMI         `mapstructure:"ami,omitempty"`
+// User: User responsible for provisioning the blueprint, usually high-privilege (e.g., root or Administrator).
+// AMI: Optional AMI configuration.
+// Tag: Tag configuration for the image built by Packer.
+type PackerTemplates struct {
 	Container   Container   `mapstructure:"container,omitempty"`
 	ImageValues ImageValues `mapstructure:"image_values"`
-	Systemd     bool        `mapstructure:"systemd"`
 	User        string      `mapstructure:"user"`
+	AMI         AMI         `mapstructure:"ami,omitempty"`
+	Tag         Tag         `mapstructure:"tag"`
+}
+
+// Tag represents the tag configuration for the image built by Packer.
+//
+// **Attributes:**
+//
+// Name: Name of the tag.
+// Version: Version of the tag.
+type Tag struct {
+	Name    string `mapstructure:"name"`
+	Version string `mapstructure:"version"`
+}
+
+// ParseAMIDetails extracts the AMI ID from the output of a Packer build command.
+//
+// **Parameters:**
+//
+// output: The output from the Packer build command.
+//
+// **Returns:**
+//
+// string: The AMI ID if found in the output.
+func (p *PackerTemplates) ParseAMIDetails(output string) string {
+	if strings.Contains(output, "AMI:") {
+		parts := strings.Split(output, " ")
+		for i := 0; i < len(parts)-1; i++ {
+			if parts[i] == "AMI:" {
+				return parts[i+1]
+			}
+		}
+	}
+	return ""
 }
 
 // ParseImageHashes extracts the image hashes from the output of a Packer build
-// command and updates the provided Packer blueprint with the new hashes.
+// command and updates the provided PackerTemplates struct with the new hashes.
 //
 // **Parameters:**
 //
@@ -105,7 +137,7 @@ type PackerTemplate struct {
 // **Returns:**
 //
 // []ImageHash: A slice of ImageHash structs parsed from the build output.
-func (p *PackerTemplate) ParseImageHashes(output string) []ImageHash {
+func (p *PackerTemplates) ParseImageHashes(output string) []ImageHash {
 	if p.Container.ImageHashes == nil {
 		p.Container.ImageHashes = []ImageHash{}
 	}
@@ -148,25 +180,4 @@ func (p *PackerTemplate) ParseImageHashes(output string) []ImageHash {
 		}
 	}
 	return p.Container.ImageHashes
-}
-
-// ParseAMIDetails extracts the AMI ID from the output of a Packer build command.
-//
-// **Parameters:**
-//
-// output: The output from the Packer build command.
-//
-// **Returns:**
-//
-// string: The AMI ID if found in the output.
-func (p *PackerTemplate) ParseAMIDetails(output string) string {
-	if strings.Contains(output, "AMI:") {
-		parts := strings.Split(output, " ")
-		for i := 0; i < len(parts)-1; i++ {
-			if parts[i] == "AMI:" {
-				return parts[i+1]
-			}
-		}
-	}
-	return ""
 }

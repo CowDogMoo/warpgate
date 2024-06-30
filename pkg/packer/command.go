@@ -37,7 +37,7 @@ type PackerCommandRunner interface {
 // **Returns:**
 //
 // error: An error if the command fails.
-func (p *PackerTemplate) runCommand(
+func (p *PackerTemplates) runCommand(
 	subCmd string, args []string, dir string,
 	outputHandler func(string)) (string, error) {
 
@@ -76,7 +76,7 @@ func (p *PackerTemplate) runCommand(
 // map[string]string: A map of image hashes parsed from the build output.
 // string: The AMI ID parsed from the build output.
 // error: An error if the build command fails.
-func (p *PackerTemplate) RunBuild(args []string, dir string) ([]ImageHash, string, error) {
+func (p *PackerTemplates) RunBuild(args []string, dir string) ([]ImageHash, string, error) {
 	if dir == "" {
 		dir = "."
 	}
@@ -118,7 +118,7 @@ func (p *PackerTemplate) RunBuild(args []string, dir string) ([]ImageHash, strin
 // **Returns:**
 //
 // error: An error if the init command fails.
-func (p *PackerTemplate) RunInit(args []string, dir string) error {
+func (p *PackerTemplates) RunInit(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -146,7 +146,7 @@ func (p *PackerTemplate) RunInit(args []string, dir string) error {
 // **Returns:**
 //
 // error: An error if the validate command fails.
-func (p *PackerTemplate) RunValidate(args []string, dir string) error {
+func (p *PackerTemplates) RunValidate(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -169,7 +169,7 @@ func (p *PackerTemplate) RunValidate(args []string, dir string) error {
 //
 // string: The version of Packer.
 // error: An error if the version command fails.
-func (p *PackerTemplate) RunVersion() (string, error) {
+func (p *PackerTemplates) RunVersion() (string, error) {
 	var versionOutput strings.Builder
 	outputHandler := func(s string) {
 		versionOutput.WriteString(s)

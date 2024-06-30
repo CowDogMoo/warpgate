@@ -1,19 +1,20 @@
 ---
 blueprint:
   name: windows
-  tag:
-    name: windows-server
-    version: 2019
-
-packer_templates:
-  - image_values:
+  packer_templates:
+    image_values:
       name: Windows_Server
       version: 2019
+    # Provisioning user
     user: Administrator
     # AMI specific configurations
     ami:
       instance_type: t3.micro
       region: us-east-1
+    # Tags for created odysseys
+    tag:
+      name: windows-server
+      version: 2019
 # packages:
 #   - name: git
 #     version: latest

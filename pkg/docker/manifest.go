@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/containers/storage"
-	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
+	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -66,20 +66,20 @@ type GetStoreFunc func(options storage.StoreOptions) (storage.Store, error)
 //
 // **Parameters:**
 //
-// blueprint: The blueprint containing image tag information.
+// pTmpl: Packer templates containing the tag information.
 // imageTags: A slice of image tags to include in the manifest list.
 //
 // **Returns:**
 //
 // error: An error if any operation fails during manifest creation or pushing.
-func (d *DockerClient) CreateAndPushManifest(blueprint *bp.Blueprint, imageTags []string) error {
+func (d *DockerClient) CreateAndPushManifest(pTmpl *packer.PackerTemplates, imageTags []string) error {
 	if len(imageTags) == 0 {
 		return fmt.Errorf("no image tags provided for manifest creation")
 	}
 
 	targetImage := fmt.Sprintf("%s/%s:%s",
 		strings.TrimPrefix(d.Container.ImageRegistry.Server, "https://"),
-		blueprint.Tag.Name, blueprint.Tag.Version)
+		pTmpl.Tag.Name, pTmpl.Tag.Version)
 
 	fmt.Printf("Creating manifest list for %s with %v tags\n", targetImage, imageTags)
 

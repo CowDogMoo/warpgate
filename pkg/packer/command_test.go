@@ -68,7 +68,7 @@ func TestRunBuild(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			packerTemplate := packer.PackerTemplate{}
+			packerTemplate := packer.PackerTemplates{}
 			_, _, err := packerTemplate.RunBuild(tc.args, tc.dir)
 			if tc.expectedError {
 				assert.Error(t, err)
@@ -110,7 +110,7 @@ func TestRunInit(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			packerTemplate := packer.PackerTemplate{}
+			packerTemplate := packer.PackerTemplates{}
 			err := packerTemplate.RunInit(tc.args, tc.dir)
 			if tc.expectedError {
 				assert.Error(t, err)
@@ -152,7 +152,7 @@ func TestRunValidate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			packerTemplate := packer.PackerTemplate{}
+			packerTemplate := packer.PackerTemplates{}
 			err := packerTemplate.RunValidate(tc.args, tc.dir)
 			if tc.expectedError {
 				assert.Error(t, err)
@@ -176,7 +176,7 @@ func TestRunVersion(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			packerTemplate := packer.PackerTemplate{}
+			packerTemplate := packer.PackerTemplates{}
 			version, err := packerTemplate.RunVersion()
 			if tc.expectedError {
 				assert.Error(t, err)

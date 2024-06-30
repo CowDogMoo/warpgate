@@ -17,7 +17,7 @@ The `packer` package is a part of the WarpGate.
 
 ## Functions
 
-### PackerTemplate.ParseAMIDetails(string)
+### PackerTemplates.ParseAMIDetails(string)
 
 ```go
 ParseAMIDetails(string) string
@@ -35,14 +35,14 @@ string: The AMI ID if found in the output.
 
 ---
 
-### PackerTemplate.ParseImageHashes(string)
+### PackerTemplates.ParseImageHashes(string)
 
 ```go
 ParseImageHashes(string) []ImageHash
 ```
 
 ParseImageHashes extracts the image hashes from the output of a Packer build
-command and updates the provided Packer blueprint with the new hashes.
+command and updates the provided PackerTemplates struct with the new hashes.
 
 **Parameters:**
 
@@ -54,7 +54,7 @@ output: The output from the Packer build command.
 
 ---
 
-### PackerTemplate.RunBuild([]string, string)
+### PackerTemplates.RunBuild([]string, string)
 
 ```go
 RunBuild([]string, string) []ImageHash, string, error
@@ -76,7 +76,7 @@ error: An error if the build command fails.
 
 ---
 
-### PackerTemplate.RunInit([]string, string)
+### PackerTemplates.RunInit([]string, string)
 
 ```go
 RunInit([]string, string) error
@@ -96,7 +96,7 @@ error: An error if the init command fails.
 
 ---
 
-### PackerTemplate.RunValidate([]string, string)
+### PackerTemplates.RunValidate([]string, string)
 
 ```go
 RunValidate([]string, string) error
@@ -116,7 +116,7 @@ error: An error if the validate command fails.
 
 ---
 
-### PackerTemplate.RunVersion()
+### PackerTemplates.RunVersion()
 
 ```go
 RunVersion() string, error

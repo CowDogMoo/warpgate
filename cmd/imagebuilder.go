@@ -51,10 +51,6 @@ var (
 
 			blueprint := bp.Blueprint{
 				Name: blueprintName,
-				Tag: bp.Tag{
-					Name:    tagName,
-					Version: tagVersion,
-				},
 			}
 
 			if err := blueprint.CreateBuildDir(); err != nil {
@@ -118,7 +114,7 @@ func init() {
 // error: An error if any issue occurs while building the images.
 func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) error {
 	err := blueprint.LoadPackerTemplates(githubToken)
-	if err != nil || len(blueprint.PackerTemplates) == 0 {
+	if err != nil {
 		return fmt.Errorf("no packer templates found: %v", err)
 	}
 
@@ -127,7 +123,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 	}
 
 	// Check if container configuration is needed
-	if blueprint.PackerTemplates[0].Container.ImageRegistry.Server != "" {
+	if blueprint.PackerTemplates.Container.ImageRegistry.Server != "" {
 
 		// Create ContainerImageRegistry object
 		registryConfig := packer.ContainerImageRegistry{
@@ -146,8 +142,8 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 			return err
 		}
 
-		if err := dockerClient.ProcessPackerTemplates(blueprint.PackerTemplates, blueprint); err != nil {
-			return err
+		if err := dockerClient.ProcessTemplates(blueprint.PackerTemplates, blueprint.Name); err != nil {
+			return fmt.Errorf("error processing Packer template: %v", err)
 		}
 	}
 

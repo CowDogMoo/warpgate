@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/pkg/packer"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -31,9 +32,21 @@ func TestParseImageHashes(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pTmpl := &packer.PackerTemplate{}
+			// Mock the viper configuration for image hashes
+			viper.Set("container.image_hashes", []interface{}{
+				map[string]interface{}{"arch": "arm64", "os": "linux"},
+				map[string]interface{}{"arch": "amd64", "os": "linux"},
+			})
+
+			pTmpl := &packer.PackerTemplates{}
 			hashes := pTmpl.ParseImageHashes(tc.output)
-			assert.Equal(t, tc.expectedHashes, hashes)
+
+			actualHashes := make(map[string]string)
+			for _, hash := range hashes {
+				actualHashes[hash.Arch] = hash.Hash
+			}
+
+			assert.Equal(t, tc.expectedHashes, actualHashes)
 		})
 	}
 }
