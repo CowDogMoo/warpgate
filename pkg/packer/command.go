@@ -53,7 +53,7 @@ func (p *PackerTemplate) runCommand(
 	}
 
 	fmt.Printf(
-		"executing command: %s %v in directory: %s\n",
+		"Executing command: %s %v in directory: %s\n",
 		cmd.CmdString, cmd.Args, cmd.Dir)
 
 	if _, err := cmd.RunCmd(); err != nil {
