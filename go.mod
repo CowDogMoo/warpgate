@@ -6,7 +6,7 @@ toolchain go1.22.4
 
 require (
 	github.com/containers/common v0.59.1
-	github.com/containers/image/v5 v5.31.0
+	github.com/containers/image/v5 v5.31.1
 	github.com/containers/storage v1.54.0
 	github.com/docker/docker v27.0.2+incompatible
 	github.com/fatih/color v1.17.0
