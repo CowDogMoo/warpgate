@@ -10,10 +10,10 @@ packer_templates:
       name: Windows_Server
       version: 2019
     user: Administrator
-
-# AMI specific configurations
-ami:
-  region: us-east-1
+    # AMI specific configurations
+    ami:
+      instance_type: t3.micro
+      region: us-east-1
 # packages:
 #   - name: git
 #     version: latest

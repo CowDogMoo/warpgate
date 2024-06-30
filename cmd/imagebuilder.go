@@ -126,25 +126,29 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return err
 	}
 
-	// Create ContainerImageRegistry object
-	registryConfig := packer.ContainerImageRegistry{
-		Server:     viper.GetString("container.registry.server"),
-		Username:   viper.GetString("container.registry.username"),
-		Credential: githubToken,
-	}
+	// Check if container configuration is needed
+	if blueprint.PackerTemplates[0].Container.ImageRegistry.Server != "" {
 
-	if registryConfig.Server == "" || registryConfig.Username == "" || registryConfig.Credential == "" {
-		return fmt.Errorf("container registry configuration must not be empty")
-	}
+		// Create ContainerImageRegistry object
+		registryConfig := packer.ContainerImageRegistry{
+			Server:     viper.GetString("container.registry.server"),
+			Username:   viper.GetString("container.registry.username"),
+			Credential: githubToken,
+		}
 
-	// New DockerClient initialization with username and token
-	dockerClient, err := docker.NewDockerClient(viper.GetString("container.registry.server"), githubToken, registryConfig)
-	if err != nil {
-		return err
-	}
+		if registryConfig.Server == "" || registryConfig.Username == "" || registryConfig.Credential == "" {
+			return fmt.Errorf("container registry configuration must not be empty")
+		}
 
-	if err := dockerClient.ProcessPackerTemplates(blueprint.PackerTemplates, blueprint); err != nil {
-		return err
+		// New DockerClient initialization with username and token
+		dockerClient, err := docker.NewDockerClient(viper.GetString("container.registry.server"), githubToken, registryConfig)
+		if err != nil {
+			return err
+		}
+
+		if err := dockerClient.ProcessPackerTemplates(blueprint.PackerTemplates, blueprint); err != nil {
+			return err
+		}
 	}
 
 	return nil

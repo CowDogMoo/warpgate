@@ -104,13 +104,8 @@ func configFileExists(path string) (bool, error) {
 // error: An error if the configuration path cannot be set.
 func (b *Blueprint) SetConfigPath() error {
 	bpConfig := filepath.Join(b.Path, "config.yaml")
-	if _, err := configFileExists(bpConfig); err != nil {
-		return err
-	}
-
 	// Ensure the target blueprint config exists
-	_, err := configFileExists(bpConfig)
-	if err != nil {
+	if _, err := configFileExists(bpConfig); err != nil {
 		return err
 	}
 
@@ -225,18 +220,32 @@ func (b *Blueprint) LoadPackerTemplates(githubToken string) error {
 		return fmt.Errorf("no packer templates found")
 	}
 
-	for i, tmpl := range b.PackerTemplates {
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &tmpl.AMI); err != nil {
-			return fmt.Errorf("failed to unmarshal ami settings for template %d: %v", i, err)
+	for i := range b.PackerTemplates {
+		if err := b.unmarshalTemplate(i, githubToken); err != nil {
+			return err
 		}
+	}
 
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container", i), &tmpl.Container); err != nil {
+	return nil
+}
+
+func (b *Blueprint) unmarshalTemplate(i int, githubToken string) error {
+	// Unmarshal AMI if present
+	amiKey := fmt.Sprintf("packer_templates.%d.ami", i)
+	if viper.IsSet(amiKey) {
+		if err := viper.UnmarshalKey(amiKey, &b.PackerTemplates[i].AMI); err != nil {
+			return fmt.Errorf("failed to unmarshal AMI settings for template %d: %v", i, err)
+		}
+	}
+
+	// Unmarshal Container if present
+	containerKey := fmt.Sprintf("packer_templates.%d.container", i)
+	if viper.IsSet(containerKey) {
+		b.PackerTemplates[i].Container.ImageRegistry.Credential = githubToken
+
+		if err := viper.UnmarshalKey(containerKey, &b.PackerTemplates[i].Container); err != nil {
 			return fmt.Errorf("failed to unmarshal container settings for template %d: %v", i, err)
 		}
-
-		tmpl.Container.ImageRegistry.Credential = githubToken
-
-		b.PackerTemplates[i] = tmpl
 	}
 
 	return nil
@@ -314,23 +323,37 @@ func (b *Blueprint) PreparePackerArgs() []string {
 		"-var", fmt.Sprintf("blueprint_name=%s", b.Name),
 		"-var", fmt.Sprintf("user=%s", pTmpl.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", b.ProvisioningRepo),
-		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
 	}
 
-	// Add AMI specific variables if they exist
+	args = append(args, b.appendAMIArgs(pTmpl)...)
+	args = append(args, b.appendContainerArgs(pTmpl)...)
+
+	args = append(args, ".")
+	fmt.Printf("Packer Parameters: %s\n", hideSensitiveArgs(args))
+	return args
+}
+
+func (b *Blueprint) appendAMIArgs(pTmpl packer.PackerTemplate) []string {
+	var args []string
 	if amiConfig := pTmpl.AMI; amiConfig.InstanceType != "" {
-		args = append(args, "-var", fmt.Sprintf("instance_type=%s", pTmpl.AMI.InstanceType))
-		args = append(args, "-var", fmt.Sprintf("region=%s", pTmpl.AMI.Region))
-		args = append(args, "-var", fmt.Sprintf("ssh_user=%s", pTmpl.AMI.SSHUser))
+		fmt.Printf("AMI Config: %v\n", amiConfig)
+		args = append(args, "-var", fmt.Sprintf("instance_type=%s", amiConfig.InstanceType))
+		args = append(args, "-var", fmt.Sprintf("ami_region=%s", amiConfig.Region))
+		if amiConfig.SSHUser != "" {
+			args = append(args, "-var", fmt.Sprintf("ssh_username=%s", amiConfig.SSHUser))
+		}
 	}
+	return args
+}
 
-	// Add entrypoint if it's set
+func (b *Blueprint) appendContainerArgs(pTmpl packer.PackerTemplate) []string {
+	var args []string
+	if pTmpl.Container.Workdir != "" {
+		args = append(args, "-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir))
+	}
 	if pTmpl.Container.Entrypoint != "" {
 		args = append(args, "-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint))
 	}
-	args = append(args, ".")
-	fmt.Printf("Packer Parameters: %s\n", hideSensitiveArgs(args))
-
 	return args
 }
 
@@ -387,7 +410,6 @@ func (b *Blueprint) ValidatePackerTemplate() error {
 		}
 
 		missingFields := []string{}
-
 		for fieldName, fieldValue := range requiredFields {
 			if fieldValue == "" {
 				missingFields = append(missingFields, fieldName)
@@ -424,10 +446,9 @@ func (b *Blueprint) BuildImageAttempt(attempt int) ([]packer.ImageHash, error) {
 
 	args := b.PreparePackerArgs()
 
-	fmt.Printf("attempt %d - packer parameters: %s\n", attempt, hideSensitiveArgs(args))
+	fmt.Printf("Attempt %d - packer parameters: %s\n", attempt, hideSensitiveArgs(args))
 
 	// Initialize the packer templates directory
-	fmt.Printf("initializing %s packer template\n", b.Name)
 	if err := b.PackerTemplates[0].RunInit([]string{"."}, filepath.Join(b.Path, "packer_templates")); err != nil {
 		return nil, fmt.Errorf("error initializing packer command: %v", err)
 	}
@@ -458,11 +479,11 @@ func (b *Blueprint) BuildImageAttempt(attempt int) ([]packer.ImageHash, error) {
 
 	switch {
 	case len(validHashes) > 0:
-		fmt.Printf("image hashes: %v\n", validHashes)
+		fmt.Printf("Image hashes: %v\n", validHashes)
 	case amiID != "":
-		fmt.Printf("built AMI ID: %s\n", amiID)
+		fmt.Printf("Built AMI ID: %s\n", amiID)
 	default:
-		fmt.Printf("no container image or AMI found in the build output\n")
+		fmt.Printf("No container image or AMI found in the build output\n")
 	}
 
 	return validHashes, nil
