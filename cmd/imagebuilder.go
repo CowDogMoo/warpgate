@@ -42,8 +42,8 @@ var (
 				return fmt.Errorf("error reading blueprint config file: %w", err)
 			}
 
-			tagName := viper.GetString("blueprint.tag.name")
-			tagVersion := viper.GetString("blueprint.tag.version")
+			tagName := viper.GetString("blueprint.packer_templates.tag.name")
+			tagVersion := viper.GetString("blueprint.packer_templates.tag.version")
 
 			if tagName == "" || tagVersion == "" {
 				return fmt.Errorf("blueprint tag name and version must not be empty")
@@ -51,6 +51,12 @@ var (
 
 			blueprint := bp.Blueprint{
 				Name: blueprintName,
+				PackerTemplates: &packer.PackerTemplates{
+					Tag: packer.Tag{
+						Name:    tagName,
+						Version: tagVersion,
+					},
+				},
 			}
 
 			if err := blueprint.CreateBuildDir(); err != nil {
@@ -142,7 +148,7 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 			return err
 		}
 
-		if err := dockerClient.ProcessTemplates(blueprint.PackerTemplates, blueprint.Name); err != nil {
+		if err := dockerClient.ProcessTemplates(*blueprint.PackerTemplates, blueprint.Name); err != nil {
 			return fmt.Errorf("error processing Packer template: %v", err)
 		}
 	}

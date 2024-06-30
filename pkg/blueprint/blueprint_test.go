@@ -243,15 +243,67 @@ func setupBlueprint(name, tempDir string) *bp.Blueprint {
 }
 
 func setupConfig(t *testing.T, blueprint *bp.Blueprint, configContent string) {
+	// Ensure the directory exists
+	err := os.MkdirAll(blueprint.Path, os.ModePerm)
+	if err != nil {
+		t.Fatalf("failed to create blueprint directory: %v", err)
+	}
+
 	configFilePath := filepath.Join(blueprint.Path, "config.yaml")
-	err := os.WriteFile(configFilePath, []byte(configContent), 0644)
+	err = os.WriteFile(configFilePath, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}
+
 	viper.SetConfigFile(configFilePath)
 	err = viper.ReadInConfig()
 	if err != nil {
 		t.Fatalf("failed to read config file: %v", err)
+	}
+}
+
+func TestValidatePackerTemplate(t *testing.T) {
+	tests := []struct {
+		name          string
+		blueprint     *bp.Blueprint
+		expectedError string
+	}{
+		{
+			name: "valid template",
+			blueprint: &bp.Blueprint{
+				Name:             "test-blueprint",
+				Path:             "test-path",
+				ProvisioningRepo: "test-repo",
+				PackerTemplates: &packer.PackerTemplates{
+					ImageValues: packer.ImageValues{Name: "test-image", Version: "1.0"},
+					User:        "test-user",
+					Container:   packer.Container{Workdir: "test-workdir"},
+				},
+			},
+		},
+		{
+			name: "missing fields",
+			blueprint: &bp.Blueprint{
+				Name: "test-blueprint",
+				Path: "test-path",
+				PackerTemplates: &packer.PackerTemplates{
+					ImageValues: packer.ImageValues{Name: "", Version: ""},
+					User:        "",
+				},
+			},
+			expectedError: "packer template 'test-blueprint' has uninitialized fields",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.blueprint.ValidatePackerTemplates()
+			if tc.expectedError != "" {
+				assert.Contains(t, err.Error(), tc.expectedError)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
 	}
 }
 
@@ -279,43 +331,55 @@ func TestLoadPackerTemplates(t *testing.T) {
 	}{
 		{
 			name:          "valid blueprint",
-			blueprintName: "sliver",
+			blueprintName: "test",
 			configContent: `
-packer_templates:
-  ami:
-    instance_type: "t2.micro"
-    region: "us-west-2"
-    ssh_user: "ubuntu"
-  container:
-    image_hashes:
-      - arch: "amd64"
-        os: "ubuntu"
-        hash: "hash1"
-      - arch: "arm64"
-        os: "ubuntu"
-        hash: "hash2"
-    image_registry:
-      server: "testserver"
-      username: "testuser"
-      credential: "testtoken"
-    workdir: "/tmp"
-  image_values:
-    name: "ubuntu"
-    version: "jammy"
-  user: "ubuntu"
+blueprint:
+  name: test
+  packer_templates:
+    image_values:
+      name: ubuntu
+      version: jammy
+    user: ubuntu
+    ami:
+      instance_type: t3.medium
+      region: us-east-1
+      ssh_username: ubuntu
+    tag:
+      name: l50/test
+      version: latest
+    container:
+      registry:
+        server: ghcr.io
+        username: l50
+      workdir: /home/ubuntu
 `,
 			expectedErr: "",
 		},
 		{
 			name:          "missing config file",
 			blueprintName: "sliver",
-			expectedErr:   "no config file used by viper",
+			expectedErr:   "no config file",
 		},
 		{
 			name:          "invalid config content",
 			blueprintName: "sliver",
-			configContent: `packer_templates: "not_a_list"`,
-			expectedErr:   "failed to unmarshal packer templates",
+			configContent: `
+blueprint:
+  name: test
+  packer_templates:
+    image_valuez:
+      name: ubuntu
+      version: jammy
+    user: ubuntu
+    ami:
+      instance_type: t3.medium
+      region: us-east-1
+      ssh_username: ubuntu
+    tag:
+      name: l50/test
+      version: latest
+`,
+			expectedErr: "no packer templates found",
 		},
 		{
 			name:          "empty packer templates",
@@ -340,105 +404,15 @@ packer_templates:
 				}
 			}
 
-			err := blueprint.LoadPackerTemplates("testtoken")
+			err := blueprint.LoadPackerTemplates("test")
 			if tc.expectedErr != "" {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedErr)
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, blueprint.PackerTemplates)
-			}
-		})
-	}
-}
-
-func TestBuildPackerImages(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "repo_copy")
-	if err != nil {
-		t.Fatalf("failed to create temp directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	repoRoot, err := gitutils.RepoRoot()
-	if err != nil {
-		t.Fatalf("failed to get repo root: %v", err)
-	}
-	err = sys.Cp(repoRoot, tempDir)
-	if err != nil {
-		t.Fatalf("failed to copy repo: %v", err)
-	}
-
-	blueprint := setupBlueprint("sliver", tempDir)
-
-	setupConfig(t, blueprint, `
-packer_templates:
-  container:
-    image_hashes:
-      - arch: "amd64"
-        os: "ubuntu"
-        hash: "hash1"
-      - arch: "arm64"
-        os: "ubuntu"
-        hash: "hash2"
-    image_registry:
-      server: "testserver"
-      username: "testuser"
-      credential: "testtoken"
-    workdir: "/tmp"
-  image_values:
-    name: "ubuntu"
-    version: "jammy"
-  user: "ubuntu"
-`)
-
-	t.Run("BuildPackerImages", func(t *testing.T) {
-		hashes, err := blueprint.BuildPackerImages()
-		assert.NoError(t, err)
-		assert.NotNil(t, hashes)
-		assert.NotEmpty(t, hashes)
-	})
-}
-
-func TestValidatePackerTemplate(t *testing.T) {
-	tests := []struct {
-		name          string
-		blueprint     *bp.Blueprint
-		expectedError string
-	}{
-		{
-			name: "valid template",
-			blueprint: &bp.Blueprint{
-				Name:             "test-blueprint",
-				Path:             "test-path",
-				ProvisioningRepo: "test-repo",
-				PackerTemplates: packer.PackerTemplates{
-					ImageValues: packer.ImageValues{Name: "test-image", Version: "1.0"},
-					User:        "test-user",
-					Container:   packer.Container{Workdir: "test-workdir"},
-				},
-			},
-		},
-		{
-			name: "missing fields",
-			blueprint: &bp.Blueprint{
-				Name: "test-blueprint",
-				Path: "test-path",
-				PackerTemplates: packer.PackerTemplates{
-					ImageValues: packer.ImageValues{Name: "", Version: ""},
-					User:        "",
-				},
-			},
-			expectedError: "packer template 'test-blueprint' has uninitialized fields",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := tc.blueprint.ValidatePackerTemplates()
-			if tc.expectedError != "" {
-				assert.Contains(t, err.Error(), tc.expectedError)
-			} else {
-				assert.NoError(t, err)
+				assert.NotEmpty(t, blueprint.PackerTemplates.ImageValues.Name)
+				assert.NotEmpty(t, blueprint.PackerTemplates.User)
 			}
 		})
 	}

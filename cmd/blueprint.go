@@ -121,12 +121,6 @@ func processCfgInputs(cmd *cobra.Command) error {
 		return errors.New("invalid tag format")
 	}
 
-	systemd, err := cmd.Flags().GetBool("systemd")
-	if err != nil {
-		log.L().Error("Failed to get systemd flag from input: %v", err)
-		return err
-	}
-
 	baseInput, err := cmd.Flags().GetStringSlice("base")
 	if err != nil || validateBaseInput(baseInput) != nil {
 		log.L().Error("Failed to get base input from CLI or invalid format: %v", err)
@@ -134,14 +128,14 @@ func processCfgInputs(cmd *cobra.Command) error {
 	}
 
 	// Initialize the packer template
-	packerTemplates := generatePackerTemplate(baseInput[0], systemd)
+	packerTemplates := generatePackerTemplate(baseInput[0])
 
 	log.L().Debugf("Configured packer template: %#v", packerTemplates)
 
 	return nil
 }
 
-func generatePackerTemplate(baseInput string, systemd bool) packer.PackerTemplates {
+func generatePackerTemplate(baseInput string) packer.PackerTemplates {
 	parts := strings.Split(baseInput, ":")
 	return packer.PackerTemplates{
 		AMI: packer.AMI{
@@ -203,7 +197,7 @@ func createPacker(blueprint bp.Blueprint) error {
 		return err
 	}
 
-	blueprint.PackerTemplates = packerTemplates
+	blueprint.PackerTemplates = &packerTemplates
 
 	// Create the templated config file for the new blueprint
 	packerDir := filepath.Join(newBPPath, "packer_templates")
@@ -227,7 +221,7 @@ func createPacker(blueprint bp.Blueprint) error {
 		Container      packer.Container
 	}{
 		Blueprint:      bp.Blueprint{},
-		PackerTemplate: blueprint.PackerTemplates,
+		PackerTemplate: *blueprint.PackerTemplates,
 		Container:      packer.Container{},
 	}
 
@@ -283,7 +277,7 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 		cobra.CheckErr(err)
 	}
 
-	blueprint.PackerTemplates = packerTemplates
+	blueprint.PackerTemplates = &packerTemplates
 
 	if err := createCfg(blueprint); err != nil {
 		log.L().Error(err)
