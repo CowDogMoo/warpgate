@@ -10,7 +10,7 @@ require (
 	github.com/containers/storage v1.54.0
 	github.com/docker/docker v27.0.1+incompatible
 	github.com/fatih/color v1.17.0
-	github.com/google/go-containerregistry v0.19.1
+	github.com/google/go-containerregistry v0.19.2
 	github.com/l50/goutils/v2 v2.2.6
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/go-homedir v1.1.0
