@@ -348,6 +348,11 @@ blueprint:
       name: l50/test
       version: latest
     container:
+      image_hashes:
+        - arch: amd64
+          os: linux
+        - arch: arm64
+          os: linux
       registry:
         server: ghcr.io
         username: l50

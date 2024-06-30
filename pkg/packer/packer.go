@@ -142,7 +142,19 @@ func (p *PackerTemplates) ParseImageHashes(output string) []ImageHash {
 		p.Container.ImageHashes = []ImageHash{}
 	}
 
-	imageHashesConfig := viper.Get("container.image_hashes").([]interface{})
+	// Retrieve container image hashes configuration
+	imageHashesConfigRaw := viper.Get("container.image_hashes")
+	if imageHashesConfigRaw == nil {
+		fmt.Println("Error: container.image_hashes is nil or not found")
+		return p.Container.ImageHashes
+	}
+
+	// Attempt to type assert to []interface{}
+	imageHashesConfig, ok := imageHashesConfigRaw.([]interface{})
+	if !ok {
+		fmt.Println("Error: container.image_hashes is not []interface{}")
+		return p.Container.ImageHashes
+	}
 
 	// Regular expression to match and remove ANSI escape sequences
 	re := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
@@ -158,7 +170,11 @@ func (p *PackerTemplates) ParseImageHashes(output string) []ImageHash {
 				if len(archParts) > 1 {
 					arch := strings.TrimSuffix(archParts[1], ":")
 					for _, ihConfig := range imageHashesConfig {
-						ih := ihConfig.(map[string]interface{})
+						ih, ok := ihConfig.(map[string]interface{})
+						if !ok {
+							fmt.Println("Error: invalid image hash config format")
+							continue
+						}
 						if ih["arch"].(string) == arch {
 							imageHash := ImageHash{
 								Arch: arch,
