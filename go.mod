@@ -10,7 +10,7 @@ require (
 	github.com/containers/storage v1.54.0
 	github.com/docker/docker v27.0.2+incompatible
 	github.com/fatih/color v1.17.0
-	github.com/google/go-containerregistry v0.19.1
+	github.com/google/go-containerregistry v0.19.2
 	github.com/l50/goutils/v2 v2.2.6
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -63,6 +63,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.5.0 // indirect
 	github.com/go-git/go-git/v5 v5.12.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
+	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.23.0 // indirect
@@ -94,7 +95,7 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.8 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
-	github.com/letsencrypt/boulder v0.0.0-20230907030200-6d76a0f91e1e // indirect
+	github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/manifoldco/promptui v0.9.0 // indirect
@@ -130,7 +131,7 @@ require (
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sigstore/fulcio v1.4.5 // indirect
 	github.com/sigstore/rekor v1.3.6 // indirect
-	github.com/sigstore/sigstore v1.8.4 // indirect
+	github.com/sigstore/sigstore v1.8.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.2.2 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
