@@ -16,7 +16,7 @@ variable "ami_instance_type" {
 variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 variable "instance_type" {
@@ -37,11 +37,13 @@ variable "ssh_username" {
 variable "base_image" {
   type        = string
   description = "Base image."
+  default     = "ubuntu"
 }
 
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
+  default     = "jammy"
 }
 
 variable "setup_systemd" {
@@ -88,5 +90,5 @@ variable "os_version" {
 
 variable "user" {
   type        = string
-  description = "Default user for a blueprint."
+  description = "Default user for the container."
 }

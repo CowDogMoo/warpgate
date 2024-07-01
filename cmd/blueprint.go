@@ -121,42 +121,23 @@ func processCfgInputs(cmd *cobra.Command) error {
 		return errors.New("invalid tag format")
 	}
 
-	systemd, err := cmd.Flags().GetBool("systemd")
-	if err != nil {
-		log.L().Error("Failed to get systemd flag from input: %v", err)
-		return err
-	}
-
 	baseInput, err := cmd.Flags().GetStringSlice("base")
 	if err != nil || validateBaseInput(baseInput) != nil {
 		log.L().Error("Failed to get base input from CLI or invalid format: %v", err)
 		return err
 	}
 
-	if systemd {
-		// Systemd enabled; prepare both systemd and standard templates
-		packerTemplates = append(packerTemplates, generatePackerTemplate(baseInput[0], true))
-		if len(baseInput) > 1 {
-			// Create non-systemd templates for the rest of the base inputs
-			for _, base := range baseInput[1:] {
-				packerTemplates = append(packerTemplates, generatePackerTemplate(base, false))
-			}
-		}
-	} else {
-		// No systemd; create standard templates for all base inputs
-		for _, base := range baseInput {
-			packerTemplates = append(packerTemplates, generatePackerTemplate(base, false))
-		}
-	}
+	// Initialize the packer template
+	packerTemplates := generatePackerTemplate(baseInput[0])
 
-	log.L().Debugf("Configured packer templates: %#v", packerTemplates)
+	log.L().Debugf("Configured packer template: %#v", packerTemplates)
 
 	return nil
 }
 
-func generatePackerTemplate(baseInput string, systemd bool) packer.PackerTemplate {
+func generatePackerTemplate(baseInput string) packer.PackerTemplates {
 	parts := strings.Split(baseInput, ":")
-	return packer.PackerTemplate{
+	return packer.PackerTemplates{
 		AMI: packer.AMI{
 			InstanceType: "",
 			Region:       "",
@@ -179,8 +160,7 @@ func generatePackerTemplate(baseInput string, systemd bool) packer.PackerTemplat
 			Name:    parts[0],
 			Version: parts[1],
 		},
-		User:    "",
-		Systemd: systemd,
+		User: "",
 	}
 }
 
@@ -207,8 +187,7 @@ func createCfg(blueprint bp.Blueprint) error {
 
 func createPacker(blueprint bp.Blueprint) error {
 	// Parse the input config template
-	tmpl := template.Must(
-		template.ParseFiles(filepath.Join("templates", "packer.pkr.hcl.tmpl")))
+	tmpl := template.Must(template.ParseFiles(filepath.Join("templates", "packer.pkr.hcl.tmpl")))
 	newBPPath := filepath.Join("blueprints", blueprint.Name)
 
 	viper.AddConfigPath(newBPPath)
@@ -218,42 +197,41 @@ func createPacker(blueprint bp.Blueprint) error {
 		return err
 	}
 
-	blueprint.PackerTemplates = packerTemplates
+	blueprint.PackerTemplates = &packerTemplates
 
 	// Create the templated config file for the new blueprint
 	packerDir := filepath.Join(newBPPath, "packer_templates")
 
 	// Get blueprint information
-	if err := viper.UnmarshalKey("container", &blueprint.PackerTemplates[0].Container); err != nil {
+	if err := viper.UnmarshalKey("container", &blueprint.PackerTemplates.Container); err != nil {
 		log.L().Errorf("Failed to unmarshal container data from config file: %v", err)
 		cobra.CheckErr(err)
 	}
 
 	set := false
-	blueprint.PackerTemplates[0].Container.ImageRegistry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
+	blueprint.PackerTemplates.Container.ImageRegistry.Credential, set = os.LookupEnv("GITHUB_TOKEN")
 	if !set {
 		return errors.New("required env var $GITHUB_TOKEN is not set, please " +
 			"set it with a correct Personal Access Token and try again")
 	}
 
-	for _, pkr := range blueprint.PackerTemplates {
-		tmplData := struct {
-			Blueprint      bp.Blueprint
-			PackerTemplate packer.PackerTemplate
-			Container      packer.Container
-		}{
-			Blueprint:      bp.Blueprint{},
-			PackerTemplate: pkr,
-			Container:      packer.Container{},
-		}
-		f, err := os.Create(filepath.Join(packerDir, blueprint.Name))
-		if err != nil {
-			return fmt.Errorf(color.RedString("failed to create %s: %v", filepath.Join(packerDir, blueprint.Name), err))
-		}
-		defer f.Close()
-		if err := tmpl.Execute(f, tmplData); err != nil {
-			return fmt.Errorf(color.RedString("failed to populate %s with templated data: %v", filepath.Join(packerDir, blueprint.Name), err))
-		}
+	tmplData := struct {
+		Blueprint      bp.Blueprint
+		PackerTemplate packer.PackerTemplates
+		Container      packer.Container
+	}{
+		Blueprint:      bp.Blueprint{},
+		PackerTemplate: *blueprint.PackerTemplates,
+		Container:      packer.Container{},
+	}
+
+	f, err := os.Create(filepath.Join(packerDir, blueprint.Name))
+	if err != nil {
+		return fmt.Errorf(color.RedString("failed to create %s: %v", filepath.Join(packerDir, blueprint.Name), err))
+	}
+	defer f.Close()
+	if err := tmpl.Execute(f, tmplData); err != nil {
+		return fmt.Errorf(color.RedString("failed to populate %s with templated data: %v", filepath.Join(packerDir, blueprint.Name), err))
 	}
 
 	if err := sys.Cp(filepath.Join("files", "variables.pkr.hcl"), filepath.Join(newBPPath, "variables.pkr.hcl")); err != nil {
@@ -266,8 +244,7 @@ func createPacker(blueprint bp.Blueprint) error {
 }
 
 func createScript(bpName string) error {
-	tmpl := template.Must(
-		template.ParseFiles(filepath.Join("templates", "provision.sh.tmpl")))
+	tmpl := template.Must(template.ParseFiles(filepath.Join("templates", "provision.sh.tmpl")))
 
 	// Create the templated config file for the new blueprint
 	scriptFile := filepath.Join("blueprints", bpName, "scripts", "provision.sh")
@@ -300,7 +277,7 @@ func createBlueprint(cmd *cobra.Command, blueprintName string) {
 		cobra.CheckErr(err)
 	}
 
-	blueprint.PackerTemplates = packerTemplates
+	blueprint.PackerTemplates = &packerTemplates
 
 	if err := createCfg(blueprint); err != nil {
 		log.L().Error(err)
@@ -354,31 +331,29 @@ func showBlueprint(blueprintName string) {
 		cobra.CheckErr(err)
 	}
 
-	for i := range blueprint.PackerTemplates {
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &blueprint.PackerTemplates[i].AMI); err != nil {
-			log.L().Errorf("Failed to unmarshal AMI information for template %d: %v", i, err)
-			cobra.CheckErr(err)
-		}
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container", i), &blueprint.PackerTemplates[i].Container); err != nil {
-			log.L().Errorf("Failed to unmarshal container information for template %d: %v", i, err)
-			cobra.CheckErr(err)
-		}
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container.base_image_values", i), &blueprint.PackerTemplates[i].Container.BaseImageValues); err != nil {
-			log.L().Errorf("Failed to unmarshal base image values for template %d: %v", i, err)
-			cobra.CheckErr(err)
-		}
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container.registry", i), &blueprint.PackerTemplates[i].Container.ImageRegistry); err != nil {
-			log.L().Errorf("Failed to unmarshal registry information for template %d: %v", i, err)
-			cobra.CheckErr(err)
-		}
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container.image_hashes", i), &blueprint.PackerTemplates[i].Container.ImageHashes); err != nil {
-			log.L().Errorf("Failed to unmarshal image hashes for template %d: %v", i, err)
-			cobra.CheckErr(err)
-		}
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container.workdir", i), &blueprint.PackerTemplates[i].Container.Workdir); err != nil {
-			log.L().Errorf("Failed to unmarshal workdir information for template %d: %v", i, err)
-			cobra.CheckErr(err)
-		}
+	if err := viper.UnmarshalKey("packer_templates.ami", &blueprint.PackerTemplates.AMI); err != nil {
+		log.L().Errorf("Failed to unmarshal AMI information for template %d: %v", err)
+		cobra.CheckErr(err)
+	}
+	if err := viper.UnmarshalKey("packer_templates.container", &blueprint.PackerTemplates.Container); err != nil {
+		log.L().Errorf("Failed to unmarshal container information for template %d: %v", err)
+		cobra.CheckErr(err)
+	}
+	if err := viper.UnmarshalKey("packer_templates.container.base_image_values", &blueprint.PackerTemplates.Container.BaseImageValues); err != nil {
+		log.L().Errorf("Failed to unmarshal base image values for template %d: %v", err)
+		cobra.CheckErr(err)
+	}
+	if err := viper.UnmarshalKey("packer_templates.container.registry", &blueprint.PackerTemplates.Container.ImageRegistry); err != nil {
+		log.L().Errorf("Failed to unmarshal registry information for template %d: %v", err)
+		cobra.CheckErr(err)
+	}
+	if err := viper.UnmarshalKey("packer_templates.container.image_hashes", &blueprint.PackerTemplates.Container.ImageHashes); err != nil {
+		log.L().Errorf("Failed to unmarshal image hashes for template %d: %v", err)
+		cobra.CheckErr(err)
+	}
+	if err := viper.UnmarshalKey("packer_templates.container.workdir", &blueprint.PackerTemplates.Container.Workdir); err != nil {
+		log.L().Errorf("Failed to unmarshal workdir information for template %d: %v", err)
+		cobra.CheckErr(err)
 	}
 
 	blueprintJSON, err := json.MarshalIndent(blueprint, "", "  ")

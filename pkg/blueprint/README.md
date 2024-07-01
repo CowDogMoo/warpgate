@@ -139,10 +139,10 @@ error: An error if the configuration path cannot be set.
 
 ---
 
-### Blueprint.ValidatePackerTemplate()
+### Blueprint.ValidatePackerTemplates()
 
 ```go
-ValidatePackerTemplate() error
+ValidatePackerTemplates() error
 ```
 
 ValidatePackerTemplate validates the Packer template for the blueprint.

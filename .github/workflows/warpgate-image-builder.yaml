@@ -220,7 +220,7 @@ jobs:
         run: |
           echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           blueprint_name="${{ matrix.blueprint.blueprint }}"
-          tag_name=$(yq e '.blueprint.tag.name' "${{ matrix.blueprint.path }}/config.yaml")
+          tag_name=$(yq e '.blueprint.packer_templates.tag.name' "${{ matrix.blueprint.path }}/config.yaml")
           repo_owner=$(echo "$tag_name" | cut -d'/' -f1)
           image_name="ghcr.io/$repo_owner/$blueprint_name:latest"
           echo "Verifying image: $image_name"

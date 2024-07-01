@@ -7,12 +7,6 @@ variable "ami_arch" {
   default     = "amd64"
 }
 
-variable "ami_instance_type" {
-  type        = string
-  description = "The type of instance to use for the initial AMI creation."
-  default     = "t3.small"
-}
-
 variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."

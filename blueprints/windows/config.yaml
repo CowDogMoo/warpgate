@@ -1,0 +1,53 @@
+---
+blueprint:
+  max_retries: 3
+  name: windows
+  packer_templates:
+    image_values:
+      name: Windows_Server
+      version: 2019
+    # Provisioning user
+    user: Administrator
+    # AMI specific configurations
+    ami:
+      instance_type: t3.micro
+      region: us-east-1
+    # Tags for created odysseys
+    tag:
+      name: windows-server
+      version: 2019
+# packages:
+#   - name: git
+#     version: latest
+#   - name: aws-cli
+#     version: latest
+# services:
+#   - name: sshd
+#     action: enable
+#   - name: winrm
+#     action: enable
+# files:
+#   - source: ./scripts
+#     destination: C:\provision-scripts
+#   - source: ./files
+#     destination: C:\provision-files
+#   - path: C:\provision-files\hello.txt
+#     content: Hello, World!
+# scripts:
+#   - name: install-git.ps1
+#     path: C:\provision-scripts\install-git.ps1
+# commands:
+#   - name: install-aws-cli
+#     command: aws --version
+# env:
+#   - name: AWS_ACCESS_KEY_ID
+#     value: AKIAIOSFODNN7EXAMPLE
+# users:
+#   - name: target_user
+#     password: SuperS3cr3t!!!!
+# groups:
+#   - name: target_group
+#     members:
+#       - target_user
+# directories:
+#   - path: C:\provision-scripts

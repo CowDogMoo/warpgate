@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/l50/goutils/v2/sys"
 )
@@ -37,23 +38,27 @@ type PackerCommandRunner interface {
 // **Returns:**
 //
 // error: An error if the command fails.
-func (p *PackerTemplate) runCommand(
+func (p *PackerTemplates) runCommand(
 	subCmd string, args []string, dir string,
 	outputHandler func(string)) (string, error) {
 
 	var outputBuffer bytes.Buffer
+	var mu sync.Mutex // Add a mutex to synchronize access to the buffer
+
 	cmd := sys.Cmd{
 		CmdString: "packer",
 		Args:      append([]string{subCmd}, args...),
 		Dir:       dir,
 		OutputHandler: func(s string) {
 			outputHandler(s)
+			mu.Lock()                          // Lock the mutex before writing to the buffer
 			outputBuffer.WriteString(s + "\n") // Capture output
+			mu.Unlock()                        // Unlock the mutex after writing to the buffer
 		},
 	}
 
 	fmt.Printf(
-		"executing command: %s %v in directory: %s\n",
+		"Executing command: %s %v in directory: %s\n",
 		cmd.CmdString, cmd.Args, cmd.Dir)
 
 	if _, err := cmd.RunCmd(); err != nil {
@@ -76,7 +81,7 @@ func (p *PackerTemplate) runCommand(
 // map[string]string: A map of image hashes parsed from the build output.
 // string: The AMI ID parsed from the build output.
 // error: An error if the build command fails.
-func (p *PackerTemplate) RunBuild(args []string, dir string) ([]ImageHash, string, error) {
+func (p *PackerTemplates) RunBuild(args []string, dir string) ([]ImageHash, string, error) {
 	if dir == "" {
 		dir = "."
 	}
@@ -84,9 +89,13 @@ func (p *PackerTemplate) RunBuild(args []string, dir string) ([]ImageHash, strin
 	fmt.Printf("Running Packer build command from the %s directory...\n", dir)
 
 	var outputBuffer bytes.Buffer
+	var mu sync.Mutex // Add a mutex to synchronize access to the buffer
+
 	outputHandler := func(s string) {
 		fmt.Println(s)
+		mu.Lock() // Lock the mutex before writing to the buffer
 		outputBuffer.WriteString(s)
+		mu.Unlock() // Unlock the mutex after writing to the buffer
 	}
 
 	if len(args) > 0 && args[0] == "build" {
@@ -118,7 +127,7 @@ func (p *PackerTemplate) RunBuild(args []string, dir string) ([]ImageHash, strin
 // **Returns:**
 //
 // error: An error if the init command fails.
-func (p *PackerTemplate) RunInit(args []string, dir string) error {
+func (p *PackerTemplates) RunInit(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -146,7 +155,7 @@ func (p *PackerTemplate) RunInit(args []string, dir string) error {
 // **Returns:**
 //
 // error: An error if the validate command fails.
-func (p *PackerTemplate) RunValidate(args []string, dir string) error {
+func (p *PackerTemplates) RunValidate(args []string, dir string) error {
 	if dir == "" {
 		dir = "."
 	}
@@ -169,7 +178,7 @@ func (p *PackerTemplate) RunValidate(args []string, dir string) error {
 //
 // string: The version of Packer.
 // error: An error if the version command fails.
-func (p *PackerTemplate) RunVersion() (string, error) {
+func (p *PackerTemplates) RunVersion() (string, error) {
 	var versionOutput strings.Builder
 	outputHandler := func(s string) {
 		versionOutput.WriteString(s)

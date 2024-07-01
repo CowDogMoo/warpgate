@@ -47,9 +47,9 @@ source "amazon-ebs" "ubuntu" {
   region        = "${var.ami_region}"
   source_ami_filter {
     filters = {
-      name = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
-      root-device-type    = "ebs"
-      virtualization-type = "hvm"
+      name                 = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
+      root-device-type     = "ebs"
+      virtualization-type  = "hvm"
     }
     owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
     most_recent = true

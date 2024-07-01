@@ -78,76 +78,32 @@ type ImageValues struct {
 	Version string `mapstructure:"version"`
 }
 
-// PackerTemplate represents a Packer template associated with a blueprint.
+// PackerTemplate represents a collection of Packer templates consumed by a blueprint.
 //
 // **Attributes:**
 //
-// AMI: Optional AMI configuration.
-// Container: Container configuration for the template.
+// Container: Configuration for container images.
 // ImageValues: Name and version of the image.
-// Systemd: Indicates if systemd is used in the container.
-// User: User to run commands as in the container.
-type PackerTemplate struct {
-	AMI         AMI         `mapstructure:"ami,omitempty"`
+// User: User responsible for provisioning the blueprint, usually high-privilege (e.g., root or Administrator).
+// AMI: Optional AMI configuration.
+// Tag: Tag configuration for the image built by Packer.
+type PackerTemplates struct {
 	Container   Container   `mapstructure:"container,omitempty"`
 	ImageValues ImageValues `mapstructure:"image_values"`
-	Systemd     bool        `mapstructure:"systemd"`
 	User        string      `mapstructure:"user"`
+	AMI         AMI         `mapstructure:"ami,omitempty"`
+	Tag         Tag         `mapstructure:"tag"`
 }
 
-// ParseImageHashes extracts the image hashes from the output of a Packer build
-// command and updates the provided Packer blueprint with the new hashes.
+// Tag represents the tag configuration for the image built by Packer.
 //
-// **Parameters:**
+// **Attributes:**
 //
-// output: The output from the Packer build command.
-//
-// **Returns:**
-//
-// []ImageHash: A slice of ImageHash structs parsed from the build output.
-func (p *PackerTemplate) ParseImageHashes(output string) []ImageHash {
-	if p.Container.ImageHashes == nil {
-		p.Container.ImageHashes = []ImageHash{}
-	}
-
-	imageHashesConfig := viper.Get("container.image_hashes").([]interface{})
-
-	// Regular expression to match and remove ANSI escape sequences
-	re := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-	cleanOutput := re.ReplaceAllString(output, "")
-
-	lines := strings.Split(cleanOutput, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "Imported Docker image: sha256:") {
-			parts := strings.Fields(line)
-			if len(parts) >= 5 {
-				hash := strings.TrimPrefix(parts[len(parts)-1], "sha256:")
-				archParts := strings.Split(parts[1], ".")
-				if len(archParts) > 1 {
-					arch := strings.TrimSuffix(archParts[1], ":")
-					for _, ihConfig := range imageHashesConfig {
-						ih := ihConfig.(map[string]interface{})
-						if ih["arch"].(string) == arch {
-							imageHash := ImageHash{
-								Arch: arch,
-								OS:   ih["os"].(string),
-								Hash: hash,
-							}
-							// Ensure that the hash is not empty
-							if imageHash.Hash != "" {
-								p.Container.ImageHashes = append(p.Container.ImageHashes, imageHash)
-								fmt.Printf("Updated ImageHashes: %v\n", p.Container.ImageHashes)
-							} else {
-								fmt.Printf("Warning: Skipping empty hash for arch: %s, os: %s\n", arch, ih["os"].(string))
-							}
-							break
-						}
-					}
-				}
-			}
-		}
-	}
-	return p.Container.ImageHashes
+// Name: Name of the tag.
+// Version: Version of the tag.
+type Tag struct {
+	Name    string `mapstructure:"name"`
+	Version string `mapstructure:"version"`
 }
 
 // ParseAMIDetails extracts the AMI ID from the output of a Packer build command.
@@ -159,7 +115,7 @@ func (p *PackerTemplate) ParseImageHashes(output string) []ImageHash {
 // **Returns:**
 //
 // string: The AMI ID if found in the output.
-func (p *PackerTemplate) ParseAMIDetails(output string) string {
+func (p *PackerTemplates) ParseAMIDetails(output string) string {
 	if strings.Contains(output, "AMI:") {
 		parts := strings.Split(output, " ")
 		for i := 0; i < len(parts)-1; i++ {
@@ -169,4 +125,98 @@ func (p *PackerTemplate) ParseAMIDetails(output string) string {
 		}
 	}
 	return ""
+}
+
+// ParseImageHashes extracts image hashes from Packer build output and updates
+// the provided PackerTemplates struct.
+//
+// **Parameters:**
+//
+// output: The output from the Packer build command.
+//
+// **Returns:**
+//
+// []ImageHash: A slice of ImageHash structs parsed from the build output.
+func (p *PackerTemplates) ParseImageHashes(output string) []ImageHash {
+	if p.Container.ImageHashes == nil {
+		p.Container.ImageHashes = []ImageHash{}
+	}
+
+	imageHashesConfig := p.getImageHashesConfig()
+	if imageHashesConfig == nil {
+		fmt.Println("No valid image_hashes found in configuration")
+		return p.Container.ImageHashes
+	}
+
+	cleanOutput := removeANSISequences(output)
+	lines := strings.Split(cleanOutput, "\n")
+	fmt.Println("Parsing image hashes from the Packer build output...", lines)
+
+	for _, line := range lines {
+		if strings.Contains(line, "Imported Docker image: sha256:") {
+			p.parseLine(line, imageHashesConfig)
+		}
+	}
+	return p.Container.ImageHashes
+}
+
+func (p *PackerTemplates) getImageHashesConfig() []interface{} {
+	imageHashesConfig, ok := viper.Get("blueprint.packer_templates.container.image_hashes").([]interface{})
+	if !ok {
+		return nil
+	}
+	return imageHashesConfig
+}
+
+func removeANSISequences(output string) string {
+	re := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+	return re.ReplaceAllString(output, "")
+}
+
+func (p *PackerTemplates) parseLine(line string, imageHashesConfig []interface{}) {
+	parts := strings.Fields(line)
+	if len(parts) < 5 {
+		return
+	}
+
+	hash := strings.TrimPrefix(parts[len(parts)-1], "sha256:")
+	arch := extractArch(parts[1])
+	if arch == "" {
+		return
+	}
+
+	for _, ihConfig := range imageHashesConfig {
+		ih, ok := ihConfig.(map[string]interface{})
+		if !ok {
+			fmt.Println("Error: invalid image hash config format")
+			continue
+		}
+		if ih["arch"].(string) == arch {
+			p.updateImageHashes(ih, hash)
+			break
+		}
+	}
+}
+
+func extractArch(part string) string {
+	archParts := strings.Split(part, ".")
+	if len(archParts) > 1 {
+		return strings.TrimSuffix(archParts[1], ":")
+	}
+	return ""
+}
+
+func (p *PackerTemplates) updateImageHashes(ih map[string]interface{}, hash string) {
+	if hash == "" {
+		fmt.Printf("Warning: Skipping empty hash for arch: %s, os: %s\n", ih["arch"].(string), ih["os"].(string))
+		return
+	}
+
+	imageHash := ImageHash{
+		Arch: ih["arch"].(string),
+		OS:   ih["os"].(string),
+		Hash: hash,
+	}
+	p.Container.ImageHashes = append(p.Container.ImageHashes, imageHash)
+	fmt.Printf("Updated ImageHashes: %v\n", p.Container.ImageHashes)
 }

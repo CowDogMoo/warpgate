@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 
-	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/docker/docker/api/types/image"
 	dockerRegistry "github.com/docker/docker/api/types/registry"
@@ -32,7 +31,7 @@ type DockerClientInterface interface {
 	DockerLogin() error
 	DockerPush(image string) error
 	DockerTag(sourceImage, targetImage string) error
-	CreateAndPushManifest(blueprint *bp.Blueprint, imageTags []string) error
+	CreateAndPushManifest(pTmpl *packer.PackerTemplates, imageTags []string) error
 	CreateManifest(ctx context.Context, targetImage string, imageTags []string) (v1.ImageIndex, error)
 	GetImageSize(imageRef string) (int64, error)
 }
@@ -62,13 +61,13 @@ type DockerClient struct {
 //
 // *DockerClient: A DockerClient instance.
 // error: An error if any issue occurs while creating the client.
-func NewDockerClient(registryURL, authToken string, registryConfig packer.ContainerImageRegistry) (*DockerClient, error) {
+func NewDockerClient(registryConfig packer.ContainerImageRegistry) (*DockerClient, error) {
 	cli, err := dockerClient.NewClientWithOpts(dockerClient.FromEnv, dockerClient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("error creating Docker client: %v", err)
 	}
 
-	dockerRegistry, err := NewDockerRegistry(registryURL, authToken, registryConfig, DefaultGetStore, true)
+	dockerRegistry, err := NewDockerRegistry(registryConfig, DefaultGetStore, true)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Docker registry: %v", err)
 	}
@@ -107,18 +106,14 @@ func (d *DockerClient) DockerLogin() error {
 	}
 
 	if resp.Status != "Login Succeeded" {
-		return fmt.Errorf("failed to login to Docker registry %s:%v", d.Container.ImageRegistry.Server, resp.Status)
+		return fmt.Errorf("failed to login to Docker registry %s: %v", d.Container.ImageRegistry.Server, resp.Status)
 	}
 
-	// Use the identity token if it is available
 	if resp.IdentityToken != "" {
 		d.AuthStr = resp.IdentityToken
-		fmt.Printf("Successfully logged in to %s and retrieved identity token as %s\n", d.Container.ImageRegistry.Server, d.AuthStr)
-	}
-
-	// If no identity token is available, encode the authConfig to base64
-	if d.AuthStr == "" {
-		fmt.Println("No identity token retrieved from registry, encoding input token...")
+		fmt.Printf("Successfully logged in to %s and retrieved identity token\n", d.Container.ImageRegistry.Server)
+	} else {
+		fmt.Println("No identity token retrieved, encoding input token...")
 		d.AuthStr, err = encodeAuthToBase64(authConfig)
 		if err != nil {
 			return fmt.Errorf("error encoding authConfig to base64: %v", err)
@@ -185,32 +180,7 @@ func (d *DockerClient) PushImage(containerImage string) error {
 	return nil
 }
 
-// ProcessPackerTemplates processes a list of Packer templates by
-// tagging and pushing images to a registry.
-//
-// **Parameters:**
-//
-// pTmpl: A slice of PackerTemplate instances to process.
-// blueprint: The blueprint containing tag information.
-//
-// **Returns:**
-//
-// error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blueprint bp.Blueprint) error {
-	if len(pTmpl) == 0 {
-		return errors.New("packer templates must be provided for the blueprint")
-	}
-
-	for _, p := range pTmpl {
-		if err := d.ProcessTemplate(p, blueprint); err != nil {
-			return fmt.Errorf("error processing Packer template: %v", err)
-		}
-	}
-
-	return nil
-}
-
-// ProcessTemplate processes a Packer template by tagging and pushing images
+// ProcessTemplates processes Packer templates by tagging and pushing images
 // to a registry.
 //
 // **Parameters:**
@@ -221,17 +191,22 @@ func (d *DockerClient) ProcessPackerTemplates(pTmpl []packer.PackerTemplate, blu
 // **Returns:**
 //
 // error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bp.Blueprint) error {
-	if blueprint.Name == "" {
+func (d *DockerClient) ProcessTemplates(pTmpl *packer.PackerTemplates, blueprintName string) error {
+	if blueprintName == "" {
 		return errors.New("blueprint name must not be empty")
 	}
 
-	if blueprint.Tag.Name == "" || blueprint.Tag.Version == "" {
+	if pTmpl.Tag.Name == "" || pTmpl.Tag.Version == "" {
 		return errors.New("blueprint tag name and version must not be empty")
 	}
 
-	if pTmpl.Container.ImageRegistry.Server == "" || pTmpl.Container.ImageRegistry.Username == "" || pTmpl.Container.ImageRegistry.Credential == "" {
-		return fmt.Errorf("registry server '%s', username '%s', and credential must not be empty", pTmpl.Container.ImageRegistry.Server, pTmpl.Container.ImageRegistry.Username)
+	pTmpl.Container.ImageRegistry.Credential = d.Container.ImageRegistry.Credential
+
+	if pTmpl.Container.ImageRegistry.Server == "" ||
+		pTmpl.Container.ImageRegistry.Username == "" ||
+		pTmpl.Container.ImageRegistry.Credential == "" {
+		return fmt.Errorf("registry server '%s', username '%s', and credential must not be empty",
+			pTmpl.Container.ImageRegistry.Server, pTmpl.Container.ImageRegistry.Username)
 	}
 
 	d.Container.ImageRegistry = pTmpl.Container.ImageRegistry
@@ -250,14 +225,13 @@ func (d *DockerClient) ProcessTemplate(pTmpl packer.PackerTemplate, blueprint bp
 			i--
 		}
 	}
-	fmt.Printf("Processing %s image with the following hashes: %+v\n", blueprint.Name, d.Container.ImageHashes) // Debugging line
 
-	imageTags, err := d.TagAndPushImages(&blueprint)
+	imageTags, err := d.TagAndPushImages(pTmpl)
 	if err != nil {
 		return err
 	}
 
-	if err := d.CreateAndPushManifest(&blueprint, imageTags); err != nil {
+	if err := d.CreateAndPushManifest(pTmpl, imageTags); err != nil {
 		return err
 	}
 
@@ -291,20 +265,18 @@ func (d *DockerClient) SetRegistry(registry *DockerRegistry) {
 }
 
 // TagAndPushImages tags and pushes images to a registry based on
-// the provided blueprint.
+// the provided PackerTemplate.
 //
 // **Parameters:**
 //
-// blueprint: The blueprint containing tag information.
+// pTmpl: The PackerTemplates containing image tag information.
 //
 // **Returns:**
 //
 // []string: A slice of image tags that were successfully pushed.
 // error: An error if any operation fails during tagging or pushing.
-func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, error) {
+func (d *DockerClient) TagAndPushImages(pTmpl *packer.PackerTemplates) ([]string, error) {
 	var imageTags []string
-
-	fmt.Printf("Image hashes: %+v\n", d.Container.ImageHashes)
 
 	for _, hash := range d.Container.ImageHashes {
 		if hash.Arch == "" || hash.Hash == "" || hash.OS == "" {
@@ -314,14 +286,11 @@ func (d *DockerClient) TagAndPushImages(blueprint *bp.Blueprint) ([]string, erro
 		localTag := fmt.Sprintf("sha256:%s", hash.Hash)
 		remoteTag := fmt.Sprintf("%s/%s:%s",
 			strings.TrimPrefix(d.Container.ImageRegistry.Server, "https://"),
-			blueprint.Tag.Name, hash.Arch)
-		fmt.Printf("Tagging image: %s as %s\n", localTag, remoteTag)
+			pTmpl.Tag.Name, hash.Arch)
 
 		if err := d.DockerTag(localTag, remoteTag); err != nil {
 			return imageTags, err
 		}
-
-		fmt.Printf("Pushing image: %s\n", remoteTag)
 
 		if err := d.PushImage(remoteTag); err != nil {
 			return imageTags, err

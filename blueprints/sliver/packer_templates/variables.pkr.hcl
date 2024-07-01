@@ -7,12 +7,6 @@ variable "ami_arch" {
   default     = "amd64"
 }
 
-variable "ami_instance_type" {
-  type        = string
-  description = "The type of instance to use for the initial AMI creation."
-  default     = "t3.small"
-}
-
 variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."
@@ -21,7 +15,7 @@ variable "ami_region" {
 
 variable "instance_type" {
   type        = string
-  description = "The type of instance to use for the initial AMI creation."
+  description = "The type of instance to use for AMI creation."
   default     = "t3.medium"
 }
 
@@ -68,18 +62,6 @@ variable "disk_size" {
   description = "Disk size in GB for building the AMI."
   default     = 50
 }
-
-variable "pkr_build_dir" {
-  type        = string
-  description = "Directory that packer will execute the transferred provisioning logic from within the container."
-  default     = "ansible-collection-arsenal"
-}
-
-variable "provision_repo_path" {
-  type        = string
-  description = "Path on disk to the repo that contains the provisioning code to build the container image."
-}
-
 variable "os" {
   type        = string
   description = "Operating system to use for the AMI."
@@ -92,7 +74,18 @@ variable "os_version" {
   default     = "jammy-22.04"
 }
 
+variable "pkr_build_dir" {
+  type        = string
+  description = "Directory that packer will execute the transferred provisioning logic from within the container."
+  default     = "ansible-collection-arsenal"
+}
+
+variable "provision_repo_path" {
+  type        = string
+  description = "Path on disk to the repo that contains the provisioning code to build the container image."
+}
+
 variable "user" {
   type        = string
-  description = "Default user for a blueprint."
+  description = "Default odyssey user."
 }

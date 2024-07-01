@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -28,28 +29,15 @@ const (
 //
 // Name: Name of the blueprint.
 // BuildDir: Path to the temporary build directory.
-// PackerTemplates: A slice of Packer templates for building images.
+// PackerTemplates: Packer templates consumed by the blueprint.
 // Path: Path to the blueprint configuration.
 // ProvisioningRepo: Path to the repository containing provisioning logic.
-// Tag: Tag configuration for the image built by Packer.
 type Blueprint struct {
 	Name             string                  `mapstructure:"name"`
 	BuildDir         string                  `mapstructure:"build_dir"`
-	PackerTemplates  []packer.PackerTemplate `mapstructure:"packer_templates"`
+	PackerTemplates  *packer.PackerTemplates `mapstructure:"packer_templates"`
 	Path             string                  `mapstructure:"path"`
 	ProvisioningRepo string                  `mapstructure:"provisioning_repo"`
-	Tag              Tag                     `mapstructure:"tag"`
-}
-
-// Tag represents the tag configuration for the image built by Packer.
-//
-// **Attributes:**
-//
-// Name: Name of the tag.
-// Version: Version of the tag.
-type Tag struct {
-	Name    string `mapstructure:"name"`
-	Version string `mapstructure:"version"`
 }
 
 // ParseCommandLineFlags parses command line flags for a Blueprint.
@@ -90,8 +78,10 @@ func (b *Blueprint) ParseCommandLineFlags(cmd *cobra.Command) error {
 
 func configFileExists(path string) (bool, error) {
 	_, err := os.Stat(path)
-	if err != nil || os.IsNotExist(err) {
+	if os.IsNotExist(err) {
 		return false, errors.New("config file does not exist")
+	} else if err != nil {
+		return false, err
 	}
 
 	return true, nil
@@ -104,13 +94,8 @@ func configFileExists(path string) (bool, error) {
 // error: An error if the configuration path cannot be set.
 func (b *Blueprint) SetConfigPath() error {
 	bpConfig := filepath.Join(b.Path, "config.yaml")
-	if _, err := configFileExists(bpConfig); err != nil {
-		return err
-	}
-
 	// Ensure the target blueprint config exists
-	_, err := configFileExists(bpConfig)
-	if err != nil {
+	if _, err := configFileExists(bpConfig); err != nil {
 		return err
 	}
 
@@ -134,9 +119,8 @@ func (b *Blueprint) Initialize() error {
 		return fmt.Errorf("blueprint path or name is not set")
 	}
 
-	packerDir := filepath.Join(b.Path, "packer_templates")
-
 	// Ensure the packer templates directory exists
+	packerDir := filepath.Join(b.Path, "packer_templates")
 	if _, err := os.Stat(packerDir); os.IsNotExist(err) {
 		return fmt.Errorf("expected packer_templates directory not found in %s", b.Path)
 	} else if err != nil {
@@ -215,28 +199,42 @@ func (b *Blueprint) LoadPackerTemplates(githubToken string) error {
 	if configFile == "" {
 		return fmt.Errorf("no config file used by viper")
 	}
+
+	b.PackerTemplates = &packer.PackerTemplates{}
 	fmt.Printf("Config file used by viper: %s\n", configFile)
 
-	if err := viper.UnmarshalKey("packer_templates", &b.PackerTemplates); err != nil {
+	if err := viper.UnmarshalKey("blueprint.packer_templates", b.PackerTemplates); err != nil {
 		return fmt.Errorf("failed to unmarshal packer templates: %v", err)
 	}
 
-	if len(b.PackerTemplates) == 0 {
-		return fmt.Errorf("no packer templates found")
+	// Check that required fields are not empty
+	if b.PackerTemplates.ImageValues.Name == "" || b.PackerTemplates.User == "" {
+		return fmt.Errorf("no packer templates found in %s config file", configFile)
 	}
 
-	for i, tmpl := range b.PackerTemplates {
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.ami", i), &tmpl.AMI); err != nil {
-			return fmt.Errorf("failed to unmarshal ami settings for template %d: %v", i, err)
+	if err := b.unmarshalTemplates(githubToken); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (b *Blueprint) unmarshalTemplates(githubToken string) error {
+	// Unmarshal AMI if present
+	amiKey := "packer_templates.ami"
+	if viper.IsSet(amiKey) {
+		if err := viper.UnmarshalKey(amiKey, &b.PackerTemplates.AMI); err != nil {
+			return fmt.Errorf("failed to unmarshal AMI settings for template: %v", err)
 		}
+	}
 
-		if err := viper.UnmarshalKey(fmt.Sprintf("packer_templates.%d.container", i), &tmpl.Container); err != nil {
-			return fmt.Errorf("failed to unmarshal container settings for template %d: %v", i, err)
+	// Unmarshal Container if present
+	containerKey := "packer_templates.container"
+	if viper.IsSet(containerKey) {
+		b.PackerTemplates.Container.ImageRegistry.Credential = githubToken
+		if err := viper.UnmarshalKey(containerKey, &b.PackerTemplates.Container); err != nil {
+			return fmt.Errorf("failed to unmarshal container settings for template: %v", err)
 		}
-
-		tmpl.Container.ImageRegistry.Credential = githubToken
-
-		b.PackerTemplates[i] = tmpl
 	}
 
 	return nil
@@ -249,29 +247,32 @@ func (b *Blueprint) LoadPackerTemplates(githubToken string) error {
 // map[string]string: A map of image hashes generated by the build process.
 // error: An error if any issue occurs during the build process.
 func (b *Blueprint) BuildPackerImages() (map[string]string, error) {
-	errChan := make(chan error, len(b.PackerTemplates))
-	imageHashesChan := make(chan map[string]string, len(b.PackerTemplates))
+	if reflect.DeepEqual(b.PackerTemplates, &packer.PackerTemplates{}) {
+		return nil, fmt.Errorf("no packer templates found in %s blueprint", b.Name)
+	}
+
+	errChan := make(chan error, 1)
+	imageHashesChan := make(chan map[string]string, 1)
 	var wg sync.WaitGroup
 
-	for _, pTmpl := range b.PackerTemplates {
-		if err := b.ValidatePackerTemplate(); err != nil {
-			return nil, err
-		}
-
-		wg.Add(1)
-		go func(blueprint Blueprint, pTmpl packer.PackerTemplate) {
-			defer wg.Done()
-
-			fmt.Printf("Building %s packer template as part of the %s blueprint", blueprint.PackerTemplates[0].ImageValues.Name, blueprint.Name)
-			blueprint.PackerTemplates[0] = pTmpl
-			hashes, err := b.buildPackerImage()
-			if err != nil {
-				errChan <- fmt.Errorf("error building %s: %v", pTmpl.ImageValues.Name, err)
-				return
-			}
-			imageHashesChan <- hashes
-		}(*b, pTmpl)
+	if err := b.ValidatePackerTemplates(); err != nil {
+		return nil, err
 	}
+
+	wg.Add(1)
+	go func(blueprint Blueprint, pTmpl *packer.PackerTemplates) {
+		defer wg.Done()
+
+		fmt.Printf("Building %s packer template as part of the %s blueprint\n", pTmpl.ImageValues.Name, blueprint.Name)
+		blueprint.PackerTemplates = pTmpl
+		hashes, err := b.buildPackerImage()
+		if err != nil {
+			errChan <- fmt.Errorf("error building %s: %v", pTmpl.ImageValues.Name, err)
+			fmt.Printf("Error during build: %v\n", err)
+			return
+		}
+		imageHashesChan <- hashes
+	}(*b, b.PackerTemplates)
 
 	go func() {
 		wg.Wait()
@@ -282,6 +283,7 @@ func (b *Blueprint) BuildPackerImages() (map[string]string, error) {
 	var errOccurred bool
 	for err := range errChan {
 		if err != nil {
+			fmt.Printf("Build error: %v\n", err)
 			errOccurred = true
 		}
 	}
@@ -307,30 +309,44 @@ func (b *Blueprint) BuildPackerImages() (map[string]string, error) {
 //
 // []string: A slice of arguments for the packer build command.
 func (b *Blueprint) PreparePackerArgs() []string {
-	pTmpl := b.PackerTemplates[0]
+	pTmpl := b.PackerTemplates
 	args := []string{
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.ImageValues.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.ImageValues.Version),
 		"-var", fmt.Sprintf("blueprint_name=%s", b.Name),
 		"-var", fmt.Sprintf("user=%s", pTmpl.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", b.ProvisioningRepo),
-		"-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir),
 	}
 
-	// Add AMI specific variables if they exist
+	args = append(args, b.appendAMIArgs(pTmpl)...)
+	args = append(args, b.appendContainerArgs(pTmpl)...)
+
+	args = append(args, ".")
+	fmt.Printf("Packer Parameters: %s\n", hideSensitiveArgs(args))
+	return args
+}
+
+func (b *Blueprint) appendAMIArgs(pTmpl *packer.PackerTemplates) []string {
+	var args []string
 	if amiConfig := pTmpl.AMI; amiConfig.InstanceType != "" {
-		args = append(args, "-var", fmt.Sprintf("instance_type=%s", pTmpl.AMI.InstanceType))
-		args = append(args, "-var", fmt.Sprintf("region=%s", pTmpl.AMI.Region))
-		args = append(args, "-var", fmt.Sprintf("ssh_user=%s", pTmpl.AMI.SSHUser))
+		fmt.Printf("AMI Config: %v\n", amiConfig)
+		args = append(args, "-var", fmt.Sprintf("instance_type=%s", amiConfig.InstanceType))
+		args = append(args, "-var", fmt.Sprintf("ami_region=%s", amiConfig.Region))
+		if amiConfig.SSHUser != "" {
+			args = append(args, "-var", fmt.Sprintf("ssh_username=%s", amiConfig.SSHUser))
+		}
 	}
+	return args
+}
 
-	// Add entrypoint if it's set
+func (b *Blueprint) appendContainerArgs(pTmpl *packer.PackerTemplates) []string {
+	var args []string
+	if pTmpl.Container.Workdir != "" {
+		args = append(args, "-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir))
+	}
 	if pTmpl.Container.Entrypoint != "" {
 		args = append(args, "-var", fmt.Sprintf("entrypoint=%s", pTmpl.Container.Entrypoint))
 	}
-	args = append(args, ".")
-	fmt.Printf("Packer Parameters: %s\n", hideSensitiveArgs(args))
-
 	return args
 }
 
@@ -356,7 +372,8 @@ func (b *Blueprint) buildPackerImage() (map[string]string, error) {
 		hashes, err := b.BuildImageAttempt(attempt)
 		if err != nil {
 			lastError = err
-			continue // retry
+			fmt.Printf("Attempt %d failed with error: %v\n", attempt, err) // Log each error
+			continue                                                       // retry
 		}
 
 		fmt.Printf("Successfully built container image from the %s packer template\n", b.Name)
@@ -375,29 +392,26 @@ func (b *Blueprint) buildPackerImage() (map[string]string, error) {
 // **Returns:**
 //
 // error: An error if the Packer template is invalid.
-func (b *Blueprint) ValidatePackerTemplate() error {
-	for _, pTmpl := range b.PackerTemplates {
-		requiredFields := map[string]string{
-			"ImageValues.Name":           pTmpl.ImageValues.Name,
-			"ImageValues.Version":        pTmpl.ImageValues.Version,
-			"User":                       pTmpl.User,
-			"Blueprint.Name":             b.Name,
-			"Blueprint.Path":             b.Path,
-			"Blueprint.ProvisioningRepo": b.ProvisioningRepo,
-		}
+func (b *Blueprint) ValidatePackerTemplates() error {
+	requiredFields := map[string]string{
+		"ImageValues.Name":           b.PackerTemplates.ImageValues.Name,
+		"ImageValues.Version":        b.PackerTemplates.ImageValues.Version,
+		"User":                       b.PackerTemplates.User,
+		"Blueprint.Name":             b.Name,
+		"Blueprint.Path":             b.Path,
+		"Blueprint.ProvisioningRepo": b.ProvisioningRepo,
+	}
 
-		missingFields := []string{}
-
-		for fieldName, fieldValue := range requiredFields {
-			if fieldValue == "" {
-				missingFields = append(missingFields, fieldName)
-			}
+	missingFields := []string{}
+	for fieldName, fieldValue := range requiredFields {
+		if fieldValue == "" {
+			missingFields = append(missingFields, fieldName)
 		}
+	}
 
-		if len(missingFields) > 0 {
-			return fmt.Errorf("packer template '%s' has uninitialized fields: %s",
-				b.Name, strings.Join(missingFields, ", "))
-		}
+	if len(missingFields) > 0 {
+		return fmt.Errorf("packer template '%s' has uninitialized fields: %s",
+			b.Name, strings.Join(missingFields, ", "))
 	}
 
 	return nil
@@ -414,21 +428,20 @@ func (b *Blueprint) ValidatePackerTemplate() error {
 // map[string]string: The image hashes generated by the build.
 // error: An error if any issue occurs during the build process.
 func (b *Blueprint) BuildImageAttempt(attempt int) ([]packer.ImageHash, error) {
-	if len(b.PackerTemplates) == 0 {
-		return nil, fmt.Errorf("no packer templates found")
+	if b.PackerTemplates == nil {
+		return nil, fmt.Errorf("no packer templates found in %s blueprint", b.Name)
 	}
 
-	if err := viper.UnmarshalKey(ContainerKey, &b.PackerTemplates[0].Container); err != nil {
+	if err := viper.UnmarshalKey(ContainerKey, &b.PackerTemplates.Container); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal container parameters from %s config file: %v", b.Name, err)
 	}
 
 	args := b.PreparePackerArgs()
 
-	fmt.Printf("attempt %d - packer parameters: %s\n", attempt, hideSensitiveArgs(args))
+	fmt.Printf("Attempt %d - packer parameters: %s\n", attempt, hideSensitiveArgs(args))
 
 	// Initialize the packer templates directory
-	fmt.Printf("initializing %s packer template\n", b.Name)
-	if err := b.PackerTemplates[0].RunInit([]string{"."}, filepath.Join(b.Path, "packer_templates")); err != nil {
+	if err := b.PackerTemplates.RunInit([]string{"."}, filepath.Join(b.Path, "packer_templates")); err != nil {
 		return nil, fmt.Errorf("error initializing packer command: %v", err)
 	}
 
@@ -443,7 +456,7 @@ func (b *Blueprint) BuildImageAttempt(attempt int) ([]packer.ImageHash, error) {
 	}
 
 	// Run the build command
-	hashes, amiID, err := b.PackerTemplates[0].RunBuild(args, filepath.Join(b.Path, "packer_templates"))
+	hashes, amiID, err := b.PackerTemplates.RunBuild(args, filepath.Join(b.Path, "packer_templates"))
 	if err != nil {
 		return nil, fmt.Errorf("error running build command: %v", err)
 	}
@@ -458,11 +471,11 @@ func (b *Blueprint) BuildImageAttempt(attempt int) ([]packer.ImageHash, error) {
 
 	switch {
 	case len(validHashes) > 0:
-		fmt.Printf("image hashes: %v\n", validHashes)
+		fmt.Printf("Image hashes: %v\n", validHashes)
 	case amiID != "":
-		fmt.Printf("built AMI ID: %s\n", amiID)
+		fmt.Printf("Built AMI ID: %s\n", amiID)
 	default:
-		fmt.Printf("no container image or AMI found in the build output\n")
+		fmt.Printf("No container image or AMI found in the build output\n")
 	}
 
 	return validHashes, nil
