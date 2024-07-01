@@ -142,17 +142,9 @@ func (p *PackerTemplates) ParseImageHashes(output string) []ImageHash {
 		p.Container.ImageHashes = []ImageHash{}
 	}
 
-	// Retrieve container image hashes configuration
-	imageHashesConfigRaw := viper.Get("container.image_hashes")
-	if imageHashesConfigRaw == nil {
-		fmt.Println("Error: container.image_hashes is nil or not found")
-		return p.Container.ImageHashes
-	}
-
-	// Attempt to type assert to []interface{}
-	imageHashesConfig, ok := imageHashesConfigRaw.([]interface{})
-	if !ok {
-		fmt.Println("Error: container.image_hashes is not []interface{}")
+	imageHashesConfig, ok := viper.Get("blueprint.packer_templates.container.image_hashes").([]interface{})
+	if !ok || imageHashesConfig == nil {
+		fmt.Println("No valid image_hashes found in configuration")
 		return p.Container.ImageHashes
 	}
 
@@ -161,6 +153,7 @@ func (p *PackerTemplates) ParseImageHashes(output string) []ImageHash {
 	cleanOutput := re.ReplaceAllString(output, "")
 
 	lines := strings.Split(cleanOutput, "\n")
+	fmt.Println("Parsing image hashes from the Packer build output...", lines)
 	for _, line := range lines {
 		if strings.Contains(line, "Imported Docker image: sha256:") {
 			parts := strings.Fields(line)

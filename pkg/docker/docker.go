@@ -68,8 +68,8 @@ func (h *CustomAuthenticator) Authorization() (*authn.AuthConfig, error) {
 //
 // *DockerRegistry: A DockerRegistry instance.
 // error: An error if any issue occurs while creating the registry.
-func NewDockerRegistry(registryURL, authToken string, registryConfig packer.ContainerImageRegistry, getStore GetStoreFunc, ignoreChownErrors bool) (*DockerRegistry, error) {
-	if registryURL == "" {
+func NewDockerRegistry(registryConfig packer.ContainerImageRegistry, getStore GetStoreFunc, ignoreChownErrors bool) (*DockerRegistry, error) {
+	if registryConfig.Server == "" {
 		return nil, errors.New("registry URL must not be empty")
 	}
 
@@ -110,8 +110,8 @@ func NewDockerRegistry(registryURL, authToken string, registryConfig packer.Cont
 	return &DockerRegistry{
 		Runtime:       runtime,
 		Store:         store,
-		RegistryURL:   registryURL,
-		AuthToken:     authToken,
+		RegistryURL:   registryConfig.Server,
+		AuthToken:     registryConfig.Credential,
 		Authenticator: &CustomAuthenticator{Username: registryConfig.Username, Password: registryConfig.Credential},
 	}, nil
 }

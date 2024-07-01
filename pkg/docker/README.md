@@ -142,13 +142,13 @@ error: An error if any operation fails during the size retrieval
 
 ---
 
-### DockerClient.ProcessTemplates(packer.PackerTemplates, string)
+### DockerClient.ProcessTemplates(*packer.PackerTemplates, string)
 
 ```go
-ProcessTemplates(packer.PackerTemplates, string) error
+ProcessTemplates(*packer.PackerTemplates, string) error
 ```
 
-ProcessTemplate processes a Packer template by tagging and pushing images
+ProcessTemplates processes Packer templates by tagging and pushing images
 to a registry.
 
 **Parameters:**
@@ -257,10 +257,10 @@ error: An error if any operation fails during tagging or pushing.
 
 ---
 
-### NewDockerClient(string, packer.ContainerImageRegistry)
+### NewDockerClient(packer.ContainerImageRegistry)
 
 ```go
-NewDockerClient(string, packer.ContainerImageRegistry) *DockerClient, error
+NewDockerClient(packer.ContainerImageRegistry) *DockerClient, error
 ```
 
 NewDockerClient creates a new Docker client.
@@ -272,10 +272,10 @@ error: An error if any issue occurs while creating the client.
 
 ---
 
-### NewDockerRegistry(string, packer.ContainerImageRegistry, GetStoreFunc, bool)
+### NewDockerRegistry(packer.ContainerImageRegistry, GetStoreFunc, bool)
 
 ```go
-NewDockerRegistry(string packer.ContainerImageRegistry GetStoreFunc bool) *DockerRegistry error
+NewDockerRegistry(packer.ContainerImageRegistry GetStoreFunc bool) *DockerRegistry error
 ```
 
 NewDockerRegistry creates a new Docker registry.

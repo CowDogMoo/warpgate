@@ -63,7 +63,7 @@ func TestNewDockerRegistry(t *testing.T) {
 			authToken:         "testToken",
 			getStore:          docker.DefaultGetStore,
 			ignoreChownErrors: false,
-			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testPass", Server: "https://example.com"},
+			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testToken", Server: "https://example.com"},
 			wantErr:           false,
 		},
 		{
@@ -72,7 +72,7 @@ func TestNewDockerRegistry(t *testing.T) {
 			authToken:         "testToken",
 			getStore:          docker.DefaultGetStore,
 			ignoreChownErrors: false,
-			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testPass", Server: ""},
+			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testToken", Server: ""},
 			wantErr:           true,
 		},
 		{
@@ -86,7 +86,7 @@ func TestNewDockerRegistry(t *testing.T) {
 				return docker.DefaultGetStore(options)
 			},
 			ignoreChownErrors: true,
-			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testPass", Server: "https://example.com"},
+			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testToken", Server: "https://example.com"},
 			wantErr:           false,
 		},
 		{
@@ -97,14 +97,14 @@ func TestNewDockerRegistry(t *testing.T) {
 				return nil, errors.New("chown /home/runner/.local/share/containers/storage/vfs/dir: operation not permitted")
 			},
 			ignoreChownErrors: false,
-			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testPass", Server: "https://example.com"},
+			registryConfig:    packer.ContainerImageRegistry{Username: "testUser", Credential: "testToken", Server: "https://example.com"},
 			wantErr:           true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			registry, err := docker.NewDockerRegistry(tc.registryURL, tc.authToken, tc.registryConfig, tc.getStore, tc.ignoreChownErrors)
+			registry, err := docker.NewDockerRegistry(tc.registryConfig, tc.getStore, tc.ignoreChownErrors)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("NewDockerRegistry() error = %v, wantErr %v", err, tc.wantErr)
 				return

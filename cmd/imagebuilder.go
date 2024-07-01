@@ -8,7 +8,6 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/docker"
 	packer "github.com/cowdogmoo/warpgate/pkg/packer"
 	"github.com/cowdogmoo/warpgate/pkg/registry"
-	log "github.com/l50/goutils/v2/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -85,25 +84,15 @@ func init() {
 
 	imageBuilderCmd.Flags().StringP(
 		"provisionPath", "p", "", "Local path to the repo with provisioning logic that will be used by packer")
-	if err := imageBuilderCmd.MarkFlagRequired("provisionPath"); err != nil {
-		log.L().Error(err)
-		cobra.CheckErr(err)
-	}
+	cobra.CheckErr(imageBuilderCmd.MarkFlagRequired("provisionPath"))
 
 	imageBuilderCmd.Flags().StringP(
 		"blueprint", "b", "", "The blueprint to use for image building.")
-	if err := imageBuilderCmd.MarkFlagRequired("blueprint"); err != nil {
-		log.L().Error(err)
-		cobra.CheckErr(err)
-	}
+	cobra.CheckErr(imageBuilderCmd.MarkFlagRequired("blueprint"))
 
 	imageBuilderCmd.Flags().StringP(
 		"github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
-	err := viper.BindPFlag("container.registry.token", imageBuilderCmd.Flags().Lookup("github-token"))
-	if err != nil {
-		log.L().Error(err)
-		cobra.CheckErr(err)
-	}
+	cobra.CheckErr(viper.BindPFlag("blueprint.image_hashes.container.registry.token", imageBuilderCmd.Flags().Lookup("github-token")))
 }
 
 // RunImageBuilder is the main function for the imageBuilder command
@@ -130,11 +119,10 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 
 	// Check if container configuration is needed
 	if blueprint.PackerTemplates.Container.ImageRegistry.Server != "" {
-
 		// Create ContainerImageRegistry object
 		registryConfig := packer.ContainerImageRegistry{
-			Server:     viper.GetString("container.registry.server"),
-			Username:   viper.GetString("container.registry.username"),
+			Server:     viper.GetString("blueprint.packer_templates.container.registry.server"),
+			Username:   viper.GetString("blueprint.packer_templates.container.registry.username"),
 			Credential: githubToken,
 		}
 
@@ -143,12 +131,12 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		}
 
 		// New DockerClient initialization with username and token
-		dockerClient, err := docker.NewDockerClient(viper.GetString("container.registry.server"), githubToken, registryConfig)
+		dockerClient, err := docker.NewDockerClient(registryConfig)
 		if err != nil {
 			return err
 		}
 
-		if err := dockerClient.ProcessTemplates(*blueprint.PackerTemplates, blueprint.Name); err != nil {
+		if err := dockerClient.ProcessTemplates(blueprint.PackerTemplates, blueprint.Name); err != nil {
 			return fmt.Errorf("error processing Packer template: %v", err)
 		}
 	}
