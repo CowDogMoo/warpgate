@@ -62,6 +62,7 @@ variable "disk_size" {
   description = "Disk size in GB for building the AMI."
   default     = 50
 }
+
 variable "os" {
   type        = string
   description = "Operating system to use for the AMI."

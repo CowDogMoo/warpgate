@@ -38,12 +38,6 @@ variable "base_image_version" {
   description = "Version of the base image."
 }
 
-variable "setup_systemd" {
-  type        = bool
-  description = "Create systemd service for container."
-  default     = false
-}
-
 variable "workdir" {
   type        = string
   description = "Working directory for a new container."
