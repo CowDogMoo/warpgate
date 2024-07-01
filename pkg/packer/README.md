@@ -41,8 +41,8 @@ string: The AMI ID if found in the output.
 ParseImageHashes(string) []ImageHash
 ```
 
-ParseImageHashes extracts the image hashes from the output of a Packer build
-command and updates the provided PackerTemplates struct with the new hashes.
+ParseImageHashes extracts image hashes from Packer build output and updates
+the provided PackerTemplates struct.
 
 **Parameters:**
 

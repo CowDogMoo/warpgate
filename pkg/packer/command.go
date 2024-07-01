@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/l50/goutils/v2/sys"
 )
@@ -42,13 +43,17 @@ func (p *PackerTemplates) runCommand(
 	outputHandler func(string)) (string, error) {
 
 	var outputBuffer bytes.Buffer
+	var mu sync.Mutex // Add a mutex to synchronize access to the buffer
+
 	cmd := sys.Cmd{
 		CmdString: "packer",
 		Args:      append([]string{subCmd}, args...),
 		Dir:       dir,
 		OutputHandler: func(s string) {
 			outputHandler(s)
+			mu.Lock()                          // Lock the mutex before writing to the buffer
 			outputBuffer.WriteString(s + "\n") // Capture output
+			mu.Unlock()                        // Unlock the mutex after writing to the buffer
 		},
 	}
 
@@ -84,9 +89,13 @@ func (p *PackerTemplates) RunBuild(args []string, dir string) ([]ImageHash, stri
 	fmt.Printf("Running Packer build command from the %s directory...\n", dir)
 
 	var outputBuffer bytes.Buffer
+	var mu sync.Mutex // Add a mutex to synchronize access to the buffer
+
 	outputHandler := func(s string) {
 		fmt.Println(s)
+		mu.Lock() // Lock the mutex before writing to the buffer
 		outputBuffer.WriteString(s)
+		mu.Unlock() // Unlock the mutex after writing to the buffer
 	}
 
 	if len(args) > 0 && args[0] == "build" {

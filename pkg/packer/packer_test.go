@@ -15,9 +15,8 @@ func TestParseImageHashes(t *testing.T) {
 		expectedHashes map[string]string
 	}{
 		{
-			name: "Valid json output with hashes",
-			output: "2024/06/30 00:48:27 machine readable: docker.arm64,artifact []string" +
-				"{\"0\", \"string\", \"Imported Docker image: sha256:d53e4d1efeecb0af6d7142e15e352256748cd08a1b14c2255297e420005e5553\"}",
+			name:   "Valid json output with hashes",
+			output: `==> docker.arm64: Imported Docker image: sha256:d53e4d1efeecb0af6d7142e15e352256748cd08a1b14c2255297e420005e5553`,
 			expectedHashes: map[string]string{
 				"arm64": "d53e4d1efeecb0af6d7142e15e352256748cd08a1b14c2255297e420005e5553",
 			},
@@ -41,7 +40,7 @@ func TestParseImageHashes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			// Mock the viper configuration for image hashes
-			viper.Set("container.image_hashes", []interface{}{
+			viper.Set("blueprint.packer_templates.container.image_hashes", []interface{}{
 				map[string]interface{}{"arch": "arm64", "os": "linux"},
 				map[string]interface{}{"arch": "amd64", "os": "linux"},
 			})
