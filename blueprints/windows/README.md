@@ -1,7 +1,6 @@
-# Test Blueprint
+# Windows Blueprint
 
-**Test Blueprint** builds a container image provisioned with
-a test script.
+**Windows Blueprint** builds an Amazon Machine Image (AMI) for Windows Server 2019 using Packer and SSM.
 
 ---
 
@@ -26,16 +25,17 @@ Before you start, ensure you have the following installed:
 
 - `./config.yaml`: Configuration file defining the blueprint's basic settings.
 - `./variables.pkr.hcl`: Variable definitions for the Packer build.
-- `./scripts/provision.sh`: Script containing the provisioning logic.
+- `./scripts/provision.ps1`: Script containing the provisioning logic.
+- `./scripts/choco.ps1`: Script for installing Chocolatey.
+- `./scripts/bootstrap_win.txt`: Script for bootstrapping the Windows instance.
 - `./packer_templates/plugins.pkr.hcl`: Packer configuration file for required plugins.
-- `./packer_templates/test.pkr.hcl`: Main Packer template file for the
-  Test blueprint.
+- `./packer_templates/windows.pkr.hcl`: Main Packer template file for the Windows blueprint.
 
 ## Getting Started
 
 1. Ensure you have the necessary [prerequisites](#prerequisites) installed.
 
-1. Clone the repository containing the Test blueprint:
+1. Clone the Warp Gate repository:
 
    ```bash
    gh repo clone CowDogMoo/warpgate
@@ -50,15 +50,14 @@ Before you start, ensure you have the following installed:
 
 ## Usage
 
-### Building the Container Image
+### Building the AMI
 
-Use warpgate to build local container images based on the `test`
-blueprint:
+Use warpgate to build a Windows AMI based on the `windows` blueprint:
 
 ```bash
 wg imageBuilder \
-  -b "test" \
-  -p "$PWD/blueprints/test/scripts/provision.sh" \
+  -b "windows" \
+  -p "$HOME/security/ansible-collection-arsenal" \
   -t "$(op item get 'CowDogMoo/warpgate BOT TOKEN' --fields token)"
 ```
 
@@ -67,7 +66,7 @@ wg imageBuilder \
 - Pull the Docker image:
 
   ```bash
-  docker pull ghcr.io/l50/test:latest
+  docker pull ghcr.io/l50/windows:latest
   ```
 
 - Run the Docker container:
@@ -75,7 +74,10 @@ wg imageBuilder \
   ```bash
   docker run -it --rm \
     --privileged \
-    --entrypoint pwsh \
-    --user root \
-    ghcr.io/l50/test:latest
+    --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
+    --cgroupns host \
+    --entrypoint /bin/bash \
+    --user windows \
+    --workdir /home/windows \
+    ghcr.io/l50/windows:latest
   ```
