@@ -203,6 +203,8 @@ jobs:
             provision_path="${{ github.workspace }}/ansible-collection-arsenal"
           elif [[ "${{ matrix.blueprint.blueprint }}" == "test" ]]; then
             provision_path="${{ matrix.blueprint.path }}/scripts/provision.sh"
+          elif [[ "${{ matrix.blueprint.blueprint }}" == "windows" ]]; then
+            provision_path="${{ matrix.blueprint.path }}/scripts/provision.ps1"
           else
             echo "Unknown blueprint: ${{ matrix.blueprint.blueprint }}"
             exit 1
