@@ -188,27 +188,49 @@ jobs:
             ignore_chown_errors = "true"
           EOF'
 
+      - name: Define provision path function
+        id: define-provision-path
+        run: |
+          set_provision_path() {
+            local blueprint=$1
+            case $blueprint in
+              "runzero-explorer")
+                echo "${{ github.workspace }}/ansible-collection-workstation"
+                ;;
+              "sliver" | "ttpforge" | "atomic-red-team" | "attack-box")
+                echo "${{ github.workspace }}/ansible-collection-arsenal"
+                ;;
+              "test")
+                echo "${{ matrix.blueprint.path }}/scripts/provision.sh"
+                ;;
+              "windows")
+                echo "${{ matrix.blueprint.path }}/scripts/provision.ps1"
+                ;;
+              *)
+                echo "Unknown blueprint: $blueprint" >&2
+                exit 1
+                ;;
+            esac
+          }
+
+          blueprint_name="${{ matrix.blueprint.blueprint }}"
+          provision_path=$(set_provision_path $blueprint_name)
+          echo "Blueprint name: $blueprint_name"
+          echo "Provision path: $provision_path"
+
+          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "provision_path=$provision_path" >> $GITHUB_ENV
+
       - name: Run image builder for each blueprint
         run: |
           blueprint_name="${{ matrix.blueprint.blueprint }}"
           export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
-          provision_path=""
+          provision_path=$provision_path
           tag_name=$(yq e '.blueprint.tag.name' "${{ matrix.blueprint.path }}/config.yaml")
           repo_owner=$(echo "$tag_name" | cut -d'/' -f1)
 
-          echo "Blueprint name: ${{ matrix.blueprint.blueprint }}"
-          if [[ "${{ matrix.blueprint.blueprint }}" == "runzero-explorer" ]]; then
-            provision_path="${{ github.workspace }}/ansible-collection-workstation"
-          elif [[ "${{ matrix.blueprint.blueprint }}" == "sliver" || "${{ matrix.blueprint.blueprint }}" == "ttpforge" || "${{ matrix.blueprint.blueprint }}" == "atomic-red-team" ]]; then
-            provision_path="${{ github.workspace }}/ansible-collection-arsenal"
-          elif [[ "${{ matrix.blueprint.blueprint }}" == "test" ]]; then
-            provision_path="${{ matrix.blueprint.path }}/scripts/provision.sh"
-          elif [[ "${{ matrix.blueprint.blueprint }}" == "windows" ]]; then
-            provision_path="${{ matrix.blueprint.path }}/scripts/provision.ps1"
-          else
-            echo "Unknown blueprint: ${{ matrix.blueprint.blueprint }}"
-            exit 1
-          fi
+          echo "Blueprint name: $blueprint_name"
+          echo "Provision path: $provision_path"
 
           echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
