@@ -57,6 +57,6 @@ build {
     environment_vars = [
       "SSH_INTERFACE=${var.ssh_interface}"
     ]
-    script = "../scripts/provision.ps1"
+    script = "${var.provision_script_path}"
   }
 }
