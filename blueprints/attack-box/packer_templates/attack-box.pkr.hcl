@@ -7,12 +7,15 @@
 # [attack-box](https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/attack-box)
 # Ansible playbook.
 #########################################################################################
-locals { timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp()) }
+locals {
+  timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())
+}
+
 source "docker" "amd64" {
   commit      = true
-  image   = "${var.base_image}:${var.base_image_version}"
+  image       = "${var.base_image}:${var.base_image_version}"
   platform    = "linux/amd64"
-  privileged = true
+  privileged  = true
 
   volumes = {
     "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
@@ -61,26 +64,24 @@ source "amazon-ebs" "kali" {
     owners      = ["679593333241"]
   }
 
-  communicator   = "ssh"
+  user_data_file = "${var.user_data_file}"
   run_tags       = "${var.run_tags}"
 
-   launch_block_device_mappings {
-    device_name           = "/dev/sda1"
+  launch_block_device_mappings {
+    device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
     volume_type           = "gp2"
     delete_on_termination = true
   }
 
-  #### SSH Configuration ####
-  ssh_port                 = "${var.ssh_port}"
-  ssh_username             = "${var.ssh_username}"
-  ssh_file_transfer_method = "sftp"
-  ssh_timeout              = "${var.ssh_timeout}"
+  ami_block_device_mappings {
+    device_name           = "${var.disk_device_name}"
+    volume_size           = "${var.disk_size}"
+    volume_type           = "gp2"
+    delete_on_termination = true
+  }
 
-  #### SSM and IP Configuration ####
-  associate_public_ip_address = "${var.ssh_interface == "session_manager"}"
-  ssh_interface = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
-  iam_instance_profile = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
+  ssh_username = "${var.ssh_username}"
 
   tags = {
     Name      = "${var.blueprint_name}-${local.timestamp}"
@@ -93,12 +94,12 @@ build {
     # "source.docker.arm64",
     # "source.docker.amd64",
     "source.amazon-ebs.kali",
-    ]
+  ]
 
   // Transfer the code found at the input provision_repo_path
   // to the pkr_build_dir, which is used by packer during the build process.
   provisioner "file" {
-    source = "${var.provision_repo_path}"
+    source      = "${var.provision_repo_path}"
     destination = "${var.pkr_build_dir}"
   }
 
@@ -113,8 +114,8 @@ build {
   provisioner "shell" {
     environment_vars = [
       "PKR_BUILD_DIR=${var.pkr_build_dir}",
-      "DISK_SIZE=${var.disk_size}",
-      ]
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    ]
     inline = [
       "chmod +x ${var.pkr_build_dir}/provision.sh",
       "${var.pkr_build_dir}/provision.sh"

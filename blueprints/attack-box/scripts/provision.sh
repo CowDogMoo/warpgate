@@ -6,6 +6,13 @@ set -ex
 export PKR_BUILD_DIR="${1:-ansible-collection-arsenal}"
 export CLEANUP="${2:-true}"
 
+wait_for_apt_lock() {
+    while sudo fuser /var/lib/apt/lists/lock > /dev/null 2>&1; do
+        echo "Waiting for apt lock to be released..."
+        sleep 1
+    done
+}
+
 install_sudo_if_needed() {
     # Check if we are root and sudo is not available
     if [[ $EUID -eq 0 ]] && ! command -v sudo &> /dev/null; then
@@ -14,29 +21,36 @@ install_sudo_if_needed() {
 }
 
 run_as_root() {
+    echo "Running command as root:" "$@"
     if command -v sudo &> /dev/null; then
         sudo "$@"
     else
         "$@"
     fi
+    local status=$?
+    if [ $status -ne 0 ]; then
+        echo "Error: Command failed with status $status"
+        exit $status
+    fi
 }
 
 add_py_deps_to_path() {
-    # Add .local/bin to PATH if it's not already there
+    echo "Adding .local/bin to PATH if not already present..."
     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
         export PATH="$PATH:$HOME/.local/bin"
     fi
 }
 
 install_dependencies() {
+    echo "Installing dependencies..."
     install_sudo_if_needed
 
-    run_as_root apt-get update -y 2> /dev/null
+    wait_for_apt_lock
+    run_as_root apt-get update -y
     run_as_root apt-get install -y bash git gpg-agent python3 python3-pip
     echo 'debconf debconf/frontend select Noninteractive' | run_as_root debconf-set-selections
 
     # Install Python packages globally to avoid PATH issues
-    python3 -m pip install --upgrade pip
     python3 -m pip install --upgrade \
         ansible-core \
         docker \
@@ -47,8 +61,8 @@ install_dependencies() {
     add_py_deps_to_path
 }
 
-# Provision logic run by packer
 run_provision_logic() {
+    echo "Running provision logic..."
     if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
         ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
         ansible-galaxy collection install git+https://github.com/l50/ansible-collection-arsenal.git,main --force
@@ -76,7 +90,7 @@ run_provision_logic() {
 
 cleanup() {
     if [[ "${CLEANUP}" == "true" ]]; then
-        # Clean up apt cache
+        echo "Cleaning up the system..."
         run_as_root apt-get clean
         run_as_root rm -rf /var/lib/apt/lists/*
 
@@ -91,7 +105,6 @@ cleanup() {
             python3-pip \
             python3-setuptools \
             build-essential \
-            libgmp-dev \
             manpages \
             man-db \
             bsdmainutils

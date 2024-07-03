@@ -32,6 +32,16 @@ variable "ami_region" {
   default     = "us-east-1"
 }
 
+variable "base_image" {
+  type        = string
+  description = "Base image."
+}
+
+variable "base_image_version" {
+  type        = string
+  description = "Version of the base image."
+}
+
 variable "communicator" {
   type        = string
   description = "The communicator to use for the instance - ssh or winrm."

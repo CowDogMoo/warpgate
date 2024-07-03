@@ -17,6 +17,12 @@ variable "provision_repo_path" {
   description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
 }
 
+variable "provision_script_path" {
+  type        = string
+  description = "Path on disk to the provisioning script."
+  default = "../scripts/provision.sh"
+}
+
 ############################################
 #              AWS variables               #
 ############################################
@@ -30,6 +36,12 @@ variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."
   default     = "us-east-1"
+}
+
+variable "disk_device_name" {
+  type        = string
+  description = "Disk device to use for the instance."
+  default     = "/dev/xvda"
 }
 
 variable "disk_size" {
@@ -72,7 +84,8 @@ variable "run_tags" {
 variable "ssh_interface" {
   type        = string
   description = "The interface to use for SSH connections."
-  default     = "session_manager"
+  default     = "public_ip"
+  # default     = "session_manager"
 }
 
 variable "ssh_username" {
@@ -98,6 +111,12 @@ variable "user" {
   description = "Default odyssey user."
 }
 
+variable "user_data_file" {
+  type        = string
+  description = "Path to the user data file for instance initialization."
+  default     = "../scripts/user_data.sh"
+}
+
 ############################################
 #           Container variables            #
 ############################################
@@ -112,7 +131,7 @@ variable "base_image_version" {
 }
 
 variable "entrypoint" {
-  type    = string
+  type        = string
   description = "Optional entrypoint script."
 }
 
