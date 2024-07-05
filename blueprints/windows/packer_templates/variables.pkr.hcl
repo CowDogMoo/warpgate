@@ -9,13 +9,19 @@ variable "blueprint_name" {
 variable "provision_script_path" {
   type        = string
   description = "Path on disk to the provisioning script."
-  default = "../scripts/provision.ps1"
+  default     = "../scripts/provision.ps1"
 }
 
 variable "provision_repo_path" {
   type        = string
   description = "Path on disk to the repo that contains the provisioning code to build the container image."
 }
+
+variable "pkr_build_dir" {
+  type        = string
+  description = "Directory on the target instance where the provisioning repo will be uploaded."
+  default     = "ansible-collection-arsenal"
+  }
 
 #######################################################
 #                  AWS variables                      #
@@ -74,7 +80,7 @@ variable "os_version" {
 variable "run_tags" {
   type        = map(string)
   description = "Tags to apply to the instance."
-  default     = {
+  default = {
     Name = "packer-windows"
   }
 }

@@ -62,6 +62,10 @@ type DockerClient struct {
 // *DockerClient: A DockerClient instance.
 // error: An error if any issue occurs while creating the client.
 func NewDockerClient(registryConfig packer.ContainerImageRegistry) (*DockerClient, error) {
+	if registryConfig.Server == "" || registryConfig.Username == "" || registryConfig.Credential == "" {
+		return nil, errors.New("registryConfig fields must not be empty")
+	}
+
 	cli, err := dockerClient.NewClientWithOpts(dockerClient.FromEnv, dockerClient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("error creating Docker client: %v", err)
@@ -149,7 +153,6 @@ func (d *DockerClient) DockerTag(sourceImage, targetImage string) error {
 // **Parameters:**
 //
 // containerImage: The name of the image to push.
-// authStr: The auth string for the Docker registry.
 //
 // **Returns:**
 //
@@ -251,6 +254,9 @@ func (d *DockerClient) ProcessTemplates(pTmpl *packer.PackerTemplates, blueprint
 // error: An error if any issue occurs during the image removal process.
 // []image.DeleteResponse: A slice of image.DeleteResponse instances.
 func (d *DockerClient) RemoveImage(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error) {
+	if imageID == "" {
+		return nil, errors.New("imageID must not be empty")
+	}
 	fmt.Println("Removing image:", imageID)
 	return d.CLI.ImageRemove(ctx, imageID, options)
 }

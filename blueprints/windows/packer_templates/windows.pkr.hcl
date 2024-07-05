@@ -3,9 +3,11 @@
 #
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
-# Description: Create a windows AMI provisioned with a basic powershell script.
+# Description: Create a Windows AMI provisioned with a basic PowerShell script.
 #########################################################################################
-locals { timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp()) }
+locals {
+  timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())
+}
 
 source "amazon-ebs" "windows" {
   ami_name      = "${var.blueprint_name}-${local.timestamp}"
@@ -40,8 +42,8 @@ source "amazon-ebs" "windows" {
 
   #### SSM and IP Configuration ####
   associate_public_ip_address = "${var.ssh_interface == "session_manager"}"
-  ssh_interface = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
-  iam_instance_profile = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
+  ssh_interface               = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
+  iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
   tags = {
     Name      = "${var.blueprint_name}-${local.timestamp}"
@@ -53,10 +55,30 @@ build {
   name    = "windows"
   sources = ["source.amazon-ebs.windows"]
 
-  provisioner "powershell" {
-    environment_vars = [
-      "SSH_INTERFACE=${var.ssh_interface}"
+  # Upload the Ansible playbooks and other required files
+  provisioner "file" {
+    source      = "${var.provision_repo_path}"
+    destination = "${var.pkr_build_dir}"
+  }
+
+  provisioner "ansible" {
+    only = ["amazon-ebs.windows"]
+    playbook_file = "${var.provision_repo_path}/playbooks/windows-scenarios/windows-scenarios.yml"
+    user = "Administrator"
+    extra_arguments = [
+      "--extra-vars",
+      "ansible_shell_type=powershell",
+      "--extra-vars",
+      "ansible_shell_executable=None",
+      "--extra-vars",
+      "ansible_user=Administrator",
     ]
-    script = "${var.provision_script_path}"
+  }
+
+  provisioner "powershell" {
+    inline = [
+      "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\InitializeInstance.ps1 -Schedule",
+      "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\SysprepInstance.ps1 -NoShutdown"
+    ]
   }
 }

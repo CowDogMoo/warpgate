@@ -113,8 +113,14 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return fmt.Errorf("no packer templates found: %v", err)
 	}
 
-	if _, err := blueprint.BuildPackerImages(); err != nil {
+	buildResult, err := blueprint.BuildPackerImages()
+	if err != nil {
 		return err
+	}
+
+	// Ensure at least one image is built
+	if len(buildResult) == 0 {
+		return fmt.Errorf("no images were built")
 	}
 
 	// Check if container configuration is needed

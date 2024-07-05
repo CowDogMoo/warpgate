@@ -174,7 +174,6 @@ auth string.
 **Parameters:**
 
 containerImage: The name of the image to push.
-authStr: The auth string for the Docker registry.
 
 **Returns:**
 
