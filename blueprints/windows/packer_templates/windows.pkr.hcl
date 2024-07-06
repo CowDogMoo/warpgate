@@ -39,6 +39,8 @@ source "amazon-ebs" "windows" {
   winrm_password = "${var.communicator == "winrm" ? var.winrm_password : null}"
   winrm_port     = "${var.communicator == "winrm" ? var.winrm_port : null}"
   winrm_timeout  = "${var.communicator == "winrm" ? var.winrm_timeout : null}"
+  winrm_use_ssl  = "${var.communicator == "winrm" ? var.winrm_use_ssl : null}"
+  winrm_insecure = "${var.communicator == "winrm" ? var.winrm_insecure : null}"
 
   #### SSM and IP Configuration ####
   associate_public_ip_address = "${var.ssh_interface == "session_manager"}"
@@ -55,30 +57,40 @@ build {
   name    = "windows"
   sources = ["source.amazon-ebs.windows"]
 
+  # Create the pkr_build_dir
+  provisioner "powershell" {
+    inline = [
+      "if (!(Test-Path -Path \"C:/${var.pkr_build_dir}\")) {",
+      "  New-Item -Path C:/ -Name ${var.pkr_build_dir} -ItemType Directory",
+      "} else {",
+      "  Write-Host \"Directory C:/${var.pkr_build_dir} already exists.\"",
+      "}"
+    ]
+  }
   # Upload the Ansible playbooks and other required files
   provisioner "file" {
-    source      = "${var.provision_repo_path}"
-    destination = "${var.pkr_build_dir}"
+    source      = "${var.provision_repo_path}/"
+    destination = "C:/${var.pkr_build_dir}/"
   }
 
   provisioner "ansible" {
     only = ["amazon-ebs.windows"]
     playbook_file = "${var.provision_repo_path}/playbooks/windows-scenarios/windows-scenarios.yml"
     user = "Administrator"
+    # local_port = 5986
+    # ansible_env_vars = ["no_proxy=\"*\""]
     extra_arguments = [
       "--extra-vars",
       "ansible_shell_type=powershell",
       "--extra-vars",
       "ansible_shell_executable=None",
-      "--extra-vars",
-      "ansible_user=Administrator",
     ]
   }
 
   provisioner "powershell" {
     inline = [
-      "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\InitializeInstance.ps1 -Schedule",
-      "C:\\ProgramData\\Amazon\\EC2-Windows\\Launch\\Scripts\\SysprepInstance.ps1 -NoShutdown"
+      "C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/InitializeInstance.ps1 -Schedule",
+      "C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/SysprepInstance.ps1 -NoShutdown"
     ]
   }
 }

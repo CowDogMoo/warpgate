@@ -120,6 +120,8 @@ variable "user_data_file" {
   default     = "../scripts/bootstrap_win.txt"
 }
 
+#######################################################
+
 variable "winrm_username" {
   type        = string
   description = "Username for WinRM connection."
