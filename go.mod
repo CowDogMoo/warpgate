@@ -11,7 +11,7 @@ require (
 	github.com/docker/docker v27.0.3+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/google/go-containerregistry v0.19.2
-	github.com/l50/goutils/v2 v2.2.7-0.20240701021652-d7eb0dd2bc91
+	github.com/l50/goutils/v2 v2.2.7-0.20240705073005-edbbb6e54458
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/otiai10/copy v1.14.0
@@ -24,7 +24,7 @@ require (
 require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240701130421-f6361c86f094 // indirect
-	google.golang.org/grpc v1.64.0 // indirect
+	google.golang.org/grpc v1.65.0 // indirect
 )
 
 require (

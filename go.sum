@@ -250,6 +250,8 @@ github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
 github.com/l50/goutils/v2 v2.2.7-0.20240701021652-d7eb0dd2bc91 h1:U26YAXSvDE4El1PgFtGzeK06Z4U3MAF5Rch9I1sefSc=
 github.com/l50/goutils/v2 v2.2.7-0.20240701021652-d7eb0dd2bc91/go.mod h1:FbDqwHFE4okqKm+emXcXhL7YWUNKd3MiK08JpptgxyE=
+github.com/l50/goutils/v2 v2.2.7-0.20240705073005-edbbb6e54458 h1:yfuy+k5Os5rXLanSrORhmyqf7ubKmiZzHO+qHzApHR0=
+github.com/l50/goutils/v2 v2.2.7-0.20240705073005-edbbb6e54458/go.mod h1:AVZ4dQ8rtiTykEUhXoBJTu+KvnUyZlNOaREnaEAsK04=
 github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec h1:2tTW6cDth2TSgRbAhD7yjZzTQmcN25sDRPEeinR51yQ=
 github.com/letsencrypt/boulder v0.0.0-20240620165639-de9c06129bec/go.mod h1:TmwEoGCwIti7BCeJ9hescZgRtatxRE+A72pCoPfmcfk=
 github.com/letsencrypt/boulder v0.0.0-20240702155844-cb6fcc288914 h1:BUe/vBvYHK4wxivOyTbtWT6ywW+xNf+9Cw86tCJgMkM=
@@ -588,6 +590,8 @@ google.golang.org/grpc v1.27.0/go.mod h1:qbnxyOmOxrQa7FizSgH+ReBfzJrCY1pSN7KXBS8
 google.golang.org/grpc v1.33.2/go.mod h1:JMHMWHQWaTccqQQlmk3MJZS+GWXOdAesneDmEnv2fbc=
 google.golang.org/grpc v1.64.0 h1:KH3VH9y/MgNQg1dE7b3XfVK0GsPSIzJwdF617gUSbvY=
 google.golang.org/grpc v1.64.0/go.mod h1:oxjF8E3FBnjp+/gVFYdWacaLDx9na1aqy9oovLpxQYg=
+google.golang.org/grpc v1.65.0 h1:bs/cUb4lp1G5iImFFd3u5ixQzweKizoZJAwBNLR42lc=
+google.golang.org/grpc v1.65.0/go.mod h1:WgYC2ypjlB0EiQi6wdKixMqukr6lBc0Vo+oOgjrM5ZQ=
 google.golang.org/protobuf v0.0.0-20200109180630-ec00e32a8dfd/go.mod h1:DFci5gLYBciE7Vtevhsrf46CRTquxDuWsQurQQe4oz8=
 google.golang.org/protobuf v0.0.0-20200221191635-4d8936d0db64/go.mod h1:kwYJMbMJ01Woi6D6+Kah6886xMZcty6N08ah7+eCXa0=
 google.golang.org/protobuf v0.0.0-20200228230310-ab0ca4ff8a60/go.mod h1:cfTl7dwQJ+fmap5saPgwCLgHXTUD7jkjRqWcaiX5VyM=
