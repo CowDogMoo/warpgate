@@ -1,4 +1,5 @@
 <powershell>
+# Resource: https://github.com/chorrell/packer-aws-windows-openssh/blob/main/files/SetupSsh.ps1
 # Don't display progress bars
 # See: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_preference_variables?view=powershell-7.3#progresspreference
 $ProgressPreference = 'SilentlyContinue'

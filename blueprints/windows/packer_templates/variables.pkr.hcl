@@ -21,7 +21,7 @@ variable "pkr_build_dir" {
   type        = string
   description = "Directory on the target instance where the provisioning repo will be uploaded."
   default     = "ansible-collection-arsenal"
-  }
+}
 
 #######################################################
 #                  AWS variables                      #

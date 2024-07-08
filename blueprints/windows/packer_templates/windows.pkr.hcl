@@ -1,10 +1,10 @@
-#########################################################################################
+################################################################################
 # windows packer template
 #
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
 # Description: Create a Windows AMI provisioned with a basic PowerShell script.
-#########################################################################################
+################################################################################
 locals {
   timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())
 }
@@ -57,40 +57,50 @@ build {
   name    = "windows"
   sources = ["source.amazon-ebs.windows"]
 
-  # Create the pkr_build_dir
+  # Ensure the target directory exists
   provisioner "powershell" {
     inline = [
-      "if (!(Test-Path -Path \"C:/${var.pkr_build_dir}\")) {",
-      "  New-Item -Path C:/ -Name ${var.pkr_build_dir} -ItemType Directory",
+      "if (!(Test-Path -Path 'C:/${var.pkr_build_dir}')) {",
+      "  Write-Host 'Creating directory C:/${var.pkr_build_dir}'",
+      "  New-Item -Path 'C:/' -Name '${var.pkr_build_dir}' -ItemType Directory",
       "} else {",
-      "  Write-Host \"Directory C:/${var.pkr_build_dir} already exists.\"",
+      "  Write-Host 'Directory C:/${var.pkr_build_dir} already exists.'",
       "}"
     ]
   }
-  # Upload the Ansible playbooks and other required files
-  provisioner "file" {
-    source      = "${var.provision_repo_path}/"
-    destination = "C:/${var.pkr_build_dir}/"
-  }
 
+  # # Upload the Ansible playbooks and other required files to the instance
+  # provisioner "file" {
+  #   source      = "${var.provision_repo_path}/"
+  #   destination = "C:/${var.pkr_build_dir}/"
+  # }
+
+  # Run the Ansible playbook on the instance
   provisioner "ansible" {
     only = ["amazon-ebs.windows"]
+    galaxy_file = "${var.provision_repo_path}/requirements.yml"
     playbook_file = "${var.provision_repo_path}/playbooks/windows-scenarios/windows-scenarios.yml"
     user = "Administrator"
-    # local_port = 5986
-    # ansible_env_vars = ["no_proxy=\"*\""]
     extra_arguments = [
       "--extra-vars",
-      "ansible_shell_type=powershell",
-      "--extra-vars",
-      "ansible_shell_executable=None",
+      "ansible_shell_type=powershell ansible_shell_executable=None"
     ]
   }
 
+  # Run the PowerShell scripts to initialize and sysprep the instance
   provisioner "powershell" {
+    only = ["amazon-ebs.windows"]
     inline = [
-      "C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/InitializeInstance.ps1 -Schedule",
-      "C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/SysprepInstance.ps1 -NoShutdown"
+      "if (Test-Path 'C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/InitializeInstance.ps1') {",
+      "  & 'C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/InitializeInstance.ps1' -Schedule",
+      "} else {",
+      "  Write-Host 'InitializeInstance.ps1 not found'",
+      "}",
+      "if (Test-Path 'C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/SysprepInstance.ps1') {",
+      "  & 'C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/SysprepInstance.ps1' -NoShutdown",
+      "} else {",
+      "  Write-Host 'SysprepInstance.ps1 not found'",
+      "}"
     ]
   }
 }
