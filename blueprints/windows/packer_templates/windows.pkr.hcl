@@ -69,6 +69,7 @@ build {
     ]
   }
 
+  # TODO This is probably not needed, but it's here until everything works perfectly:
   # # Upload the Ansible playbooks and other required files to the instance
   # provisioner "file" {
   #   source      = "${var.provision_repo_path}/"
@@ -82,25 +83,19 @@ build {
     playbook_file = "${var.provision_repo_path}/playbooks/windows-scenarios/windows-scenarios.yml"
     user = "Administrator"
     extra_arguments = [
-      "--extra-vars",
-      "ansible_shell_type=powershell ansible_shell_executable=None"
+      "-e ansible_shell_type=powershell",
+      "-e ansible_shell_executable=None",
+      "-e ansible_winrm_server_cert_validation=ignore",
     ]
   }
 
   # Run the PowerShell scripts to initialize and sysprep the instance
-  provisioner "powershell" {
+   provisioner "powershell" {
     only = ["amazon-ebs.windows"]
     inline = [
-      "if (Test-Path 'C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/InitializeInstance.ps1') {",
-      "  & 'C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/InitializeInstance.ps1' -Schedule",
-      "} else {",
-      "  Write-Host 'InitializeInstance.ps1 not found'",
-      "}",
-      "if (Test-Path 'C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/SysprepInstance.ps1') {",
-      "  & 'C:/ProgramData/Amazon/EC2-Windows/Launch/Scripts/SysprepInstance.ps1' -NoShutdown",
-      "} else {",
-      "  Write-Host 'SysprepInstance.ps1 not found'",
-      "}"
+      "Set-Location $env:programfiles/amazon/ec2launch",
+      "./ec2launch.exe reset -c",
+      "./ec2launch.exe sysprep -c"
     ]
   }
 }
