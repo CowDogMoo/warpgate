@@ -10,7 +10,7 @@ require (
 	github.com/containers/storage v1.54.0
 	github.com/docker/docker v27.0.3+incompatible
 	github.com/fatih/color v1.17.0
-	github.com/google/go-containerregistry v0.19.2
+	github.com/google/go-containerregistry v0.20.0
 	github.com/l50/goutils/v2 v2.2.7-0.20240701021652-d7eb0dd2bc91
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -143,7 +143,7 @@ require (
 	github.com/stefanberger/go-pkcs11uri v0.0.0-20230803200340-78284954bff6 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/sylabs/sif/v2 v2.17.1 // indirect
+	github.com/sylabs/sif/v2 v2.18.0 // indirect
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.1 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
