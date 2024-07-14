@@ -26,11 +26,15 @@
       enabled: true
     },
     {
-      description: "Auto merge GitHub Actions",
-      matchManagers: ["github-actions"],
+      description: "Auto merge all updates if tests pass and author is cowdogmoo-renovate-bot",
+      matchPackagePatterns: ["*"],
+      matchManagers: ["github-actions", "gomod"],
       automerge: true,
-      automergeType: "pr"
-    }
+      automergeType: "pr",
+      automergeStrategy: "squash",
+      requiredStatusChecks: ["test", "build"],
+      matchAuthors: ["cowdogmoo-renovate-bot"],
+    },
   ],
   customManagers: [
     {
