@@ -30,13 +30,14 @@
       matchPackagePatterns: ["*"],
       matchManagers: ["github-actions", "gomod"],
       automerge: true,
-      automergeType: "pr",
       automergeStrategy: "squash",
-      requiredStatusChecks: ["test", "build"],
-      prBodyTemplate: "Author: {{author}}",
-      matchUpdateTypes: ["major", "minor", "patch", "digest"],
+      requiredStatusChecks: ["tests", "pre-commit"],
     },
   ],
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
+  },
   customManagers: [
     {
       customType: "regex",
@@ -47,4 +48,5 @@
       datasourceTemplate: "go",
     },
   ],
+  platformAutomerge: true,
 }
