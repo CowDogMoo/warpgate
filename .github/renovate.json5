@@ -10,40 +10,42 @@
     ":automergeDigest",
     ":automergeBranch",
     "github>CowDogMoo/warpgate//.github/renovate/autoMerge.json5",
-    "helpers:pinGitHubActionDigests"
+    "helpers:pinGitHubActionDigests",
   ],
   dependencyDashboardTitle: "Renovate Dashboard 🤖",
   suppressNotifications: ["prIgnoreNotification"],
   rebaseWhen: "conflicted",
   commitBodyTable: true,
   "pre-commit": {
-    enabled: true
+    enabled: true,
   },
   packageRules: [
     {
       matchManagers: ["gomod"],
       matchPackagePatterns: ["*"],
-      enabled: true
+      enabled: true,
     },
     {
-      description: "Auto merge all updates if tests pass and author is cowdogmoo-renovate-bot",
+      description: "Auto merge all updates if tests pass",
       matchPackagePatterns: ["*"],
       matchManagers: ["github-actions", "gomod"],
       automerge: true,
-      automergeType: "pr",
       automergeStrategy: "squash",
-      requiredStatusChecks: ["test", "build"],
-      matchAuthors: ["cowdogmoo-renovate-bot"],
+      requiredStatusChecks: ["tests", "pre-commit"],
     },
   ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
   customManagers: [
     {
       customType: "regex",
       fileMatch: [".sh$"],
       matchStrings: [
-        "go install (?<depName>[^@]+?)@(?<currentValue>[0-9.-a-zA-Z]+)"
+        "go install (?<depName>[^@]+?)@(?<currentValue>[0-9.-a-zA-Z]+)",
       ],
-      datasourceTemplate: "go"
-    }
-  ]
+      datasourceTemplate: "go",
+    },
+  ],
 }
