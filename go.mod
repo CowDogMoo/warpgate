@@ -129,7 +129,7 @@ require (
 	github.com/samber/slog-multi v1.1.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.8.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
-	github.com/sigstore/fulcio v1.5.0 // indirect
+	github.com/sigstore/fulcio v1.5.1 // indirect
 	github.com/sigstore/rekor v1.3.6 // indirect
 	github.com/sigstore/sigstore v1.8.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
