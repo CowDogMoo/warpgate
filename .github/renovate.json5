@@ -33,6 +33,8 @@
       automergeType: "pr",
       automergeStrategy: "squash",
       requiredStatusChecks: ["test", "build"],
+      prBodyTemplate: "Author: {{author}}",
+      matchUpdateTypes: ["major", "minor", "patch", "digest"],
     },
   ],
   customManagers: [
