@@ -34,9 +34,9 @@
       requiredStatusChecks: ["tests", "pre-commit"],
     },
   ],
-  "lockFileMaintenance": {
-    "enabled": true,
-    "automerge": true
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
   },
   customManagers: [
     {
@@ -48,4 +48,5 @@
       datasourceTemplate: "go",
     },
   ],
+  platformAutomerge: true,
 }
