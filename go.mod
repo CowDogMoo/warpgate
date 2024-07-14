@@ -24,7 +24,7 @@ require (
 require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240709173604-40e1e62336c5 // indirect
-	google.golang.org/grpc v1.64.0 // indirect
+	google.golang.org/grpc v1.64.1 // indirect
 )
 
 require (
@@ -95,7 +95,7 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
-	github.com/letsencrypt/boulder v0.0.0-20240703151159-926a0704b455 // indirect
+	github.com/letsencrypt/boulder v0.0.0-20240712190237-472effbb9be1 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/manifoldco/promptui v0.9.0 // indirect
