@@ -11,7 +11,7 @@ require (
 	github.com/docker/docker v27.0.3+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/google/go-containerregistry v0.20.0
-	github.com/l50/goutils/v2 v2.2.7-0.20240701021652-d7eb0dd2bc91
+	github.com/l50/goutils/v2 v2.2.7-0.20240710043526-1599c4215b7f
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/otiai10/copy v1.14.0
