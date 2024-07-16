@@ -42,7 +42,7 @@ jobs:
         run: echo "IMAGE_NAME=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Build and export to Docker (Test Image)
-        uses: docker/bake-action@dbdf67d511c64f5af9363b359bf1c3c94a92fcfd # v5
+        uses: docker/bake-action@eac74531aa56a9266bfedfe5edb6b851ce2cca2b # v5
         with:
           set: "*.tags=ghcr.io/cowdogmoo/atomic-red:latest"
           provenance: false # Stop unknown/unknown images from being pushed
