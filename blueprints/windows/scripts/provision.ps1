@@ -8,12 +8,6 @@ function Install-Chocolatey {
     choco feature enable -n allowGlobalConfirmation
 }
 
-function Cleanup-SSHKeys {
-    Write-Output "Cleaning up SSH keys..."
-    $openSSHAuthorizedKeys = Join-Path $env:ProgramData 'ssh\administrators_authorized_keys'
-    Remove-Item -Recurse -Force -Path $openSSHAuthorizedKeys
-}
-
 function Enable-DownloadKeyTask {
     Write-Output "Checking for DownloadKey task..."
     if (Get-ScheduledTask -TaskName "DownloadKey" -ErrorAction SilentlyContinue) {
@@ -28,13 +22,6 @@ function Enable-DownloadKeyTask {
     }
 }
 
-function Run-Sysprep {
-    Write-Output "Running Sysprep..."
-    & "$Env:Programfiles\Amazon\EC2Launch\ec2launch.exe" sysprep
-}
-
 # Main script execution
 Install-Chocolatey
-Cleanup-SSHKeys
 Enable-DownloadKeyTask
-Run-Sysprep

@@ -14,7 +14,7 @@ variable "provision_script_path" {
 
 variable "provision_repo_path" {
   type        = string
-  description = "Path on disk to the repo that contains the provisioning code to build the container image."
+  description = "Path on disk to repo that contains the provisioning code to build an odyssey."
 }
 
 #######################################################
@@ -106,6 +106,7 @@ variable "ssh_timeout" {
 variable "user" {
   type        = string
   description = "Default odyssey user."
+  default     = "Administrator"
 }
 
 variable "user_data_file" {
@@ -123,7 +124,6 @@ variable "winrm_username" {
 variable "winrm_password" {
   type        = string
   description = "Password for WinRM connection."
-  default     = "Sup3rS3c,;)r3t"
 }
 
 variable "winrm_port" {
