@@ -241,6 +241,8 @@ github.com/l50/goutils/v2 v2.2.7-0.20240714225621-468c413774f3 h1:K5rqk9zhgqm5ne
 github.com/l50/goutils/v2 v2.2.7-0.20240714225621-468c413774f3/go.mod h1:KjTiRNp0+fPGxvgoGhEFLnpFVEZFqTNd2XEKh9J27qQ=
 github.com/letsencrypt/boulder v0.0.0-20240703151159-926a0704b455 h1:7qlH83MAj8brWE8jeHZbC/EsifiARC7pohnYbfxMeDs=
 github.com/letsencrypt/boulder v0.0.0-20240703151159-926a0704b455/go.mod h1:DNWt6HdzbAMkuzimBEe3fsBBjS3IPGVcUoDB0JQzy/k=
+github.com/letsencrypt/boulder v0.0.0-20240712190237-472effbb9be1 h1:E+DUC4Auqz0z3y8zroTmC4Nkqg24ksSJBZNz6tAiQJY=
+github.com/letsencrypt/boulder v0.0.0-20240712190237-472effbb9be1/go.mod h1:et0D2uVsAym98MGcExdPxFoA6AhIzg03HZ3eXap986Q=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
 github.com/magefile/mage v1.15.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
 github.com/magiconair/properties v1.8.7 h1:IeQXZAiQcpL9mgcAe1Nu6cX9LLw6ExEHKjN0VQdvPDY=
@@ -270,6 +272,8 @@ github.com/moby/docker-image-spec v1.3.1 h1:jMKff3w6PgbfSa69GfNg+zN/XLhfXJGnEx3N
 github.com/moby/docker-image-spec v1.3.1/go.mod h1:eKmb5VW8vQEh/BAr2yvVNvuiJuY6UIocYsFu/DxxRpo=
 github.com/moby/sys/mountinfo v0.7.1 h1:/tTvQaSJRr2FshkhXiIpux6fQ2Zvc4j7tAhMTStAG2g=
 github.com/moby/sys/mountinfo v0.7.1/go.mod h1:IJb6JQeOklcdMU9F5xQ8ZALD+CUr5VlGpwtX+VE0rpI=
+github.com/moby/sys/mountinfo v0.7.2 h1:1shs6aH5s4o5H2zQLn796ADW1wMrIwHsyJ2v9KouLrg=
+github.com/moby/sys/mountinfo v0.7.2/go.mod h1:1YOa8w8Ih7uW0wALDUgT1dTTSBrZ+HiBLGws92L2RU4=
 github.com/moby/sys/user v0.1.0 h1:WmZ93f5Ux6het5iituh9x2zAG7NFY9Aqi49jjE1PaQg=
 github.com/moby/sys/user v0.1.0/go.mod h1:fKJhFOnsCN6xZ5gSfbM6zaHGgDJMrqt9/reuj4T7MmU=
 github.com/moby/term v0.5.0 h1:xt8Q1nalod/v7BqbG21f8mQPqH+xAaC9C3N3wfWbVP0=
