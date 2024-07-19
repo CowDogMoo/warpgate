@@ -5,7 +5,9 @@
 #
 # Description: Create a windows AMI provisioned with a basic powershell script.
 #########################################################################################
-locals { timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp()) }
+locals {
+  timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())
+}
 
 source "amazon-ebs" "windows" {
   ami_name      = "${var.blueprint_name}-${local.timestamp}"
@@ -40,8 +42,10 @@ source "amazon-ebs" "windows" {
 
   #### SSM and IP Configuration ####
   associate_public_ip_address = "${var.ssh_interface == "session_manager"}"
-  ssh_interface = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
-  iam_instance_profile = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
+  ssh_interface = "${var.ssh_interface}"
+  iam_instance_profile = "${var.iam_instance_profile}"
+  # ssh_interface = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
+  # iam_instance_profile = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
   tags = {
     Name      = "${var.blueprint_name}-${local.timestamp}"
@@ -50,7 +54,7 @@ source "amazon-ebs" "windows" {
 }
 
 build {
-  name    = "windows"
+  name    = var.blueprint_name
   sources = ["source.amazon-ebs.windows"]
 
   provisioner "powershell" {

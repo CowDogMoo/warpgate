@@ -99,15 +99,6 @@ cleanup() {
 
         # Remove unused packages and their dependencies
         run_as_root apt-get autoremove -y
-        run_as_root apt-get purge -y \
-            git \
-            gpg-agent \
-            python3-pip \
-            python3-setuptools \
-            build-essential \
-            manpages \
-            man-db \
-            bsdmainutils
 
         # Clean up cloud-init logs if running on EC2
         if [[ -n "${AWS_DEFAULT_REGION}" ]]; then

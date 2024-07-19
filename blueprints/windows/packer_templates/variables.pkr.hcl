@@ -1,6 +1,11 @@
 #######################################################
 #                  Warpgate variables                 #
 #######################################################
+variable "ansible_aws_ssm_bucket_name" {
+  type        = string
+  description = "Name of the S3 bucket to store ansible artifacts."
+}
+
 variable "blueprint_name" {
   type        = string
   description = "Name of the blueprint."
@@ -124,6 +129,7 @@ variable "winrm_username" {
 variable "winrm_password" {
   type        = string
   description = "Password for WinRM connection."
+  default     = "NotARealPassword"
 }
 
 variable "winrm_port" {
