@@ -29,7 +29,7 @@ source "amazon-ebs" "windows" {
   run_tags       = "${var.run_tags}"
 
   #### SSH Configuration ####
-  ssh_port                 = "${var.communicator == "ssh" ? var.ssh_port : null}"
+  # ssh_port                 = "${var.communicator == "ssh" ? var.ssh_port : null}"
   ssh_username             = "${var.communicator == "ssh" ? var.ssh_username : null}"
   ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
   ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
@@ -57,10 +57,17 @@ build {
   name    = var.blueprint_name
   sources = ["source.amazon-ebs.windows"]
 
-  provisioner "powershell" {
-    environment_vars = [
-      "SSH_INTERFACE=${var.ssh_interface}"
+  provisioner "ansible" {
+    playbook_file  = "${var.provision_repo_path}/playbooks/vulnerable-windows-scenarios/windows-scenarios.yml"
+    inventory_file_template =  "{{ .HostAlias }} ansible_host={{ .ID }} ansible_user={{ .User }} ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand=\"sh -c \\\"aws ssm start-session --target %h --document-name AWS-StartSSHSession -parameters portNumber=%p\\\"\"'\n"
+    user           = "${var.user}"
+    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
+    extra_arguments = [
+      "-e", "ansible_aws_ssm_bucket_name=${var.ansible_aws_ssm_bucket_name}",
+      "-e", "ansible_shell_type=powershell",
+      "-e", "ansible_shell_executable=None",
+      "-vvv",
     ]
-    script = "${var.provision_script_path}"
   }
 }
+
