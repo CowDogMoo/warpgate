@@ -86,18 +86,12 @@ build {
     "source.amazon-ebs.ubuntu",
   ]
 
-  provisioner "file" {
-    source      = "ansible.cfg"
-    destination = "/tmp/ansible.cfg"
-  }
-
   provisioner "ansible" {
     playbook_file  = "${var.provision_repo_path}/playbooks/workstation/workstation.yml"
     inventory_file_template =  "{{ .HostAlias }} ansible_host={{ .ID }} ansible_user={{ .User }} ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand=\"sh -c \\\"aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p\\\"\"'\n"
     user           = "${var.ssh_username}"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"
     ansible_env_vars = [
-      "ANSIBLE_CONFIG=/tmp/ansible.cfg",
       "AWS_DEFAULT_REGION=${var.ami_region}",
       "PACKER_BUILD_NAME={{ build_name }}",
       ]
