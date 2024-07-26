@@ -41,12 +41,17 @@ variable "ami_arch" {
 variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."
-  default     = "us-west-1"
 }
 
 variable "ansible_aws_ssm_bucket_name" {
   type        = string
   description = "Name of the S3 bucket to store ansible artifacts."
+}
+
+variable "ansible_aws_ssm_timeout" {
+  type        = number
+  description = "Timeout for ansible SSM connections."
+  default     = 600
 }
 
 variable "communicator" {

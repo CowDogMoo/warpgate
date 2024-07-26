@@ -106,10 +106,9 @@ build {
   ]
 
   provisioner "ansible" {
-    playbook_file           = "${var.provision_repo_path}/playbooks/attack-box/attack-box.yml"
-    inventory_file          = "${var.provision_repo_path}/playbooks/attack-box/attack-box_aws_ec2.yml"
-    user                    = var.ssh_username
-    galaxy_file             = "${var.provision_repo_path}/requirements.yml"
+    playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
+    inventory_file = "${var.provision_repo_path}/playbooks/attack_box/attack_box_inventory_aws_ec2.yml"
+    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
     ansible_env_vars = [
       "AWS_DEFAULT_REGION=${var.ami_region}",
       "PACKER_BUILD_NAME={{ build_name }}",
@@ -120,8 +119,9 @@ build {
       "-e", "ansible_connection=aws_ssm",
       "-e", "ansible_aws_ssm_region=${var.ami_region}",
       "-e", "ansible_shell_executable=${var.shell}",
+      "-e", "ansible_aws_ssm_timeout=${var.ansible_aws_ssm_timeout}",
       "-e", "ansible_aws_ssm_s3_addressing_style=virtual",
-      "-vvvv",
+      "-v",
     ]
   }
 }
