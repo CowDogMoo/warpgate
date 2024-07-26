@@ -12,10 +12,10 @@ locals {
 }
 
 source "docker" "amd64" {
-  commit      = true
-  image       = "${var.base_image}:${var.base_image_version}"
-  platform    = "linux/amd64"
-  privileged  = true
+  commit     = true
+  image      = "${var.base_image}:${var.base_image_version}"
+  platform   = "linux/amd64"
+  privileged = true
 
   volumes = {
     "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
@@ -50,7 +50,7 @@ source "docker" "arm64" {
 }
 
 source "amazon-ebs" "kali" {
-  ami_name      = "${var.blueprint_name}-${formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())}"
+  ami_name      = "${var.blueprint_name}-${local.timestamp}"
   instance_type = "${var.instance_type}"
   region        = "${var.ami_region}"
 
@@ -61,11 +61,8 @@ source "amazon-ebs" "kali" {
       virtualization-type = "hvm"
     }
     most_recent = true
-    owners      = ["679593333241"]
+    owners      = ["679593333241"] # Offensive Security's owner ID for Kali images
   }
-
-  user_data_file = "${var.user_data_file}"
-  run_tags       = "${var.run_tags}"
 
   launch_block_device_mappings {
     device_name           = "${var.disk_device_name}"
@@ -81,7 +78,19 @@ source "amazon-ebs" "kali" {
     delete_on_termination = true
   }
 
-  ssh_username = "${var.ssh_username}"
+  communicator   = "${var.communicator}"
+  run_tags       = "${var.run_tags}"
+  user_data_file = "${var.user_data_file}"
+
+  #### SSH Configuration ####
+  ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
+  ssh_interface            = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
+  ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
+  ssh_username             = "${var.ssh_username}"
+
+  #### SSM and IP Configuration ####
+  associate_public_ip_address = true
+  iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
   tags = {
     Name      = "${var.blueprint_name}-${local.timestamp}"
@@ -96,29 +105,23 @@ build {
     "source.amazon-ebs.kali",
   ]
 
-  // Transfer the code found at the input provision_repo_path
-  // to the pkr_build_dir, which is used by packer during the build process.
-  provisioner "file" {
-    source      = "${var.provision_repo_path}"
-    destination = "${var.pkr_build_dir}"
-  }
-
-  // The provisioner "file" is used to transfer the provisioning script
-  // to the pkr_build_dir. The provisioner "shell" is used to execute the
-  // provisioning script within the build environment.
-  provisioner "file" {
-    source      = "../scripts/provision.sh"
-    destination = "${var.pkr_build_dir}/provision.sh"
-  }
-
-  provisioner "shell" {
-    environment_vars = [
-      "PKR_BUILD_DIR=${var.pkr_build_dir}",
-      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  provisioner "ansible" {
+    playbook_file           = "${var.provision_repo_path}/playbooks/attack-box/attack-box.yml"
+    inventory_file          = "${var.provision_repo_path}/playbooks/attack-box/attack-box_aws_ec2.yml"
+    user                    = var.ssh_username
+    galaxy_file             = "${var.provision_repo_path}/requirements.yml"
+    ansible_env_vars = [
+      "AWS_DEFAULT_REGION=${var.ami_region}",
+      "PACKER_BUILD_NAME={{ build_name }}",
     ]
-    inline = [
-      "chmod +x ${var.pkr_build_dir}/provision.sh",
-      "${var.pkr_build_dir}/provision.sh"
+    extra_arguments = [
+      "--connection", "packer",
+      "-e", "ansible_aws_ssm_bucket_name=${var.ansible_aws_ssm_bucket_name}",
+      "-e", "ansible_connection=aws_ssm",
+      "-e", "ansible_aws_ssm_region=${var.ami_region}",
+      "-e", "ansible_shell_executable=${var.shell}",
+      "-e", "ansible_aws_ssm_s3_addressing_style=virtual",
+      "-vvvv",
     ]
   }
 }

@@ -9,7 +9,7 @@ variable "blueprint_name" {
 variable "pkr_build_dir" {
   type        = string
   description = "Directory that packer will execute the transferred provisioning logic from within the build environment."
-  default     = "ansible-collection-workstation"
+  default     = "/tmp"
 }
 
 variable "provision_repo_path" {
@@ -61,6 +61,18 @@ variable "instance_type" {
   default     = "t3.micro"
 }
 
+variable "os" {
+  type        = string
+  description = "Operating system to use for the AMI."
+  default     = "ubuntu"
+}
+
+variable "os_version" {
+  type        = string
+  description = "OS version to use for the AMI."
+  default     = "jammy-22.04"
+}
+
 variable "run_tags" {
   type        = map(string)
   description = "Tags to apply to the instance."
@@ -96,7 +108,7 @@ variable "user" {
 variable "user_data_file" {
   type        = string
   description = "Path to the user data file for instance initialization."
-  default     = "../scripts/provision.sh"
+  default     = "../scripts/user_data.sh"
 }
 
 ############################################
@@ -112,18 +124,6 @@ variable "base_image_version" {
   type        = string
   description = "Version of the base image."
   default     = "jammy"
-}
-
-variable "os" {
-  type        = string
-  description = "Operating system to use for the AMI."
-  default     = "ubuntu"
-}
-
-variable "os_version" {
-  type        = string
-  description = "OS version to use for the AMI."
-  default     = "jammy-22.04"
 }
 
 variable "workdir" {
