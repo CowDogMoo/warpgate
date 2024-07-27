@@ -17,12 +17,12 @@ type MockS3Client struct {
 
 func (m *MockS3Client) CreateBucket(input *s3.CreateBucketInput) (*s3.CreateBucketOutput, error) {
 	args := m.Called(input)
-	return args.Get(0).(*s3.CreateBucketOutput), args.Error(1)
+	return &s3.CreateBucketOutput{}, args.Error(1)
 }
 
 func (m *MockS3Client) DeleteBucket(input *s3.DeleteBucketInput) (*s3.DeleteBucketOutput, error) {
 	args := m.Called(input)
-	return args.Get(0).(*s3.DeleteBucketOutput), args.Error(1)
+	return &s3.DeleteBucketOutput{}, args.Error(1)
 }
 
 func (m *MockS3Client) WaitUntilBucketNotExists(input *s3.HeadBucketInput) error {

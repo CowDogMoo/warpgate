@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	s3utils "github.com/l50/awsutils/s3"
@@ -56,15 +57,31 @@ func CreateBucketWrapper(client s3iface.S3API, bucketName string) error {
 //
 // error: An error if the S3 bucket cleanup fails.
 func CleanupBucket(cs *CloudStorage) error {
-	client, ok := cs.Client.(s3iface.S3API)
-	if !ok {
-		return fmt.Errorf("invalid S3 client type")
-	}
-	if err := CreateBucketWrapper(client, cs.BucketName); err != nil {
-		return fmt.Errorf("failed to create S3 bucket: %v", err)
+	err := DestroyBucketAPI(cs.Client, cs.BucketName)
+	if err != nil {
+		return fmt.Errorf("failed to destroy S3 bucket: %v", err)
 	}
 
 	fmt.Printf("Destroyed S3 bucket: %s\n", cs.BucketName)
+	return nil
+}
+
+func CreateBucketAPI(client s3iface.S3API, bucketName string) error {
+	_, err := client.CreateBucket(&s3.CreateBucketInput{Bucket: aws.String(bucketName)})
+	return err
+}
+
+func DestroyBucketAPI(client s3iface.S3API, bucketName string) error {
+	_, err := client.DeleteBucket(&s3.DeleteBucketInput{Bucket: aws.String(bucketName)})
+	if err != nil {
+		return err
+	}
+
+	err = client.WaitUntilBucketNotExists(&s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -76,12 +93,7 @@ func CleanupBucket(cs *CloudStorage) error {
 func InitializeS3Bucket(cs *CloudStorage) error {
 	bucketName := createBucketName(cs)
 
-	s3Client, ok := cs.Client.(*s3.S3)
-	if !ok {
-		return fmt.Errorf("invalid S3 client type")
-	}
-
-	err := s3utils.CreateBucket(s3Client, bucketName)
+	err := CreateBucketAPI(cs.Client, bucketName)
 	if err != nil {
 		return fmt.Errorf("failed to create S3 bucket: %v", err)
 	}
