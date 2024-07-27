@@ -117,6 +117,7 @@ func (b *Blueprint) Initialize() error {
 			return fmt.Errorf("failed to create build directory: %v", err)
 		}
 	}
+
 	if b.Path == "" || b.Name == "" {
 		return fmt.Errorf("blueprint path or name is not set")
 	}
@@ -130,6 +131,14 @@ func (b *Blueprint) Initialize() error {
 		return fmt.Errorf("failed to initialize S3 bucket: %v", err)
 	}
 	b.BucketName = cs.BucketName
+
+	// Check for required environment variables if AMI configuration is provided
+	if b.PackerTemplates.AMI.InstanceType != "" {
+		requiredVars := []string{"AWS_DEFAULT_REGION"}
+		if err := packer.CheckRequiredEnvVars(requiredVars); err != nil {
+			return fmt.Errorf("environment variable check failed: %v", err)
+		}
+	}
 
 	// Ensure the packer_templates directory exists
 	packerDir := filepath.Join(b.Path, "packer_templates")
@@ -146,11 +155,9 @@ func (b *Blueprint) Initialize() error {
 		Dir:           packerDir,
 		OutputHandler: func(s string) { fmt.Println(s) },
 	}
-
 	if _, err := cmd.RunCmd(); err != nil {
 		return fmt.Errorf("failed to initialize blueprint with packer init: %v", err)
 	}
-
 	return nil
 }
 

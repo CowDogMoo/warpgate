@@ -17,6 +17,24 @@ The `packer` package is a part of the WarpGate.
 
 ## Functions
 
+### CheckRequiredEnvVars([]string)
+
+```go
+CheckRequiredEnvVars([]string) error
+```
+
+CheckRequiredEnvVars ensures that the necessary environment variables are set.
+
+**Parameters:**
+
+vars: A list of environment variable names to check.
+
+**Returns:**
+
+error: An error if any of the environment variables are not set.
+
+---
+
 ### PackerTemplates.ParseAMIDetails(string)
 
 ```go
