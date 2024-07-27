@@ -121,7 +121,7 @@ build {
       "-e", "ansible_shell_executable=${var.shell}",
       "-e", "ansible_aws_ssm_timeout=${var.ansible_aws_ssm_timeout}",
       "-e", "ansible_aws_ssm_s3_addressing_style=virtual",
-      "-v",
+      "-vvvv",
     ]
   }
 }

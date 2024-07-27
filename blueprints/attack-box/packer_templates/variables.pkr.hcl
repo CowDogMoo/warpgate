@@ -50,8 +50,8 @@ variable "ansible_aws_ssm_bucket_name" {
 
 variable "ansible_aws_ssm_timeout" {
   type        = number
-  description = "Timeout for ansible SSM connections."
-  default     = 600
+  description = "Timeout for ansible SSM connections - 30 minutes by default."
+  default     = 1800
 }
 
 variable "communicator" {
