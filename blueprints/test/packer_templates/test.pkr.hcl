@@ -19,7 +19,7 @@ source "docker" "amd64" {
   volumes = {
     "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
   }
-  
+
   changes = [
     "USER ${var.user}",
     "WORKDIR ${var.workdir}",
@@ -64,12 +64,12 @@ source "amazon-ebs" "ubuntu" {
   communicator   = "${var.communicator}"
   run_tags       = "${var.run_tags}"
   user_data_file = "${var.user_data_file}"
- 
+
   #### SSH Configuration ####
   ssh_username   = "${var.ssh_username}"
   ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
   ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
-  
+
   #### SSM and IP Configuration ####
   associate_public_ip_address = true
   ssh_interface = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"

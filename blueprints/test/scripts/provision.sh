@@ -42,7 +42,7 @@ install_and_configure_cloudwatch() {
     sudo systemctl start amazon-cloudwatch-agent
 
     # Write the CloudWatch Agent configuration file
-    sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null <<EOF
+    sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null << EOF
 {
   "agent": {
     "metrics_collection_interval": 60,
@@ -109,7 +109,7 @@ install_dependencies() {
 
     wait_for_apt_lock
     run_as_root apt-get update -y
-    run_as_root apt-get install -y $packages
+    run_as_root apt-get install -y "${packages}"
     echo 'debconf debconf/frontend select Noninteractive' | run_as_root debconf-set-selections
 
     # Install Python packages globally to avoid PATH issues
