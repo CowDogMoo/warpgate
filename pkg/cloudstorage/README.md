@@ -17,50 +17,31 @@ The `cloudstorage` package is a part of the WarpGate.
 
 ## Functions
 
-### CleanupBucket(*CloudStorage)
+### CreateS3Bucket(*CloudStorage)
 
 ```go
-CleanupBucket(*CloudStorage) error
+CreateS3Bucket(*CloudStorage) error
 ```
 
-CleanupBucket destroys the S3 bucket created for the blueprint.
-
-**Returns:**
-
-error: An error if the S3 bucket cleanup fails.
-
----
-
-### CreateBucketWrapper(s3iface.S3API, string)
-
-```go
-CreateBucketWrapper(s3iface.S3API, string) error
-```
-
-CreateBucketWrapper is a wrapper function for creating an S3 bucket.
-
-**Parameters:**
-
-client: AWS S3 client.
-bucketName: Name of the bucket to be created.
-
-**Returns:**
-
-error: An error if the S3 bucket creation fails.
-
----
-
-### InitializeS3Bucket(*CloudStorage)
-
-```go
-InitializeS3Bucket(*CloudStorage) error
-```
-
-InitializeS3Bucket initializes an S3 bucket and stores the bucket name.
+CreateS3Bucket initializes an S3 bucket and stores the bucket name.
 
 **Returns:**
 
 error: An error if the S3 bucket initialization fails.
+
+---
+
+### DestroyS3Bucket(*CloudStorage)
+
+```go
+DestroyS3Bucket(*CloudStorage) error
+```
+
+DestroyS3Bucket destroys the S3 bucket created for the blueprint.
+
+**Returns:**
+
+error: An error if the S3 bucket destruction fails.
 
 ---
 

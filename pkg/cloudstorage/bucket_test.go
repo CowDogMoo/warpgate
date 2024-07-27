@@ -58,7 +58,7 @@ func TestCreateBucketName(t *testing.T) {
 				Client:        mockS3,
 			}
 
-			err := cloudstorage.InitializeS3Bucket(cs)
+			err := cloudstorage.CreateS3Bucket(cs)
 			assert.NoError(t, err)
 			assert.Contains(t, cs.BucketName, tc.expected)
 
@@ -67,7 +67,7 @@ func TestCreateBucketName(t *testing.T) {
 	}
 }
 
-func TestCleanupBucket(t *testing.T) {
+func TestDestroyS3Bucket(t *testing.T) {
 	tests := []struct {
 		name       string
 		bucketName string
@@ -104,7 +104,7 @@ func TestCleanupBucket(t *testing.T) {
 				Client:     mockS3,
 			}
 
-			err := cloudstorage.CleanupBucket(cs)
+			err := cloudstorage.DestroyS3Bucket(cs)
 			if tc.expectErr {
 				assert.Error(t, err)
 			} else {
@@ -116,7 +116,7 @@ func TestCleanupBucket(t *testing.T) {
 	}
 }
 
-func TestInitializeS3Bucket(t *testing.T) {
+func TestCreateS3Bucket(t *testing.T) {
 	tests := []struct {
 		name          string
 		blueprintName string
@@ -151,7 +151,7 @@ func TestInitializeS3Bucket(t *testing.T) {
 				Client:        mockS3,
 			}
 
-			err := cloudstorage.InitializeS3Bucket(cs)
+			err := cloudstorage.CreateS3Bucket(cs)
 			if tc.expectErr {
 				assert.Error(t, err)
 			} else {

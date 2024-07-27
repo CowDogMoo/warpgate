@@ -127,7 +127,8 @@ func (b *Blueprint) Initialize() error {
 		BlueprintName: b.Name,
 		BucketName:    b.BucketName,
 	}
-	if err := cloudstorage.InitializeS3Bucket(cs); err != nil {
+
+	if err := cloudstorage.CreateS3Bucket(cs); err != nil {
 		return fmt.Errorf("failed to initialize S3 bucket: %v", err)
 	}
 	b.BucketName = cs.BucketName
@@ -390,7 +391,7 @@ func (b *Blueprint) buildPackerImage() (map[string]string, error) {
 			BlueprintName: b.Name,
 			BucketName:    b.BucketName,
 		}
-		if err := cloudstorage.CleanupBucket(cs); err != nil {
+		if err := cloudstorage.DestroyS3Bucket(cs); err != nil {
 			fmt.Printf("Failed to clean up S3 bucket: %v\n", err)
 		}
 	}()
