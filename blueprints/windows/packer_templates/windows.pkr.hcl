@@ -21,7 +21,7 @@ source "amazon-ebs" "windows" {
     most_recent = true
     owners      = ["amazon"]
   }
-  
+
   launch_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
@@ -74,7 +74,7 @@ build {
   provisioner "ansible" {
     playbook_file  = "${var.provision_repo_path}/playbooks/vulnerable_windows_scenarios/windows_scenarios.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/vulnerable_windows_scenarios/windows_inventory_aws_ec2.yml"
-    galaxy_file = "${var.provision_repo_path}/requirements.yml"
+    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
     ansible_env_vars = [
       "AWS_DEFAULT_REGION=${var.ami_region}",
       "PACKER_BUILD_NAME={{ build_name }}",
