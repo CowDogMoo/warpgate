@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cowdogmoo/warpgate/pkg/cloudstorage"
 	"github.com/cowdogmoo/warpgate/pkg/packer"
 	gitutils "github.com/l50/goutils/v2/git"
 	"github.com/l50/goutils/v2/sys"
@@ -32,12 +33,14 @@ const (
 // PackerTemplates: Packer templates consumed by the blueprint.
 // Path: Path to the blueprint configuration.
 // ProvisioningRepo: Path to the repository containing provisioning logic.
+// BucketName: Name of the S3 bucket used for storing provisioning artifacts.
 type Blueprint struct {
 	Name             string                  `mapstructure:"name"`
 	BuildDir         string                  `mapstructure:"build_dir"`
 	PackerTemplates  *packer.PackerTemplates `mapstructure:"packer_templates"`
 	Path             string                  `mapstructure:"path"`
 	ProvisioningRepo string                  `mapstructure:"provisioning_repo"`
+	BucketName       string                  // dynamically created bucket name
 }
 
 // ParseCommandLineFlags parses command line flags for a Blueprint.
@@ -114,12 +117,21 @@ func (b *Blueprint) Initialize() error {
 			return fmt.Errorf("failed to create build directory: %v", err)
 		}
 	}
-
 	if b.Path == "" || b.Name == "" {
 		return fmt.Errorf("blueprint path or name is not set")
 	}
 
-	// Ensure the packer templates directory exists
+	// Initialize the CloudStorage struct
+	cs := &cloudstorage.CloudStorage{
+		BlueprintName: b.Name,
+		BucketName:    b.BucketName,
+	}
+	if err := cloudstorage.InitializeS3Bucket(cs); err != nil {
+		return fmt.Errorf("failed to initialize S3 bucket: %v", err)
+	}
+	b.BucketName = cs.BucketName
+
+	// Ensure the packer_templates directory exists
 	packerDir := filepath.Join(b.Path, "packer_templates")
 	if _, err := os.Stat(packerDir); os.IsNotExist(err) {
 		return fmt.Errorf("expected packer_templates directory not found in %s", b.Path)
@@ -316,6 +328,7 @@ func (b *Blueprint) PreparePackerArgs() []string {
 		"-var", fmt.Sprintf("blueprint_name=%s", b.Name),
 		"-var", fmt.Sprintf("user=%s", pTmpl.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", b.ProvisioningRepo),
+		"-var", fmt.Sprintf("ansible_aws_ssm_bucket_name=%s", b.BucketName),
 	}
 
 	args = append(args, b.appendAMIArgs(pTmpl)...)
@@ -364,6 +377,16 @@ func (b *Blueprint) buildPackerImage() (map[string]string, error) {
 	if err := b.Initialize(); err != nil {
 		return nil, fmt.Errorf("failed to initialize blueprint: %v", err)
 	}
+
+	defer func() {
+		cs := &cloudstorage.CloudStorage{
+			BlueprintName: b.Name,
+			BucketName:    b.BucketName,
+		}
+		if err := cloudstorage.CleanupBucket(cs); err != nil {
+			fmt.Printf("Failed to clean up S3 bucket: %v\n", err)
+		}
+	}()
 
 	const maxRetries = 3
 	var lastError error

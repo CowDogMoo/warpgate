@@ -10,7 +10,6 @@ blueprint:
     # AMI specific configurations
     ami:
       instance_type: t3.micro
-      region: us-west-1
       ssh_username: kali
     # Tags for created odysseys
     tag:
@@ -26,3 +25,5 @@ blueprint:
         username: cowdogmoo
       workdir: /home/kali
       entrypoint: "/run/docker-entrypoint.sh ; zsh"
+    # Packer build variables
+    provision_repo_path: "{{ env `HOME` }}/security/ansible-collection-arsenal"
