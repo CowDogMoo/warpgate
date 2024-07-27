@@ -5,9 +5,7 @@
 #
 # Description: Create a windows AMI provisioned with a basic powershell script.
 #########################################################################################
-locals {
-  timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())
-}
+locals { timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp()) }
 
 source "amazon-ebs" "windows" {
   ami_name      = "${var.blueprint_name}-${local.timestamp}"
@@ -16,23 +14,37 @@ source "amazon-ebs" "windows" {
 
   source_ami_filter {
     filters = {
-      name                = "${var.os}-${var.os_version}"
+      name                = "${var.os}-${var.os_version}*"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
     most_recent = true
     owners      = ["amazon"]
   }
+  
+  launch_block_device_mappings {
+    device_name           = "${var.disk_device_name}"
+    volume_size           = "${var.disk_size}"
+    volume_type           = "gp2"
+    delete_on_termination = true
+  }
 
-  user_data_file = "${var.user_data_file}"
+  ami_block_device_mappings {
+    device_name           = "${var.disk_device_name}"
+    volume_size           = "${var.disk_size}"
+    volume_type           = "gp2"
+    delete_on_termination = true
+  }
+
   communicator   = "${var.communicator}"
   run_tags       = "${var.run_tags}"
+  user_data_file = "${var.user_data_file}"
 
   #### SSH Configuration ####
-  # ssh_port                 = "${var.communicator == "ssh" ? var.ssh_port : null}"
-  ssh_username             = "${var.communicator == "ssh" ? var.ssh_username : null}"
   ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
+  ssh_interface            = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
   ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
+  ssh_username             = "${var.ssh_username}"
 
   #### WinRM Configuration ####
   winrm_username = "${var.communicator == "winrm" ? var.winrm_username : null}"
@@ -41,11 +53,8 @@ source "amazon-ebs" "windows" {
   winrm_timeout  = "${var.communicator == "winrm" ? var.winrm_timeout : null}"
 
   #### SSM and IP Configuration ####
-  associate_public_ip_address = "${var.ssh_interface == "session_manager"}"
-  ssh_interface = "${var.ssh_interface}"
-  iam_instance_profile = "${var.iam_instance_profile}"
-  # ssh_interface = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
-  # iam_instance_profile = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
+  associate_public_ip_address = true
+  iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
   tags = {
     Name      = "${var.blueprint_name}-${local.timestamp}"
@@ -54,20 +63,33 @@ source "amazon-ebs" "windows" {
 }
 
 build {
-  name    = var.blueprint_name
   sources = ["source.amazon-ebs.windows"]
 
+  #  provisioner "windows-restart" {
+  #   # Wait a maximum of 30 minutes for Windows to restart.
+  #   # If the restart process takes longer than 30 minutes, the build will fail.
+  #   restart_timeout = "30m"
+  # }
+
   provisioner "ansible" {
-    playbook_file  = "${var.provision_repo_path}/playbooks/vulnerable-windows-scenarios/windows-scenarios.yml"
-    inventory_file_template =  "{{ .HostAlias }} ansible_host={{ .ID }} ansible_user={{ .User }} ansible_ssh_common_args='-o StrictHostKeyChecking=no -o ProxyCommand=\"sh -c \\\"aws ssm start-session --target %h --document-name AWS-StartSSHSession -parameters portNumber=%p\\\"\"'\n"
-    user           = "${var.user}"
-    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
+    playbook_file  = "${var.provision_repo_path}/playbooks/vulnerable_windows_scenarios/windows_scenarios.yml"
+    inventory_file = "${var.provision_repo_path}/playbooks/vulnerable_windows_scenarios/windows_inventory_aws_ec2.yml"
+    galaxy_file = "${var.provision_repo_path}/requirements.yml"
+    ansible_env_vars = [
+      "AWS_DEFAULT_REGION=${var.ami_region}",
+      "PACKER_BUILD_NAME={{ build_name }}",
+      "SSH_INTERFACE=${var.ssh_interface}",
+    ]
     extra_arguments = [
+      "--connection", "packer",
       "-e", "ansible_aws_ssm_bucket_name=${var.ansible_aws_ssm_bucket_name}",
+      "-e", "ansible_connection=aws_ssm",
+      "-e", "ansible_aws_ssm_region=${var.ami_region}",
       "-e", "ansible_shell_type=powershell",
       "-e", "ansible_shell_executable=None",
-      "-vvv",
+      "-e", "ansible_aws_ssm_timeout=${var.ansible_aws_ssm_timeout}",
+      "-e", "ansible_aws_ssm_s3_addressing_style=virtual",
+      "-vvvv",
     ]
   }
 }
-
