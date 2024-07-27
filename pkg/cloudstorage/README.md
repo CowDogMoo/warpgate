@@ -31,6 +31,25 @@ error: An error if the S3 bucket cleanup fails.
 
 ---
 
+### CreateBucketWrapper(s3iface.S3API, string)
+
+```go
+CreateBucketWrapper(s3iface.S3API, string) error
+```
+
+CreateBucketWrapper is a wrapper function for creating an S3 bucket.
+
+**Parameters:**
+
+client: AWS S3 client.
+bucketName: Name of the bucket to be created.
+
+**Returns:**
+
+error: An error if the S3 bucket creation fails.
+
+---
+
 ### InitializeS3Bucket(*CloudStorage)
 
 ```go
