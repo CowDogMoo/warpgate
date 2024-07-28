@@ -6,8 +6,8 @@ toolchain go1.22.5
 
 require (
 	github.com/containers/common v0.59.2
-	github.com/containers/image/v5 v5.31.1
-	github.com/containers/storage v1.54.0
+	github.com/containers/image/v5 v5.32.0
+	github.com/containers/storage v1.55.0
 	github.com/docker/docker v27.1.1+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/google/go-containerregistry v0.20.1
@@ -109,7 +109,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
-	github.com/moby/sys/user v0.1.0 // indirect
+	github.com/moby/sys/user v0.2.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
