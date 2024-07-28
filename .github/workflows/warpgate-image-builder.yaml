@@ -197,14 +197,11 @@ jobs:
               "runzero-explorer")
                 echo "${{ github.workspace }}/ansible-collection-workstation"
                 ;;
-              "sliver" | "ttpforge" | "atomic-red-team" | "attack-box")
+              "sliver" | "ttpforge" | "atomic-red-team" | "attack-box") # , "windows")
                 echo "${{ github.workspace }}/ansible-collection-arsenal"
                 ;;
               "test")
                 echo "${{ matrix.blueprint.path }}/scripts/provision.sh"
-                ;;
-              "windows")
-                echo "${{ matrix.blueprint.path }}/scripts/provision.ps1"
                 ;;
               *)
                 echo "Unknown blueprint: $blueprint" >&2

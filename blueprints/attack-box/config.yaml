@@ -25,5 +25,3 @@ blueprint:
         username: cowdogmoo
       workdir: /home/kali
       entrypoint: "/run/docker-entrypoint.sh ; zsh"
-    # Packer build variables
-    provision_repo_path: "{{ env `HOME` }}/security/ansible-collection-arsenal"
