@@ -15,13 +15,3 @@ blueprint:
     tag:
       name: cowdogmoo/attack-box
       version: latest
-    # Container specific configurations
-    container:
-      image_hashes:
-        - arch: amd64
-          os: linux
-      registry:
-        server: ghcr.io
-        username: cowdogmoo
-      workdir: /home/kali
-      entrypoint: "/run/docker-entrypoint.sh ; zsh"
