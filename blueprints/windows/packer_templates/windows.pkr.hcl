@@ -65,27 +65,23 @@ source "amazon-ebs" "windows" {
 build {
   sources = ["source.amazon-ebs.windows"]
 
-  #  provisioner "windows-restart" {
-  #   # Wait a maximum of 30 minutes for Windows to restart.
-  #   # If the restart process takes longer than 30 minutes, the build will fail.
-  #   restart_timeout = "30m"
-  # }
-
   provisioner "ansible" {
     playbook_file  = "${var.provision_repo_path}/playbooks/vulnerable_windows_scenarios/windows_scenarios.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/vulnerable_windows_scenarios/windows_inventory_aws_ec2.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"
+    use_proxy      = false
     ansible_env_vars = [
       "AWS_DEFAULT_REGION=${var.ami_region}",
       "PACKER_BUILD_NAME={{ build_name }}",
       "SSH_INTERFACE=${var.ssh_interface}",
+      "no_proxy='*'",
     ]
     extra_arguments = [
       "--connection", "packer",
       "-e", "ansible_aws_ssm_bucket_name=${var.ansible_aws_ssm_bucket_name}",
       "-e", "ansible_connection=aws_ssm",
       "-e", "ansible_aws_ssm_region=${var.ami_region}",
-      "-e", "ansible_shell_type=powershell",
+      "-e", "ansible_shell_type=${var.shell}",
       "-e", "ansible_shell_executable=None",
       "-e", "ansible_aws_ssm_timeout=${var.ansible_aws_ssm_timeout}",
       "-e", "ansible_aws_ssm_s3_addressing_style=virtual",

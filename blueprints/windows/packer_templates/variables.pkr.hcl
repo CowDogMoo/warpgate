@@ -6,15 +6,21 @@ variable "blueprint_name" {
   description = "Name of the blueprint."
 }
 
+variable "provision_repo_path" {
+  type        = string
+  description = "Path on disk to repo that contains the provisioning code to build an odyssey."
+}
+
 variable "provision_script_path" {
   type        = string
   description = "Path on disk to the provisioning script."
   default = "../scripts/provision.ps1"
 }
 
-variable "provision_repo_path" {
+variable "shell" {
   type        = string
-  description = "Path on disk to repo that contains the provisioning code to build an odyssey."
+  description = "Shell to use."
+  default     = "powershell"
 }
 
 #######################################################
@@ -39,7 +45,7 @@ variable "ansible_aws_ssm_bucket_name" {
 variable "ansible_aws_ssm_timeout" {
   type        = number
   description = "Timeout for ansible SSM connections - 30 minutes by default."
-  default     = 1800
+  default     = 14400
 }
 
 variable "base_image" {
@@ -119,7 +125,7 @@ variable "ssh_username" {
 variable "ssh_timeout" {
   type        = string
   description = "Timeout for SSH connections."
-  default     = "20m"
+  default     = "240m"
 }
 
 variable "user" {
@@ -155,5 +161,5 @@ variable "winrm_port" {
 variable "winrm_timeout" {
   type        = string
   description = "Timeout for WinRM connections."
-  default     = "20m"
+  default     = "240m"
 }
