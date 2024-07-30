@@ -14,13 +14,19 @@ variable "pkr_build_dir" {
 
 variable "provision_repo_path" {
   type        = string
-  description = "Path on disk to the repo that contains the provisioning code to build the container image."
+  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
 }
 
 variable "provision_script_path" {
   type        = string
   description = "Path on disk to the provisioning script."
   default = "../scripts/provision.sh"
+}
+
+variable "shell" {
+  type        = string
+  description = "Shell to use."
+  default     = "/bin/bash"
 }
 
 ############################################
@@ -35,12 +41,18 @@ variable "ami_arch" {
 variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."
-  default     = "us-west-1"
 }
 
 variable "ansible_aws_ssm_bucket_name" {
   type        = string
   description = "Name of the S3 bucket to store ansible artifacts."
+}
+
+
+variable "ansible_aws_ssm_timeout" {
+  type        = number
+  description = "Timeout for ansible SSM connections - 30 minutes by default."
+  default     = 1800
 }
 
 variable "communicator" {
@@ -49,16 +61,26 @@ variable "communicator" {
   default     = "ssh"
 }
 
+variable "disk_device_name" {
+  type        = string
+  description = "Disk device to use for the instance."
+  default     = "/dev/xvda"
+}
+
+variable "disk_size" {
+  type        = number
+  description = "Disk size in GB for building the AMI."
+  default     = 50
+}
+
 variable "iam_instance_profile" {
   type        = string
   description = "IAM instance profile to use for the instance."
-  default     = "PackerInstanceProfile"
 }
 
 variable "instance_type" {
   type        = string
   description = "The type of instance to use for the initial AMI creation."
-  default     = "t3.micro"
 }
 
 variable "os" {
@@ -96,7 +118,7 @@ variable "ssh_username" {
 variable "ssh_timeout" {
   type        = string
   description = "Timeout for SSH connections."
-  default     = "20m"
+  default     = "30m"
 }
 
 variable "user" {
@@ -124,6 +146,18 @@ variable "base_image_version" {
   type        = string
   description = "Version of the base image."
   default     = "jammy"
+}
+
+variable "entrypoint" {
+  type        = string
+  description = "Optional entrypoint script."
+  default     = ""
+}
+
+variable "setup_systemd" {
+  type        = bool
+  description = "Create systemd service for container."
+  default     = false
 }
 
 variable "workdir" {

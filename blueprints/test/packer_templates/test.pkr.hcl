@@ -58,7 +58,21 @@ source "amazon-ebs" "ubuntu" {
       virtualization-type  = "hvm"
     }
     most_recent = true
-    owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
+    owners      = ["099720109477"] # Canonical's owner ID for Ubuntu images
+  }
+
+  ami_block_device_mappings {
+    device_name           = "${var.disk_device_name}"
+    volume_size           = "${var.disk_size}"
+    volume_type           = "gp2"
+    delete_on_termination = true
+  }
+
+  launch_block_device_mappings {
+    device_name           = "${var.disk_device_name}"
+    volume_size           = "${var.disk_size}"
+    volume_type           = "gp2"
+    delete_on_termination = true
   }
 
   communicator   = "${var.communicator}"
@@ -66,14 +80,14 @@ source "amazon-ebs" "ubuntu" {
   user_data_file = "${var.user_data_file}"
 
   #### SSH Configuration ####
-  ssh_username   = "${var.ssh_username}"
   ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
+  ssh_interface            = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
   ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
+  ssh_username             = "${var.ssh_username}"
 
   #### SSM and IP Configuration ####
   associate_public_ip_address = true
-  ssh_interface = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
-  iam_instance_profile = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
+  iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
   tags = {
     Name      = "${var.blueprint_name}-${local.timestamp}"
