@@ -276,7 +276,7 @@ func (b *Blueprint) BuildPackerImages() (map[string]string, error) {
 		hashes, err := b.buildPackerImage(cs.BucketName)
 		if err != nil {
 			errChan <- fmt.Errorf("error building %s: %v", pTmpl.ImageValues.Name, err)
-			fmt.Printf("Error during build: %v\n", err)
+			fmt.Printf("error during build: %v\n", err)
 			return
 		}
 		imageHashesChan <- hashes
@@ -344,7 +344,6 @@ func (b *Blueprint) PreparePackerArgs(bucketName string) []string {
 func (b *Blueprint) appendAMIArgs(pTmpl *packer.PackerTemplates) []string {
 	var args []string
 	if amiConfig := pTmpl.AMI; amiConfig.InstanceType != "" {
-		fmt.Printf("AMI Config: %v\n", amiConfig)
 		args = append(args, "-var", fmt.Sprintf("instance_type=%s", amiConfig.InstanceType))
 		if amiConfig.SSHUser != "" {
 			args = append(args, "-var", fmt.Sprintf("ssh_username=%s", amiConfig.SSHUser))
