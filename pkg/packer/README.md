@@ -35,6 +35,45 @@ error: An error if any of the environment variables are not set.
 
 ---
 
+### CreateIAMResources(string)
+
+```go
+CreateIAMResources(string) string, string, error
+```
+
+CreateIAMResources creates an IAM role and instance profile with the necessary policies for Packer to build an AMI.
+
+**Parameters:**
+
+bucketName: The name of the S3 bucket to use for Packer builds.
+
+**Returns:**
+
+string: The name of the instance profile.
+string: The name of the IAM role.
+error: An error if the IAM resources could not be created.
+
+---
+
+### DestroyIAMResources(string)
+
+```go
+DestroyIAMResources(string) error
+```
+
+DestroyIAMResources removes the IAM role and instance profile created for Packer builds.
+
+**Parameters:**
+
+profileName: The name of the instance profile.
+roleName: The name of the IAM role.
+
+**Returns:**
+
+error: An error if the IAM resources could not be destroyed.
+
+---
+
 ### PackerTemplates.ParseAMIDetails(string)
 
 ```go
