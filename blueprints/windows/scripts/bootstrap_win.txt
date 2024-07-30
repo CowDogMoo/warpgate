@@ -1,11 +1,9 @@
 <powershell>
 # Don't display progress bars
-# See: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_preference_variables?view=powershell-7.3#progresspreference
 $ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'Stop'
 
 # Install OpenSSH using Add-WindowsCapability
-# See: https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows
 Write-Host 'Installing and starting sshd'
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 
@@ -19,6 +17,11 @@ Start-Service sshd
 
 # Set appropriate permissions on administrators_authorized_keys by copying them from an existing key
 Get-ACL C:\ProgramData\ssh\ssh_host_dsa_key | Set-ACL C:\ProgramData\ssh\administrators_authorized_keys
+
+# Configure UAC to allow privilege elevation in remote shells
+$Key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+$Setting = 'LocalAccountTokenFilterPolicy'
+Set-ItemProperty -Path $Key -Name $Setting -Value 1 -Force
 
 # Set default shell to Powershell
 New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force

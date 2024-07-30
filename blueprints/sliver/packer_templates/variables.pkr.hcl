@@ -16,7 +16,6 @@ variable "ami_region" {
 variable "instance_type" {
   type        = string
   description = "The type of instance to use for AMI creation."
-  default     = "t3.medium"
 }
 
 variable "ssh_username" {

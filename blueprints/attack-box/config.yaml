@@ -9,20 +9,9 @@ blueprint:
     user: kali
     # AMI specific configurations
     ami:
-      instance_type: t3.micro
-      region: us-west-1
+      instance_type: c4.xlarge
       ssh_username: kali
     # Tags for created odysseys
     tag:
       name: cowdogmoo/attack-box
       version: latest
-    # Container specific configurations
-    container:
-      image_hashes:
-        - arch: amd64
-          os: linux
-      registry:
-        server: ghcr.io
-        username: cowdogmoo
-      workdir: /home/kali
-      entrypoint: "/run/docker-entrypoint.sh ; zsh"

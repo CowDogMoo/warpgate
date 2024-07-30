@@ -6,15 +6,21 @@ variable "blueprint_name" {
   description = "Name of the blueprint."
 }
 
+variable "provision_repo_path" {
+  type        = string
+  description = "Path on disk to repo that contains the provisioning code to build an odyssey."
+}
+
 variable "provision_script_path" {
   type        = string
   description = "Path on disk to the provisioning script."
   default = "../scripts/provision.ps1"
 }
 
-variable "provision_repo_path" {
+variable "shell" {
   type        = string
-  description = "Path on disk to repo that contains the provisioning code to build an odyssey."
+  description = "Shell to use."
+  default     = "powershell"
 }
 
 #######################################################
@@ -29,17 +35,29 @@ variable "ami_arch" {
 variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."
-  default     = "us-east-1"
+}
+
+variable "ansible_aws_ssm_bucket_name" {
+  type        = string
+  description = "Name of the S3 bucket to store ansible artifacts."
+}
+
+variable "ansible_aws_ssm_timeout" {
+  type        = number
+  description = "Timeout for ansible SSM connections - 30 minutes by default."
+  default     = 14400
 }
 
 variable "base_image" {
   type        = string
   description = "Base image."
+  default    = "Windows_Server"
 }
 
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
+  default   = "2022-English-Full-Base"
 }
 
 variable "communicator" {
@@ -48,10 +66,22 @@ variable "communicator" {
   default     = "ssh"
 }
 
+variable "disk_device_name" {
+  type        = string
+  description = "Disk device to use for the instance."
+  default     = "/dev/sda1"
+}
+
+variable "disk_size" {
+  type        = number
+  description = "Disk size in GB for building the AMI."
+  default     = 50
+}
+
 variable "iam_instance_profile" {
   type        = string
   description = "IAM instance profile to use for the instance."
-  default     = "AmazonSSMInstanceProfileForInstances"
+  default     = "PackerInstanceProfile"
 }
 
 variable "instance_type" {
@@ -68,7 +98,7 @@ variable "os" {
 variable "os_version" {
   type        = string
   description = "OS version to use for the AMI."
-  default     = "2022-English-Full-Base*"
+  default   = "2022-English-Full-Base"
 }
 
 variable "run_tags" {
@@ -91,16 +121,10 @@ variable "ssh_username" {
   default     = "Administrator"
 }
 
-variable "ssh_port" {
-  type        = number
-  description = "SSH port to use for the instance."
-  default     = 22
-}
-
 variable "ssh_timeout" {
   type        = string
   description = "Timeout for SSH connections."
-  default     = "20m"
+  default     = "240m"
 }
 
 variable "user" {
@@ -124,6 +148,7 @@ variable "winrm_username" {
 variable "winrm_password" {
   type        = string
   description = "Password for WinRM connection."
+  default     = "NotARealPassword"
 }
 
 variable "winrm_port" {
@@ -135,5 +160,5 @@ variable "winrm_port" {
 variable "winrm_timeout" {
   type        = string
   description = "Timeout for WinRM connections."
-  default     = "20m"
+  default     = "240m"
 }

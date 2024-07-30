@@ -9,8 +9,7 @@ blueprint:
     user: root
     # AMI specific configurations
     ami:
-      instance_type: t3.micro
-      region: us-east-1
+      instance_type: c4.xlarge
       ssh_username: ubuntu
     # Tags for created odysseys
     tag:

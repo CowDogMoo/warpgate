@@ -20,7 +20,13 @@ variable "provision_repo_path" {
 variable "provision_script_path" {
   type        = string
   description = "Path on disk to the provisioning script."
-  default = "../scripts/provision.sh"
+  default     = "../scripts/provision.sh"
+}
+
+variable "shell" {
+  type        = string
+  description = "Shell to use."
+  default     = "/bin/zsh"
 }
 
 ############################################
@@ -35,7 +41,23 @@ variable "ami_arch" {
 variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."
-  default     = "us-east-1"
+}
+
+variable "ansible_aws_ssm_bucket_name" {
+  type        = string
+  description = "Name of the S3 bucket to store ansible artifacts."
+}
+
+variable "ansible_aws_ssm_timeout" {
+  type        = number
+  description = "Timeout for ansible SSM connections - 30 minutes by default."
+  default     = 1800
+}
+
+variable "communicator" {
+  type        = string
+  description = "The communicator to use for the instance - ssh or winrm."
+  default     = "ssh"
 }
 
 variable "disk_device_name" {
@@ -53,7 +75,7 @@ variable "disk_size" {
 variable "iam_instance_profile" {
   type        = string
   description = "IAM instance profile to use for the instance."
-  default     = "AmazonSSMInstanceProfileForInstances"
+  default     = "PackerInstanceProfile"
 }
 
 variable "instance_type" {
@@ -76,7 +98,7 @@ variable "os_version" {
 variable "run_tags" {
   type        = map(string)
   description = "Tags to apply to the instance."
-  default     = {
+  default = {
     Name = "packer-attack-box"
   }
 }
@@ -84,20 +106,13 @@ variable "run_tags" {
 variable "ssh_interface" {
   type        = string
   description = "The interface to use for SSH connections."
-  default     = "public_ip"
-  # default     = "session_manager"
+  default     = "session_manager"
 }
 
 variable "ssh_username" {
   type        = string
   description = "The SSH username for the AMI."
   default     = "kali"
-}
-
-variable "ssh_port" {
-  type        = number
-  description = "SSH port to use for the instance."
-  default     = 22
 }
 
 variable "ssh_timeout" {
@@ -109,6 +124,7 @@ variable "ssh_timeout" {
 variable "user" {
   type        = string
   description = "Default odyssey user."
+  default     = "kali"
 }
 
 variable "user_data_file" {
@@ -123,19 +139,23 @@ variable "user_data_file" {
 variable "base_image" {
   type        = string
   description = "Base image."
+  default     = "kali"
 }
 
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
+  default     = "last-snapshot"
 }
 
 variable "entrypoint" {
   type        = string
   description = "Optional entrypoint script."
+  default     = ""
 }
 
 variable "workdir" {
   type        = string
   description = "Working directory for a new container."
+  default     = ""
 }

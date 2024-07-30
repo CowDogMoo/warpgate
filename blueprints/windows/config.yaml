@@ -1,6 +1,5 @@
 ---
 blueprint:
-  max_retries: 3
   name: windows
   packer_templates:
     image_values:
@@ -10,8 +9,8 @@ blueprint:
     user: Administrator
     # AMI specific configurations
     ami:
-      instance_type: t3.micro
-      region: us-west-1
+      instance_type: c4.xlarge
+      ssh_username: Administrator
     # Tags for created odysseys
     tag:
       name: windows-server

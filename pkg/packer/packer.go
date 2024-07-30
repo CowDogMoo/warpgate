@@ -2,6 +2,7 @@ package packer
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -104,6 +105,24 @@ type PackerTemplates struct {
 type Tag struct {
 	Name    string `mapstructure:"name"`
 	Version string `mapstructure:"version"`
+}
+
+// CheckRequiredEnvVars ensures that the necessary environment variables are set.
+//
+// **Parameters:**
+//
+// vars: A list of environment variable names to check.
+//
+// **Returns:**
+//
+// error: An error if any of the environment variables are not set.
+func CheckRequiredEnvVars(vars []string) error {
+	for _, v := range vars {
+		if os.Getenv(v) == "" {
+			return fmt.Errorf("required environment variable %s is not set", v)
+		}
+	}
+	return nil
 }
 
 // ParseAMIDetails extracts the AMI ID from the output of a Packer build command.
