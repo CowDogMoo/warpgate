@@ -81,7 +81,6 @@ variable "disk_size" {
 variable "iam_instance_profile" {
   type        = string
   description = "IAM instance profile to use for the instance."
-  default     = "PackerInstanceProfile"
 }
 
 variable "instance_type" {

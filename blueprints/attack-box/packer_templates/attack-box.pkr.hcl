@@ -64,14 +64,14 @@ source "amazon-ebs" "kali" {
     owners      = ["679593333241"] # Offensive Security's owner ID for Kali images
   }
 
-  launch_block_device_mappings {
+  ami_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
     volume_type           = "gp2"
     delete_on_termination = true
   }
 
-  ami_block_device_mappings {
+  launch_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
     volume_type           = "gp2"
