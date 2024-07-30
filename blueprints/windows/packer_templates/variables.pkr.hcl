@@ -87,7 +87,6 @@ variable "iam_instance_profile" {
 variable "instance_type" {
   type        = string
   description = "The type of instance to use for AMI creation."
-  default     = "t3.micro"
 }
 
 variable "os" {
