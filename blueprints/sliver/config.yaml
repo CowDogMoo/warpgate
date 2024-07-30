@@ -10,7 +10,6 @@ blueprint:
     # AMI specific configurations
     ami:
       instance_type: c4.xlarge
-      region: us-east-1
       ssh_username: ubuntu
     # Tags for created odysseys
     tag:

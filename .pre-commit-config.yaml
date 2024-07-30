@@ -56,10 +56,10 @@ repos:
       - id: go-build
       - id: go-mod-tidy
 
-  - repo: https://github.com/cisagov/pre-commit-packer
-    rev: v0.0.2
-    hooks:
-      - id: packer_fmt
+  # - repo: https://github.com/cisagov/pre-commit-packer
+  #   rev: v0.0.2
+  #   hooks:
+  #     - id: packer_fmt
 
   - repo: local
     hooks:
