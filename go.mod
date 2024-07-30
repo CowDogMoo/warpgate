@@ -3,6 +3,7 @@ module github.com/cowdogmoo/warpgate
 go 1.22.5
 
 require (
+	github.com/aws/aws-sdk-go v1.53.10
 	github.com/containers/common v0.60.0
 	github.com/containers/image/v5 v5.32.0
 	github.com/containers/storage v1.55.0

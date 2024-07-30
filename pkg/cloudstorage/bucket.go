@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/l50/awsutils/s3"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
 // CloudStorage represents the configuration needed for S3 bucket operations.
@@ -37,13 +36,12 @@ func createBucketName(cs *CloudStorage) string {
 //
 // **Parameters:**
 //
-// ctx: Pulumi context.
 // cs: CloudStorage configuration.
 //
 // **Returns:**
 //
 // error: An error if the S3 bucket initialization fails.
-func CreateS3Bucket(ctx *pulumi.Context, cs *CloudStorage) error {
+func CreateS3Bucket(cs *CloudStorage) error {
 	if cs.BucketName == "" {
 		cs.BucketName = createBucketName(cs)
 		conn := s3.CreateConnection()
@@ -62,13 +60,12 @@ func CreateS3Bucket(ctx *pulumi.Context, cs *CloudStorage) error {
 //
 // **Parameters:**
 //
-// ctx: Pulumi context.
 // cs: CloudStorage configuration.
 //
 // **Returns:**
 //
 // error: An error if the S3 bucket destruction fails.
-func DestroyS3Bucket(ctx *pulumi.Context, cs *CloudStorage) error {
+func DestroyS3Bucket(cs *CloudStorage) error {
 	conn := s3.CreateConnection()
 	err := s3.DestroyBucket(conn.Client, cs.BucketName)
 	if err != nil {
