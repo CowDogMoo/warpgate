@@ -13,7 +13,6 @@ import (
 	gitutils "github.com/l50/goutils/v2/git"
 	"github.com/l50/goutils/v2/sys"
 	recursiveCp "github.com/otiai10/copy"
-	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -254,12 +253,12 @@ func (b *Blueprint) BuildPackerImages() (map[string]string, error) {
 	}
 
 	cs := &cloudstorage.CloudStorage{BlueprintName: b.Name}
-	if err := cloudstorage.CreateS3Bucket(nil, cs); err != nil {
+	if err := cloudstorage.CreateS3Bucket(cs); err != nil {
 		return nil, fmt.Errorf("failed to create S3 bucket: %v", err)
 	}
 
 	defer func() {
-		if err := cloudstorage.DestroyS3Bucket(nil, cs); err != nil {
+		if err := cloudstorage.DestroyS3Bucket(cs); err != nil {
 			fmt.Printf("error destroying S3 bucket: %v\n", err)
 		}
 	}()
@@ -512,21 +511,20 @@ func hideSensitiveArgs(args []string) []string {
 //
 // **Parameters:**
 //
-// ctx: Pulumi context.
 // cs: CloudStorage configuration.
 // action: The action to perform, either "create" or "destroy".
 //
 // **Returns:**
 //
 // error: An error if the S3 bucket management fails.
-func (b *Blueprint) ManageS3Bucket(ctx *pulumi.Context, cs *cloudstorage.CloudStorage, action string) error {
+func (b *Blueprint) ManageS3Bucket(cs *cloudstorage.CloudStorage, action string) error {
 	switch action {
 	case "create":
-		if err := cloudstorage.CreateS3Bucket(ctx, cs); err != nil {
+		if err := cloudstorage.CreateS3Bucket(cs); err != nil {
 			return fmt.Errorf("failed to create S3 bucket: %v", err)
 		}
 	case "destroy":
-		if err := cloudstorage.DestroyS3Bucket(ctx, cs); err != nil {
+		if err := cloudstorage.DestroyS3Bucket(cs); err != nil {
 			return fmt.Errorf("failed to destroy S3 bucket: %v", err)
 		}
 	default:

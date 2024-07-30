@@ -17,17 +17,16 @@ The `cloudstorage` package is a part of the WarpGate.
 
 ## Functions
 
-### CreateS3Bucket(*pulumi.Context, *CloudStorage)
+### CreateS3Bucket(*CloudStorage)
 
 ```go
-CreateS3Bucket(*pulumi.Context, *CloudStorage) error
+CreateS3Bucket(*CloudStorage) error
 ```
 
 CreateS3Bucket initializes an S3 bucket and stores the bucket name.
 
 **Parameters:**
 
-ctx: Pulumi context.
 cs: CloudStorage configuration.
 
 **Returns:**
@@ -36,17 +35,16 @@ error: An error if the S3 bucket initialization fails.
 
 ---
 
-### DestroyS3Bucket(*pulumi.Context, *CloudStorage)
+### DestroyS3Bucket(*CloudStorage)
 
 ```go
-DestroyS3Bucket(*pulumi.Context, *CloudStorage) error
+DestroyS3Bucket(*CloudStorage) error
 ```
 
 DestroyS3Bucket destroys the S3 bucket created for the blueprint.
 
 **Parameters:**
 
-ctx: Pulumi context.
 cs: CloudStorage configuration.
 
 **Returns:**

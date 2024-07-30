@@ -94,17 +94,16 @@ error: An error if any issue occurs while loading the Packer templates.
 
 ---
 
-### Blueprint.ManageS3Bucket(*pulumi.Context, *cloudstorage.CloudStorage, string)
+### Blueprint.ManageS3Bucket(*cloudstorage.CloudStorage, string)
 
 ```go
-ManageS3Bucket(*pulumi.Context, *cloudstorage.CloudStorage, string) error
+ManageS3Bucket(*cloudstorage.CloudStorage, string) error
 ```
 
 ManageS3Bucket manages the lifecycle of the S3 bucket for the blueprint.
 
 **Parameters:**
 
-ctx: Pulumi context.
 cs: CloudStorage configuration.
 action: The action to perform, either "create" or "destroy".
 
