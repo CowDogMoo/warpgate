@@ -29,6 +29,11 @@ variable "shell" {
   default     = "/bin/zsh"
 }
 
+variable "user" {
+  type        = string
+  description = "Default user for the container."
+}
+
 ############################################
 #              AWS variables               #
 ############################################
@@ -118,12 +123,6 @@ variable "ssh_timeout" {
   type        = string
   description = "Timeout for SSH connections."
   default     = "20m"
-}
-
-variable "user" {
-  type        = string
-  description = "Default odyssey user."
-  default     = "kali"
 }
 
 variable "user_data_file" {

@@ -1,7 +1,7 @@
 #########################################################################################
 # attack-box packer template
 #
-# Author: Jayson Grace <Jayson Grace <jayson.e.grace@gmail.com>
+# Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
 # Description: Create container images and AMI provisioned with the
 # [attack-box](https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/attack-box)
@@ -104,6 +104,30 @@ build {
     # "source.docker.amd64",
     "source.amazon-ebs.kali",
   ]
+
+  provisioner "shell-local" {
+    inline = [
+      "cat > ${var.provision_repo_path}/playbooks/attack_box/attack_box_inventory_aws_ec2.yml <<EOF",
+      "---",
+      "plugin: amazon.aws.aws_ec2",
+      "regions:",
+      "  - \"$AWS_DEFAULT_REGION\"",
+      "hostnames:",
+      "  - instance-id",
+      "  - tag:Name",
+      "filters:",
+      "  \"tag:Name\":",
+      "    - \"packer-attack-box\"",
+      "keyed_groups:",
+      "  - key: tags.Name",
+      "    prefix: name_",
+      "compose:",
+      "  ansible_host: instance_id",
+      "  ansible_fqdn: public_dns_name",
+      "strict: true",
+      "EOF"
+    ]
+  }
 
   provisioner "ansible" {
     playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
