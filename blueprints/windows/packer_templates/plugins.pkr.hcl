@@ -5,9 +5,9 @@ packer {
       version = ">= 1.0.0"
       source  = "github.com/hashicorp/amazon"
     }
-     ansible = {
+    ansible = {
       version = ">= 1.1.1"
-      source = "github.com/hashicorp/ansible"
+      source  = "github.com/hashicorp/ansible"
     }
   }
 }

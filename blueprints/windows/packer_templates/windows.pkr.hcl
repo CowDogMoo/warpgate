@@ -3,9 +3,13 @@
 #
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
-# Description: Create a windows AMI provisioned with a basic powershell script.
+# Description: Create a windows AMI provisioned with the
+# [attack-box](https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/attack-box)
+# Ansible playbook.
 #########################################################################################
-locals { timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp()) }
+locals {
+  timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())
+}
 
 source "amazon-ebs" "windows" {
   ami_name      = "${var.blueprint_name}-${local.timestamp}"
@@ -64,6 +68,30 @@ source "amazon-ebs" "windows" {
 
 build {
   sources = ["source.amazon-ebs.windows"]
+
+  provisioner "shell-local" {
+    inline = [
+      "cat > ${var.provision_repo_path}/playbooks/vulnerable_windows_scenarios/windows_inventory_aws_ec2.yml <<EOF",
+      "---",
+      "plugin: amazon.aws.aws_ec2",
+      "regions:",
+      "  - \"$AWS_DEFAULT_REGION\"",
+      "hostnames:",
+      "  - instance-id",
+      "  - tag:Name",
+      "filters:",
+      "  \"tag:Name\":",
+      "    - \"packer-windows\"",
+      "keyed_groups:",
+      "  - key: tags.Name",
+      "    prefix: name_",
+      "compose:",
+      "  ansible_host: instance_id",
+      "  ansible_fqdn: public_dns_name",
+      "strict: true",
+      "EOF"
+    ]
+  }
 
   provisioner "ansible" {
     playbook_file  = "${var.provision_repo_path}/playbooks/vulnerable_windows_scenarios/windows_scenarios.yml"
