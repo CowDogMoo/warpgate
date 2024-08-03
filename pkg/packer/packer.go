@@ -19,7 +19,7 @@ import (
 type AMI struct {
 	InstanceType string `mapstructure:"instance_type"`
 	Region       string `mapstructure:"region"`
-	SSHUser      string `mapstructure:"ssh_user"`
+	SSHUser      string `mapstructure:"ssh_username"`
 }
 
 // ImageHash represents the hash of an image built by Packer.
@@ -48,6 +48,7 @@ type ImageHash struct {
 // Workdir: Working directory in the container.
 type Container struct {
 	BaseImageValues ImageValues            `mapstructure:"base_image_values"`
+	ContainerUser   string                 `mapstructure:"container_username"`
 	DockerClient    string                 `mapstructure:"docker_client"`
 	Entrypoint      string                 `mapstructure:"entrypoint"`
 	ImageHashes     []ImageHash            `mapstructure:"image_hashes"`
@@ -85,13 +86,11 @@ type ImageValues struct {
 //
 // Container: Configuration for container images.
 // ImageValues: Name and version of the image.
-// User: User responsible for provisioning the blueprint, usually high-privilege (e.g., root or Administrator).
 // AMI: Optional AMI configuration.
 // Tag: Tag configuration for the image built by Packer.
 type PackerTemplates struct {
 	Container   Container   `mapstructure:"container,omitempty"`
 	ImageValues ImageValues `mapstructure:"image_values"`
-	User        string      `mapstructure:"user"`
 	AMI         AMI         `mapstructure:"ami,omitempty"`
 	Tag         Tag         `mapstructure:"tag"`
 }

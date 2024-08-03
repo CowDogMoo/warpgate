@@ -5,8 +5,6 @@ blueprint:
     image_values:
       name: ubuntu
       version: jammy
-    # Provisioning user
-    user: ubuntu
     # AMI specific configurations
     ami:
       instance_type: c4.xlarge
@@ -17,6 +15,7 @@ blueprint:
       version: latest
     # Container specific configurations
     container:
+      container_username: ubuntu
       image_hashes:
         - arch: amd64
           os: linux

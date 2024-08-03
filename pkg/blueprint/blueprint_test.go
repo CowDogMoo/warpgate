@@ -276,8 +276,7 @@ func TestValidatePackerTemplate(t *testing.T) {
 				ProvisioningRepo: "test-repo",
 				PackerTemplates: &packer.PackerTemplates{
 					ImageValues: packer.ImageValues{Name: "test-image", Version: "1.0"},
-					User:        "test-user",
-					Container:   packer.Container{Workdir: "test-workdir"},
+					Container:   packer.Container{ContainerUser: "test-user", Workdir: "test-workdir"},
 				},
 			},
 		},
@@ -288,7 +287,6 @@ func TestValidatePackerTemplate(t *testing.T) {
 				Path: "test-path",
 				PackerTemplates: &packer.PackerTemplates{
 					ImageValues: packer.ImageValues{Name: "", Version: ""},
-					User:        "",
 				},
 			},
 			expectedError: "packer template 'test-blueprint' has uninitialized fields",
@@ -339,7 +337,6 @@ blueprint:
     image_values:
       name: ubuntu
       version: jammy
-    user: ubuntu
     ami:
       instance_type: t3.medium
       region: us-east-1
@@ -348,6 +345,7 @@ blueprint:
       name: l50/test
       version: latest
     container:
+      container_username: ubuntu
       image_hashes:
         - arch: amd64
           os: linux
@@ -375,7 +373,6 @@ blueprint:
     image_valuez:
       name: ubuntu
       version: jammy
-    user: ubuntu
     ami:
       instance_type: t3.medium
       region: us-east-1
@@ -417,7 +414,7 @@ blueprint:
 				assert.NoError(t, err)
 				assert.NotNil(t, blueprint.PackerTemplates)
 				assert.NotEmpty(t, blueprint.PackerTemplates.ImageValues.Name)
-				assert.NotEmpty(t, blueprint.PackerTemplates.User)
+				assert.True(t, blueprint.PackerTemplates.Container.ContainerUser != "" || blueprint.PackerTemplates.AMI.SSHUser != "")
 			}
 		})
 	}

@@ -144,6 +144,7 @@ func generatePackerTemplate(baseInput string) packer.PackerTemplates {
 			SSHUser:      "",
 		},
 		Container: packer.Container{
+			ContainerUser: "",
 			ImageHashes: []packer.ImageHash{
 				{
 					OS:   "",
@@ -160,7 +161,6 @@ func generatePackerTemplate(baseInput string) packer.PackerTemplates {
 			Name:    parts[0],
 			Version: parts[1],
 		},
-		User: "",
 	}
 }
 

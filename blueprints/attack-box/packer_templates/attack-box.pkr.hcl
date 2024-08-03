@@ -23,7 +23,7 @@ source "docker" "amd64" {
 
   changes = [
     "ENTRYPOINT ${var.entrypoint}",
-    "USER ${var.container_user}",
+    "USER ${var.container_username}",
     "WORKDIR ${var.workdir}",
   ]
 
@@ -38,7 +38,7 @@ source "docker" "arm64" {
 
   changes = [
     "ENTRYPOINT ${var.entrypoint}",
-    "USER ${var.user}",
+    "USER ${var.container_username}",
     "WORKDIR ${var.workdir}",
   ]
 
@@ -100,12 +100,37 @@ source "amazon-ebs" "kali" {
 
 build {
   sources = [
-    # "source.docker.arm64",
-    # "source.docker.amd64",
+    "source.docker.arm64",
+    "source.docker.amd64",
     "source.amazon-ebs.kali",
   ]
 
+  provisioner "shell" {
+    only = ["docker.arm64", "docker.amd64"]
+    inline = [
+      "apt-get -y update",
+      "apt-get install -y software-properties-common",
+      "apt-add-repository ppa:ansible/ansible",
+      "apt-get -y update",
+      "apt-get install -y ansible"
+    ]
+  }
+
+  provisioner "ansible" {
+    only = ["docker.arm64", "docker.amd64"]
+    playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
+    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
+    ansible_env_vars = [
+      "PACKER_BUILD_NAME={{ build_name }}",
+    ]
+    extra_arguments = [
+      "--connection", "docker",
+      "-vvvv",
+    ]
+  }
+
   provisioner "shell-local" {
+    only = ["amazon-ebs.kali"]
     inline = [
       "cat > ${var.provision_repo_path}/playbooks/attack_box/attack_box_inventory_aws_ec2.yml <<EOF",
       "---",
@@ -130,6 +155,7 @@ build {
   }
 
   provisioner "ansible" {
+    only = ["amazon-ebs.kali"]
     playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/attack_box/attack_box_inventory_aws_ec2.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"

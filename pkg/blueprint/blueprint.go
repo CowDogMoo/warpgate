@@ -201,7 +201,7 @@ func (b *Blueprint) LoadPackerTemplates(githubToken string) error {
 	}
 
 	// Check that required fields are not empty
-	if b.PackerTemplates.ImageValues.Name == "" || b.PackerTemplates.User == "" {
+	if b.PackerTemplates.ImageValues.Name == "" || (b.PackerTemplates.Container.ContainerUser == "" && b.PackerTemplates.AMI.SSHUser == "") {
 		return fmt.Errorf("no packer templates found in %s config file", configFile)
 	}
 
@@ -338,7 +338,6 @@ func (b *Blueprint) PreparePackerArgs(bucketName, profileName string) []string {
 		"-var", fmt.Sprintf("base_image=%s", pTmpl.ImageValues.Name),
 		"-var", fmt.Sprintf("base_image_version=%s", pTmpl.ImageValues.Version),
 		"-var", fmt.Sprintf("blueprint_name=%s", b.Name),
-		"-var", fmt.Sprintf("user=%s", pTmpl.User),
 		"-var", fmt.Sprintf("provision_repo_path=%s", b.ProvisioningRepo),
 	}
 
@@ -377,6 +376,9 @@ func (b *Blueprint) appendAMIArgs(pTmpl *packer.PackerTemplates, bucketName, pro
 
 func (b *Blueprint) appendContainerArgs(pTmpl *packer.PackerTemplates) []string {
 	var args []string
+	if pTmpl.Container.ContainerUser != "" {
+		args = append(args, "-var", fmt.Sprintf("container_username=%s", pTmpl.Container.ContainerUser))
+	}
 	if pTmpl.Container.Workdir != "" {
 		args = append(args, "-var", fmt.Sprintf("workdir=%s", pTmpl.Container.Workdir))
 	}
@@ -433,7 +435,6 @@ func (b *Blueprint) ValidatePackerTemplates() error {
 	requiredFields := map[string]string{
 		"ImageValues.Name":           b.PackerTemplates.ImageValues.Name,
 		"ImageValues.Version":        b.PackerTemplates.ImageValues.Version,
-		"User":                       b.PackerTemplates.User,
 		"Blueprint.Name":             b.Name,
 		"Blueprint.Path":             b.Path,
 		"Blueprint.ProvisioningRepo": b.ProvisioningRepo,

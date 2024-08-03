@@ -29,7 +29,7 @@ variable "shell" {
   default     = "/bin/zsh"
 }
 
-variable "user" {
+variable "container_username" {
   type        = string
   description = "Default user for the container."
 }
