@@ -8,7 +8,7 @@ require (
 	github.com/containers/storage v1.55.0
 	github.com/docker/docker v27.1.1+incompatible
 	github.com/fatih/color v1.17.0
-	github.com/google/go-containerregistry v0.20.1
+	github.com/google/go-containerregistry v0.20.2
 	github.com/l50/awsutils v1.1.7
 	github.com/l50/goutils/v2 v2.2.7-0.20240714225621-468c413774f3
 	github.com/magefile/mage v1.15.0
@@ -132,7 +132,7 @@ require (
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sigstore/fulcio v1.5.1 // indirect
 	github.com/sigstore/rekor v1.3.6 // indirect
-	github.com/sigstore/sigstore v1.8.7 // indirect
+	github.com/sigstore/sigstore v1.8.8 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
@@ -141,7 +141,7 @@ require (
 	github.com/stefanberger/go-pkcs11uri v0.0.0-20230803200340-78284954bff6 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/sylabs/sif/v2 v2.18.0 // indirect
+	github.com/sylabs/sif/v2 v2.19.0 // indirect
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.1 // indirect
 	github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 // indirect
