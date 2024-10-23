@@ -7,7 +7,7 @@ require (
 	github.com/containers/image/v5 v5.32.0
 	github.com/containers/storage v1.55.0
 	github.com/docker/docker v27.1.1+incompatible
-	github.com/fatih/color v1.17.0
+	github.com/fatih/color v1.18.0
 	github.com/google/go-containerregistry v0.20.1
 	github.com/l50/awsutils v1.1.7
 	github.com/l50/goutils/v2 v2.2.7-0.20240714225621-468c413774f3
@@ -163,7 +163,7 @@ require (
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
 	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.22.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/term v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
