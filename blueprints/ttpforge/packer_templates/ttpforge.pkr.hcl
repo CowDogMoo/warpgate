@@ -73,8 +73,8 @@ source "amazon-ebs" "ubuntu" {
     delete_on_termination = true
   }
 
-  communicator = "${var.communicator}"
-  run_tags     = "${var.run_tags}"
+  communicator   = "${var.communicator}"
+  run_tags       = "${var.run_tags}"
   user_data_file = "${var.user_data_file}"
 
   #### SSH Configuration ####
@@ -100,26 +100,40 @@ build {
     "source.amazon-ebs.ubuntu",
   ]
 
-  # Packer build for container images
+  # Provisioner for the TTPForge playbook in container images
+  provisioner "file" {
+    only        = ["docker.arm64", "docker.amd64"]
+    source      = "../scripts/provision.sh"
+    destination = "${var.pkr_build_dir}/provision.sh"
+  }
+
+  # Execute the provisioning script with necessary environment settings
   provisioner "shell" {
     only = ["docker.arm64", "docker.amd64"]
+    environment_vars = [
+      "PKR_BUILD_DIR=${var.pkr_build_dir}",
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "DEBIAN_FRONTEND=noninteractive",
+    ]
+
     inline = [
-      "apt-get update -y 2> /dev/null",
-      "apt-get install -y bash git gpg-agent python3 python3-pip sudo",
-      "echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections",
+      "chmod +x ${var.pkr_build_dir}/provision.sh",
+      "${var.pkr_build_dir}/provision.sh"
     ]
   }
 
+  # Packer build for Docker containers
   provisioner "ansible" {
-    only          = ["docker.arm64", "docker.amd64"]
-    playbook_file = "${var.provision_repo_path}/playbooks/ttpforge/ttpforge.yml"
-    galaxy_file   = "${var.provision_repo_path}/requirements.yml"
+    only           = ["docker.arm64", "docker.amd64"]
+    playbook_file  = "${var.provision_repo_path}/playbooks/ttpforge/ttpforge.yml"
+    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
     ansible_env_vars = [
       "PACKER_BUILD_NAME={{ build_name }}",
+      "DEBIAN_FRONTEND=noninteractive",
     ]
-    extra_arguments = [
-      "-vvvv",
-    ]
+    # extra_arguments = [
+    #   "-vvvv",
+    # ]
   }
 
   # Packer build for Amazon AMI
@@ -128,12 +142,23 @@ build {
     inline = [
       "cat > ${var.provision_repo_path}/playbooks/ttpforge/ttpforge_inventory_aws_ec2.yml <<EOF",
       "---",
-      "all:",
-      "  hosts:",
-      "    localhost:",
-      "      ansible_connection: local",
-      "      ansible_python_interpreter: /usr/bin/python3",
-      "EOF",
+      "plugin: amazon.aws.aws_ec2",
+      "regions:",
+      "  - \"$AWS_DEFAULT_REGION\"",
+      "hostnames:",
+      "  - instance-id",
+      "  - tag:Name",
+      "filters:",
+      "  \"tag:Name\":",
+      "    - \"packer-ttpforge\"",
+      "keyed_groups:",
+      "  - key: tags.Name",
+      "    prefix: name_",
+      "compose:",
+      "  ansible_host: instance_id",
+      "  ansible_fqdn: public_dns_name",
+      "strict: true",
+      "EOF"
     ]
   }
 
@@ -154,7 +179,7 @@ build {
       "-e", "ansible_shell_executable=${var.shell}",
       "-e", "ansible_aws_ssm_timeout=${var.ansible_aws_ssm_timeout}",
       "-e", "ansible_aws_ssm_s3_addressing_style=virtual",
-      "-vvvv",
+      # "-vvvv",
     ]
   }
 }

@@ -23,7 +23,6 @@ source "docker" "amd64" {
 
   changes = [
     "ENTRYPOINT ${var.entrypoint}",
-    "USER ${var.container_username}",
     "WORKDIR ${var.workdir}",
   ]
 
@@ -36,15 +35,14 @@ source "docker" "arm64" {
   platform   = "linux/arm64"
   privileged = true
 
-  changes = [
-    "ENTRYPOINT ${var.entrypoint}",
-    "USER ${var.container_username}",
-    "WORKDIR ${var.workdir}",
-  ]
-
   volumes = {
     "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
   }
+
+  changes = [
+    "ENTRYPOINT ${var.entrypoint}",
+    "WORKDIR ${var.workdir}",
+  ]
 
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
@@ -100,19 +98,19 @@ source "amazon-ebs" "kali" {
 
 build {
   sources = [
-    "source.docker.arm64",
-    "source.docker.amd64",
+    # "source.docker.arm64",
+    # "source.docker.amd64",
     "source.amazon-ebs.kali",
   ]
 
+  # Packer build for container images
   provisioner "shell" {
     only = ["docker.arm64", "docker.amd64"]
     inline = [
-      "apt-get -y update",
-      "apt-get install -y software-properties-common",
-      "apt-add-repository ppa:ansible/ansible",
-      "apt-get -y update",
-      "apt-get install -y ansible"
+      "apt-get update -y 2> /dev/null",
+      "apt-get install -y bash git gpg-agent python3 python3-pip sudo",
+      "echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections",
+      "python3 -m pip install --upgrade ansible-core docker molecule molecule-docker 'molecule-plugins[docker]'",
     ]
   }
 
@@ -129,6 +127,7 @@ build {
     ]
   }
 
+  # Packer build for Amazon AMI
   provisioner "shell-local" {
     only = ["amazon-ebs.kali"]
     inline = [

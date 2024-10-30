@@ -6,6 +6,10 @@
 # Description: Create a docker image provisioned with
 # https://github.com/l50/ansible-collection-arsenal/tree/main/playbooks/atomic_red_team
 #########################################################################################
+locals {
+  timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())
+}
+
 source "docker" "amd64" {
   commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
@@ -18,7 +22,7 @@ source "docker" "amd64" {
 
   changes = [
     "USER ${var.user}",
-    "WORKDIR ${var.workdir}",
+    # "WORKDIR ${var.workdir}",
   ]
 
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
@@ -32,7 +36,7 @@ source "docker" "arm64" {
 
   changes = [
     "USER ${var.user}",
-    "WORKDIR ${var.workdir}",
+    # "WORKDIR ${var.workdir}",
   ]
 
   volumes = {
@@ -48,40 +52,66 @@ source "amazon-ebs" "ubuntu" {
   region        = "${var.ami_region}"
   source_ami_filter {
     filters = {
-      name = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
+      name                = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
-    owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
     most_recent = true
+    owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
   }
-  ssh_username = "${var.ssh_username}"
+
+  ami_block_device_mappings {
+    device_name           = "${var.disk_device_name}"
+    volume_size           = "${var.disk_size}"
+    volume_type           = "gp2"
+    delete_on_termination = true
+  }
+
+  launch_block_device_mappings {
+    device_name           = "${var.disk_device_name}"
+    volume_size           = "${var.disk_size}"
+    volume_type           = "gp2"
+    delete_on_termination = true
+  }
+
+  communicator   = "${var.communicator}"
+  run_tags       = "${var.run_tags}"
+  # user_data_file = "${var.user_data_file}"
+
+  #### SSH Configuration ####
+  ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
+  ssh_interface            = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
+  ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
+  ssh_username             = "${var.ssh_username}"
+
+  #### SSM and IP Configuration ####
+  associate_public_ip_address = true
+  iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
+
+  tags = {
+    Name      = "${var.blueprint_name}-${local.timestamp}"
+    BuildTime = "${local.timestamp}"
+  }
 }
 
 build {
   sources = [
     "source.docker.amd64",
     "source.docker.arm64",
-    "source.amazon-ebs.ubuntu",
+    # "source.amazon-ebs.ubuntu",
   ]
-
-  provisioner "file" {
-    source      = "${var.provision_repo_path}"
-    destination = "${var.pkr_build_dir}"
-  }
-
-  provisioner "file" {
-    source      = "../scripts/provision.sh"
-    destination = "${var.pkr_build_dir}/provision.sh"
-  }
-
-  provisioner "shell" {
-    environment_vars = [
-      "PKR_BUILD_DIR=${var.pkr_build_dir}",
+  
+  provisioner "ansible" {
+    only          = ["docker.arm64", "docker.amd64"]
+    playbook_file = "${var.provision_repo_path}/playbooks/ttpforge/ttpforge.yml"
+    galaxy_file   = "${var.provision_repo_path}/requirements.yml"
+    ansible_env_vars = [
+      "PACKER_BUILD_NAME={{ build_name }}",
+      "ANSIBLE_CONFIG=/tmp/ansible.cfg",
     ]
-    inline = [
-      "chmod +x ${var.pkr_build_dir}/provision.sh",
-      "${var.pkr_build_dir}/provision.sh"
+    extra_arguments = [
+      "--connection", "community.docker.docker",
+      "-vvvv",
     ]
   }
 }

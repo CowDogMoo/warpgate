@@ -15,7 +15,7 @@ variable "cleanup" {
 variable "pkr_build_dir" {
   type        = string
   description = "Directory that packer will execute the transferred provisioning logic from within the build environment."
-  default     = "ansible-collection-arsenal"
+  default     = "/tmp"
 }
 
 variable "provision_repo_path" {

@@ -17,6 +17,7 @@ blueprint:
       version: latest
     # Container specific configurations
     container:
+      container_username: sliver
       image_hashes:
         - arch: amd64
           os: linux

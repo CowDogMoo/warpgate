@@ -6,7 +6,7 @@ blueprint:
       name: ubuntu
       version: jammy
     # Provisioning user
-    user: root
+    user: ubuntu
     # AMI specific configurations
     ami:
       instance_type: c4.xlarge
@@ -16,13 +16,13 @@ blueprint:
       name: l50/atomic-red-team
       version: latest
     # Container specific configurations
-    container:
-      image_hashes:
-        - arch: amd64
-          os: linux
-        - arch: arm64
-          os: linux
-      registry:
-        server: ghcr.io
-        username: l50
-      workdir: /root/AtomicRedTeam
+    # container:
+    #   image_hashes:
+    #     - arch: amd64
+    #       os: linux
+    #     - arch: arm64
+    #       os: linux
+    #   registry:
+    #     server: ghcr.io
+    #     username: l50
+      # workdir: /root/AtomicRedTeam
