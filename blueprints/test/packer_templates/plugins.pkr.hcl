@@ -1,13 +1,17 @@
 # Define the plugin(s) used by Packer.
 packer {
   required_plugins {
-    docker = {
-      version = ">= 1.0.9"
-      source  = "github.com/hashicorp/docker"
-    }
     amazon = {
-      version = ">= 1.0.0"
       source  = "github.com/hashicorp/amazon"
+      version = "~> 1"
+    }
+    ansible = {
+      source = "github.com/hashicorp/ansible"
+      version = "~> 1"
+    }
+    docker = {
+      source  = "github.com/hashicorp/docker"
+      version = "~> 1"
     }
   }
 }
