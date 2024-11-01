@@ -173,3 +173,7 @@ require (
 	mvdan.cc/sh/v3 v3.8.0 // indirect
 	tags.cncf.io/container-device-interface v0.8.0 // indirect
 )
+
+// Necessary to prevent Go from attempting to update to a version
+// that changes the module path (https://github.com/darccio/mergo#important-notes)
+replace github.com/imdario/mergo => github.com/imdario/mergo v0.3.16
