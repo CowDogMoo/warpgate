@@ -181,4 +181,4 @@ require (
 
 // Necessary to prevent Go from attempting to update to a version
 // that changes the module path (https://github.com/darccio/mergo#important-notes)
-replace github.com/imdario/mergo => github.com/imdario/mergo v0.3.16
+replace github.com/imdario/mergo => github.com/imdario/mergo v1.0.1
