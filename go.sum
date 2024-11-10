@@ -71,6 +71,8 @@ github.com/containerd/typeurl/v2 v2.2.1 h1:/X1Kgcz4sKS/NTKQvvRS0pEVpUYqmPTwGQont
 github.com/containerd/typeurl/v2 v2.2.1/go.mod h1:95ljDnPfD3bAbDJRugOiShd/DlAAsxGtUBhJxIn7SCk=
 github.com/containerd/typeurl/v2 v2.2.2 h1:3jN/k2ysKuPCsln5Qv8bzR9cxal8XjkxPogJfSNO31k=
 github.com/containerd/typeurl/v2 v2.2.2/go.mod h1:95ljDnPfD3bAbDJRugOiShd/DlAAsxGtUBhJxIn7SCk=
+github.com/containerd/typeurl/v2 v2.2.3 h1:yNA/94zxWdvYACdYO8zofhrTVuQY73fFU1y++dYSw40=
+github.com/containerd/typeurl/v2 v2.2.3/go.mod h1:95ljDnPfD3bAbDJRugOiShd/DlAAsxGtUBhJxIn7SCk=
 github.com/containers/common v0.60.4 h1:H5+LAMHPZEqX6vVNOQ+IguVsaFl8kbO/SZ/VPXjxhy0=
 github.com/containers/common v0.60.4/go.mod h1:I0upBi1qJX3QmzGbUOBN1LVP6RvkKhd3qQpZbQT+Q54=
 github.com/containers/image/v5 v5.32.2 h1:SzNE2Y6sf9b1GJoC8qjCuMBXwQrACFp4p0RK15+4gmQ=
