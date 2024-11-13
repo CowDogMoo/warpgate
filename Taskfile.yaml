@@ -1,0 +1,24 @@
+---
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+includes:
+  pre-commit:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
+  github:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/github/Taskfile.yaml"
+  terraform:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/terraform/Taskfile.yaml"
+
+tasks:
+  default:
+    desc: "Run all CI tasks"
+    cmds:
+      - task: run-pre-commit
+
+  run-pre-commit:
+    desc: "Update, clear cache, and run pre-commit hooks"
+    cmds:
+      - task: pre-commit:update-hooks
+      - task: pre-commit:clear-cache
+      - task: pre-commit:run-hooks
