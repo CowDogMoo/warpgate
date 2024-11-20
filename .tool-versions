@@ -3,4 +3,4 @@ python 3.12.4
 ruby 3.3.3
 helm 3.16.2
 kubectl 1.31.2
-packer 1.9.4
+packer 1.11.2
