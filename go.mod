@@ -61,7 +61,7 @@ require (
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
-	github.com/go-git/gcfg v1.5.1-0.20241228213128-52e213351497 // indirect
+	github.com/go-git/gcfg 04fcf10086e0 // indirect
 	github.com/go-git/go-billy/v5 v5.6.1 // indirect
 	github.com/go-git/go-git/v5 v5.13.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.4 // indirect
