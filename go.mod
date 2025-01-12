@@ -138,7 +138,7 @@ require (
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sigstore/fulcio v1.6.5 // indirect
 	github.com/sigstore/rekor v1.3.7 // indirect
-	github.com/sigstore/sigstore v1.8.11 // indirect
+	github.com/sigstore/sigstore v1.8.12 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/skeema/knownhosts v1.3.0 // indirect
 	github.com/smallstep/pkcs7 v0.1.1 // indirect
