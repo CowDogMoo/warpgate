@@ -4,7 +4,7 @@ go 1.23.2
 
 require (
 	github.com/containers/common v0.61.0
-	github.com/containers/image/v5 v5.33.0
+	github.com/containers/image/v5 v5.33.1
 	github.com/containers/storage v1.56.1
 	github.com/docker/docker v27.4.1+incompatible
 	github.com/fatih/color v1.18.0
