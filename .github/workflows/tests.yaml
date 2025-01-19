@@ -58,6 +58,6 @@ jobs:
           bash .hooks/run-go-tests.sh coverage
 
       - name: Send the coverage output
-        uses: shogo82148/actions-goveralls@785c9d68212c91196d3994652647f8721918ba11 # v1
+        uses: shogo82148/actions-goveralls@e6875f831db61e6abffbd8df91a2eb6cd24b46c9 # v1
         with:
           path-to-profile: coverage-all.out
