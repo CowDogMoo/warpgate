@@ -6,9 +6,9 @@ require (
 	github.com/containers/common v0.61.0
 	github.com/containers/image/v5 v5.33.0
 	github.com/containers/storage v1.56.1
-	github.com/docker/docker v27.4.1+incompatible
+	github.com/docker/docker v27.5.0+incompatible
 	github.com/fatih/color v1.18.0
-	github.com/google/go-containerregistry v0.20.2
+	github.com/google/go-containerregistry v0.20.3
 	github.com/l50/awsutils v1.1.7
 	github.com/l50/goutils/v2 v2.2.7
 	github.com/magefile/mage v1.15.0
@@ -176,7 +176,7 @@ require (
 	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/tools v0.29.0 // indirect
-	google.golang.org/protobuf v1.36.1 // indirect
+	google.golang.org/protobuf v1.36.3 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
