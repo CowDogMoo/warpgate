@@ -1,6 +1,8 @@
 module github.com/cowdogmoo/warpgate
 
-go 1.23.2
+go 1.23.3
+
+toolchain go1.23.5
 
 require (
 	github.com/containers/common v0.61.1
@@ -136,7 +138,7 @@ require (
 	github.com/samber/slog-multi v1.3.3 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.9.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
-	github.com/sigstore/fulcio v1.6.5 // indirect
+	github.com/sigstore/fulcio v1.6.6 // indirect
 	github.com/sigstore/rekor v1.3.7 // indirect
 	github.com/sigstore/sigstore v1.8.12 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
