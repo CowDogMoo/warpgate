@@ -17,3 +17,9 @@ builds/
 # Custom attributes files created by macOS
 .DS_Store
 .secrets
+
+# Taskfile
+.task
+
+# Pre-commit artifacts
+node_modules

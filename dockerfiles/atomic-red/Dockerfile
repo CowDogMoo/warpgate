@@ -24,5 +24,5 @@ RUN Write-Host "Downloading install-atomicredteam.ps1 script..." ; \
     New-Item $PROFILE -Force ; \
     Write-Host "Installation complete."
 
-COPY ./setup.ps1 .
+COPY dockerfiles/atomic-red/setup.ps1 .
 RUN ./setup.ps1

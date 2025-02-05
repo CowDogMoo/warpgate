@@ -19,7 +19,8 @@ group "default" {
 
 # Target for AMD64 architecture
 target "amd64" {
-  dockerfile = "Dockerfile"
+  context = "."
+  dockerfile = "dockerfiles/atomic-red/Dockerfile"
   platforms = ["linux/amd64"]
   args = { BASE_IMAGE_ARCH = "amd64" }
   tags = tag("")
@@ -27,7 +28,8 @@ target "amd64" {
 
 # Target for ARM64 architecture
 target "arm64" {
-  dockerfile = "Dockerfile"
+  context = "."
+  dockerfile = "dockerfiles/atomic-red/Dockerfile"
   platforms = ["linux/arm64"]
   args = { BASE_IMAGE_ARCH = "arm64" }
   tags = tag("arm64")
