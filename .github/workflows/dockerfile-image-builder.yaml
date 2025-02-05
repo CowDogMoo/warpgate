@@ -44,6 +44,11 @@ jobs:
       - name: Build and export to Docker (Test Image)
         uses: docker/bake-action@7bff531c65a5cda33e52e43950a795b91d450f63 # v6
         with:
-          workdir: ./dockerfiles/atomic-red
-          provenance: false # Stop unknown/unknown images from being pushed
+          context: .
+          files: ./dockerfiles/atomic-red/docker-bake.hcl
+          provenance: false
           push: true
+          set: |
+            *.platform=linux/amd64,linux/arm64
+            *.args.REPO=ghcr.io/cowdogmoo/atomic-red
+            *.args.TAG=latest
