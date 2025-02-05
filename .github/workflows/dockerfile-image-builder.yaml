@@ -10,16 +10,15 @@ concurrency:
   cancel-in-progress: true
   group: "${{ github.workflow }}"
 
+env:
+  PRODUCT_VERSION: "latest"
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+
 permissions:
   id-token: write
   contents: read
   packages: write
 
-env:
-  PRODUCT_VERSION: "latest"
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
-  # # Used for testing locally with act
-  # IMAGE_NAME: ghcr.io/${{ secrets.GITHUB_REPOSITORY_OWNER }}/${{ secrets.GITHUB_REPOSITORY_NAME }}
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
