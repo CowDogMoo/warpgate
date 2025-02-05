@@ -123,6 +123,23 @@ TODOs in `config.yaml`.
 
 ---
 
+## Authentication & Image Pushing
+
+Warp Gate requires authentication when pushing built images to GitHub Container
+Registry (`ghcr.io`). This is handled using a **Classic Personal Access Token** (`BOT_TOKEN`)
+instead of the default `GITHUB_TOKEN`, ensuring that the workflow has the
+correct package write permissions.
+
+### GitHub Actions Authentication
+
+- The workflow logs in to `ghcr.io` using:
+
+  ```bash
+  echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+  ```
+
+---
+
 ## Additional Documentation
 
 - [Developer Environment Setup](docs/dev.md)
