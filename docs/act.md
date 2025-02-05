@@ -2,7 +2,7 @@
 
 1. Install [Act](https://github.com/nektos/act)
 
-2. Create a `.secrets` file with the following content:
+1. Create a `.secrets` file with the following content:
 
    ```bash
     BOT_TOKEN=your_github_token
@@ -10,7 +10,7 @@
     GITHUB_REPOSITORY_OWNER=cowdogmoo
    ```
 
-3. Uncomment relevant sections in
+1. Uncomment relevant sections in
    `.github/workflows/dockerfile-image-builder.yaml` and run the following command:
 
    ```bash
