@@ -403,6 +403,8 @@ github.com/subosito/gotenv v1.6.0 h1:9NlTDc1FTs4qu0DDq7AEtTPNw6SVm7uBMsUCUjABIf8
 github.com/subosito/gotenv v1.6.0/go.mod h1:Dk4QP5c2W3ibzajGcXpNraDfq2IrhjMIvMSWPKKo0FU=
 github.com/sylabs/sif/v2 v2.20.2 h1:HGEPzauCHhIosw5o6xmT3jczuKEuaFzSfdjAsH33vYw=
 github.com/sylabs/sif/v2 v2.20.2/go.mod h1:WyYryGRaR4Wp21SAymm5pK0p45qzZCSRiZMFvUZiuhc=
+github.com/sylabs/sif/v2 v2.21.0 h1:vvHp5vBsyIOv70T7rgWN8CcT6cS3j3Jtm4rELZJYc4c=
+github.com/sylabs/sif/v2 v2.21.0/go.mod h1:d4ifdG5JnlEwHmM6dWcAqZiGNWEAj9RM8P8JwkRnG7o=
 github.com/tchap/go-patricia/v2 v2.3.2 h1:xTHFutuitO2zqKAQ5rCROYgUb7Or/+IC3fts9/Yc7nM=
 github.com/tchap/go-patricia/v2 v2.3.2/go.mod h1:VZRHKAb53DLaG+nA9EaYYiaEx6YztwDlLElMsnSHD4k=
 github.com/titanous/rocacheck v0.0.0-20171023193734-afe73141d399 h1:e/5i7d4oYZ+C1wj2THlRK+oAhjeS/TRQwMfkIuet3w0=
