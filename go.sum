@@ -133,6 +133,8 @@ github.com/go-git/go-git/v5 v5.13.2 h1:7O7xvsK7K+rZPKW6AQR1YyNhfywkv7B8/FsP3ki6Z
 github.com/go-git/go-git/v5 v5.13.2/go.mod h1:hWdW5P4YZRjmpGHwRH2v3zkWcNl6HeXaXQEMGb3NJ9A=
 github.com/go-jose/go-jose/v4 v4.0.4 h1:VsjPI33J0SB9vQM6PLmNjoHqMQNGPiZ0rHL7Ni7Q6/E=
 github.com/go-jose/go-jose/v4 v4.0.4/go.mod h1:NKb5HO1EZccyMpiZNbdUw/14tiXNyUJh188dfnMCAfc=
+github.com/go-jose/go-jose/v4 v4.0.5 h1:M6T8+mKZl/+fNNuFHvGIzDz7BTLQPIounk/b9dw3AaE=
+github.com/go-jose/go-jose/v4 v4.0.5/go.mod h1:s3P1lRrkT8igV8D9OjyL4WRyHvjB6a4JSllnOrmmBOA=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
 github.com/go-logr/logr v1.4.2 h1:6pFjapn8bFcIbiKo3XT4j/BhANplGihG6tvd+8rYgrY=
 github.com/go-logr/logr v1.4.2/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
@@ -263,6 +265,8 @@ github.com/letsencrypt/boulder v0.0.0-20250214182100-eab90ee2f5b6 h1:JJI5p6/Itaq
 github.com/letsencrypt/boulder v0.0.0-20250214182100-eab90ee2f5b6/go.mod h1:gKPxAQspVM50FlcrM5gglWjpG2SrBIxjePnY5i8qteE=
 github.com/letsencrypt/boulder v0.0.0-20250220232038-fb2fd8af7512 h1:2XoenkXDZuVB9JsQBjGRYM5oh+bsfHzgtRGzpxbDeMw=
 github.com/letsencrypt/boulder v0.0.0-20250220232038-fb2fd8af7512/go.mod h1:gKPxAQspVM50FlcrM5gglWjpG2SrBIxjePnY5i8qteE=
+github.com/letsencrypt/boulder v0.0.0-20250228232437-10d9ef9af709 h1:Ujqva5EwNxLUVtTtlIykdBykv0lH1V842sfZ7nme7z8=
+github.com/letsencrypt/boulder v0.0.0-20250228232437-10d9ef9af709/go.mod h1:JLcKoazhOopVDb0UkpMLli8YWpDwA6gXTIOUJpJUdVY=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
 github.com/magefile/mage v1.15.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
 github.com/magiconair/properties v1.8.9 h1:nWcCbLq1N2v/cpNsy5WvQ37Fb+YElfq20WJ/a8RkpQM=
