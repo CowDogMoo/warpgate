@@ -8,7 +8,7 @@ require (
 	github.com/containers/common v0.62.0
 	github.com/containers/image/v5 v5.34.0
 	github.com/containers/storage v1.57.1
-	github.com/docker/docker v28.0.0+incompatible
+	github.com/docker/docker v28.0.1+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/google/go-containerregistry v0.20.3
 	github.com/l50/awsutils v1.1.7
