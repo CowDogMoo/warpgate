@@ -25,7 +25,7 @@ require (
 require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250227231956-55c901821b1e // indirect
-	google.golang.org/grpc v1.69.4 // indirect
+	google.golang.org/grpc v1.71.0 // indirect
 )
 
 require (
