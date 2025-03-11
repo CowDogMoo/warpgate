@@ -412,6 +412,8 @@ github.com/sigstore/sigstore v1.8.14 h1:JqDkQ7PQCiCOerPRSkYr57Rj9sZO59fOcXDxvLsb
 github.com/sigstore/sigstore v1.8.14/go.mod h1:2lXojNsjZjkqu1//FWxq7qUcPB8Lq1KsR5hc+GkcC/4=
 github.com/sigstore/sigstore v1.8.15 h1:9HHnZmxjPQSTPXTCZc25HDxxSTWwsGMh/ZhWZZ39maU=
 github.com/sigstore/sigstore v1.8.15/go.mod h1:+Wa5mrG6A+Gss516YC9owy10q3IazqIRe0y1EoQRHHM=
+github.com/sigstore/sigstore v1.9.0 h1:zUfcKbp8RiJ4wEmA4nvcnEySQAqzF1NtV+v6rVzLwNY=
+github.com/sigstore/sigstore v1.9.0/go.mod h1:zUoATYzR1J3rLNp3jmp4fzIJtWdhC3ZM6MnpcBtnsE4=
 github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
