@@ -5,8 +5,8 @@ go 1.24.0
 toolchain go1.24.1
 
 require (
-	github.com/containers/common v0.62.1
-	github.com/containers/image/v5 v5.34.2
+	github.com/containers/common v0.62.3
+	github.com/containers/image/v5 v5.34.3
 	github.com/containers/storage v1.57.2
 	github.com/docker/docker v28.0.2+incompatible
 	github.com/fatih/color v1.18.0
