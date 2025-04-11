@@ -93,6 +93,9 @@ func init() {
 	imageBuilderCmd.Flags().StringP(
 		"github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
 	cobra.CheckErr(viper.BindPFlag("blueprint.image_hashes.container.registry.token", imageBuilderCmd.Flags().Lookup("github-token")))
+
+	imageBuilderCmd.Flags().BoolP(
+		"no-push", "", false, "Build container images locally without pushing to registry")
 }
 
 // RunImageBuilder is the main function for the imageBuilder command
@@ -113,29 +116,28 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return fmt.Errorf("no packer templates found: %v", err)
 	}
 
-	if _, err := blueprint.BuildPackerImages(); err != nil {
+	imageHashes, err := blueprint.BuildPackerImages()
+	if err != nil {
 		return err
 	}
 
-	// Check if container configuration is needed
-	if blueprint.PackerTemplates.Container.ImageRegistry.Server != "" {
-		// Create ContainerImageRegistry object
+	// Get the no-push flag value
+	noPush, _ := cmd.Flags().GetBool("no-push")
+
+	// Only process Docker images if there are actually image hashes to push
+	if !noPush && len(imageHashes) > 0 && blueprint.PackerTemplates.Container.ImageRegistry.Server != "" {
 		registryConfig := packer.ContainerImageRegistry{
 			Server:     viper.GetString("blueprint.packer_templates.container.registry.server"),
 			Username:   viper.GetString("blueprint.packer_templates.container.registry.username"),
 			Credential: githubToken,
 		}
-
 		if registryConfig.Server == "" || registryConfig.Username == "" || registryConfig.Credential == "" {
 			return fmt.Errorf("container registry configuration must not be empty")
 		}
-
-		// New DockerClient initialization with username and token
 		dockerClient, err := docker.NewDockerClient(registryConfig)
 		if err != nil {
 			return err
 		}
-
 		if err := dockerClient.ProcessTemplates(blueprint.PackerTemplates, blueprint.Name); err != nil {
 			return fmt.Errorf("error processing Packer template: %v", err)
 		}
