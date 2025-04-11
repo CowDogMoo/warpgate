@@ -27,4 +27,4 @@ jobs:
         run: go list -json -deps ./... > go.list
 
       - name: Run nancy to check for vulnerabilities
-        uses: sonatype-nexus-community/nancy-github-action@main
+        uses: sonatype-nexus-community/nancy-github-action@395e2fb168f674f96502e5652103d112899ea369 # v1.0.3
