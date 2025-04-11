@@ -278,6 +278,12 @@ func (d *DockerClient) SetRegistry(registry *DockerRegistry) {
 func (d *DockerClient) TagAndPushImages(pTmpl *packer.PackerTemplates) ([]string, error) {
 	var imageTags []string
 
+	// No image hashes to process
+	if len(d.Container.ImageHashes) == 0 {
+		fmt.Println("No image hashes to process, skipping tagging and pushing.")
+		return imageTags, nil // Return success rather than error
+	}
+
 	for _, hash := range d.Container.ImageHashes {
 		if hash.Arch == "" || hash.Hash == "" || hash.OS == "" {
 			return imageTags, errors.New("arch, hash, and OS must not be empty")
@@ -299,7 +305,8 @@ func (d *DockerClient) TagAndPushImages(pTmpl *packer.PackerTemplates) ([]string
 		imageTags = append(imageTags, remoteTag)
 	}
 
-	if len(imageTags) == 0 {
+	// Only return error if we expected to push images but couldn't
+	if len(imageTags) == 0 && len(d.Container.ImageHashes) > 0 {
 		return imageTags, errors.New("no images were tagged and pushed")
 	}
 
