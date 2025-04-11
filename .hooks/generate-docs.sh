@@ -13,10 +13,10 @@
 set -e
 
 # Define the URL of bashutils.sh
-bashutils_url="https://raw.githubusercontent.com/l50/dotfiles/main/bashutils"
+bashutils_url="https://raw.githubusercontent.com/l50/dotfiles/refs/heads/main/bashutils.sh"
 
 # Define the local path of bashutils.sh
-bashutils_path="/tmp/bashutils"
+bashutils_path="/tmp/bashutils.sh"
 
 # Check if bashutils.sh exists locally
 if [[ ! -f "${bashutils_path}" ]]; then

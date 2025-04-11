@@ -173,13 +173,13 @@ func createCfg(blueprint bp.Blueprint) error {
 	cfgFile := filepath.Join("blueprints", blueprint.Name, "config.yaml")
 	f, err := os.Create(cfgFile)
 	if err != nil {
-		return fmt.Errorf(color.RedString("failed to create config file: %v", err))
+		return fmt.Errorf("failed to create config file: %v", err)
 	}
 
 	defer f.Close()
 
 	if err := tmpl.Execute(f, blueprint); err != nil {
-		return fmt.Errorf(color.RedString("failed to create config.yaml: %v", err))
+		return fmt.Errorf("failed to create config.yaml: %v", err)
 	}
 
 	return nil
@@ -227,15 +227,15 @@ func createPacker(blueprint bp.Blueprint) error {
 
 	f, err := os.Create(filepath.Join(packerDir, blueprint.Name))
 	if err != nil {
-		return fmt.Errorf(color.RedString("failed to create %s: %v", filepath.Join(packerDir, blueprint.Name), err))
+		return fmt.Errorf("failed to create %s: %v", filepath.Join(packerDir, blueprint.Name), err)
 	}
 	defer f.Close()
 	if err := tmpl.Execute(f, tmplData); err != nil {
-		return fmt.Errorf(color.RedString("failed to populate %s with templated data: %v", filepath.Join(packerDir, blueprint.Name), err))
+		return fmt.Errorf("failed to populate %s with templated data: %v", filepath.Join(packerDir, blueprint.Name), err)
 	}
 
 	if err := sys.Cp(filepath.Join("files", "variables.pkr.hcl"), filepath.Join(newBPPath, "variables.pkr.hcl")); err != nil {
-		return fmt.Errorf(color.RedString("failed to transfer packer variables file to new blueprint directory: %v", err))
+		return fmt.Errorf("failed to transfer packer variables file to new blueprint directory: %v", err)
 	}
 
 	log.L().Debugf("Contents of all Packer templates: %#v\n", packerTemplates)
@@ -250,13 +250,13 @@ func createScript(bpName string) error {
 	scriptFile := filepath.Join("blueprints", bpName, "scripts", "provision.sh")
 	f, err := os.Create(scriptFile)
 	if err != nil {
-		return fmt.Errorf(color.RedString("failed to create provision script file: %v", err))
+		return fmt.Errorf("failed to create provision script file: %v", err)
 	}
 
 	defer f.Close()
 
 	if err := tmpl.Execute(f, bpName); err != nil {
-		return fmt.Errorf(color.RedString("failed to create provision.sh: %v", err))
+		return fmt.Errorf("failed to create provision.sh: %v", err)
 	}
 
 	return nil
