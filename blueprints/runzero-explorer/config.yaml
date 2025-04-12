@@ -9,7 +9,7 @@ blueprint:
     user: ubuntu
     # Tags for created odysseys
     tag:
-      name: cowdogmoo/runzero-explorer
+      name: bulwark/runzero_explorer
       version: latest
     # Container specific configurations
     container:
@@ -20,5 +20,5 @@ blueprint:
           os: linux
       registry:
         server: ghcr.io
-        username: cowdogmoo
+        username: l50
       workdir: /home/ubuntu
