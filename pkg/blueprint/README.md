@@ -20,7 +20,7 @@ The `blueprint` package is a part of the WarpGate.
 ### Blueprint.BuildImageAttempt(int, string)
 
 ```go
-BuildImageAttempt(int, string) []packer.ImageHash, error
+BuildImageAttempt(int, string) []packer.ImageHash, string, error
 ```
 
 BuildImageAttempt attempts to build the image for the blueprint.

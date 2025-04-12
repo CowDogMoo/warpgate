@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	bp "github.com/cowdogmoo/warpgate/pkg/blueprint"
@@ -18,20 +19,50 @@ var (
 	imageBuilderCmd = &cobra.Command{
 		Use:   "imageBuilder",
 		Short: "Build a container image using packer and a provisioning repo",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			// Validate required flags
 			blueprintName, err := cmd.Flags().GetString("blueprint")
 			if err != nil {
 				return err
 			}
+			if blueprintName == "" {
+				return fmt.Errorf("blueprint name must not be empty")
+			}
 
-			githubToken, err = cmd.Flags().GetString("github-token")
+			provisionPath, err := cmd.Flags().GetString("provisionPath")
+			if err != nil {
+				return err
+			}
+			if provisionPath == "" {
+				return fmt.Errorf("provision path must not be empty")
+			}
+
+			// Check if the provision path exists
+			if _, err := os.Stat(provisionPath); os.IsNotExist(err) {
+				return fmt.Errorf("provision path does not exist: %s", provisionPath)
+			}
+
+			// Handle GitHub token - try flag first, then environment variable
+			token, err := cmd.Flags().GetString("github-token")
 			if err != nil {
 				return err
 			}
 
-			if blueprintName == "" {
-				return fmt.Errorf("blueprint name must not be empty")
+			// If token is not provided via flag, try environment variable
+			if token == "" {
+				token = os.Getenv("GITHUB_TOKEN")
+				// Set the flag value for consistent access later
+				if token != "" {
+					cmd.Flags().Set("github-token", token)
+				}
 			}
+
+			githubToken = token
+
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			blueprintName, _ := cmd.Flags().GetString("blueprint")
 
 			// Read the specific blueprint configuration file
 			blueprintConfigFile := filepath.Join("blueprints", blueprintName, "config.yaml")
@@ -45,7 +76,7 @@ var (
 			tagVersion := viper.GetString("blueprint.packer_templates.tag.version")
 
 			if tagName == "" || tagVersion == "" {
-				return fmt.Errorf("blueprint tag name and version must not be empty")
+				return fmt.Errorf("blueprint tag name and version must not be empty in config file")
 			}
 
 			blueprint := bp.Blueprint{
@@ -70,8 +101,14 @@ var (
 				return err
 			}
 
-			if err := registry.ValidateToken(githubToken); err != nil {
-				return err
+			// Only validate token if it's provided and we're pushing to registry
+			noPush, _ := cmd.Flags().GetBool("no-push")
+			if !noPush && githubToken != "" {
+				if err := registry.ValidateToken(githubToken); err != nil {
+					return fmt.Errorf("invalid GitHub token: %w", err)
+				}
+			} else if !noPush && githubToken == "" {
+				return fmt.Errorf("GitHub token is required when pushing to registry. Provide it with -t/--github-token flag or set GITHUB_TOKEN environment variable")
 			}
 
 			return RunImageBuilder(cmd, args, blueprint)
@@ -92,7 +129,7 @@ func init() {
 
 	imageBuilderCmd.Flags().StringP(
 		"github-token", "t", "", "GitHub token to authenticate with (optional, will use GITHUB_TOKEN env var if not provided)")
-	cobra.CheckErr(viper.BindPFlag("blueprint.image_hashes.container.registry.token", imageBuilderCmd.Flags().Lookup("github-token")))
+	viper.BindPFlag("blueprint.image_hashes.container.registry.token", imageBuilderCmd.Flags().Lookup("github-token"))
 
 	imageBuilderCmd.Flags().BoolP(
 		"no-push", "", false, "Build container images locally without pushing to registry")
@@ -131,9 +168,15 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 			Username:   viper.GetString("blueprint.packer_templates.container.registry.username"),
 			Credential: githubToken,
 		}
-		if registryConfig.Server == "" || registryConfig.Username == "" || registryConfig.Credential == "" {
-			return fmt.Errorf("container registry configuration must not be empty")
+		if registryConfig.Server == "" || registryConfig.Username == "" {
+			return fmt.Errorf("container registry server and username configuration must not be empty")
 		}
+
+		// Only require credential if we're pushing
+		if registryConfig.Credential == "" && !noPush {
+			return fmt.Errorf("GitHub token is required for pushing to container registry")
+		}
+
 		dockerClient, err := docker.NewDockerClient(registryConfig)
 		if err != nil {
 			return err

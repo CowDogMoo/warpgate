@@ -27,17 +27,16 @@ and follow along.
   brew install pre-commit packer
   ```
 
-- [Install gvm](https://github.com/moovweb/gvm):
+- [Install asdf](https://asdf-vm.com/):
 
   ```bash
-  bash < <(curl -s -S -L https://raw.githubusercontent.com/moovweb/gvm/master/binscripts/gvm-installer)
-  source "${GVM_BIN}"
+  git clone https://github.com/asdf-vm/asdf.git ~/.asdf
   ```
 
-- [Install golang](https://go.dev/):
+- Use asdf to install go:
 
   ```bash
-  source .gvm
+  asdf install golang 1.24.0
   ```
 
 - [Install Mage](https://magefile.org/):
@@ -59,12 +58,6 @@ and follow along.
 ---
 
 ## Configure environment
-
-1. Setup go environment:
-
-   ```bash
-   source .gvm
-   ```
 
 1. Install pre-commit hooks:
 

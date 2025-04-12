@@ -19,6 +19,11 @@ variable "ami_region" {
   default     = "us-east-1"
 }
 
+variable "ansible_aws_ssm_bucket_name" {
+  type        = string
+  description = "Name of the S3 bucket to store ansible artifacts."
+}
+
 variable "instance_type" {
   type        = string
   description = "The type of instance to use for the initial AMI creation."
