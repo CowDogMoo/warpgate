@@ -3,7 +3,7 @@
 # Provision logic for container image creation.
 set -ex
 
-export PKR_BUILD_DIR="${1:-ansible-collection-workstation}"
+export PKR_BUILD_DIR="${1:-ansible-collection-bulwark}"
 export CLEANUP="${2:-true}"
 
 install_sudo_if_needed() {
@@ -51,7 +51,7 @@ install_dependencies() {
 run_provision_logic() {
     if [[ -f "${PKR_BUILD_DIR}/requirements.yml" ]]; then
         ansible-galaxy install -r "${PKR_BUILD_DIR}/requirements.yml"
-        ansible-galaxy collection install git+https://github.com/CowDogMoo/ansible-collection-workstation.git,main --force
+        ansible-galaxy collection install git+https://github.com/l50/ansible-collection-bulwark.git,main --force
     else
         echo "${PKR_BUILD_DIR}/requirements.yml not found."
     fi
