@@ -177,4 +177,4 @@ require (
 // that changes the module path (https://github.com/darccio/mergo#important-notes)
 replace github.com/imdario/mergo => github.com/imdario/mergo v1.0.1
 
-replace github.com/containers/image/v5 => github.com/containers/image/v5 v5.34.4-0.20250411164019-9b83c49abf09
+replace github.com/containers/image/v5 => github.com/containers/image/v5 v5.34.4-0.20250411224952-12c8495ca2fc
