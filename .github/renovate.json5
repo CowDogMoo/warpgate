@@ -9,7 +9,6 @@
     ":enablePreCommit",
     ":automergeDigest",
     ":automergeBranch",
-    "github>CowDogMoo/warpgate//.github/renovate/autoMerge.json5",
     "helpers:pinGitHubActionDigests",
   ],
   dependencyDashboardTitle: "Renovate Dashboard 🤖",
@@ -26,13 +25,30 @@
       enabled: true,
     },
     {
-      description: "Auto merge all updates if tests pass",
-      matchPackagePatterns: ["*"],
-      matchManagers: ["github-actions", "gomod"],
-      automerge: true,
-      automergeStrategy: "squash",
-      requiredStatusChecks: ["tests", "pre-commit"],
+      "description": "Auto merge GitHub Actions minor and patch updates",
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["github-tags"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "branch"
     },
+    {
+      "description": "Auto merge non-major updates for Go modules",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue",
+      "requiredStatusChecks": ["tests", "pre-commit"]
+    },
+    {
+      "description": "Auto merge Docker updates",
+      "matchManagers": ["docker-compose", "dockerfile"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue"
+    }
   ],
   lockFileMaintenance: {
     enabled: true,
