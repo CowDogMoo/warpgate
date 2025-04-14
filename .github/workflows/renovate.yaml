@@ -1,6 +1,7 @@
 ---
-name: "Renovate"
+name: Renovate
 on:
+  # checkov:skip=CKV_GHA_7: "Workflow dispatch inputs are required for manual debugging and configuration"
   workflow_dispatch:
     inputs:
       dryRun:
@@ -22,14 +23,20 @@ on:
     branches: ["main"]
     paths:
       - .github/renovate.json5
-      - .github/renovate/**.json5
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.run_number || github.ref }}
   cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.run_number || github.ref }}
 
 # Retrieve BOT_USER_ID via `curl -s "https://api.github.com/users/${BOT_USERNAME}%5Bbot%5D" | jq .id`
 env:
+  GO_VERSION: 1.24.0
+  PYTHON_VERSION: 3.12.6
   WORKFLOW_DRY_RUN: false
   WORKFLOW_LOG_LEVEL: debug
   WORKFLOW_VERSION: latest # 37.59.8
@@ -57,6 +64,26 @@ jobs:
         with:
           token: "${{ steps.app-token.outputs.token }}"
 
+      - name: Set up Python
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55 # v5.5.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install python dependencies
+        run: python3 -m pip install checkov pre-commit
+
+      - name: Set up Go
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install go module dependencies
+        run: |
+          go install mvdan.cc/sh/v3/cmd/shfmt@latest
+          go install github.com/aquasecurity/tfsec/cmd/tfsec@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install github.com/terraform-docs/terraform-docs@latest
+
       - name: Override default config from dispatch variables
         run: |
           echo "RENOVATE_DRY_RUN=${{ github.event.inputs.dryRun || env.WORKFLOW_DRY_RUN }}" >> "${GITHUB_ENV}"
@@ -79,3 +106,5 @@ jobs:
           configurationFile: "${{ env.RENOVATE_ONBOARDING_CONFIG_FILE_NAME }}"
           token: "${{ steps.app-token.outputs.token }}"
           renovate-version: "${{ github.event.inputs.version || env.WORKFLOW_VERSION }}"
+        env:
+          LOG_LEVEL: "${{ env.LOG_LEVEL }}"
