@@ -22,9 +22,41 @@
   "pre-commit": {
     "enabled": true
   },
-
-  "gomod": {
-    "enabled": true
+  packageRules: [
+    {
+      matchManagers: ["gomod"],
+      matchPackagePatterns: ["*"],
+      enabled: true,
+    },
+    {
+      "description": "Auto merge GitHub Actions minor and patch updates",
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["github-tags"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "branch"
+    },
+    {
+      "description": "Auto merge non-major updates for Go modules",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue",
+      "requiredStatusChecks": ["tests", "pre-commit"]
+    },
+    {
+      "description": "Auto merge Docker updates",
+      "matchManagers": ["docker-compose", "dockerfile"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue"
+    }
+  ],
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
   },
 
   "docker": {
