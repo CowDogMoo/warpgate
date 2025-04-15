@@ -48,7 +48,7 @@ source "amazon-ebs" "ubuntu" {
   region        = "${var.ami_region}"
   source_ami_filter {
     filters = {
-      name = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
+      name                = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
       root-device-type    = "ebs"
       virtualization-type = "hvm"
     }
