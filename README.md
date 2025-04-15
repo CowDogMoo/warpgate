@@ -164,6 +164,9 @@ Note: Warp Gate uses a **Classic Personal Access Token** (`BOT_TOKEN`)
 instead of the default `GITHUB_TOKEN`, ensuring that the workflow has the
 correct package write permissions.
 
+For troubleshooting push failures or manually pushing images, see our
+[Manual Image Pushing Guide](docs/image-pushing.md).
+
 ---
 
 ## Additional Documentation
@@ -171,3 +174,4 @@ correct package write permissions.
 - [Developer Environment Setup](docs/dev.md)
 - [Debugging](docs/debug.md)
 - [Local Github Action Testing](docs/act.md)
+- [Manual Image Pushing Guide](docs/image-pushing.md)
