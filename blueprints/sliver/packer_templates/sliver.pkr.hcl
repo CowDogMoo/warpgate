@@ -68,7 +68,7 @@ source "amazon-ebs" "ubuntu" {
 
 build {
   sources = [
-    "source.docker.amd64",
+    # "source.docker.amd64",
     "source.docker.arm64",
     # "source.amazon-ebs.ubuntu", # Currently commented out because it significantly slows
     # down the build process. Uncomment if you want to build an AMI.
