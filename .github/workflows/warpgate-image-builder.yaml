@@ -173,6 +173,7 @@ jobs:
         run: |
           git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ${{ github.workspace }}/ansible-collection-workstation
           git clone https://github.com/l50/ansible-collection-arsenal.git ${{ github.workspace }}/ansible-collection-arsenal
+          git clone https://github.com/l50/ansible-collection-bulwark.git ${{ github.workspace }}/ansible-collection-bulwark
 
       - name: Make repository name lowercase
         id: lower-repo
@@ -212,7 +213,7 @@ jobs:
             local blueprint=$1
             case $blueprint in
               "runzero-explorer")
-                echo "${{ github.workspace }}/ansible-collection-workstation"
+                echo "${{ github.workspace }}/ansible-collection-bulwark"
                 ;;
               "sliver" | "ttpforge" | "atomic-red-team" | "attack-box") # , "windows")
                 echo "${{ github.workspace }}/ansible-collection-arsenal"
