@@ -83,17 +83,23 @@ type ImageValues struct {
 //
 // **Attributes:**
 //
+// BuildOptions: Options for building the image.
 // Container: Configuration for container images.
 // ImageValues: Name and version of the image.
+// NoAMI: Flag to skip AMI creation.
+// NoContainers: Flag to skip container image creation.
 // User: User responsible for provisioning the blueprint, usually high-privilege (e.g., root or Administrator).
 // AMI: Optional AMI configuration.
 // Tag: Tag configuration for the image built by Packer.
 type PackerTemplates struct {
-	Container   Container   `mapstructure:"container,omitempty"`
-	ImageValues ImageValues `mapstructure:"image_values"`
-	User        string      `mapstructure:"user"`
-	AMI         AMI         `mapstructure:"ami,omitempty"`
-	Tag         Tag         `mapstructure:"tag"`
+	BuildOptions []string    `mapstructure:"build_options"`
+	Container    Container   `mapstructure:"container,omitempty"`
+	ImageValues  ImageValues `mapstructure:"image_values"`
+	NoAMI        bool        `mapstructure:"no_ami"`
+	NoContainers bool        `mapstructure:"no_containers"`
+	User         string      `mapstructure:"user"`
+	AMI          AMI         `mapstructure:"ami,omitempty"`
+	Tag          Tag         `mapstructure:"tag"`
 }
 
 // Tag represents the tag configuration for the image built by Packer.

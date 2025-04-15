@@ -18,7 +18,7 @@ import (
 // RunValidate: Runs the Packer validate command.
 // RunVersion: Runs the Packer version command.
 type PackerCommandRunner interface {
-	RunBuild(args []string, dir string) error
+	RunBuild(args []string, dir string) ([]ImageHash, string, error)
 	RunInit(args []string, dir string) error
 	RunValidate(args []string, dir string) error
 	RunVersion() (string, error)
@@ -37,6 +37,7 @@ type PackerCommandRunner interface {
 //
 // **Returns:**
 //
+// string: The captured command output.
 // error: An error if the command fails.
 func (p *PackerTemplates) runCommand(
 	subCmd string, args []string, dir string,
@@ -78,7 +79,7 @@ func (p *PackerTemplates) runCommand(
 //
 // **Returns:**
 //
-// map[string]string: A map of image hashes parsed from the build output.
+// []ImageHash: A slice of image hashes parsed from the build output.
 // string: The AMI ID parsed from the build output.
 // error: An error if the build command fails.
 func (p *PackerTemplates) RunBuild(args []string, dir string) ([]ImageHash, string, error) {
@@ -98,6 +99,7 @@ func (p *PackerTemplates) RunBuild(args []string, dir string) ([]ImageHash, stri
 		mu.Unlock() // Unlock the mutex after writing to the buffer
 	}
 
+	// If args start with "build", remove it
 	if len(args) > 0 && args[0] == "build" {
 		args = args[1:]
 	}
@@ -107,7 +109,17 @@ func (p *PackerTemplates) RunBuild(args []string, dir string) ([]ImageHash, stri
 		return nil, "", err
 	}
 
-	if p.Container.ImageRegistry.Server != "" {
+	// Check if this is a Docker build by analyzing the command or output
+	isDockerBuild := false
+	for _, arg := range args {
+		if strings.Contains(arg, "-only=source.docker") {
+			isDockerBuild = true
+			break
+		}
+	}
+
+	// If Docker registry is configured or it's a Docker build, parse image hashes
+	if p.Container.ImageRegistry.Server != "" || isDockerBuild {
 		imageHashes := p.ParseImageHashes(output)
 		amiID := p.ParseAMIDetails(output)
 		return imageHashes, amiID, nil
