@@ -88,7 +88,7 @@ dir: The directory to run the Packer build command in.
 
 **Returns:**
 
-map[string]string: A map of image hashes parsed from the build output.
+[]ImageHash: A slice of image hashes parsed from the build output.
 string: The AMI ID parsed from the build output.
 error: An error if the build command fails.
 
