@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.14
+# syntax=docker/dockerfile:1.15
 
 # Use the BASE_IMAGE build argument to select the appropriate base image
 ARG BASE_IMAGE_ARCH
