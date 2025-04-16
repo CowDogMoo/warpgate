@@ -108,6 +108,7 @@ require (
 	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/oklog/ulid/v2 v2.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
@@ -147,6 +148,7 @@ require (
 	github.com/vbatts/tar-split v0.12.1 // indirect
 	github.com/vbauerster/mpb/v8 v8.9.3 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	go.mongodb.org/mongo-driver v1.14.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.2.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
@@ -164,8 +166,8 @@ require (
 	golang.org/x/term v0.31.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/tools v0.32.0 // indirect
-	google.golang.org/genproto/googleapis/api 207652e42e2e // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250409194420-de1ac958c67a // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250414145226-207652e42e2e // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250414145226-207652e42e2e // indirect
 	google.golang.org/grpc v1.71.1 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
@@ -178,4 +180,4 @@ require (
 // that changes the module path (https://github.com/darccio/mergo#important-notes)
 replace github.com/imdario/mergo => github.com/imdario/mergo v1.0.1
 
-replace github.com/containers/image/v5 => github.com/containers/image/v5 4279b172c41a
+replace github.com/containers/image/v5 => github.com/containers/image/v5 v5.34.4-0.20250414103325-4279b172c41a
