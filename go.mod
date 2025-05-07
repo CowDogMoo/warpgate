@@ -149,7 +149,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.10.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.mongodb.org/mongo-driver v1.14.0 // indirect
-	go.mongodb.org/mongo-driver/v2 v2.2.0 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.2.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 // indirect
