@@ -65,7 +65,7 @@ run_provision_logic() {
         --connection=local \
         --inventory 127.0.0.1, \
         --limit 127.0.0.1 \
-        "${PKR_BUILD_DIR}/playbooks/runzero-explorer/runzero-explorer.yml"
+        "${PKR_BUILD_DIR}/playbooks/runzero_explorer/runzero_explorer.yml"
 
     # Wait for ansible to finish running
     while /usr/bin/pgrep ansible > /dev/null; do
