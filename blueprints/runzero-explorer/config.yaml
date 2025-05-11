@@ -7,6 +7,10 @@ blueprint:
       version: jammy
     # Provisioning user
     user: ubuntu
+    # AMI specific configurations
+    ami:
+      instance_type: t3.micro
+      ssh_username: ubuntu
     # Tags for created odysseys
     tag:
       name: bulwark/runzero_explorer
