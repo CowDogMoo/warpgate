@@ -13,10 +13,11 @@ concurrency:
 env:
   AWS_DEFAULT_REGION: us-west-1
   DEBIAN_FRONTEND: noninteractive
+  GO_VERSION: 1.24.0
   PRODUCT_VERSION: latest
+  PYTHON_VERSION: 3.12.6
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
   TZ: UTC
-  GO_VERSION: 1.24.0
 
 # Required for OIDC
 permissions:
@@ -60,6 +61,14 @@ jobs:
           cache-dependency-path: |
             **/go.sum
             test/go.sum
+
+      - name: Set up Python
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55 # v5.5.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ansible
+        run: python3 -m pip install ansible
 
       - name: Install yq
         run: go install github.com/mikefarah/yq/v4@latest
