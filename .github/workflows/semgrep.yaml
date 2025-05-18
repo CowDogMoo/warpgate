@@ -20,7 +20,7 @@ jobs:
     if: (github.actor != 'dependabot[bot]')
 
     steps:
-      - name: Set up git repository
+      - name: Setup git repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
