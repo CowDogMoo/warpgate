@@ -16,6 +16,7 @@ env:
   PRODUCT_VERSION: latest
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
   TZ: UTC
+  GO_VERSION: 1.24.0
 
 # Required for OIDC
 permissions:
@@ -51,10 +52,14 @@ jobs:
           echo "export XDG_DATA_HOME=/root/.local/share" >> $GITHUB_ENV
 
       - name: Setup Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5
         with:
-          go-version: "1.24"
-          cache-dependency-path: "**/*.sum"
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: |
+            **/go.sum
+            test/go.sum
 
       - name: Install yq
         run: go install github.com/mikefarah/yq/v4@latest
@@ -125,10 +130,14 @@ jobs:
           echo "export XDG_DATA_HOME=/root/.local/share" >> $GITHUB_ENV
 
       - name: Setup Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5
         with:
-          go-version: "1.24"
-          cache-dependency-path: "**/*.sum"
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: |
+            **/go.sum
+            test/go.sum
 
       - name: Restore Go Modules cache
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
