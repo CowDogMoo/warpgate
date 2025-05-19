@@ -54,10 +54,11 @@ build {
     "source.docker.arm64"
   ]
 
-  # Docker-specific pre-provisioner for ansible
+  # Pre-provisioner for ansible
   provisioner "shell" {
     only = ["docker.arm64", "docker.amd64"]
     inline = [
+      "echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections",
       "apt-get update",
       "apt-get install -y python3 python3-pip sudo"
     ]
@@ -65,8 +66,8 @@ build {
 
   provisioner "ansible" {
     only = ["docker.arm64", "docker.amd64"]
-    playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"
+    playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
     ansible_env_vars = [
       "PACKER_BUILD_NAME={{ build_name }}"
     ]
