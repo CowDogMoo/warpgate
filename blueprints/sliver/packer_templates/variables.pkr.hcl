@@ -12,9 +12,14 @@ variable "pkr_build_dir" {
   default     = "ansible-collection-arsenal"
 }
 
-variable "provision_repo_path" {
+variable "arsenal_repo_path" {
   type        = string
-  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
+  description = "Path on disk to the repo that contains the arsenal code."
+}
+
+variable "workstation_repo_path" {
+  type        = string
+  description = "Path on disk to the repo that contains the workstation code."
 }
 
 variable "provision_script_path" {
