@@ -251,7 +251,9 @@ jobs:
           timeout 2h sudo -E wg imageBuilder \
             -b "$blueprint_name" \
             -p "$provision_path" \
-            -t "${{ secrets.BOT_TOKEN }}"
+            -t "${{ secrets.BOT_TOKEN }}" \
+            --no-ami
+
         working-directory: ${{ github.workspace }}
 
       - name: Verify pushed images
