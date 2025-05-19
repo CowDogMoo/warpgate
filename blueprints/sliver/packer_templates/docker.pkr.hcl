@@ -5,8 +5,9 @@
 #
 # Description: Create a docker image provisioned with
 # https://github.com/l50/ansible-collection-arsenal/tree/main/playbooks/sliver
-#
+# Ansible playbook.
 #########################################################################################
+# Docker AMD64 source configuration
 source "docker" "amd64" {
   commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
@@ -18,6 +19,7 @@ source "docker" "amd64" {
   }
 
   changes = [
+    "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.user}",
     "WORKDIR ${var.workdir}",
   ]
@@ -25,6 +27,7 @@ source "docker" "amd64" {
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
+# Docker ARM64 source configuration
 source "docker" "arm64" {
   commit     = true
   image      = "${var.base_image}:${var.base_image_version}"
@@ -32,6 +35,7 @@ source "docker" "arm64" {
   privileged = true
 
   changes = [
+    "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.user}",
     "WORKDIR ${var.workdir}",
   ]
@@ -43,54 +47,41 @@ source "docker" "arm64" {
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
 }
 
-source "amazon-ebs" "ubuntu" {
-  ami_name      = "${var.blueprint_name}-${formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())}"
-  instance_type = "${var.instance_type}"
-  region        = "${var.ami_region}"
-  source_ami_filter {
-    filters = {
-      name                = "${var.os}/images/*${var.os}-${var.os_version}-${var.ami_arch}-server-*"
-      root-device-type    = "ebs"
-      virtualization-type = "hvm"
-    }
-    owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
-    most_recent = true
-  }
-  ssh_username = "${var.ssh_username}"
-
-   launch_block_device_mappings {
-    device_name           = "/dev/sda1"
-    volume_size           = "${var.disk_size}"
-    volume_type           = "gp2"
-    delete_on_termination = true
-  }
-}
-
 build {
+  name = "sliver-docker"
   sources = [
     "source.docker.amd64",
     "source.docker.arm64",
-    "source.amazon-ebs.ubuntu",
   ]
 
-  provisioner "file" {
-    source      = "${var.provision_repo_path}"
-    destination = "${var.pkr_build_dir}"
-  }
-
-  provisioner "file" {
-    source      = "../scripts/provision.sh"
-    destination = "${var.pkr_build_dir}/provision.sh"
-  }
-
+  # Pre-provisioner for ansible
   provisioner "shell" {
-    environment_vars = [
-      "PKR_BUILD_DIR=${var.pkr_build_dir}",
-      "DISK_SIZE=${var.disk_size}",
-    ]
+    only = ["docker.arm64", "docker.amd64"]
     inline = [
-      "chmod +x ${var.pkr_build_dir}/provision.sh",
-      "${var.pkr_build_dir}/provision.sh"
+      "echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections",
+      "apt-get update",
+      "apt-get install -y python3 python3-pip sudo"
+    ]
+  }
+
+  provisioner "ansible" {
+    only = ["docker.arm64", "docker.amd64"]
+    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
+    playbook_file  = "${var.provision_repo_path}/playbooks/sliver/sliver.yml"
+    ansible_env_vars = [
+      "PACKER_BUILD_NAME={{ build_name }}"
+    ]
+    extra_arguments = [
+      "-e", "ansible_shell_executable=${var.shell}"
+    ]
+  }
+
+  # Clean up to reduce image size
+  provisioner "shell" {
+    only = ["docker.arm64", "docker.amd64"]
+    inline = [
+      "apt-get clean",
+      "rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*"
     ]
   }
 }
