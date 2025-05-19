@@ -26,7 +26,7 @@ variable "provision_script_path" {
 variable "shell" {
   type        = string
   description = "Shell to use."
-  default     = "/bin/zsh"
+  default     = "/bin/bash"
 }
 
 ############################################
@@ -41,11 +41,13 @@ variable "ami_arch" {
 variable "ami_region" {
   type        = string
   description = "AWS region to launch the instance and create AMI."
+  default     = "us-east-1"
 }
 
 variable "ansible_aws_ssm_bucket_name" {
   type        = string
   description = "Name of the S3 bucket to store ansible artifacts."
+  default     = "dummy-bucket"
 }
 
 variable "ansible_aws_ssm_timeout" {
@@ -57,7 +59,7 @@ variable "ansible_aws_ssm_timeout" {
 variable "communicator" {
   type        = string
   description = "The communicator to use for the instance - ssh or winrm."
-  default     = "ssh"
+  default     = "none"
 }
 
 variable "disk_device_name" {
@@ -81,6 +83,7 @@ variable "iam_instance_profile" {
 variable "instance_type" {
   type        = string
   description = "The type of instance to use for the initial AMI creation."
+  default     = "t3.micro"
 }
 
 variable "os" {
@@ -124,7 +127,7 @@ variable "ssh_timeout" {
 variable "user" {
   type        = string
   description = "Default odyssey user."
-  default     = "kali"
+  default     = "root"
 }
 
 variable "user_data_file" {
@@ -139,13 +142,13 @@ variable "user_data_file" {
 variable "base_image" {
   type        = string
   description = "Base image."
-  default     = "kali"
+  default     = "kalilinux/kali-last-release"
 }
 
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
-  default     = "last-snapshot"
+  default     = "latest"
 }
 
 variable "entrypoint" {
@@ -157,5 +160,5 @@ variable "entrypoint" {
 variable "workdir" {
   type        = string
   description = "Working directory for a new container."
-  default     = ""
+  default     = "/root"
 }
