@@ -7,6 +7,8 @@ includes:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
   github:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/github/Taskfile.yaml"
+  packer:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/packer/Taskfile.yaml"
   terraform:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/terraform/Taskfile.yaml"
   renovate:
@@ -26,3 +28,25 @@ tasks:
       - task: pre-commit:update-hooks
       - task: pre-commit:clear-cache
       - task: pre-commit:run-hooks
+
+  blueprint-build:
+    desc: "Build a blueprint image from anywhere in the repo"
+    cmds:
+      - task: packer:_packer-base
+        vars:
+          COMMAND: "build"
+          BLUEPRINT: "{{.BLUEPRINT}}"
+          ONLY: '{{.ONLY | default ""}}'
+          VARS: '{{.VARS | default ""}}'
+          FORCE: '{{.FORCE | default "false"}}'
+    env:
+      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
+
+  blueprint-validate:
+    desc: "Validate a blueprint packer template from anywhere in the repo"
+    cmds:
+      - task: packer:_packer-base
+        vars:
+          COMMAND: "validate"
+          BLUEPRINT: "{{.BLUEPRINT}}"
+          VAR_FILE: '{{.VAR_FILE | default ""}}'
