@@ -29,24 +29,25 @@ tasks:
       - task: pre-commit:clear-cache
       - task: pre-commit:run-hooks
 
-  blueprint-build:
-    desc: "Build a blueprint image from anywhere in the repo"
+  template-build:
+    desc: "Build a template image from anywhere in the repo"
     cmds:
-      - task: packer:_packer-base
+      - task: packer:packer-template-build
         vars:
           COMMAND: "build"
-          BLUEPRINT: "{{.BLUEPRINT}}"
+          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
+          TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}blueprints/{{.TEMPLATE_NAME}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
           ONLY: '{{.ONLY | default ""}}'
           VARS: '{{.VARS | default ""}}'
           FORCE: '{{.FORCE | default "false"}}'
     env:
       PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
 
-  blueprint-validate:
-    desc: "Validate a blueprint packer template from anywhere in the repo"
+  template-validate:
+    desc: "Validate a template packer template from anywhere in the repo"
     cmds:
       - task: packer:_packer-base
         vars:
           COMMAND: "validate"
-          BLUEPRINT: "{{.BLUEPRINT}}"
+          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
           VAR_FILE: '{{.VAR_FILE | default ""}}'
