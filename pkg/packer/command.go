@@ -112,7 +112,7 @@ func (p *PackerTemplates) RunBuild(args []string, dir string) ([]ImageHash, stri
 	// Check if this is a Docker build by analyzing the command or output
 	isDockerBuild := false
 	for _, arg := range args {
-		if strings.Contains(arg, "-only=source.docker") {
+		if strings.Contains(arg, "-only=*docker.*") {
 			isDockerBuild = true
 			break
 		}

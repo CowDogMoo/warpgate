@@ -352,10 +352,10 @@ func (b *Blueprint) PreparePackerArgs(bucketName string, noAMI, noContainers boo
 	switch {
 	case noAMI && !noContainers:
 		// Skip AMI build, build only container sources
-		args = append(args, "-only=docker.*")
+		args = append(args, "-only=*docker.*")
 	case !noAMI && noContainers:
 		// Skip container build, build only AMI sources
-		args = append(args, "-only=amazon-ebs.*")
+		args = append(args, "-only=*amazon-ebs.*")
 	case noAMI && noContainers:
 		fmt.Println("Warning: Both container and AMI builds are disabled. No images will be built.")
 	}
