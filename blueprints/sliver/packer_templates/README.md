@@ -8,6 +8,7 @@ configuring the system.
 ```bash
 packer build \
   -only='sliver-docker.docker.*' \
-  -var "provision_repo_path=${HOME}/ansible-collection-arsenal" \
+  -var "workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation" \
+  -var "arsenal_repo_path=${HOME}/ansible-collection-arsenal" \
   -var 'blueprint_name=sliver' .
 ```
