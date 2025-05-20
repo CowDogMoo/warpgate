@@ -6,8 +6,10 @@ to set up the environment, including installing necessary packages and
 configuring the system.
 
 ```bash
-packer build \
-  -only='attack-box-docker.docker.*' \
-  -var "provision_repo_path=${HOME}/ansible-collection-arsenal" \
-  -var 'blueprint_name=attack-box' .
+export TASK_X_REMOTE_TASKFILES=1
+task -y template-build TEMPLATE_DIR=blueprints/attack-box/packer_templates \
+  TEMPLATE_NAME=attack-box \
+  ONLY='attack-box-docker.docker.*' \
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal \
+  blueprint_name=attack-box"
 ```

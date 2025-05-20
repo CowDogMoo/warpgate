@@ -6,6 +6,7 @@ to set up the environment, including installing necessary packages and
 configuring the system.
 
 ```bash
+export TASK_X_REMOTE_TASKFILES=1
 task -y template-build TEMPLATE_DIR=blueprints/runzero-explorer/packer_templates \
   TEMPLATE_NAME=runzero-explorer \
   ONLY='runzero-explorer-docker.docker.*' \
