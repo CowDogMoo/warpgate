@@ -11,18 +11,21 @@ source "amazon-ebs" "ubuntu" {
     most_recent = true
     owners      = ["099720109477"] # Canonical's owner ID for Ubuntu images
   }
+
   launch_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
     volume_type           = "gp3"
     delete_on_termination = true
   }
+
   ami_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
     volume_type           = "gp3"
     delete_on_termination = true
   }
+
   communicator   = "${var.communicator}"
   run_tags       = "${var.run_tags}"
   user_data_file = "${var.user_data_file}"
@@ -55,6 +58,7 @@ build {
       "sudo systemctl start amazon-ssm-agent",
     ]
   }
+
   provisioner "ansible" {
     only = ["amazon-ebs.ubuntu"]
     playbook_file  = "${var.provision_repo_path}/playbooks/atomic-red-team/atomic-red-team.yml"
