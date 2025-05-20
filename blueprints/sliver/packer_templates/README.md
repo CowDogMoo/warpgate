@@ -6,13 +6,10 @@ to set up the environment, including installing necessary packages and
 configuring the system.
 
 ```bash
-task -y template-build TEMPLATE_DIR=blueprints/sliver/packer_templates TEMPLATE_NAME=sliver ONLY='sliver-docker.docker.*' VARS="workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation arsenal_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=sliver"
-```
-
-```bash
-packer build \
-  -only='sliver-docker.docker.*' \
-  -var "workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation" \
-  -var "arsenal_repo_path=${HOME}/ansible-collection-arsenal" \
-  -var 'blueprint_name=sliver' .
+task -y template-build TEMPLATE_DIR=blueprints/sliver/packer_templates \
+  TEMPLATE_NAME=sliver \
+  ONLY='sliver-docker.docker.*' \
+  VARS="workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation \
+  arsenal_repo_path=${HOME}/ansible-collection-arsenal \
+  blueprint_name=sliver"
 ```
