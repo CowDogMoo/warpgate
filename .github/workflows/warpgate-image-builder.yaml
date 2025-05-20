@@ -14,10 +14,12 @@ env:
   AWS_DEFAULT_REGION: us-west-1
   DEBIAN_FRONTEND: noninteractive
   GO_VERSION: 1.24.0
-  PRODUCT_VERSION: latest
+  PACKER_VERSION: latest
   PYTHON_VERSION: 3.12.6
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
   TZ: UTC
+  TASK_X_REMOTE_TASKFILES: 1
+  TASK_VERSION: 3.38.0
 
 # Required for OIDC
 permissions:
@@ -26,73 +28,22 @@ permissions:
   packages: write
 
 jobs:
-  generate-blueprints:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential \
-                                  btrfs-progs \
-                                  fuse-overlayfs \
-                                  libgpgme-dev \
-                                  libbtrfs-dev \
-                                  pkg-config \
-                                  slirp4netns \
-                                  uidmap
-          export XDG_RUNTIME_DIR=/run/user/$(id -u)
-          export XDG_CONFIG_HOME=/root/.config
-          export XDG_DATA_HOME=/root/.local/share
-          echo "export XDG_RUNTIME_DIR=/run/user/$(id -u)" >> $GITHUB_ENV
-          echo "export XDG_CONFIG_HOME=/root/.config" >> $GITHUB_ENV
-          echo "export XDG_DATA_HOME=/root/.local/share" >> $GITHUB_ENV
-
-      - name: Setup Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
-            test/go.sum
-
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install ansible
-        run: python3 -m pip install ansible
-
-      - name: Install yq
-        run: go install github.com/mikefarah/yq/v4@latest
-
-      - name: Setup warpgate
-        run: |
-          go mod tidy
-          go build -o wg
-          sudo mv wg /usr/local/bin/wg
-
-      - name: Generate list of blueprints
-        id: set-matrix
-        run: |
-          blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$')
-          matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" --arg PWD "$PWD" 'split("\n")[:-1] | map({blueprint: ., path: ($PWD + "/blueprints/" + .)})' | jq -c .)
-          echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
-
   image-builder:
-    needs: generate-blueprints
-    name: Build container images using warpgate
+    name: Build container images using go-task
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        blueprint: ${{fromJson(needs.generate-blueprints.outputs.matrix)}}
+        blueprint:
+          - name: sliver
+            provision_repo: ansible-collection-arsenal
+          - name: atomic-red-team
+            provision_repo: ansible-collection-arsenal
+          - name: attack-box
+            provision_repo: ansible-collection-arsenal
+          - name: runzero-explorer
+            provision_repo: ansible-collection-bulwark
+          - name: ttpforge
+            provision_repo: ansible-collection-arsenal
       fail-fast: false
     steps:
       - name: Checkout
@@ -103,7 +54,7 @@ jobs:
         with:
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
           role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
-          role-session-name: WarpgateAMIBuilder
+          role-session-name: Warpgate-Image-Builder
           role-duration-seconds: 7200
 
       - name: Setup QEMU
@@ -148,37 +99,28 @@ jobs:
             **/go.sum
             test/go.sum
 
-      - name: Restore Go Modules cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        if: always()
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-            ${{ runner.os }}-go-
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55 # v5.5.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ansible
+        run: python3 -m pip install ansible
+
+      - name: Install yq
+        run: go install github.com/mikefarah/yq/v4@latest
 
       - name: Setup `packer`
         uses: hashicorp/setup-packer@main
         id: setup
         with:
-          version: ${{ env.PRODUCT_VERSION }}
-
-      - name: Setup warpgate
-        run: |
-          go mod tidy
-          go build -o wg
-          sudo mv wg /usr/local/bin/wg
-
-      - name: Clone ansible-collection repositories
-        run: |
-          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ${{ github.workspace }}/ansible-collection-workstation
-          git clone https://github.com/l50/ansible-collection-arsenal.git ${{ github.workspace }}/ansible-collection-arsenal
-          git clone https://github.com/l50/ansible-collection-bulwark.git ${{ github.workspace }}/ansible-collection-bulwark
-
-      - name: Make repository name lowercase
-        id: lower-repo
-        run: |
-          echo "repo_owner_lowercase=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          version: ${{ env.PACKER_VERSION }}
 
       - name: Free up disk space
         run: |
@@ -206,63 +148,71 @@ jobs:
             ignore_chown_errors = "true"
           EOF'
 
-      - name: Define provision path function
-        id: define-provision-path
+      - name: Clone ansible-collection repositories
         run: |
-          set_provision_path() {
-            local blueprint=$1
-            case $blueprint in
-              "runzero-explorer")
-                echo "${{ github.workspace }}/ansible-collection-bulwark"
-                ;;
-              "sliver" | "ttpforge" | "atomic-red-team" | "attack-box") # , "windows")
-                echo "${{ github.workspace }}/ansible-collection-arsenal"
-                ;;
-              "test")
-                echo "${{ matrix.blueprint.path }}/scripts/provision.sh"
-                ;;
-              *)
-                echo "Unknown blueprint: $blueprint" >&2
-                exit 1
-                ;;
-            esac
-          }
+          mkdir -p $HOME/CowDogMoo
+          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git $HOME/CowDogMoo/ansible-collection-workstation
+          git clone https://github.com/l50/ansible-collection-arsenal.git $HOME/ansible-collection-arsenal
+          git clone https://github.com/l50/ansible-collection-bulwark.git $HOME/ansible-collection-bulwark
 
-          blueprint_name="${{ matrix.blueprint.blueprint }}"
-          provision_path=$(set_provision_path $blueprint_name)
-          echo "Blueprint name: $blueprint_name"
-          echo "Provision path: $provision_path"
+      - name: Docker login
+        run: |
           echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          echo "provision_path=$provision_path" >> $GITHUB_ENV
 
-      - name: Run image builder for each blueprint
+      - name: Set specific provision paths and variables
+        id: set-vars
         run: |
-          blueprint_name="${{ matrix.blueprint.blueprint }}"
+          BLUEPRINT="${{ matrix.blueprint.name }}"
+          PROVISION_REPO="${{ matrix.blueprint.provision_repo }}"
+
+          if [[ "$BLUEPRINT" == "sliver" ]]; then
+            echo "provision_path=$HOME/ansible-collection-arsenal" >> $GITHUB_ENV
+            echo "vars=workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation arsenal_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=sliver" >> $GITHUB_ENV
+          elif [[ "$BLUEPRINT" == "runzero-explorer" ]]; then
+            echo "provision_path=$HOME/ansible-collection-bulwark" >> $GITHUB_ENV
+            echo "vars=provision_repo_path=${HOME}/ansible-collection-bulwark blueprint_name=runzero-explorer" >> $GITHUB_ENV
+          else
+            echo "provision_path=$HOME/ansible-collection-arsenal" >> $GITHUB_ENV
+            echo "vars=provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=$BLUEPRINT" >> $GITHUB_ENV
+          fi
+
+          echo "only=$BLUEPRINT-docker.docker.*" >> $GITHUB_ENV
+
+      - name: Run image builder for blueprint
+        run: |
           export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
-          provision_path=$provision_path
-          tag_name=$(yq e '.blueprint.tag.name' "${{ matrix.blueprint.path }}/config.yaml")
-          repo_owner=$(echo "$tag_name" | cut -d'/' -f1)
+          export TASK_X_REMOTE_TASKFILES=1
 
-          echo "Blueprint name: $blueprint_name"
-          echo "Provision path: $provision_path"
+          BLUEPRINT="${{ matrix.blueprint.name }}"
+          TEMPLATE_DIR="blueprints/$BLUEPRINT/packer_templates"
 
-          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          echo "Building image for blueprint: $BLUEPRINT"
+          echo "Template directory: $TEMPLATE_DIR"
+          echo "Only: ${{ env.only }}"
+          echo "Provision path: ${{ env.provision_path }}"
+          echo "Variables: ${{ env.vars }}"
 
-          timeout 2h sudo -E wg imageBuilder \
-            -b "$blueprint_name" \
-            -p "$provision_path" \
-            -t "${{ secrets.BOT_TOKEN }}" \
-            --no-ami
-
+          timeout 2h task -y template-build \
+            TEMPLATE_DIR=$TEMPLATE_DIR \
+            TEMPLATE_NAME=$BLUEPRINT \
+            ONLY="${{ env.only }}" \
+            VARS="${{ env.vars }}"
         working-directory: ${{ github.workspace }}
 
       - name: Verify pushed images
-        if: ${{ !contains(matrix.blueprint.blueprint, 'windows') }} # Skip verification for windows blueprint (not a container image)
         run: |
           echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          blueprint_name="${{ matrix.blueprint.blueprint }}"
-          tag_name=$(yq e '.blueprint.packer_templates.tag.name' "${{ matrix.blueprint.path }}/config.yaml")
-          repo_owner=$(echo "$tag_name" | cut -d'/' -f1)
-          image_name="ghcr.io/$repo_owner/$blueprint_name:latest"
+          blueprint_name="${{ matrix.blueprint.name }}"
+          tag_name=$(yq e '.blueprint.packer_templates.tag.name' "blueprints/$blueprint_name/config.yaml" || echo "undefined")
+
+          if [[ "$tag_name" == "undefined" ]]; then
+            # Fallback to the standard format if tag name is not found
+            repo_owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+            image_name="ghcr.io/$repo_owner/$blueprint_name:latest"
+          else
+            repo_owner=$(echo "$tag_name" | cut -d'/' -f1)
+            image_name="ghcr.io/$tag_name:latest"
+          fi
+
           echo "Verifying image: $image_name"
           docker pull "$image_name"
