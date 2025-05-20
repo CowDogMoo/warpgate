@@ -66,7 +66,7 @@ variable "communicator" {
 variable "disk_device_name" {
   type        = string
   description = "Disk device to use for the instance."
-  default     = "/dev/sda1"
+  default     = "/dev/xvda"
 }
 
 variable "disk_size" {
