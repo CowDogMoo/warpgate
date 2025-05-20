@@ -6,12 +6,9 @@ to set up the environment, including installing necessary packages and
 configuring the system.
 
 ```bash
-task -y template-build TEMPLATE_DIR=blueprints/atomic-red-team/packer_templates TEMPLATE_NAME=atomic-red-team ONLY='atomic-red-team-docker.docker.*' VARS="provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=atomic-red-team"
-```
-
-```bash
-packer build \
-  -only='atomic-red-team-docker.docker.*' \
-  -var "provision_repo_path=${HOME}/ansible-collection-arsenal" \
-  -var 'blueprint_name=atomic-red-team' .
+task -y template-build TEMPLATE_DIR=blueprints/atomic-red-team/packer_templates \
+  TEMPLATE_NAME=atomic-red-team \
+  ONLY='atomic-red-team-docker.docker.*' \
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal \
+  blueprint_name=atomic-red-team"
 ```
