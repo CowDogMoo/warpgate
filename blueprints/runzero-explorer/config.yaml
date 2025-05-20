@@ -7,9 +7,13 @@ blueprint:
       version: jammy
     # Provisioning user
     user: ubuntu
+    # AMI specific configurations
+    ami:
+      instance_type: t3.micro
+      ssh_username: ubuntu
     # Tags for created odysseys
     tag:
-      name: cowdogmoo/runzero-explorer
+      name: bulwark/runzero_explorer
       version: latest
     # Container specific configurations
     container:
@@ -20,5 +24,5 @@ blueprint:
           os: linux
       registry:
         server: ghcr.io
-        username: cowdogmoo
+        username: l50
       workdir: /home/ubuntu

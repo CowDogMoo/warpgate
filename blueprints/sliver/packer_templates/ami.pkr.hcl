@@ -1,55 +1,14 @@
 #########################################################################################
-# attack-box packer template
+# sliver packer template
 #
-# Author: Jayson Grace <Jayson Grace <jayson.e.grace@gmail.com>
+# Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
-# Description: Create container images and AMI provisioned with the
-# [attack-box](https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/attack-box)
-# Ansible playbook.
+# Description: Create a docker image provisioned with
+# https://github.com/l50/ansible-collection-arsenal/tree/main/playbooks/sliver
+#
 #########################################################################################
-locals {
-  timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp())
-}
-
-source "docker" "amd64" {
-  commit     = true
-  image      = "${var.base_image}:${var.base_image_version}"
-  platform   = "linux/amd64"
-  privileged = true
-
-  volumes = {
-    "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
-  }
-
-  changes = [
-    "ENTRYPOINT ${var.entrypoint}",
-    "USER ${var.container_user}",
-    "WORKDIR ${var.workdir}",
-  ]
-
-  run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
-}
-
-source "docker" "arm64" {
-  commit     = true
-  image      = "${var.base_image}:${var.base_image_version}"
-  platform   = "linux/arm64"
-  privileged = true
-
-  changes = [
-    "ENTRYPOINT ${var.entrypoint}",
-    "USER ${var.user}",
-    "WORKDIR ${var.workdir}",
-  ]
-
-  volumes = {
-    "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
-  }
-
-  run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
-}
-
-source "amazon-ebs" "kali" {
+# Amazon EBS source configuration for Ubuntu
+source "amazon-ebs" "ubuntu" {
   ami_name      = "${var.blueprint_name}-${local.timestamp}"
   instance_type = "${var.instance_type}"
   region        = "${var.ami_region}"
@@ -61,20 +20,19 @@ source "amazon-ebs" "kali" {
       virtualization-type = "hvm"
     }
     most_recent = true
-    owners      = ["679593333241"] # Offensive Security's owner ID for Kali images
+    owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
   }
 
   launch_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
-    volume_type           = "gp2"
+    volume_type           = "gp3"
     delete_on_termination = true
   }
-
-  ami_block_device_mappings {
+    ami_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
-    volume_type           = "gp2"
+    volume_type           = "gp3"
     delete_on_termination = true
   }
 
@@ -82,13 +40,11 @@ source "amazon-ebs" "kali" {
   run_tags       = "${var.run_tags}"
   user_data_file = "${var.user_data_file}"
 
-  #### SSH Configuration ####
   ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
   ssh_interface            = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
   ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
   ssh_username             = "${var.ssh_username}"
 
-  #### SSM and IP Configuration ####
   associate_public_ip_address = true
   iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
@@ -99,20 +55,31 @@ source "amazon-ebs" "kali" {
 }
 
 build {
+  name = "sliver-ami"
   sources = [
-    # "source.docker.arm64",
-    # "source.docker.amd64",
-    "source.amazon-ebs.kali",
+    "source.amazon-ebs.ubuntu",
   ]
 
+  # Pre-provisioner for ansible
+  provisioner "shell" {
+    only = ["amazon-ebs.ubuntu"]
+    inline = [
+      "echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections",
+      "apt-get update",
+      "apt-get install -y python3 python3-pip sudo",
+      "wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb",
+      "dpkg -i amazon-ssm-agent.deb",
+      "systemctl enable amazon-ssm-agent",
+      "systemctl start amazon-ssm-agent",
+    ]
+  }
+
   provisioner "ansible" {
+    only = ["amazon-ebs.ubuntu"]
     playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/attack_box/attack_box_inventory_aws_ec2.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"
-    ansible_env_vars = [
-      "AWS_DEFAULT_REGION=${var.ami_region}",
-      "PACKER_BUILD_NAME={{ build_name }}",
-    ]
+
     extra_arguments = [
       "--connection", "packer",
       "-e", "ansible_aws_ssm_bucket_name=${var.ansible_aws_ssm_bucket_name}",
@@ -121,7 +88,7 @@ build {
       "-e", "ansible_shell_executable=${var.shell}",
       "-e", "ansible_aws_ssm_timeout=${var.ansible_aws_ssm_timeout}",
       "-e", "ansible_aws_ssm_s3_addressing_style=virtual",
-      "-vvvv",
+      "-vvvv"
     ]
   }
 }

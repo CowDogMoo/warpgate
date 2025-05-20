@@ -7,8 +7,14 @@ includes:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
   github:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/github/Taskfile.yaml"
+  packer:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/packer/Taskfile.yaml"
   terraform:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/terraform/Taskfile.yaml"
+  renovate:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/renovate/Taskfile.yaml"
+  secrets:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/secrets/Taskfile.yaml"
 
 tasks:
   default:
@@ -22,3 +28,26 @@ tasks:
       - task: pre-commit:update-hooks
       - task: pre-commit:clear-cache
       - task: pre-commit:run-hooks
+
+  template-build:
+    desc: "Build a template image from anywhere in the repo"
+    cmds:
+      - task: packer:packer-template-build
+        vars:
+          COMMAND: "build"
+          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
+          TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}blueprints/{{.TEMPLATE_NAME}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
+          ONLY: '{{.ONLY | default ""}}'
+          VARS: '{{.VARS | default ""}}'
+          FORCE: '{{.FORCE | default "false"}}'
+    env:
+      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
+
+  template-validate:
+    desc: "Validate a template packer template from anywhere in the repo"
+    cmds:
+      - task: packer:_packer-base
+        vars:
+          COMMAND: "validate"
+          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
+          VAR_FILE: '{{.VAR_FILE | default ""}}'

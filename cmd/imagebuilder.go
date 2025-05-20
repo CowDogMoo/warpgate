@@ -133,6 +133,12 @@ func init() {
 
 	imageBuilderCmd.Flags().BoolP(
 		"no-push", "", false, "Build container images locally without pushing to registry")
+
+	imageBuilderCmd.Flags().BoolP(
+		"no-containers", "", false, "Skip building container images")
+
+	imageBuilderCmd.Flags().BoolP(
+		"no-ami", "", false, "Skip building AMI images")
 }
 
 // RunImageBuilder is the main function for the imageBuilder command
@@ -153,6 +159,12 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 		return fmt.Errorf("no packer templates found: %v", err)
 	}
 
+	// Get the flag values and set them in the PackerTemplates
+	noAMI, _ := cmd.Flags().GetBool("no-ami")
+	noContainers, _ := cmd.Flags().GetBool("no-containers")
+	blueprint.PackerTemplates.NoAMI = noAMI
+	blueprint.PackerTemplates.NoContainers = noContainers
+
 	imageHashes, err := blueprint.BuildPackerImages()
 	if err != nil {
 		return err
@@ -161,8 +173,8 @@ func RunImageBuilder(cmd *cobra.Command, args []string, blueprint bp.Blueprint) 
 	// Get the no-push flag value
 	noPush, _ := cmd.Flags().GetBool("no-push")
 
-	// Only process Docker images if there are actually image hashes to push
-	if !noPush && len(imageHashes) > 0 && blueprint.PackerTemplates.Container.ImageRegistry.Server != "" {
+	// Only process Docker images if there are actually image hashes to push and we didn't disable containers
+	if !noPush && len(imageHashes) > 0 && !noContainers && blueprint.PackerTemplates.Container.ImageRegistry.Server != "" {
 		registryConfig := packer.ContainerImageRegistry{
 			Server:     viper.GetString("blueprint.packer_templates.container.registry.server"),
 			Username:   viper.GetString("blueprint.packer_templates.container.registry.username"),
