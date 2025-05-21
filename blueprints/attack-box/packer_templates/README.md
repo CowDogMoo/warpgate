@@ -10,22 +10,26 @@ roles to configure the system for security testing and red teaming.
 ## Requirements
 
 - [Packer](https://www.packer.io/)
-- Access to AWS (for AMI build)
-- Docker (if building Docker images)
-- Ansible roles/playbooks (`attack_box` playbooks in your `provision_repo_path`)
-- Required Packer plugins: `docker`, `amazon`, and `ansible`
+- AWS account & credentials (for AMI builds)
+- Docker (for building Docker images)
+- Provisioning repo with Ansible roles/playbooks (see `provision_repo_path`)
+- Required Packer plugins:
+
+  - `amazon`
+  - `docker`
+  - `ansible`
 
 ---
 
 ## Variables
 
-Many build-time variables are configurable via the command line or environment
+Many parameters are configurable via the command line or environment
 (see `variables.pkr.hcl`).
 
-Key variables include:
+The most important are:
 
-- `provision_repo_path`: Path to provisioning repo (e.g., `${HOME}/ansible-collection-arsenal`)
 - `blueprint_name`: Image name prefix, e.g. `attack-box`
+- `provision_repo_path`: Path to provisioning repo (e.g., `${HOME}/ansible-collection-arsenal`)
 - `ami_region`: AWS region for the AMI (default: `us-east-1`)
 - `os_version`: Kali image version (`last-snapshot` by default)
 
@@ -33,7 +37,8 @@ Key variables include:
 
 ## Building Docker Images
 
-This will build Docker images for both `amd64` and `arm64` platforms.
+This builds Attack Box Docker images for `amd64` and `arm64`, installs
+prerequisites, and provisions using Ansible roles.
 
 **Command:**
 
@@ -45,6 +50,8 @@ task -y template-build \
   ONLY='attack-box-docker.docker.*' \
   VARS="provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=attack-box"
 ```
+
+After the build, multi-arch Attack Box Docker images will be available locally.
 
 ---
 
@@ -61,7 +68,8 @@ task -y template-build \
   VARS="provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=attack-box"
 ```
 
-_Ensure your AWS credentials and permissions are set up for AMI creation._
+> 🛡️ Ensure your AWS credentials are configured and your IAM instance profile
+> allows SSM usage and AMI creation.
 
 ---
 
@@ -80,14 +88,15 @@ task -y template-push \
 
 ## Notes
 
-- The build uses **shell and Ansible provisioners**. Ensure your
-  provisioning playbooks and requirements files for `attack_box` are available
-  at the path specified by `provision_repo_path`.
-- The **AMI build** creates and tags a Kali-based AMI in your AWS account with
-  EC2 Session Manager (SSM) support enabled.
-- For **Docker**, images for both architectures will be available locally after
-  the build.
-- Example Ansible playbook is expected at:
-  - `${provision_repo_path}/playbooks/attack_box/attack_box.yml`
+- The build uses both **shell and Ansible provisioners**. Ensure your
+  provisioning playbooks and requirement files are available at the path
+  specified by `provision_repo_path`.
+- **AMI build:**
+  - Creates and tags an AMI in your AWS account.
+  - Designed to use SSM (Session Manager) for connections where possible.
+- **Docker build:**
+  - Multi-arch (`amd64` + `arm64`) and privileged for full testbed support.
+  - Images are suitable for CI, local testing, or even deployment in a
+    kubernetes cluster.
 - Customizations such as default user, disk size, and instance type can be
   controlled via `variables.pkr.hcl` or VARS CLI argument.
