@@ -202,6 +202,8 @@ github.com/google/go-containerregistry v0.20.4-0.20250225234217-098045d5e61f h1:
 github.com/google/go-containerregistry v0.20.4-0.20250225234217-098045d5e61f/go.mod h1:UnXV0UkKqoHbzwn49vfozmwMcLMS8XLLsVKVuhv3cGc=
 github.com/google/go-containerregistry v0.20.4-0.20250517000835-a61de150b11d h1:tCDB3Q+wEipNvYqv6n/qeCCtZJcZGKJqxgW5uvE27LE=
 github.com/google/go-containerregistry v0.20.4-0.20250517000835-a61de150b11d/go.mod h1:Q14vdOOzug02bwnhMkZKD4e30pDaD9W65qzXpyzF49E=
+github.com/google/go-containerregistry v0.20.4 h1:w/Fdj3ef046SdV/GJU69cCnreaLpqbTo1X9XPyHbkd4=
+github.com/google/go-containerregistry v0.20.4/go.mod h1:Q14vdOOzug02bwnhMkZKD4e30pDaD9W65qzXpyzF49E=
 github.com/google/go-intervals v0.0.2 h1:FGrVEiUnTRKR8yE04qzXYaJMtnIYqobR5QbblK3ixcM=
 github.com/google/go-intervals v0.0.2/go.mod h1:MkaR3LNRfeKLPmqgJYs4E66z5InYjmCjbbr4TQlcT6Y=
 github.com/google/gofuzz v1.0.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=

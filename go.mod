@@ -8,7 +8,7 @@ require (
 	github.com/containers/storage v1.58.0
 	github.com/docker/docker v28.1.1+incompatible
 	github.com/fatih/color v1.18.0
-	github.com/google/go-containerregistry v0.20.4-0.20250517000835-a61de150b11d
+	github.com/google/go-containerregistry v0.20.4
 	github.com/l50/awsutils v1.1.7
 	github.com/l50/goutils/v2 v2.2.7
 	github.com/magefile/mage v1.15.0
