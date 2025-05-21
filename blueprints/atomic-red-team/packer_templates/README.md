@@ -5,6 +5,8 @@ This repository contains Packer templates to build Atomic Red Team
 EC2 images). The build will provision required packages, tools, and run Ansible
 roles to configure the system.
 
+---
+
 ## Requirements
 
 - [Packer](https://www.packer.io/)
@@ -12,6 +14,8 @@ roles to configure the system.
 - Docker (if building Docker images)
 - Ansible roles/playbooks (see `provision_repo_path`)
 - Required Packer plugins: `docker`, `amazon`, and `ansible`
+
+---
 
 ## Variables
 
@@ -23,7 +27,9 @@ The most important are:
 - `provision_repo_path`: Path to provisioning repo (e.g., `${HOME}/ansible-collection-arsenal`)
 - `blueprint_name`: Image name prefix, e.g. `atomic-red-team`
 - `ami_region`: AWS region for the AMI (default: `us-east-1`)
-- `os_version`: OS version (`jammy-22.04` by default)
+- `os_version`: OS version (`ubuntu:jammy` by default)
+
+---
 
 ## Building Docker Images
 
@@ -40,6 +46,8 @@ task -y template-build \
   VARS="provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=atomic-red-team"
 ```
 
+---
+
 ## Building AWS AMIs
 
 To build an AWS AMI (for Ubuntu, via `amazon-ebs`):
@@ -55,6 +63,8 @@ task -y template-build \
 
 _Ensure your AWS credentials and permissions are set up for AMI creation._
 
+---
+
 ## Pushing Docker Images to GitHub Container Registry
 
 ```bash
@@ -65,6 +75,8 @@ task -y template-push \
   GITHUB_TOKEN=$(gh auth token) \
   GITHUB_USER=l50
 ```
+
+---
 
 ## Notes
 

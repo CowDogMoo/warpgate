@@ -108,6 +108,18 @@ variable "base_image_version" {
   default     = "jammy"
 }
 
+variable "entrypoint" {
+  type        = string
+  description = "Optional entrypoint script."
+  default     = ""
+}
+
+variable "manifest_path" {
+  type        = string
+  description = "Path to the generated manifest file."
+  default     = "manifest.json"
+}
+
 variable "setup_systemd" {
   type        = bool
   description = "Create systemd service for container."

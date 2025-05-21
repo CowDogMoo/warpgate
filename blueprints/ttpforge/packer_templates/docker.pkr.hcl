@@ -62,4 +62,10 @@ build {
       "rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*"
     ]
   }
+
+  # Create manifest with the necessary information to tag and push the created image(s)
+  post-processor "manifest" {
+    output     = "${var.manifest_path}"
+    strip_path = true
+  }
 }
