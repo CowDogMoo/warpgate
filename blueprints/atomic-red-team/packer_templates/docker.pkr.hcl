@@ -65,9 +65,9 @@ build {
   }
 
   provisioner "ansible" {
-    only = ["docker.arm64", "docker.amd64"]
-    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
-    playbook_file  = "${var.provision_repo_path}/playbooks/atomic-red-team/atomic-red-team.yml"
+    only          = ["docker.arm64", "docker.amd64"]
+    galaxy_file   = "${var.provision_repo_path}/requirements.yml"
+    playbook_file = "${var.provision_repo_path}/playbooks/atomic-red-team/atomic-red-team.yml"
     ansible_env_vars = [
       "PACKER_BUILD_NAME={{ build_name }}"
     ]
@@ -83,5 +83,11 @@ build {
       "apt-get clean",
       "rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*"
     ]
+  }
+
+  # Create manifest with the necessary information to tag and push the created image(s)
+  post-processor "manifest" {
+    output     = "${var.manifest_path}"
+    strip_path = true
   }
 }

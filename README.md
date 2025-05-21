@@ -146,10 +146,19 @@ Use the refresh command to add package scopes to your existing token:
 gh auth refresh --scopes write:packages,read:packages,delete:packages
 ```
 
-Then set the token as an environment variable:
+Make sure it worked by checking the token status:
 
 ```bash
-export GITHUB_TOKEN=$(gh auth token)
+gh auth status --show-token
+```
+
+This command will display the scopes associated with your token. Ensure that
+`write:packages` and `delete:packages` are listed.
+
+Finally, log in to the GitHub Container Registry:
+
+```bash
+echo "$(gh auth token)" | docker login ghcr.io -u $GITHUB_USERNAME --password-stdin
 ```
 
 ### GitHub Actions Authentication

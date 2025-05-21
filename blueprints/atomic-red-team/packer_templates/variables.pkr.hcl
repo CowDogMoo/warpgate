@@ -87,6 +87,12 @@ variable "instance_type" {
   default     = "t3.medium"
 }
 
+variable "manifest_path" {
+  type        = string
+  description = "Path to the generated manifest file."
+  default     = "manifest.json"
+}
+
 variable "os" {
   type        = string
   description = "Operating system to use for the AMI."

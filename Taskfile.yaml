@@ -3,18 +3,20 @@
 version: "3"
 
 includes:
-  pre-commit:
-    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
+  docker:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/docker/Taskfile.yaml"
   github:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/github/Taskfile.yaml"
   packer:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/packer/Taskfile.yaml"
+  pre-commit:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
+  secrets:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/secrets/Taskfile.yaml"
   terraform:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/terraform/Taskfile.yaml"
   renovate:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/renovate/Taskfile.yaml"
-  secrets:
-    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/secrets/Taskfile.yaml"
 
 tasks:
   default:
@@ -31,7 +33,12 @@ tasks:
 
   template-build:
     desc: "Build a template image from anywhere in the repo"
+    env:
+      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
     cmds:
+      - task: packer:cleanup-packer-manifest
+        vars:
+          MANIFEST_PATH: '{{.MANIFEST_PATH | default "./manifest.json"}}'
       - task: packer:packer-template-build
         vars:
           COMMAND: "build"
@@ -40,8 +47,6 @@ tasks:
           ONLY: '{{.ONLY | default ""}}'
           VARS: '{{.VARS | default ""}}'
           FORCE: '{{.FORCE | default "false"}}'
-    env:
-      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
 
   template-validate:
     desc: "Validate a template packer template from anywhere in the repo"
@@ -51,3 +56,60 @@ tasks:
           COMMAND: "validate"
           TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
           VAR_FILE: '{{.VAR_FILE | default ""}}'
+
+  template-push:
+    desc: "Push multi-architecture Docker images using Packer manifest"
+    requires:
+      vars: ["NAMESPACE", "IMAGE_NAME", "GITHUB_TOKEN", "GITHUB_USER"]
+    vars:
+      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
+      NAMESPACE: "{{ .NAMESPACE }}"
+      IMAGE_NAME: "{{ .IMAGE_NAME }}"
+      TAG: '{{ .TAG | default "latest" }}'
+      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
+      GITHUB_USER: "{{ .GITHUB_USER }}"
+      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
+      ARM64_HASH:
+        sh: |
+          if [ -f "{{ .MANIFEST_PATH }}" ]; then
+            jq -r '.builds[] | select(.name == "arm64") | .artifact_id' {{ .MANIFEST_PATH }}
+          else
+            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
+            exit 1
+          fi
+      AMD64_HASH:
+        sh: |
+          if [ -f "{{ .MANIFEST_PATH }}" ]; then
+            jq -r '.builds[] | select(.name == "amd64") | .artifact_id' {{ .MANIFEST_PATH }}
+          else
+            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
+            exit 1
+          fi
+    cmds:
+      - |
+        # Check if jq is installed
+        if ! command -v jq &> /dev/null; then
+          echo "Error: jq is not installed. Please install jq to parse JSON files."
+          exit 1
+        fi
+
+        # Check if manifest file exists
+        if [ ! -f "{{ .MANIFEST_PATH }}" ]; then
+          echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}"
+          exit 1
+        fi
+
+        # Display the extracted hashes
+        echo "Extracted hashes from manifest:"
+        echo "ARM64_HASH: {{ .ARM64_HASH }}"
+        echo "AMD64_HASH: {{ .AMD64_HASH }}"
+      - task: docker:push-multi-arch
+        vars:
+          REGISTRY: "{{ .REGISTRY }}"
+          NAMESPACE: "{{ .NAMESPACE }}"
+          IMAGE_NAME: "{{ .IMAGE_NAME }}"
+          TAG: "{{ .TAG }}"
+          ARM64_HASH: "{{ .ARM64_HASH }}"
+          AMD64_HASH: "{{ .AMD64_HASH }}"
+          GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
+          GITHUB_USER: "{{ .GITHUB_USER }}"
