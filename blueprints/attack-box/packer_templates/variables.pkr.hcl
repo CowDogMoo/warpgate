@@ -157,6 +157,12 @@ variable "entrypoint" {
   default     = ""
 }
 
+variable "manifest_path" {
+  type        = string
+  description = "Path to the generated manifest file."
+  default     = "manifest.json"
+}
+
 variable "workdir" {
   type        = string
   description = "Working directory for a new container."
