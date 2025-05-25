@@ -274,6 +274,8 @@ github.com/letsencrypt/boulder v0.0.0-20250516232256-ac2dae70f223 h1:WVSpm+hj7P9
 github.com/letsencrypt/boulder v0.0.0-20250516232256-ac2dae70f223/go.mod h1:Jp/b7chssr/CdFqSTwDt4aCYreBHzvSqX05uZe5vuos=
 github.com/letsencrypt/boulder v0.0.0-20250520162421-7ea51e5f91f5 h1:VZ6hq7JMJ0VCN6Qh2bto4AjA1ViyRXBQhWG6zHFFDug=
 github.com/letsencrypt/boulder v0.0.0-20250520162421-7ea51e5f91f5/go.mod h1:Jp/b7chssr/CdFqSTwDt4aCYreBHzvSqX05uZe5vuos=
+github.com/letsencrypt/boulder v0.0.0-20250523200151-8a7c3193a98b h1:s70lQoLTjffuDe1FDMZuwC6yW6w/8Y9kRfDGrzP91AI=
+github.com/letsencrypt/boulder v0.0.0-20250523200151-8a7c3193a98b/go.mod h1:Jp/b7chssr/CdFqSTwDt4aCYreBHzvSqX05uZe5vuos=
 github.com/magefile/mage v1.15.0 h1:BvGheCMAsG3bWUDbZ8AyXXpCNwU9u5CB6sM+HNb9HYg=
 github.com/magefile/mage v1.15.0/go.mod h1:z5UZb/iS3GoOSn0JgWuiw7dxlurVYTu+/jHXqQg881A=
 github.com/mailru/easyjson v0.9.0 h1:PrnmzHw7262yW8sTBwxi1PdJA3Iw/EKBa8psRf7d9a4=
