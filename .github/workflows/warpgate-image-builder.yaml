@@ -277,9 +277,16 @@ jobs:
           PACKER_TMP_DIR: /tmp/packer-files
           PACKER_PLUGIN_PATH: /tmp/packer-plugins
         run: |
-          # Create required directories with proper permissions
-          mkdir -p /tmp/packer-files /tmp/packer-plugins
-          chmod 777 /tmp/packer-files /tmp/packer-plugins
+          # Create required directories with proper permissions if they don't exist
+          if [ ! -d "/tmp/packer-files" ]; then
+            sudo mkdir -p /tmp/packer-files
+            sudo chmod 777 /tmp/packer-files
+          fi
+
+          if [ ! -d "/tmp/packer-plugins" ]; then
+            sudo mkdir -p /tmp/packer-plugins
+            sudo chmod 777 /tmp/packer-plugins
+          fi
 
           BLUEPRINT="${{ matrix.blueprint.name }}"
           TEMPLATE_DIR="blueprints/$BLUEPRINT/packer_templates"
