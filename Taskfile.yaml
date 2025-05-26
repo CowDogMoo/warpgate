@@ -95,7 +95,6 @@ tasks:
         vars:
           TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
           TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}blueprints/{{.TEMPLATE_NAME}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
-          TEMPLATE: '{{.TEMPLATE | default ""}}'
           VARS: '{{.VARS | default ""}}'
 
   template-validate:
