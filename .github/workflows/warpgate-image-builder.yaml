@@ -13,6 +13,10 @@ concurrency:
 env:
   DEBIAN_FRONTEND: noninteractive
   GO_VERSION: 1.24.0
+  PACKER_LOG: 1
+  PACKER_LOG_PATH: /tmp/packer.log
+  PACKER_PLUGIN_PATH: /tmp/packer-plugins
+  PACKER_TMP_DIR: /tmp/packer-files
   PACKER_VERSION: latest
   PYTHON_VERSION: 3.12.6
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
@@ -68,9 +72,8 @@ jobs:
       - name: Configure Docker for Packer builds
         run: |
           # Create a temp directory that Docker can access
-          sudo mkdir -p /tmp/packer-files
-          sudo chmod 777 /tmp/packer-files
-          echo "PACKER_TMP_DIR=/tmp/packer-files" >> $GITHUB_ENV
+          sudo mkdir -p ${{ env.PACKER_TMP_DIR }}
+          sudo chmod 777 ${{ env.PACKER_TMP_DIR }}
 
           # Configure Docker when running inside act
           if [ "${{ github.actor }}" == "nektos/act" ]; then
@@ -94,7 +97,7 @@ jobs:
                   "options": ["rbind"]
                 },
                 "/root/.config/packer": {
-                  "source": "/tmp/packer-files",
+                  "source": "${{ env.PACKER_TMP_DIR }}",
                   "destination": "/root/.config/packer",
                   "options": ["rbind"]
                 }
@@ -116,14 +119,9 @@ jobs:
             docker info
 
             # Set Packer environment variables
-            echo "PACKER_PLUGIN_PATH=/tmp/packer-plugins" >> $GITHUB_ENV
-            mkdir -p /tmp/packer-plugins
-            chmod 777 /tmp/packer-plugins
+            mkdir -p ${{ env.PACKER_PLUGIN_PATH }}
+            chmod 777 ${{ env.PACKER_PLUGIN_PATH }}
           fi
-
-          # Add Packer environment variables
-          echo "PACKER_LOG=1" >> $GITHUB_ENV
-          echo "PACKER_LOG_PATH=/tmp/packer.log" >> $GITHUB_ENV
 
       - name: Cache Docker layers
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
@@ -273,19 +271,16 @@ jobs:
             ONLY="${BLUEPRINT}-docker.docker.*"
 
       - name: Build image
-        env:
-          PACKER_TMP_DIR: /tmp/packer-files
-          PACKER_PLUGIN_PATH: /tmp/packer-plugins
         run: |
           # Create required directories with proper permissions if they don't exist
-          if [ ! -d "/tmp/packer-files" ]; then
-            sudo mkdir -p /tmp/packer-files
-            sudo chmod 777 /tmp/packer-files
+          if [ ! -d "${{ env.PACKER_TMP_DIR }}" ]; then
+            sudo mkdir -p ${{ env.PACKER_TMP_DIR }}
+            sudo chmod 777 ${{ env.PACKER_TMP_DIR }}
           fi
 
-          if [ ! -d "/tmp/packer-plugins" ]; then
-            sudo mkdir -p /tmp/packer-plugins
-            sudo chmod 777 /tmp/packer-plugins
+          if [ ! -d "${{ env.PACKER_PLUGIN_PATH }}" ]; then
+            sudo mkdir -p ${{ env.PACKER_PLUGIN_PATH }}
+            sudo chmod 777 ${{ env.PACKER_PLUGIN_PATH }}
           fi
 
           BLUEPRINT="${{ matrix.blueprint.name }}"
