@@ -310,21 +310,11 @@ jobs:
 
       - name: Push image
         run: |
-          # For act local testing, pass the token directly
-          if [ "${{ github.actor }}" == "nektos/act" ]; then
-            task -y template-push \
-              NAMESPACE=${{ matrix.blueprint.namespace }} \
-              IMAGE_NAME=${{ matrix.blueprint.name }} \
-              GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-              GITHUB_USER="${{ github.actor }}"
-          else
-            # For GitHub Actions, use gh auth token as normal
-            task -y template-push \
-              NAMESPACE=${{ matrix.blueprint.namespace }} \
-              IMAGE_NAME=${{ matrix.blueprint.name }} \
-              GITHUB_TOKEN=$(gh auth token) \
-              GITHUB_USER=${{ github.actor }}
-          fi
+          task -y template-push \
+            NAMESPACE=${{ matrix.blueprint.namespace }} \
+            IMAGE_NAME=${{ matrix.blueprint.name }} \
+            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            GITHUB_USER=${{ github.actor }}
 
       - name: Verify pushed image
         run: |
