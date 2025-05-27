@@ -60,8 +60,19 @@ jobs:
           curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
           sudo apt-get install -y nodejs
 
-      - name: Checkout
+      - name: Generate Token
+        if: ${{ !env.ACT }}
+        uses: actions/create-github-app-token@dff4b11d10ecc84d937fdd0653d8343a88c5b9c4
+        id: app-token
+        with:
+          app-id: "${{ secrets.BOT_APP_ID }}"
+          private-key: "${{ secrets.BOT_APP_PRIVATE_KEY }}"
+
+      - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          token: "${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}"
+          submodules: recursive
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
