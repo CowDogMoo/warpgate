@@ -251,10 +251,11 @@ jobs:
           sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin v${{ env.TASK_VERSION }}
           task --version
 
-      - name: Initialize packer template
+      - name: Initialize image template
         run: |
-          cd packer-templates/${{ matrix.template.name }}
-          packer init .
+          task -y template-init \
+            TEMPLATE_NAME="${{ matrix.template.name }}" \
+            ONLY="${{ matrix.blueprint.name }}-docker.docker.*"
 
       - name: Build image for ${{ matrix.architecture.arch }}
         run: |
@@ -270,12 +271,10 @@ jobs:
           fi
 
           # Build only for the specific architecture
-          cd packer-templates/${{ matrix.template.name }}
-          timeout 2h packer build \
-            -only="${{ matrix.template.name }}-docker.docker.${{ matrix.architecture.arch }}" \
-            -var-file="variables.pkr.hcl" \
-            ${{ matrix.template.vars }} \
-            .
+          timeout 2h task -y template-build \
+            TEMPLATE_NAME="${{ matrix.template.name }}" \
+            ONLY="${{ matrix.template.name }}-docker.docker.${{ matrix.architecture.arch }}" \
+            VARS="${{ matrix.template.vars }}"
 
       # Push the architecture-specific image by digest
       - name: Push ${{ matrix.architecture.arch }} image by digest
