@@ -66,7 +66,7 @@ jobs:
         id: app-token
         with:
           app-id: "${{ secrets.BOT_APP_ID }}"
-          owner: cowdogmoo
+          owner: "${{ github.repository_owner }}"
           private-key: "${{ secrets.BOT_APP_PRIVATE_KEY }}"
 
       - name: Checkout repository
@@ -321,11 +321,20 @@ jobs:
 
       - name: Push image
         run: |
+          # Set authentication based on namespace
+          if [ "${{ matrix.blueprint.namespace }}" = "cowdogmoo" ]; then
+            GITHUB_TOKEN="${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}"
+            GITHUB_USER="${{ env.ACT && github.actor || format('{0}[bot]', secrets.BOT_USERNAME) }}"
+          else
+            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            GITHUB_USER="${{ github.actor }}"
+          fi
+
           task -y template-push \
             NAMESPACE=${{ matrix.blueprint.namespace }} \
             IMAGE_NAME=${{ matrix.blueprint.name }} \
-            GITHUB_TOKEN="${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}" \
-            GITHUB_USER="${{ env.ACT && github.actor || format('{0}[bot]', secrets.BOT_USERNAME) }}"
+            GITHUB_TOKEN="${GITHUB_TOKEN}" \
+            GITHUB_USER="${GITHUB_USER}"
 
       - name: Verify pushed image
         run: |
