@@ -76,7 +76,7 @@ build {
   }
 
   provisioner "ansible" {
-    only = ["amazon-ebs.kali"]
+    only           = ["amazon-ebs.kali"]
     playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/attack_box/attack_box_inventory_aws_ec2.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"

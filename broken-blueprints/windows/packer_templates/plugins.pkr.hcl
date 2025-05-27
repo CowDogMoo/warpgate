@@ -6,7 +6,7 @@ packer {
       version = "~> 1"
     }
     ansible = {
-      source = "github.com/hashicorp/ansible"
+      source  = "github.com/hashicorp/ansible"
       version = "~> 1"
     }
   }

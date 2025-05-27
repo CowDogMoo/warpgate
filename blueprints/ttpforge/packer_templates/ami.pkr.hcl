@@ -26,13 +26,13 @@ source "amazon-ebs" "ubuntu" {
     delete_on_termination = true
   }
 
-  communicator   = "${var.communicator}"
-  run_tags       = "${var.run_tags}"
-  user_data_file = "${var.user_data_file}"
-  ssh_file_transfer_method = "${var.communicator == "ssh" ? "sftp" : null}"
-  ssh_interface            = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
-  ssh_timeout              = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
-  ssh_username             = "${var.ssh_username}"
+  communicator                = "${var.communicator}"
+  run_tags                    = "${var.run_tags}"
+  user_data_file              = "${var.user_data_file}"
+  ssh_file_transfer_method    = "${var.communicator == "ssh" ? "sftp" : null}"
+  ssh_interface               = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? "session_manager" : "public_ip"}"
+  ssh_timeout                 = "${var.communicator == "ssh" ? var.ssh_timeout : null}"
+  ssh_username                = "${var.ssh_username}"
   associate_public_ip_address = true
   iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
   tags = {
@@ -61,7 +61,7 @@ build {
   }
 
   provisioner "ansible" {
-    only = ["amazon-ebs.ubuntu"]
+    only           = ["amazon-ebs.ubuntu"]
     playbook_file  = "${var.provision_repo_path}/playbooks/ttpforge/ttpforge.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/ttpforge/ttpforge_inventory_aws_ec2.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"

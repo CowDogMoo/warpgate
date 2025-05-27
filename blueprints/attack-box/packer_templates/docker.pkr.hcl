@@ -65,9 +65,9 @@ build {
   }
 
   provisioner "ansible" {
-    only = ["docker.arm64", "docker.amd64"]
-    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
-    playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
+    only          = ["docker.arm64", "docker.amd64"]
+    galaxy_file   = "${var.provision_repo_path}/requirements.yml"
+    playbook_file = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
     ansible_env_vars = [
       "PACKER_BUILD_NAME={{ build_name }}"
     ]

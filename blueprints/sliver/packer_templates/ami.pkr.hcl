@@ -29,7 +29,7 @@ source "amazon-ebs" "ubuntu" {
     volume_type           = "gp3"
     delete_on_termination = true
   }
-    ami_block_device_mappings {
+  ami_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
     volume_type           = "gp3"
@@ -75,7 +75,7 @@ build {
   }
 
   provisioner "ansible" {
-    only = ["amazon-ebs.ubuntu"]
+    only           = ["amazon-ebs.ubuntu"]
     playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/attack_box/attack_box_inventory_aws_ec2.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"

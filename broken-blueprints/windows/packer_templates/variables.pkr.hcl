@@ -14,7 +14,7 @@ variable "provision_repo_path" {
 variable "provision_script_path" {
   type        = string
   description = "Path on disk to the provisioning script."
-  default = "../scripts/provision.ps1"
+  default     = "../scripts/provision.ps1"
 }
 
 variable "shell" {
@@ -51,13 +51,13 @@ variable "ansible_aws_ssm_timeout" {
 variable "base_image" {
   type        = string
   description = "Base image."
-  default    = "Windows_Server"
+  default     = "Windows_Server"
 }
 
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
-  default   = "2022-English-Full-Base"
+  default     = "2022-English-Full-Base"
 }
 
 variable "communicator" {
@@ -98,13 +98,13 @@ variable "os" {
 variable "os_version" {
   type        = string
   description = "OS version to use for the AMI."
-  default   = "2022-English-Full-Base"
+  default     = "2022-English-Full-Base"
 }
 
 variable "run_tags" {
   type        = map(string)
   description = "Tags to apply to the instance."
-  default     = {
+  default = {
     Name = "packer-windows"
   }
 }

@@ -45,9 +45,9 @@ build {
   }
 
   provisioner "ansible" {
-    only = ["docker.arm64", "docker.amd64"]
-    galaxy_file    = "${var.provision_repo_path}/requirements.yml"
-    playbook_file  = "${var.provision_repo_path}/playbooks/runzero_explorer/runzero_explorer.yml"
+    only          = ["docker.arm64", "docker.amd64"]
+    galaxy_file   = "${var.provision_repo_path}/requirements.yml"
+    playbook_file = "${var.provision_repo_path}/playbooks/runzero_explorer/runzero_explorer.yml"
     ansible_env_vars = [
       "PACKER_BUILD_NAME={{ build_name }}",
       "RUNZERO_DOWNLOAD_TOKEN=${var.runzero_download_token}"
