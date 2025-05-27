@@ -1,6 +1,0 @@
----
-log:
-  format: json
-  level: debug
-  path: $HOME/.warp/warpgate.log
-  to_file: true
