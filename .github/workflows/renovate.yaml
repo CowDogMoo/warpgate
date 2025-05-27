@@ -78,11 +78,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Install go module dependencies
-        run: |
-          go install mvdan.cc/sh/v3/cmd/shfmt@latest
-          go install github.com/aquasecurity/tfsec/cmd/tfsec@latest
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-          go install github.com/terraform-docs/terraform-docs@latest
+        run: go install mvdan.cc/sh/v3/cmd/shfmt@latest
 
       - name: Override default config from dispatch variables
         run: |

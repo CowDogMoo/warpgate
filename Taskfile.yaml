@@ -77,13 +77,14 @@ tasks:
       - task: packer:cleanup-packer-manifest
         vars:
           MANIFEST_PATH: '{{.MANIFEST_PATH | default "./manifest.json"}}'
+
       - task: packer:packer-template-build
         vars:
           COMMAND: "build"
           TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
-          TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}blueprints/{{.TEMPLATE_NAME}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
-          ONLY: '{{.ONLY | default ""}}'
-          VARS: '{{.VARS | default ""}}'
+          TEMPLATE_DIR: "{{ if .TEMPLATE_DIR }}{{ .TEMPLATE_DIR }}{{ else }}packer-templates/{{ .TEMPLATE_NAME }}{{ end }}"
+          ONLY: '{{.ONLY   | default ""}}'
+          VARS: '{{.VARS   | default ""}}'
           FORCE: '{{.FORCE | default "false"}}'
 
   template-init:
@@ -94,7 +95,7 @@ tasks:
       - task: packer:packer-init
         vars:
           TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
-          TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}blueprints/{{.TEMPLATE_NAME}}/packer_templates{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
+          TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}packer-templates/{{.TEMPLATE_NAME}}{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
           VARS: '{{.VARS | default ""}}'
 
   template-validate:

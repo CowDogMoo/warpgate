@@ -35,22 +35,22 @@ jobs:
     name: Build container images
     strategy:
       matrix:
-        blueprint:
+        template:
           - name: sliver
             namespace: l50
-            vars: "arsenal_repo_path=${HOME}/ansible-collection-arsenal workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation blueprint_name=sliver"
+            vars: "arsenal_repo_path=${HOME}/ansible-collection-arsenal workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation template_name=sliver"
           - name: atomic-red-team
             namespace: l50
-            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=atomic-red-team"
+            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=atomic-red-team"
           - name: attack-box
             namespace: l50
-            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=attack-box"
+            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=attack-box"
           - name: runzero-explorer
             namespace: cowdogmoo
-            vars: "provision_repo_path=${HOME}/ansible-collection-bulwark blueprint_name=runzero-explorer"
+            vars: "provision_repo_path=${HOME}/ansible-collection-bulwark template_name=runzero-explorer"
           - name: ttpforge
             namespace: l50
-            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=ttpforge"
+            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=ttpforge"
         architecture:
           - arch: amd64
             runner: ubuntu-latest
@@ -251,11 +251,10 @@ jobs:
           sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin v${{ env.TASK_VERSION }}
           task --version
 
-      - name: Initialize image template
+      - name: Initialize packer template
         run: |
-          task -y template-init \
-            TEMPLATE_NAME="${{ matrix.blueprint.name }}" \
-            ONLY="${{ matrix.blueprint.name }}-docker.docker.*"
+          cd packer-templates/${{ matrix.template.name }}
+          packer init .
 
       - name: Build image for ${{ matrix.architecture.arch }}
         run: |
@@ -271,18 +270,20 @@ jobs:
           fi
 
           # Build only for the specific architecture
-          timeout 2h task -y template-build \
-            TEMPLATE_NAME="${{ matrix.blueprint.name }}" \
-            ONLY="${{ matrix.blueprint.name }}-docker.docker.${{ matrix.architecture.arch }}" \
-            VARS="${{ matrix.blueprint.vars }}"
+          cd packer-templates/${{ matrix.template.name }}
+          timeout 2h packer build \
+            -only="${{ matrix.template.name }}-docker.docker.${{ matrix.architecture.arch }}" \
+            -var-file="variables.pkr.hcl" \
+            ${{ matrix.template.vars }} \
+            .
 
       # Push the architecture-specific image by digest
       - name: Push ${{ matrix.architecture.arch }} image by digest
         id: push
         run: |
           task -y template-push-digest \
-            NAMESPACE="${{ matrix.blueprint.namespace }}" \
-            IMAGE_NAME="${{ matrix.blueprint.name }}" \
+            NAMESPACE="${{ matrix.template.namespace }}" \
+            IMAGE_NAME="${{ matrix.template.name }}" \
             ARCH="${{ matrix.architecture.arch }}" \
             GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
             GITHUB_USER="l50"
@@ -291,9 +292,9 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ matrix.blueprint.name }}-${{ matrix.architecture.arch }}
+          name: digests-${{ matrix.template.name }}-${{ matrix.architecture.arch }}
           path: |
-            digest-${{ matrix.blueprint.name }}-${{ matrix.architecture.arch }}.txt
+            digest-${{ matrix.template.name }}-${{ matrix.architecture.arch }}.txt
           retention-days: 1
 
   # Merge the multi-arch manifests
@@ -303,7 +304,7 @@ jobs:
     needs: image-builder
     strategy:
       matrix:
-        blueprint:
+        template:
           - name: sliver
             namespace: l50
           - name: atomic-red-team
@@ -322,7 +323,7 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
-          pattern: digests-${{ matrix.blueprint.name }}-*
+          pattern: digests-${{ matrix.template.name }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
@@ -343,12 +344,12 @@ jobs:
       - name: Create multi-arch manifest
         run: |
           task -y template-create-manifest \
-            NAMESPACE="${{ matrix.blueprint.namespace }}" \
-            IMAGE_NAME="${{ matrix.blueprint.name }}" \
+            NAMESPACE="${{ matrix.template.namespace }}" \
+            IMAGE_NAME="${{ matrix.template.name }}" \
             GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
             GITHUB_USER="l50"
 
       - name: Verify multi-arch image
         run: |
-          echo "Inspecting manifest for ghcr.io/${{ matrix.blueprint.namespace }}/${{ matrix.blueprint.name }}:latest"
-          docker buildx imagetools inspect "ghcr.io/${{ matrix.blueprint.namespace }}/${{ matrix.blueprint.name }}:latest"
+          echo "Inspecting manifest for ghcr.io/${{ matrix.template.namespace }}/${{ matrix.template.name }}:latest"
+          docker buildx imagetools inspect "ghcr.io/${{ matrix.template.namespace }}/${{ matrix.template.name }}:latest"
