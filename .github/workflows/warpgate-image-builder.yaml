@@ -46,9 +46,9 @@ jobs:
           - name: attack-box
             namespace: l50
             vars: "provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=attack-box"
-          - name: runzero-explorer
-            namespace: cowdogmoo
-            vars: "provision_repo_path=${HOME}/ansible-collection-bulwark blueprint_name=runzero-explorer"
+          # - name: runzero-explorer
+          #   namespace: cowdogmoo
+          #   vars: "provision_repo_path=${HOME}/ansible-collection-bulwark blueprint_name=runzero-explorer"
           - name: ttpforge
             namespace: l50
             vars: "provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=ttpforge"
@@ -60,19 +60,8 @@ jobs:
           curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
           sudo apt-get install -y nodejs
 
-      - name: Generate Token
-        if: ${{ !env.ACT }}
-        uses: actions/create-github-app-token@dff4b11d10ecc84d937fdd0653d8343a88c5b9c4
-        id: app-token
-        with:
-          app-id: "${{ secrets.BOT_APP_ID }}"
-          owner: "${{ github.repository_owner }}"
-          private-key: "${{ secrets.BOT_APP_PRIVATE_KEY }}"
-
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          token: "${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}"
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
@@ -258,7 +247,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ env.ACT && github.actor || format('{0}[bot]', secrets.BOT_USERNAME) }}
-          password: ${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup go-task
         uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
@@ -321,20 +310,11 @@ jobs:
 
       - name: Push image
         run: |
-          # Set authentication based on namespace
-          if [ "${{ matrix.blueprint.namespace }}" = "cowdogmoo" ]; then
-            GITHUB_TOKEN="${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}"
-            GITHUB_USER="${{ env.ACT && github.actor || format('{0}[bot]', secrets.BOT_USERNAME) }}"
-          else
-            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-            GITHUB_USER="${{ github.actor }}"
-          fi
-
           task -y template-push \
             NAMESPACE=${{ matrix.blueprint.namespace }} \
             IMAGE_NAME=${{ matrix.blueprint.name }} \
-            GITHUB_TOKEN="${GITHUB_TOKEN}" \
-            GITHUB_USER="${GITHUB_USER}"
+            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            GITHUB_USER="${{ github.actor }}"
 
       - name: Verify pushed image
         run: |
