@@ -1,9 +1,9 @@
 #######################################################
 #                  Warpgate variables                 #
 #######################################################
-variable "blueprint_name" {
+variable "template_name" {
   type        = string
-  description = "Name of the blueprint."
+  description = "Name of the packer template."
 }
 
 variable "pkr_build_dir" {
@@ -12,9 +12,14 @@ variable "pkr_build_dir" {
   default     = "ansible-collection-arsenal"
 }
 
-variable "provision_repo_path" {
+variable "arsenal_repo_path" {
   type        = string
-  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
+  description = "Path on disk to the repo that contains the arsenal code."
+}
+
+variable "workstation_repo_path" {
+  type        = string
+  description = "Path on disk to the repo that contains the workstation code."
 }
 
 variable "provision_script_path" {
@@ -89,20 +94,20 @@ variable "instance_type" {
 variable "os" {
   type        = string
   description = "Operating system to use for the AMI."
-  default     = "kali"
+  default     = "ubuntu"
 }
 
 variable "os_version" {
   type        = string
   description = "OS version to use for the AMI."
-  default     = "last-snapshot"
+  default     = "jammy-22.04"
 }
 
 variable "run_tags" {
   type        = map(string)
   description = "Tags to apply to the instance."
   default = {
-    Name = "packer-attack-box"
+    Name = "packer-sliver"
   }
 }
 
@@ -115,7 +120,7 @@ variable "ssh_interface" {
 variable "ssh_username" {
   type        = string
   description = "The SSH username for the AMI."
-  default     = "kali"
+  default     = "ubuntu"
 }
 
 variable "ssh_timeout" {
@@ -142,7 +147,7 @@ variable "user_data_file" {
 variable "base_image" {
   type        = string
   description = "Base image."
-  default     = "kalilinux/kali-last-release"
+  default     = "ubuntu"
 }
 
 variable "base_image_version" {

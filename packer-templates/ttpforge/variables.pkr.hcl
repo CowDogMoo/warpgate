@@ -1,39 +1,3 @@
-#######################################################
-#                  Warpgate variables                 #
-#######################################################
-variable "blueprint_name" {
-  type        = string
-  description = "Name of the blueprint."
-}
-
-variable "pkr_build_dir" {
-  type        = string
-  description = "Directory that packer will execute the transferred provisioning logic from within the build environment."
-  default     = "ansible-collection-arsenal"
-}
-
-variable "arsenal_repo_path" {
-  type        = string
-  description = "Path on disk to the repo that contains the arsenal code."
-}
-
-variable "workstation_repo_path" {
-  type        = string
-  description = "Path on disk to the repo that contains the workstation code."
-}
-
-variable "provision_script_path" {
-  type        = string
-  description = "Path on disk to the provisioning script."
-  default     = "../scripts/provision.sh"
-}
-
-variable "shell" {
-  type        = string
-  description = "Shell to use."
-  default     = "/bin/bash"
-}
-
 ############################################
 #              AWS variables               #
 ############################################
@@ -52,7 +16,7 @@ variable "ami_region" {
 variable "ansible_aws_ssm_bucket_name" {
   type        = string
   description = "Name of the S3 bucket to store ansible artifacts."
-  default     = "dummy-bucket"
+  default     = "ttpforge-ansible-artifacts"
 }
 
 variable "ansible_aws_ssm_timeout" {
@@ -64,13 +28,13 @@ variable "ansible_aws_ssm_timeout" {
 variable "communicator" {
   type        = string
   description = "The communicator to use for the instance - ssh or winrm."
-  default     = "none"
+  default     = "ssh"
 }
 
 variable "disk_device_name" {
   type        = string
   description = "Disk device to use for the instance."
-  default     = "/dev/xvda"
+  default     = "/dev/sda1"
 }
 
 variable "disk_size" {
@@ -88,26 +52,14 @@ variable "iam_instance_profile" {
 variable "instance_type" {
   type        = string
   description = "The type of instance to use for the initial AMI creation."
-  default     = "t3.micro"
-}
-
-variable "os" {
-  type        = string
-  description = "Operating system to use for the AMI."
-  default     = "ubuntu"
-}
-
-variable "os_version" {
-  type        = string
-  description = "OS version to use for the AMI."
-  default     = "jammy-22.04"
+  default     = "t3.medium"
 }
 
 variable "run_tags" {
   type        = map(string)
   description = "Tags to apply to the instance."
   default = {
-    Name = "packer-sliver"
+    Name = "packer-ttpforge"
   }
 }
 
@@ -129,12 +81,6 @@ variable "ssh_timeout" {
   default     = "20m"
 }
 
-variable "user" {
-  type        = string
-  description = "Default odyssey user."
-  default     = "root"
-}
-
 variable "user_data_file" {
   type        = string
   description = "Path to the user data file for instance initialization."
@@ -153,13 +99,7 @@ variable "base_image" {
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
-  default     = "latest"
-}
-
-variable "entrypoint" {
-  type        = string
-  description = "Optional entrypoint script."
-  default     = ""
+  default     = "jammy"
 }
 
 variable "manifest_path" {
@@ -171,5 +111,55 @@ variable "manifest_path" {
 variable "workdir" {
   type        = string
   description = "Working directory for a new container."
-  default     = "/root"
+  default     = "/root/ttpforge"
+}
+
+############################################
+#           Global variables               #
+############################################
+variable "template_name" {
+  type        = string
+  description = "Name of the packer template."
+  default     = "ttpforge"
+}
+
+variable "pkr_build_dir" {
+  type        = string
+  description = "Directory that packer will execute the transferred provisioning logic from within the build environment."
+  default     = "ansible-collection-arsenal"
+}
+
+variable "provision_repo_path" {
+  type        = string
+  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
+}
+
+variable "provision_script_path" {
+  type        = string
+  description = "Path on disk to the provisioning script."
+  default     = "../scripts/provision.sh"
+}
+
+variable "shell" {
+  type        = string
+  description = "Shell to use."
+  default     = "/bin/bash"
+}
+
+variable "os" {
+  type        = string
+  description = "Operating system to use for the AMI."
+  default     = "ubuntu"
+}
+
+variable "os_version" {
+  type        = string
+  description = "OS version to use for the AMI."
+  default     = "jammy-22.04"
+}
+
+variable "user" {
+  type        = string
+  description = "Default user for the packer template."
+  default     = "root"
 }

@@ -1,15 +1,15 @@
 #########################################################################################
-# attack-box packer template
+# sliver packer template
 #
 # Author: Jayson Grace <jayson.e.grace@gmail.com>
 #
-# Description: Create container images and AMI provisioned with the
-# [attack-box](https://github.com/CowDogMoo/ansible-collection-workstation/tree/main/playbooks/attack-box)
-# Ansible playbook.
+# Description: Create a docker image provisioned with
+# https://github.com/l50/ansible-collection-arsenal/tree/main/playbooks/sliver
+#
 #########################################################################################
-# Amazon EBS source configuration for Kali
-source "amazon-ebs" "kali" {
-  ami_name      = "${var.blueprint_name}-${local.timestamp}"
+# Amazon EBS source configuration for Ubuntu
+source "amazon-ebs" "ubuntu" {
+  ami_name      = "${var.template_name}-${local.timestamp}"
   instance_type = "${var.instance_type}"
   region        = "${var.ami_region}"
 
@@ -20,7 +20,7 @@ source "amazon-ebs" "kali" {
       virtualization-type = "hvm"
     }
     most_recent = true
-    owners      = ["679593333241"] # Offensive Security's owner ID for Kali images
+    owners      = ["099720109477"] // Canonical's owner ID for Ubuntu images
   }
 
   launch_block_device_mappings {
@@ -29,7 +29,6 @@ source "amazon-ebs" "kali" {
     volume_type           = "gp3"
     delete_on_termination = true
   }
-
   ami_block_device_mappings {
     device_name           = "${var.disk_device_name}"
     volume_size           = "${var.disk_size}"
@@ -50,20 +49,20 @@ source "amazon-ebs" "kali" {
   iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
   tags = {
-    Name      = "${var.blueprint_name}-${local.timestamp}"
+    Name      = "${var.template_name}-${local.timestamp}"
     BuildTime = "${local.timestamp}"
   }
 }
 
 build {
-  name = "attack-box-ami"
+  name = "sliver-ami"
   sources = [
-    "source.amazon-ebs.kali"
+    "source.amazon-ebs.ubuntu",
   ]
 
   # Pre-provisioner for ansible
   provisioner "shell" {
-    only = ["amazon-ebs.kali"]
+    only = ["amazon-ebs.ubuntu"]
     inline = [
       "echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections",
       "apt-get update",
@@ -76,7 +75,7 @@ build {
   }
 
   provisioner "ansible" {
-    only           = ["amazon-ebs.kali"]
+    only           = ["amazon-ebs.ubuntu"]
     playbook_file  = "${var.provision_repo_path}/playbooks/attack_box/attack_box.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/attack_box/attack_box_inventory_aws_ec2.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"

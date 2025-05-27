@@ -1,5 +1,5 @@
 source "amazon-ebs" "ubuntu" {
-  ami_name      = "${var.blueprint_name}-${local.timestamp}"
+  ami_name      = "${var.template_name}-${local.timestamp}"
   instance_type = "${var.instance_type}"
   region        = "${var.ami_region}"
   source_ami_filter {
@@ -36,7 +36,7 @@ source "amazon-ebs" "ubuntu" {
   associate_public_ip_address = true
   iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
   tags = {
-    Name      = "${var.blueprint_name}-${local.timestamp}"
+    Name      = "${var.template_name}-${local.timestamp}"
     BuildTime = "${local.timestamp}"
   }
 }

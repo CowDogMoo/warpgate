@@ -1,35 +1,3 @@
-#######################################################
-#                  Warpgate variables                 #
-#######################################################
-variable "blueprint_name" {
-  type        = string
-  description = "Name of the blueprint."
-  default     = "atomic-red-team"
-}
-
-variable "pkr_build_dir" {
-  type        = string
-  description = "Directory that packer will execute the transferred provisioning logic from within the build environment."
-  default     = "ansible-collection-arsenal"
-}
-
-variable "provision_repo_path" {
-  type        = string
-  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
-}
-
-variable "provision_script_path" {
-  type        = string
-  description = "Path on disk to the provisioning script."
-  default     = "../scripts/provision.sh"
-}
-
-variable "shell" {
-  type        = string
-  description = "Shell to use."
-  default     = "/bin/bash"
-}
-
 ############################################
 #              AWS variables               #
 ############################################
@@ -45,10 +13,16 @@ variable "ami_region" {
   default     = "us-east-1"
 }
 
+variable "ami_instance_type" {
+  type        = string
+  description = "The type of instance to use for the initial AMI creation."
+  default     = "t3.small"
+}
+
 variable "ansible_aws_ssm_bucket_name" {
   type        = string
   description = "Name of the S3 bucket to store ansible artifacts."
-  default     = "atomic-red-team-ansible-artifacts"
+  default     = "runzero-explorer-ansible-artifacts"
 }
 
 variable "ansible_aws_ssm_timeout" {
@@ -87,23 +61,11 @@ variable "instance_type" {
   default     = "t3.medium"
 }
 
-variable "os" {
-  type        = string
-  description = "Operating system to use for the AMI."
-  default     = "ubuntu"
-}
-
-variable "os_version" {
-  type        = string
-  description = "OS version to use for the AMI."
-  default     = "jammy-22.04"
-}
-
 variable "run_tags" {
   type        = map(string)
   description = "Tags to apply to the instance."
   default = {
-    Name = "packer-atomic-red-team"
+    Name = "packer-runzero-explorer"
   }
 }
 
@@ -123,12 +85,6 @@ variable "ssh_timeout" {
   type        = string
   description = "Timeout for SSH connections."
   default     = "20m"
-}
-
-variable "user" {
-  type        = string
-  description = "Default user for the blueprint."
-  default     = "root"
 }
 
 variable "user_data_file" {
@@ -164,8 +120,79 @@ variable "manifest_path" {
   default     = "manifest.json"
 }
 
+variable "setup_systemd" {
+  type        = bool
+  description = "Create systemd service for container."
+  default     = false
+}
+
 variable "workdir" {
   type        = string
   description = "Working directory for a new container."
-  default     = "/root/AtomicRedTeam"
+  default     = "/root/runzero-explorer"
+}
+
+############################################
+#           Global variables               #
+############################################
+variable "template_name" {
+  type        = string
+  description = "Name of the packer template."
+  default     = "runzero-explorer"
+}
+
+variable "pkr_build_dir" {
+  type        = string
+  description = "Directory that packer will execute the transferred provisioning logic from within the container."
+  default     = "ansible-collection-bulwark"
+}
+
+variable "provision_repo_path" {
+  type        = string
+  description = "Path on disk to the repo that contains the provisioning code to build the odyssey."
+}
+
+variable "provision_script_path" {
+  type        = string
+  description = "Path on disk to the provisioning script."
+  default     = "../scripts/provision.sh"
+}
+
+variable "shell" {
+  type        = string
+  description = "Shell to use."
+  default     = "/bin/bash"
+}
+
+variable "os" {
+  type        = string
+  description = "Operating system to use for the AMI."
+  default     = "ubuntu"
+}
+
+variable "os_version" {
+  type        = string
+  description = "OS version to use for the AMI."
+  default     = "jammy-22.04"
+}
+
+variable "user" {
+  type        = string
+  description = "Default user for a blueprint."
+  default     = "root"
+}
+
+############################################
+#        runZero-specific variables        #
+############################################
+variable "runzero_download_token" {
+  type        = string
+  description = "Token to download runzero."
+  default     = env("RUNZERO_DOWNLOAD_TOKEN")
+  validation {
+    condition     = length(var.runzero_download_token) > 0
+    error_message = <<EOF
+The RUNZERO_DOWNLOAD_TOKEN is not set: this is required to download runZero explorer.
+EOF
+  }
 }
