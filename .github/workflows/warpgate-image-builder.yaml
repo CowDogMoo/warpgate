@@ -323,8 +323,8 @@ jobs:
           task -y template-push \
             NAMESPACE=${{ matrix.blueprint.namespace }} \
             IMAGE_NAME=${{ matrix.blueprint.name }} \
-            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-            GITHUB_USER=${{ github.actor }}
+            GITHUB_TOKEN="${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}" \
+            GITHUB_USER="${{ secrets.cowdogmoo-renovate-bot }}[bot]"
 
       - name: Verify pushed image
         run: |
