@@ -8,7 +8,7 @@
 locals { timestamp = formatdate("YYYY-MM-DD-hh-mm-ss", timestamp()) }
 
 source "amazon-ebs" "windows" {
-  ami_name      = "${var.blueprint_name}-${local.timestamp}"
+  ami_name      = "${var.template_name}-${local.timestamp}"
   instance_type = "${var.instance_type}"
   region        = "${var.ami_region}"
 
@@ -57,7 +57,7 @@ source "amazon-ebs" "windows" {
   iam_instance_profile        = "${var.ssh_interface == "session_manager" && var.iam_instance_profile != "" ? var.iam_instance_profile : ""}"
 
   tags = {
-    Name      = "${var.blueprint_name}-${local.timestamp}"
+    Name      = "${var.template_name}-${local.timestamp}"
     BuildTime = "${local.timestamp}"
   }
 }

@@ -1,9 +1,9 @@
 #######################################################
 #                  Warpgate variables                 #
 #######################################################
-variable "blueprint_name" {
+variable "template_name" {
   type        = string
-  description = "Name of the blueprint."
+  description = "Name of the packer template."
 }
 
 variable "provision_repo_path" {
