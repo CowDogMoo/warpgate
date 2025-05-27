@@ -191,8 +191,18 @@ tasks:
         # Tag and push by architecture
         docker tag "{{ .IMAGE_HASH }}" "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .ARCH }}"
 
-        # Push and capture digest
-        DIGEST=$(docker push "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .ARCH }}" | grep -oP '(?<=digest: ).*' | tail -1)
+        # Push and capture digest (fixed to extract only the sha256 hash)
+        PUSH_OUTPUT=$(docker push "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .ARCH }}" 2>&1)
+        echo "$PUSH_OUTPUT"
+
+        # Extract just the sha256 digest without size info
+        DIGEST=$(echo "$PUSH_OUTPUT" | grep -oE 'digest: sha256:[a-f0-9]{64}' | cut -d' ' -f2)
+
+        if [ -z "$DIGEST" ]; then
+          echo "Error: Failed to extract digest from push output"
+          exit 1
+        fi
+
         echo "Pushed {{ .ARCH }} image with digest: $DIGEST"
         echo "$DIGEST" > digest-{{ .IMAGE_NAME }}-{{ .ARCH }}.txt
 
