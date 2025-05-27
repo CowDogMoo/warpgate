@@ -46,9 +46,9 @@ jobs:
           - name: attack-box
             namespace: l50
             vars: "provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=attack-box"
-          # - name: runzero-explorer
-          #   namespace: cowdogmoo
-          #   vars: "provision_repo_path=${HOME}/ansible-collection-bulwark blueprint_name=runzero-explorer"
+          - name: runzero-explorer
+            namespace: cowdogmoo
+            vars: "provision_repo_path=${HOME}/ansible-collection-bulwark blueprint_name=runzero-explorer"
           - name: ttpforge
             namespace: l50
             vars: "provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=ttpforge"
@@ -246,8 +246,8 @@ jobs:
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
         with:
           registry: ghcr.io
-          username: ${{ env.ACT && github.actor || format('{0}[bot]', secrets.BOT_USERNAME) }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: l50
+          password: ${{ secrets.WG_IMAGE_BUILDER_PAT }}
 
       - name: Setup go-task
         uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
@@ -306,15 +306,15 @@ jobs:
           gh --version
 
           # Authenticate gh cli
-          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+          echo "${{ secrets.WG_IMAGE_BUILDER_PAT }}" | gh auth login --with-token
 
       - name: Push image
         run: |
           task -y template-push \
             NAMESPACE=${{ matrix.blueprint.namespace }} \
             IMAGE_NAME=${{ matrix.blueprint.name }} \
-            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
-            GITHUB_USER="${{ github.actor }}"
+            GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
+            GITHUB_USER="l50"
 
       - name: Verify pushed image
         run: |
