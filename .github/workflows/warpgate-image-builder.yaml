@@ -66,6 +66,7 @@ jobs:
         id: app-token
         with:
           app-id: "${{ secrets.BOT_APP_ID }}"
+          owner: cowdogmoo
           private-key: "${{ secrets.BOT_APP_PRIVATE_KEY }}"
 
       - name: Checkout repository
@@ -256,8 +257,8 @@ jobs:
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.BOT_USERNAME }}[bot]
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ env.ACT && github.actor || format('{0}[bot]', secrets.BOT_USERNAME) }}
+          password: ${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}
 
       - name: Setup go-task
         uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
@@ -324,7 +325,7 @@ jobs:
             NAMESPACE=${{ matrix.blueprint.namespace }} \
             IMAGE_NAME=${{ matrix.blueprint.name }} \
             GITHUB_TOKEN="${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}" \
-            GITHUB_USER="${{ secrets.BOT_USERNAME }}[bot]"
+            GITHUB_USER="${{ env.ACT && github.actor || format('{0}[bot]', secrets.BOT_USERNAME) }}"
 
       - name: Verify pushed image
         run: |
