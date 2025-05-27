@@ -242,14 +242,12 @@ jobs:
             --force \
             --pre
 
-      - name: Docker login
-        run: |
-          # For act local testing
-          if [ "${{ github.actor }}" == "nektos/act" ]; then
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || echo "Skipping Docker login in act environment"
-          else
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          fi
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup go-task
         uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
@@ -312,16 +310,12 @@ jobs:
 
       - name: Push image
         run: |
-          # Generate a token directly when running in act
+          # For act local testing, pass the token directly
           if [ "${{ github.actor }}" == "nektos/act" ]; then
-            # Set temporary GitHub token for gh auth token command
-            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-
-            # Call the task with all parameters defined in your template-push task
             task -y template-push \
               NAMESPACE=${{ matrix.blueprint.namespace }} \
               IMAGE_NAME=${{ matrix.blueprint.name }} \
-              GITHUB_TOKEN="${GITHUB_TOKEN}" \
+              GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
               GITHUB_USER="${{ github.actor }}"
           else
             # For GitHub Actions, use gh auth token as normal
