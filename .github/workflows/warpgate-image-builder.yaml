@@ -149,16 +149,6 @@ jobs:
           echo "export XDG_CONFIG_HOME=/root/.config" >> $GITHUB_ENV
           echo "export XDG_DATA_HOME=/root/.local/share" >> $GITHUB_ENV
 
-      - name: Setup Go
-        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
-            test/go.sum
-
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -166,9 +156,6 @@ jobs:
 
       - name: Install ansible
         run: python3 -m pip install ansible
-
-      - name: Install yq
-        run: go install github.com/mikefarah/yq/v4@latest
 
       - name: Setup `packer`
         uses: hashicorp/setup-packer@main
@@ -292,21 +279,6 @@ jobs:
             TEMPLATE_NAME="$BLUEPRINT" \
             ONLY="${BLUEPRINT}-docker.docker.*" \
             VARS="${{ matrix.blueprint.vars }}"
-
-      - name: Install GitHub CLI
-        if: github.actor == 'nektos/act'
-        run: |
-          # Install GitHub CLI for act environment
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh -y
-
-          # Test gh installation
-          gh --version
-
-          # Authenticate gh cli
-          echo "${{ secrets.WG_IMAGE_BUILDER_PAT }}" | gh auth login --with-token
 
       - name: Push image
         run: |
