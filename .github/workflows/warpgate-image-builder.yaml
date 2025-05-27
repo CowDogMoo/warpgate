@@ -247,10 +247,9 @@ jobs:
           password: ${{ secrets.WG_IMAGE_BUILDER_PAT }}
 
       - name: Setup go-task
-        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
-        if: always()
-        with:
-          task-version: ${{ env.TASK_VERSION }}
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin v${{ env.TASK_VERSION }}
+          task --version
 
       - name: Initialize image template
         run: |
