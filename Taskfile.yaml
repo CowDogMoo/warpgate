@@ -162,3 +162,67 @@ tasks:
           AMD64_HASH: "{{ .AMD64_HASH }}"
           GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
           GITHUB_USER: "{{ .GITHUB_USER }}"
+
+  template-push-digest:
+    desc: "Push architecture-specific Docker image by digest"
+    requires:
+      vars: ["NAMESPACE", "IMAGE_NAME", "ARCH", "GITHUB_TOKEN", "GITHUB_USER"]
+    vars:
+      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
+      NAMESPACE: "{{ .NAMESPACE }}"
+      IMAGE_NAME: "{{ .IMAGE_NAME }}"
+      ARCH: "{{ .ARCH }}"
+      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
+      GITHUB_USER: "{{ .GITHUB_USER }}"
+      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
+      IMAGE_HASH:
+        sh: |
+          if [ -f "{{ .MANIFEST_PATH }}" ]; then
+            jq -r ".builds[] | select(.name == \"{{ .ARCH }}\") | .artifact_id" {{ .MANIFEST_PATH }}
+          else
+            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
+            exit 1
+          fi
+    cmds:
+      - |
+        # Login to registry
+        echo "{{ .GITHUB_TOKEN }}" | docker login {{ .REGISTRY }} -u {{ .GITHUB_USER }} --password-stdin
+
+        # Tag and push by architecture
+        docker tag "{{ .IMAGE_HASH }}" "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .ARCH }}"
+
+        # Push and capture digest
+        DIGEST=$(docker push "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .ARCH }}" | grep -oP '(?<=digest: ).*' | tail -1)
+        echo "Pushed {{ .ARCH }} image with digest: $DIGEST"
+        echo "$DIGEST" > digest-{{ .IMAGE_NAME }}-{{ .ARCH }}.txt
+
+  template-create-manifest:
+    desc: "Create and push multi-architecture manifest"
+    requires:
+      vars: ["NAMESPACE", "IMAGE_NAME", "GITHUB_TOKEN", "GITHUB_USER"]
+    vars:
+      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
+      NAMESPACE: "{{ .NAMESPACE }}"
+      IMAGE_NAME: "{{ .IMAGE_NAME }}"
+      TAG: '{{ .TAG | default "latest" }}'
+      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
+      GITHUB_USER: "{{ .GITHUB_USER }}"
+    cmds:
+      - |
+        # Login to registry
+        echo "{{ .GITHUB_TOKEN }}" | docker login {{ .REGISTRY }} -u {{ .GITHUB_USER }} --password-stdin
+
+        # Read digests
+        AMD64_DIGEST=$(cat digest-{{ .IMAGE_NAME }}-amd64.txt)
+        ARM64_DIGEST=$(cat digest-{{ .IMAGE_NAME }}-arm64.txt)
+
+        # Create and push manifest
+        docker buildx imagetools create -t "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .TAG }}" \
+          "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}@$AMD64_DIGEST" \
+          "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}@$ARM64_DIGEST"
+
+        # Also tag with timestamp
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        docker buildx imagetools create -t "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:$TIMESTAMP" \
+          "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}@$AMD64_DIGEST" \
+          "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}@$ARM64_DIGEST"

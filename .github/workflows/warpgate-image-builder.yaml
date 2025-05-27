@@ -32,8 +32,7 @@ permissions:
 
 jobs:
   image-builder:
-    name: Build and push container images
-    runs-on: ubuntu-latest
+    name: Build container images
     strategy:
       matrix:
         blueprint:
@@ -52,7 +51,15 @@ jobs:
           - name: ttpforge
             namespace: l50
             vars: "provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=ttpforge"
+        architecture:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm # Free ARM64 runner for public repos
+            platform: linux/arm64
       fail-fast: false
+    runs-on: ${{ matrix.architecture.runner }}
     steps:
       - name: Install Node.js for local development
         if: github.actor == 'nektos/act'
@@ -63,8 +70,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
+      # # QEMU is only needed for cross-platform builds
+      # - name: Setup QEMU
+      #   if: matrix.architecture.arch == 'amd64'
+      #   uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
@@ -127,9 +136,9 @@ jobs:
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.architecture.arch }}-buildx-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildx-
+            ${{ runner.os }}-${{ matrix.architecture.arch }}-buildx-
 
       - name: Install system dependencies
         run: |
@@ -141,7 +150,8 @@ jobs:
                                   libbtrfs-dev \
                                   pkg-config \
                                   slirp4netns \
-                                  uidmap
+                                  uidmap \
+                                  jq
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           export XDG_CONFIG_HOME=/root/.config
           export XDG_DATA_HOME=/root/.local/share
@@ -244,18 +254,11 @@ jobs:
 
       - name: Initialize image template
         run: |
-          BLUEPRINT="${{ matrix.blueprint.name }}"
-          TEMPLATE_DIR="blueprints/$BLUEPRINT/packer_templates"
-
-          echo "Initializing template for blueprint: $BLUEPRINT"
-          echo "Template directory: $TEMPLATE_DIR"
-
           task -y template-init \
-            TEMPLATE_DIR="$TEMPLATE_DIR" \
-            TEMPLATE_NAME="$BLUEPRINT" \
-            ONLY="${BLUEPRINT}-docker.docker.*"
+            TEMPLATE_NAME="${{ matrix.blueprint.name }}" \
+            ONLY="${{ matrix.blueprint.name }}-docker.docker.*"
 
-      - name: Build image
+      - name: Build image for ${{ matrix.architecture.arch }}
         run: |
           # Create required directories with proper permissions if they don't exist
           if [ ! -d "${{ env.PACKER_TMP_DIR }}" ]; then
@@ -268,30 +271,85 @@ jobs:
             sudo chmod 777 ${{ env.PACKER_PLUGIN_PATH }}
           fi
 
-          BLUEPRINT="${{ matrix.blueprint.name }}"
-          TEMPLATE_DIR="blueprints/$BLUEPRINT/packer_templates"
-
-          echo "Building image for blueprint: $BLUEPRINT"
-          echo "Template directory: $TEMPLATE_DIR"
-
+          # Build only for the specific architecture
           timeout 2h task -y template-build \
-            TEMPLATE_DIR="$TEMPLATE_DIR" \
-            TEMPLATE_NAME="$BLUEPRINT" \
-            ONLY="${BLUEPRINT}-docker.docker.*" \
+            TEMPLATE_NAME="${{ matrix.blueprint.name }}" \
+            ONLY="${{ matrix.blueprint.name }}-docker.docker.${{ matrix.architecture.arch }}" \
             VARS="${{ matrix.blueprint.vars }}"
 
-      - name: Push image
+      # Push the architecture-specific image by digest
+      - name: Push ${{ matrix.architecture.arch }} image by digest
+        id: push
         run: |
-          task -y template-push \
-            NAMESPACE=${{ matrix.blueprint.namespace }} \
-            IMAGE_NAME=${{ matrix.blueprint.name }} \
+          task -y template-push-digest \
+            NAMESPACE="${{ matrix.blueprint.namespace }}" \
+            IMAGE_NAME="${{ matrix.blueprint.name }}" \
+            ARCH="${{ matrix.architecture.arch }}" \
             GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
             GITHUB_USER="l50"
 
-      - name: Verify pushed image
-        run: |
-          BLUEPRINT="${{ matrix.blueprint.name }}"
-          NAMESPACE="${{ matrix.blueprint.namespace }}"
+      # Upload digest info as artifact for the merge job
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.blueprint.name }}-${{ matrix.architecture.arch }}
+          path: |
+            digest-${{ matrix.blueprint.name }}-${{ matrix.architecture.arch }}.txt
+          retention-days: 1
 
-          echo "Verifying image: ghcr.io/$NAMESPACE/$BLUEPRINT:latest"
-          docker pull "ghcr.io/$NAMESPACE/$BLUEPRINT:latest"
+  # Merge the multi-arch manifests
+  merge-manifests:
+    name: Create and push multi-arch manifest
+    runs-on: ubuntu-latest
+    needs: image-builder
+    strategy:
+      matrix:
+        blueprint:
+          - name: sliver
+            namespace: l50
+          - name: atomic-red-team
+            namespace: l50
+          - name: attack-box
+            namespace: l50
+          - name: runzero-explorer
+            namespace: cowdogmoo
+          - name: ttpforge
+            namespace: l50
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digests-${{ matrix.blueprint.name }}-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: l50
+          password: ${{ secrets.WG_IMAGE_BUILDER_PAT }}
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Create multi-arch manifest
+        run: |
+          task -y template-create-manifest \
+            NAMESPACE="${{ matrix.blueprint.namespace }}" \
+            IMAGE_NAME="${{ matrix.blueprint.name }}" \
+            GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
+            GITHUB_USER="l50"
+
+      - name: Verify multi-arch image
+        run: |
+          echo "Inspecting manifest for ghcr.io/${{ matrix.blueprint.namespace }}/${{ matrix.blueprint.name }}:latest"
+          docker buildx imagetools inspect "ghcr.io/${{ matrix.blueprint.namespace }}/${{ matrix.blueprint.name }}:latest"

@@ -26,3 +26,6 @@ node_modules
 
 # Packer artifacts
 manifest.json
+
+# Development artifacts
+TODO
