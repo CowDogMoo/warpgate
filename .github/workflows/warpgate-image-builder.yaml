@@ -256,7 +256,7 @@ jobs:
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ secrets.BOT_USERNAME }}[bot]
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup go-task
@@ -324,7 +324,7 @@ jobs:
             NAMESPACE=${{ matrix.blueprint.namespace }} \
             IMAGE_NAME=${{ matrix.blueprint.name }} \
             GITHUB_TOKEN="${{ env.ACT && secrets.GITHUB_TOKEN || steps.app-token.outputs.token }}" \
-            GITHUB_USER="${{ secrets.cowdogmoo-renovate-bot }}[bot]"
+            GITHUB_USER="${{ secrets.BOT_USERNAME }}[bot]"
 
       - name: Verify pushed image
         run: |
