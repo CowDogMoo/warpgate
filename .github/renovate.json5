@@ -1,33 +1,35 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:base",
-    ":disableRateLimiting",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    ":enablePreCommit",
-    ":automergeDigest",
-    ":automergeBranch",
-    "helpers:pinGitHubActionDigests"
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    ':disableRateLimiting',
+    ':dependencyDashboard',
+    ':semanticCommits',
+    ':enablePreCommit',
+    ':automergeDigest',
+    ':automergeBranch',
+    'helpers:pinGitHubActionDigests',
   ],
-
-  "dependencyDashboardTitle": "Renovate Dashboard 🤖",
-  "suppressNotifications": [
-    "prIgnoreNotification"
+  dependencyDashboardLabels: [
+    'renovate-dashboard',
   ],
-
-  "rebaseWhen": "conflicted",
-  "commitBodyTable": true,
-
+  dependencyDashboardTitle: 'Renovate Dashboard 🤖',
+  suppressNotifications: [
+    'prIgnoreNotification',
+  ],
+  rebaseWhen: 'conflicted',
+  commitBodyTable: true,
+  labels: [
+    'renovate',
+  ],
+  platformAutomerge: true,
   "pre-commit": {
     "enabled": true
   },
-  packageRules: [
-    {
-      matchManagers: ["gomod"],
-      matchPackagePatterns: ["*"],
-      enabled: true,
-    },
+  "github-actions": {
+    "enabled": true
+  },
+"packageRules": [
     {
       "description": "Auto merge GitHub Actions minor and patch updates",
       "matchManagers": ["github-actions"],
@@ -37,88 +39,51 @@
       "automergeType": "branch"
     },
     {
-      "description": "Auto merge non-major updates for Go modules",
-      "matchManagers": ["gomod"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "merge-queue",
-      "requiredStatusChecks": ["tests", "pre-commit"]
-    },
-    {
       "description": "Auto merge Docker updates",
       "matchManagers": ["docker-compose", "dockerfile"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue"
+    },
+    {
+      "description": "Auto merge Packer plugin updates",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["**/*.pkr.hcl"],
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "merge-queue"
-    }
-  ],
-  lockFileMaintenance: {
-    enabled: true,
-    automerge: true,
-  },
-
-  "docker": {
-    "enabled": true
-  },
-
-  "github-actions": {
-    "enabled": true
-  },
-
-  "packageRules": [
-    {
-      "matchManagers": [
-        "gomod"
-      ],
-      "enabled": true
     },
     {
-      "description": "Auto merge GitHub Actions minor and patch updates",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchDatasources": [
-        "github-tags"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
-      "automerge": true,
-      "automergeType": "branch"
+      "description": "Group Packer plugin updates by tool",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["packer-templates/atomic-red-team/**/*.pkr.hcl"],
+      "groupName": "atomic-red-team packer plugins"
     },
     {
-      "description": "Auto merge non-major updates for Go modules",
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "merge-queue",
-      "requiredStatusChecks": [
-        "tests",
-        "pre-commit"
-      ]
+      "description": "Group Packer plugin updates by tool",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["packer-templates/attack-box/**/*.pkr.hcl"],
+      "groupName": "attack-box packer plugins"
     },
     {
-      "description": "Auto merge Docker updates",
-      "matchManagers": [
-        "docker-compose",
-        "dockerfile"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch"
-      ],
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "merge-queue"
+      "description": "Group Packer plugin updates by tool",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["packer-templates/runzero-explorer/**/*.pkr.hcl"],
+      "groupName": "runzero-explorer packer plugins"
+    },
+    {
+      "description": "Group Packer plugin updates by tool",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["packer-templates/sliver/**/*.pkr.hcl"],
+      "groupName": "sliver packer plugins"
+    },
+    {
+      "description": "Group Packer plugin updates by tool",
+      "matchManagers": ["terraform"],
+      "matchFileNames": ["packer-templates/ttpforge/**/*.pkr.hcl"],
+      "groupName": "ttpforge packer plugins"
     }
   ],
 
@@ -130,14 +95,14 @@
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": [
-        ".sh$"
-      ],
+      "description": "Update Docker images in docker-bake.hcl files",
+      "fileMatch": ["docker-bake\\.hcl$"],
       "matchStrings": [
-        "go install (?<depName>[^@]+?)@(?<currentValue>[0-9.-a-zA-Z]+)"
+        "target\\s+\"[^\"]+\"\\s+{[^}]*tags\\s*=\\s*\\[\"(?<depName>[^:]+):(?<currentValue>[^\"]+)\"\\]"
       ],
-      "datasourceTemplate": "go"
+      "datasourceTemplate": "docker"
     }
   ],
+
   "platformAutomerge": true
 }

@@ -1,11 +1,11 @@
 ---
-area/blueprints:
+area/dockerfiles:
   - changed-files:
-      - any-glob-to-any-file: "blueprints/**/*"
+      - any-glob-to-any-file: "dockerfiles/**/*"
 
-area/cmd:
+area/packer:
   - changed-files:
-      - any-glob-to-any-file: "cmd/**/*"
+      - any-glob-to-any-file: "packer-templates/**/*"
 
 area/docs:
   - changed-files:
@@ -20,11 +20,28 @@ area/pre-commit:
       - any-glob-to-any-file: .pre-commit-config.yaml
       - any-glob-to-any-file: .hooks/**/*
 
-area/templates:
+area/taskfile:
   - changed-files:
-      - any-glob-to-any-file: "templates/**/*"
+      - any-glob-to-any-file: "Taskfile.yaml"
 
-area/go-mod-sum:
+# Tool-specific labelers
+tool/atomic-red-team:
   - changed-files:
-      - any-glob-to-any-file: "go.mod"
-      - any-glob-to-any-file: "go.sum"
+      - any-glob-to-any-file: "packer-templates/atomic-red-team/**/*"
+      - any-glob-to-any-file: "dockerfiles/atomic-red/**/*"
+
+tool/attack-box:
+  - changed-files:
+      - any-glob-to-any-file: "packer-templates/attack-box/**/*"
+
+tool/runzero:
+  - changed-files:
+      - any-glob-to-any-file: "packer-templates/runzero-explorer/**/*"
+
+tool/sliver:
+  - changed-files:
+      - any-glob-to-any-file: "packer-templates/sliver/**/*"
+
+tool/ttpforge:
+  - changed-files:
+      - any-glob-to-any-file: "packer-templates/ttpforge/**/*"

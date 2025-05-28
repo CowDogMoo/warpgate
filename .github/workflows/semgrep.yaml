@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write # Requirement for sending info to the Security tab
 
 jobs:
   semgrep:
@@ -28,3 +29,6 @@ jobs:
             p/secrets
             p/docker
             p/dockerfile
+            p/terraform
+            p/ci
+            p/supply-chain
