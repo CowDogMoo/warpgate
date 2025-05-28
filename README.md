@@ -26,7 +26,6 @@ spectrum of applications, including, but not limited to:
 
    - Container images ensure consistent environments across development,
      staging, and production, reducing compatibility issues.
-
    - Golden images provide a standardized base for development and testing,
      ensuring uniformity.
 
@@ -88,16 +87,16 @@ wg imageBuilder \
   -p ~/cowdogmoo/ansible-collection-workstation
 ```
 
-This next example will create a container image using the existing
-`runzero-explorer` blueprint and the `runzero-explorrer` ansible playbook
-playbook found in the `cowdogmoo.workstation` collection.
+### Container Image Creation with GitHub Container Registry
 
-Additionally, a `$GITHUB_TOKEN` is provided for the commit and push operations.
+This example will create a container image using the existing
+`runzero-explorer` blueprint and the `runzero-explorrer` ansible playbook
+found in the `cowdogmoo.workstation` collection.
 
 ```bash
 wg imageBuilder \
   -b runzero-explorer \
-  -p ~/cowdogmoo/ansible-collection-workstation \
+  -p ~/ansible-collection-bulwark \
   -t $GITHUB_TOKEN
 ```
 
@@ -125,18 +124,57 @@ TODOs in `config.yaml`.
 
 ## Authentication & Image Pushing
 
-Warp Gate requires authentication when pushing built images to GitHub Container
-Registry (`ghcr.io`). This is handled using a **Classic Personal Access Token** (`BOT_TOKEN`)
-instead of the default `GITHUB_TOKEN`, ensuring that the workflow has the
-correct package write permissions.
+### Token Setup for GitHub Container Registry
+
+For pushing images to GitHub Container Registry (ghcr.io), you need a token
+with the proper package permissions. There are two methods to create this token:
+
+**Option 1: GitHub Web Interface (recommended):**
+
+1. Go to GitHub Settings → Developer Settings → Personal Access Tokens → Tokens (classic)
+2. Generate a new token with these permissions:
+   - `write:packages`
+   - `read:packages`
+   - `delete:packages`
+   - Add `repo` scope if your repository is private
+
+**Option 2: Using GitHub CLI:**
+
+Use the refresh command to add package scopes to your existing token:
+
+```bash
+gh auth refresh --scopes write:packages,read:packages,delete:packages
+```
+
+Make sure it worked by checking the token status:
+
+```bash
+gh auth status --show-token
+```
+
+This command will display the scopes associated with your token. Ensure that
+`write:packages` and `delete:packages` are listed.
+
+Finally, log in to the GitHub Container Registry:
+
+```bash
+echo "$(gh auth token)" | docker login ghcr.io -u $GITHUB_USERNAME --password-stdin
+```
 
 ### GitHub Actions Authentication
 
-- The workflow logs in to `ghcr.io` using:
+When using GitHub Actions, the workflow logs in to `ghcr.io` using:
 
-  ```bash
-  echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-  ```
+```bash
+echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+```
+
+Note: Warp Gate uses a **Classic Personal Access Token** (`BOT_TOKEN`)
+instead of the default `GITHUB_TOKEN`, ensuring that the workflow has the
+correct package write permissions.
+
+For troubleshooting push failures or manually pushing images, see our
+[Manual Image Pushing Guide](docs/image-pushing.md).
 
 ---
 
@@ -145,3 +183,4 @@ correct package write permissions.
 - [Developer Environment Setup](docs/dev.md)
 - [Debugging](docs/debug.md)
 - [Local Github Action Testing](docs/act.md)
+- [Manual Image Pushing Guide](docs/image-pushing.md)

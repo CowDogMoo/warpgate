@@ -3,12 +3,20 @@
 version: "3"
 
 includes:
-  pre-commit:
-    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
+  docker:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/docker/Taskfile.yaml"
   github:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/github/Taskfile.yaml"
+  packer:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/packer/Taskfile.yaml"
+  pre-commit:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
+  secrets:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/secrets/Taskfile.yaml"
   terraform:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/terraform/Taskfile.yaml"
+  renovate:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/renovate/Taskfile.yaml"
 
 tasks:
   default:
@@ -22,3 +30,210 @@ tasks:
       - task: pre-commit:update-hooks
       - task: pre-commit:clear-cache
       - task: pre-commit:run-hooks
+
+  run-image-builder-action:
+    desc: "Run GitHub Actions image-builder workflow using act. Optionally specify TEMPLATE"
+    vars:
+      TEMPLATE: '{{.TEMPLATE | default ""}}'
+      IS_MAC_ARM: '{{if and (eq OS "Darwin") (eq ARCH "arm64")}}true{{else}}false{{end}}'
+      ARCH_FLAG: '{{if eq .IS_MAC_ARM "true"}}--container-architecture linux/amd64{{end}}'
+    cmds:
+      - |
+        # Clean up any existing act containers
+        docker ps -q -f name=act-Image-Builder | xargs -r docker rm -f 2>/dev/null || true
+
+        # Create a temporary secrets file with GITHUB_TOKEN if .secrets doesn't exist
+        if [ ! -f .secrets ]; then
+          echo "Warning: .secrets file not found. Creating temporary one with GITHUB_TOKEN=dummy for testing."
+          echo "GITHUB_TOKEN=dummy" > .secrets.tmp
+          SECRET_FILE=".secrets.tmp"
+        else
+          SECRET_FILE=".secrets"
+        fi
+
+        # Run act with appropriate arguments
+        if [ -n "{{.TEMPLATE}}" ]; then
+          echo '{"inputs":{"TEMPLATE":"{{.TEMPLATE}}"}}' > /tmp/github-event.json
+          act -W .github/workflows/warpgate-image-builder.yaml {{.ARCH_FLAG}} -e /tmp/github-event.json --secret-file $SECRET_FILE
+          EXIT_CODE=$?
+          rm /tmp/github-event.json
+        else
+          act -W .github/workflows/warpgate-image-builder.yaml {{.ARCH_FLAG}} --secret-file $SECRET_FILE
+          EXIT_CODE=$?
+        fi
+
+        # Clean up temporary files
+        if [ "$SECRET_FILE" = ".secrets.tmp" ]; then
+          rm .secrets.tmp
+        fi
+
+        exit $EXIT_CODE
+
+  template-build:
+    desc: "Build a template image from anywhere in the repo"
+    env:
+      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
+    cmds:
+      - task: packer:cleanup-packer-manifest
+        vars:
+          MANIFEST_PATH: '{{.MANIFEST_PATH | default "./manifest.json"}}'
+
+      - task: packer:packer-template-build
+        vars:
+          COMMAND: "build"
+          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
+          TEMPLATE_DIR: "{{ if .TEMPLATE_DIR }}{{ .TEMPLATE_DIR }}{{ else }}packer-templates/{{ .TEMPLATE_NAME }}{{ end }}"
+          ONLY: '{{.ONLY   | default ""}}'
+          VARS: '{{.VARS   | default ""}}'
+          FORCE: '{{.FORCE | default "false"}}'
+
+  template-init:
+    desc: "Initialize a Packer template from anywhere in the repo"
+    env:
+      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
+    cmds:
+      - task: packer:packer-init
+        vars:
+          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
+          TEMPLATE_DIR: '{{if .TEMPLATE_NAME}}packer-templates/{{.TEMPLATE_NAME}}{{else}}{{.TEMPLATE_DIR | default "./"}}{{end}}'
+          VARS: '{{.VARS | default ""}}'
+
+  template-validate:
+    desc: "Validate a template packer template from anywhere in the repo"
+    cmds:
+      - task: packer:_packer-base
+        vars:
+          COMMAND: "validate"
+          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
+          VAR_FILE: '{{.VAR_FILE | default ""}}'
+
+  template-push:
+    desc: "Push multi-architecture Docker images using Packer manifest"
+    requires:
+      vars: ["NAMESPACE", "IMAGE_NAME", "GITHUB_TOKEN", "GITHUB_USER"]
+    vars:
+      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
+      NAMESPACE: "{{ .NAMESPACE }}"
+      IMAGE_NAME: "{{ .IMAGE_NAME }}"
+      TAG: '{{ .TAG | default "latest" }}'
+      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
+      GITHUB_USER: "{{ .GITHUB_USER }}"
+      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
+      ARM64_HASH:
+        sh: |
+          if [ -f "{{ .MANIFEST_PATH }}" ]; then
+            jq -r '.builds[] | select(.name == "arm64") | .artifact_id' {{ .MANIFEST_PATH }}
+          else
+            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
+            exit 1
+          fi
+      AMD64_HASH:
+        sh: |
+          if [ -f "{{ .MANIFEST_PATH }}" ]; then
+            jq -r '.builds[] | select(.name == "amd64") | .artifact_id' {{ .MANIFEST_PATH }}
+          else
+            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
+            exit 1
+          fi
+    cmds:
+      - |
+        # Check if jq is installed
+        if ! command -v jq &> /dev/null; then
+          echo "Error: jq is not installed. Please install jq to parse JSON files."
+          exit 1
+        fi
+
+        # Check if manifest file exists
+        if [ ! -f "{{ .MANIFEST_PATH }}" ]; then
+          echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}"
+          exit 1
+        fi
+
+        # Display the extracted hashes
+        echo "Extracted hashes from manifest:"
+        echo "ARM64_HASH: {{ .ARM64_HASH }}"
+        echo "AMD64_HASH: {{ .AMD64_HASH }}"
+      - task: docker:push-multi-arch
+        vars:
+          REGISTRY: "{{ .REGISTRY }}"
+          NAMESPACE: "{{ .NAMESPACE }}"
+          IMAGE_NAME: "{{ .IMAGE_NAME }}"
+          TAG: "{{ .TAG }}"
+          ARM64_HASH: "{{ .ARM64_HASH }}"
+          AMD64_HASH: "{{ .AMD64_HASH }}"
+          GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
+          GITHUB_USER: "{{ .GITHUB_USER }}"
+
+  template-push-digest:
+    desc: "Push architecture-specific Docker image by digest"
+    requires:
+      vars: ["NAMESPACE", "IMAGE_NAME", "ARCH", "GITHUB_TOKEN", "GITHUB_USER"]
+    vars:
+      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
+      NAMESPACE: "{{ .NAMESPACE }}"
+      IMAGE_NAME: "{{ .IMAGE_NAME }}"
+      ARCH: "{{ .ARCH }}"
+      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
+      GITHUB_USER: "{{ .GITHUB_USER }}"
+      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
+      IMAGE_HASH:
+        sh: |
+          if [ -f "{{ .MANIFEST_PATH }}" ]; then
+            jq -r ".builds[] | select(.name == \"{{ .ARCH }}\") | .artifact_id" {{ .MANIFEST_PATH }}
+          else
+            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
+            exit 1
+          fi
+    cmds:
+      - |
+        # Login to registry
+        echo "{{ .GITHUB_TOKEN }}" | docker login {{ .REGISTRY }} -u {{ .GITHUB_USER }} --password-stdin
+
+        # Tag and push by architecture
+        docker tag "{{ .IMAGE_HASH }}" "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .ARCH }}"
+
+        # Push and capture digest (fixed to extract only the sha256 hash)
+        PUSH_OUTPUT=$(docker push "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .ARCH }}" 2>&1)
+        echo "$PUSH_OUTPUT"
+
+        # Extract just the sha256 digest without size info
+        DIGEST=$(echo "$PUSH_OUTPUT" | grep -oE 'digest: sha256:[a-f0-9]{64}' | cut -d' ' -f2)
+
+        if [ -z "$DIGEST" ]; then
+          echo "Error: Failed to extract digest from push output"
+          exit 1
+        fi
+
+        echo "Pushed {{ .ARCH }} image with digest: $DIGEST"
+        echo "$DIGEST" > digest-{{ .IMAGE_NAME }}-{{ .ARCH }}.txt
+
+  template-create-manifest:
+    desc: "Create and push multi-architecture manifest"
+    requires:
+      vars: ["NAMESPACE", "IMAGE_NAME", "GITHUB_TOKEN", "GITHUB_USER"]
+    vars:
+      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
+      NAMESPACE: "{{ .NAMESPACE }}"
+      IMAGE_NAME: "{{ .IMAGE_NAME }}"
+      TAG: '{{ .TAG | default "latest" }}'
+      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
+      GITHUB_USER: "{{ .GITHUB_USER }}"
+    cmds:
+      - |
+        # Login to registry
+        echo "{{ .GITHUB_TOKEN }}" | docker login {{ .REGISTRY }} -u {{ .GITHUB_USER }} --password-stdin
+
+        # Read digests
+        AMD64_DIGEST=$(cat digest-{{ .IMAGE_NAME }}-amd64.txt)
+        ARM64_DIGEST=$(cat digest-{{ .IMAGE_NAME }}-arm64.txt)
+
+        # Create and push manifest
+        docker buildx imagetools create -t "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:{{ .TAG }}" \
+          "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}@$AMD64_DIGEST" \
+          "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}@$ARM64_DIGEST"
+
+        # Also tag with timestamp
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        docker buildx imagetools create -t "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}:$TIMESTAMP" \
+          "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}@$AMD64_DIGEST" \
+          "{{ .REGISTRY }}/{{ .NAMESPACE }}/{{ .IMAGE_NAME }}@$ARM64_DIGEST"

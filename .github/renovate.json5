@@ -1,23 +1,26 @@
 {
-  $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: [
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
     "config:base",
-    "docker:enableMajor",
     ":disableRateLimiting",
     ":dependencyDashboard",
     ":semanticCommits",
     ":enablePreCommit",
     ":automergeDigest",
     ":automergeBranch",
-    "github>CowDogMoo/warpgate//.github/renovate/autoMerge.json5",
-    "helpers:pinGitHubActionDigests",
+    "helpers:pinGitHubActionDigests"
   ],
-  dependencyDashboardTitle: "Renovate Dashboard 🤖",
-  suppressNotifications: ["prIgnoreNotification"],
-  rebaseWhen: "conflicted",
-  commitBodyTable: true,
+
+  "dependencyDashboardTitle": "Renovate Dashboard 🤖",
+  "suppressNotifications": [
+    "prIgnoreNotification"
+  ],
+
+  "rebaseWhen": "conflicted",
+  "commitBodyTable": true,
+
   "pre-commit": {
-    enabled: true,
+    "enabled": true
   },
   packageRules: [
     {
@@ -26,27 +29,115 @@
       enabled: true,
     },
     {
-      description: "Auto merge all updates if tests pass",
-      matchPackagePatterns: ["*"],
-      matchManagers: ["github-actions", "gomod"],
-      automerge: true,
-      automergeStrategy: "squash",
-      requiredStatusChecks: ["tests", "pre-commit"],
+      "description": "Auto merge GitHub Actions minor and patch updates",
+      "matchManagers": ["github-actions"],
+      "matchDatasources": ["github-tags"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "branch"
     },
+    {
+      "description": "Auto merge non-major updates for Go modules",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue",
+      "requiredStatusChecks": ["tests", "pre-commit"]
+    },
+    {
+      "description": "Auto merge Docker updates",
+      "matchManagers": ["docker-compose", "dockerfile"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue"
+    }
   ],
   lockFileMaintenance: {
     enabled: true,
     automerge: true,
   },
-  customManagers: [
+
+  "docker": {
+    "enabled": true
+  },
+
+  "github-actions": {
+    "enabled": true
+  },
+
+  "packageRules": [
     {
-      customType: "regex",
-      fileMatch: [".sh$"],
-      matchStrings: [
-        "go install (?<depName>[^@]+?)@(?<currentValue>[0-9.-a-zA-Z]+)",
+      "matchManagers": [
+        "gomod"
       ],
-      datasourceTemplate: "go",
+      "enabled": true
     },
+    {
+      "description": "Auto merge GitHub Actions minor and patch updates",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDatasources": [
+        "github-tags"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "branch"
+    },
+    {
+      "description": "Auto merge non-major updates for Go modules",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue",
+      "requiredStatusChecks": [
+        "tests",
+        "pre-commit"
+      ]
+    },
+    {
+      "description": "Auto merge Docker updates",
+      "matchManagers": [
+        "docker-compose",
+        "dockerfile"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "merge-queue"
+    }
   ],
-  platformAutomerge: true,
+
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true
+  },
+
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": [
+        ".sh$"
+      ],
+      "matchStrings": [
+        "go install (?<depName>[^@]+?)@(?<currentValue>[0-9.-a-zA-Z]+)"
+      ],
+      "datasourceTemplate": "go"
+    }
+  ],
+  "platformAutomerge": true
 }

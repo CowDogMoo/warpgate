@@ -11,12 +11,17 @@ concurrency:
   group: "${{ github.workflow }}"
 
 env:
-  AWS_DEFAULT_REGION: us-west-1
   DEBIAN_FRONTEND: noninteractive
   GO_VERSION: 1.24.0
-  PRODUCT_VERSION: latest
+  PACKER_LOG: 1
+  PACKER_LOG_PATH: /tmp/packer.log
+  PACKER_PLUGIN_PATH: /tmp/packer-plugins
+  PACKER_TMP_DIR: /tmp/packer-files
+  PACKER_VERSION: latest
   PYTHON_VERSION: 3.12.6
   RUNZERO_DOWNLOAD_TOKEN: ${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}
+  TASK_X_REMOTE_TASKFILES: 1
+  TASK_VERSION: 3.38.0
   TZ: UTC
 
 # Required for OIDC
@@ -26,13 +31,114 @@ permissions:
   packages: write
 
 jobs:
-  generate-blueprints:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+  image-builder:
+    name: Build container images
+    strategy:
+      matrix:
+        template:
+          - name: sliver
+            namespace: l50
+            vars: "arsenal_repo_path=${HOME}/ansible-collection-arsenal workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation template_name=sliver"
+          - name: atomic-red-team
+            namespace: l50
+            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=atomic-red-team"
+          - name: attack-box
+            namespace: l50
+            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=attack-box"
+          - name: runzero-explorer
+            namespace: cowdogmoo
+            vars: "provision_repo_path=${HOME}/ansible-collection-bulwark template_name=runzero-explorer"
+          - name: ttpforge
+            namespace: l50
+            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=ttpforge"
+        architecture:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm # Free ARM64 runner for public repos
+            platform: linux/arm64
+      fail-fast: false
+    runs-on: ${{ matrix.architecture.runner }}
     steps:
-      - name: Checkout
+      - name: Install Node.js for local development
+        if: github.actor == 'nektos/act'
+        run: |
+          curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+
+      - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # # QEMU is only needed for cross-platform builds
+      # - name: Setup QEMU
+      #   if: matrix.architecture.arch == 'amd64'
+      #   uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+
+      - name: Configure Docker for Packer builds
+        run: |
+          # Create a temp directory that Docker can access
+          sudo mkdir -p ${{ env.PACKER_TMP_DIR }}
+          sudo chmod 777 ${{ env.PACKER_TMP_DIR }}
+
+          # Configure Docker when running inside act
+          if [ "${{ github.actor }}" == "nektos/act" ]; then
+            # Configure Docker for local act execution
+            echo "Running in act environment, configuring Docker..."
+
+            # Create Docker config directory if it doesn't exist
+            mkdir -p ~/.docker
+
+            # Configure Docker daemon to allow access to tmp directories
+            cat > /tmp/docker-daemon.json <<EOF
+            {
+              "features": {
+                "buildkit": true
+              },
+              "experimental": true,
+              "mountpoints": {
+                "/tmp": {
+                  "source": "/tmp",
+                  "destination": "/tmp",
+                  "options": ["rbind"]
+                },
+                "/root/.config/packer": {
+                  "source": "${{ env.PACKER_TMP_DIR }}",
+                  "destination": "/root/.config/packer",
+                  "options": ["rbind"]
+                }
+              }
+            }
+          EOF
+
+            # Apply the Docker configuration
+            sudo mkdir -p /etc/docker
+            sudo cp /tmp/docker-daemon.json /etc/docker/daemon.json
+
+            # Restart Docker to apply changes
+            sudo systemctl restart docker || true
+
+            # Wait for Docker to be ready
+            timeout 15 sh -c "until docker info >/dev/null 2>&1; do sleep 1; done"
+
+            # Verify Docker configuration
+            docker info
+
+            # Set Packer environment variables
+            mkdir -p ${{ env.PACKER_PLUGIN_PATH }}
+            chmod 777 ${{ env.PACKER_PLUGIN_PATH }}
+          fi
+
+      - name: Cache Docker layers
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-${{ matrix.architecture.arch }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.architecture.arch }}-buildx-
 
       - name: Install system dependencies
         run: |
@@ -44,23 +150,14 @@ jobs:
                                   libbtrfs-dev \
                                   pkg-config \
                                   slirp4netns \
-                                  uidmap
+                                  uidmap \
+                                  jq
           export XDG_RUNTIME_DIR=/run/user/$(id -u)
           export XDG_CONFIG_HOME=/root/.config
           export XDG_DATA_HOME=/root/.local/share
           echo "export XDG_RUNTIME_DIR=/run/user/$(id -u)" >> $GITHUB_ENV
           echo "export XDG_CONFIG_HOME=/root/.config" >> $GITHUB_ENV
           echo "export XDG_DATA_HOME=/root/.local/share" >> $GITHUB_ENV
-
-      - name: Setup Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
-            test/go.sum
 
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -70,116 +167,14 @@ jobs:
       - name: Install ansible
         run: python3 -m pip install ansible
 
-      - name: Install yq
-        run: go install github.com/mikefarah/yq/v4@latest
-
-      - name: Setup warpgate
-        run: |
-          go mod tidy
-          go build -o wg
-          sudo mv wg /usr/local/bin/wg
-
-      - name: Generate list of blueprints
-        id: set-matrix
-        run: |
-          blueprint_list=$(wg blueprint list | grep -E '^[a-zA-Z0-9_-]+$')
-          matrix_json=$(echo "$blueprint_list" | jq -R -s --arg HOME "$HOME" --arg PWD "$PWD" 'split("\n")[:-1] | map({blueprint: ., path: ($PWD + "/blueprints/" + .)})' | jq -c .)
-          echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
-
-  image-builder:
-    needs: generate-blueprints
-    name: Build container images using warpgate
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        blueprint: ${{fromJson(needs.generate-blueprints.outputs.matrix)}}
-      fail-fast: false
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4
-        with:
-          aws-region: ${{ env.AWS_DEFAULT_REGION }}
-          role-to-assume: ${{ secrets.OIDC_ROLE_ARN }}
-          role-session-name: WarpgateAMIBuilder
-          role-duration-seconds: 7200
-
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
-
-      - name: Cache Docker layers
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential \
-                                  btrfs-progs \
-                                  fuse-overlayfs \
-                                  libgpgme-dev \
-                                  libbtrfs-dev \
-                                  pkg-config \
-                                  slirp4netns \
-                                  uidmap
-          export XDG_RUNTIME_DIR=/run/user/$(id -u)
-          export XDG_CONFIG_HOME=/root/.config
-          export XDG_DATA_HOME=/root/.local/share
-          echo "export XDG_RUNTIME_DIR=/run/user/$(id -u)" >> $GITHUB_ENV
-          echo "export XDG_CONFIG_HOME=/root/.config" >> $GITHUB_ENV
-          echo "export XDG_DATA_HOME=/root/.local/share" >> $GITHUB_ENV
-
-      - name: Setup Go
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
-            test/go.sum
-
-      - name: Restore Go Modules cache
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-            ${{ runner.os }}-go-
-
       - name: Setup `packer`
         uses: hashicorp/setup-packer@main
         id: setup
         with:
-          version: ${{ env.PRODUCT_VERSION }}
-
-      - name: Setup warpgate
-        run: |
-          go mod tidy
-          go build -o wg
-          sudo mv wg /usr/local/bin/wg
-
-      - name: Clone ansible-collection repositories
-        run: |
-          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git ${{ github.workspace }}/ansible-collection-workstation
-          git clone https://github.com/l50/ansible-collection-arsenal.git ${{ github.workspace }}/ansible-collection-arsenal
-
-      - name: Make repository name lowercase
-        id: lower-repo
-        run: |
-          echo "repo_owner_lowercase=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          version: ${{ env.PACKER_VERSION }}
 
       - name: Free up disk space
+        if: github.actor != 'nektos/act'
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
@@ -205,61 +200,155 @@ jobs:
             ignore_chown_errors = "true"
           EOF'
 
-      - name: Define provision path function
-        id: define-provision-path
+      - name: Clone ansible-collection repositories
         run: |
-          set_provision_path() {
-            local blueprint=$1
-            case $blueprint in
-              "runzero-explorer")
-                echo "${{ github.workspace }}/ansible-collection-workstation"
-                ;;
-              "sliver" | "ttpforge" | "atomic-red-team" | "attack-box") # , "windows")
-                echo "${{ github.workspace }}/ansible-collection-arsenal"
-                ;;
-              "test")
-                echo "${{ matrix.blueprint.path }}/scripts/provision.sh"
-                ;;
-              *)
-                echo "Unknown blueprint: $blueprint" >&2
-                exit 1
-                ;;
-            esac
-          }
+          mkdir -p $HOME/CowDogMoo
+          git clone https://github.com/CowDogMoo/ansible-collection-workstation.git $HOME/CowDogMoo/ansible-collection-workstation
+          git clone https://github.com/l50/ansible-collection-arsenal.git $HOME/ansible-collection-arsenal
+          git clone https://github.com/l50/ansible-collection-bulwark.git $HOME/ansible-collection-bulwark
 
-          blueprint_name="${{ matrix.blueprint.blueprint }}"
-          provision_path=$(set_provision_path $blueprint_name)
-          echo "Blueprint name: $blueprint_name"
-          echo "Provision path: $provision_path"
-          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          echo "provision_path=$provision_path" >> $GITHUB_ENV
-
-      - name: Run image builder for each blueprint
+      - name: Install ansible collections
         run: |
-          blueprint_name="${{ matrix.blueprint.blueprint }}"
-          export RUNZERO_DOWNLOAD_TOKEN="${{ secrets.RUNZERO_DOWNLOAD_TOKEN }}"
-          provision_path=$provision_path
-          tag_name=$(yq e '.blueprint.tag.name' "${{ matrix.blueprint.path }}/config.yaml")
-          repo_owner=$(echo "$tag_name" | cut -d'/' -f1)
+          # Create the ansible collections directory
+          mkdir -p $HOME/.ansible/collections
 
-          echo "Blueprint name: $blueprint_name"
-          echo "Provision path: $provision_path"
+          # Build and install CowDogMoo workstation collection
+          cd $HOME/CowDogMoo/ansible-collection-workstation
+          ansible-galaxy collection build --force
+          ansible-galaxy collection install \
+            cowdogmoo-workstation-*.tar.gz \
+            -p $HOME/.ansible/collections \
+            --force \
+            --pre
 
-          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          # Build and install l50 arsenal collection
+          cd $HOME/ansible-collection-arsenal
+          ansible-galaxy collection build --force
+          ansible-galaxy collection install \
+            l50-arsenal-*.tar.gz \
+            -p $HOME/.ansible/collections \
+            --force \
+            --pre
 
-          timeout 2h sudo -E wg imageBuilder \
-            -b "$blueprint_name" \
-            -p "$provision_path" \
-            -t "${{ secrets.BOT_TOKEN }}"
-        working-directory: ${{ github.workspace }}
+          # Build and install l50 bulwark collection
+          cd $HOME/ansible-collection-bulwark
+          ansible-galaxy collection build --force
+          ansible-galaxy collection install \
+            l50-bulwark-*.tar.gz \
+            -p $HOME/.ansible/collections \
+            --force \
+            --pre
 
-      - name: Verify pushed images
-        if: ${{ !contains(matrix.blueprint.blueprint, 'windows') }} # Skip verification for windows blueprint (not a container image)
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3
+        with:
+          registry: ghcr.io
+          username: l50
+          password: ${{ secrets.WG_IMAGE_BUILDER_PAT }}
+
+      - name: Setup go-task
         run: |
-          echo "${{ secrets.BOT_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          blueprint_name="${{ matrix.blueprint.blueprint }}"
-          tag_name=$(yq e '.blueprint.packer_templates.tag.name' "${{ matrix.blueprint.path }}/config.yaml")
-          repo_owner=$(echo "$tag_name" | cut -d'/' -f1)
-          image_name="ghcr.io/$repo_owner/$blueprint_name:latest"
-          echo "Verifying image: $image_name"
-          docker pull "$image_name"
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin v${{ env.TASK_VERSION }}
+          task --version
+
+      - name: Initialize image template
+        run: |
+          task -y template-init \
+            TEMPLATE_NAME="${{ matrix.template.name }}" \
+            ONLY="${{ matrix.blueprint.name }}-docker.docker.*"
+
+      - name: Build image for ${{ matrix.architecture.arch }}
+        run: |
+          # Create required directories with proper permissions if they don't exist
+          if [ ! -d "${{ env.PACKER_TMP_DIR }}" ]; then
+            sudo mkdir -p ${{ env.PACKER_TMP_DIR }}
+            sudo chmod 777 ${{ env.PACKER_TMP_DIR }}
+          fi
+
+          if [ ! -d "${{ env.PACKER_PLUGIN_PATH }}" ]; then
+            sudo mkdir -p ${{ env.PACKER_PLUGIN_PATH }}
+            sudo chmod 777 ${{ env.PACKER_PLUGIN_PATH }}
+          fi
+
+          # Build only for the specific architecture
+          timeout 2h task -y template-build \
+            TEMPLATE_NAME="${{ matrix.template.name }}" \
+            ONLY="${{ matrix.template.name }}-docker.docker.${{ matrix.architecture.arch }}" \
+            VARS="${{ matrix.template.vars }}"
+
+      # Push the architecture-specific image by digest
+      - name: Push ${{ matrix.architecture.arch }} image by digest
+        id: push
+        run: |
+          task -y template-push-digest \
+            NAMESPACE="${{ matrix.template.namespace }}" \
+            IMAGE_NAME="${{ matrix.template.name }}" \
+            ARCH="${{ matrix.architecture.arch }}" \
+            GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
+            GITHUB_USER="l50"
+
+      # Upload digest info as artifact for the merge job
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.template.name }}-${{ matrix.architecture.arch }}
+          path: |
+            digest-${{ matrix.template.name }}-${{ matrix.architecture.arch }}.txt
+          retention-days: 1
+
+  # Merge the multi-arch manifests
+  merge-manifests:
+    name: Create and push multi-arch manifest
+    runs-on: ubuntu-latest
+    needs: image-builder
+    strategy:
+      matrix:
+        template:
+          - name: sliver
+            namespace: l50
+          - name: atomic-red-team
+            namespace: l50
+          - name: attack-box
+            namespace: l50
+          - name: runzero-explorer
+            namespace: cowdogmoo
+          - name: ttpforge
+            namespace: l50
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digests-${{ matrix.template.name }}-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: l50
+          password: ${{ secrets.WG_IMAGE_BUILDER_PAT }}
+
+      - name: Setup go-task
+        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+        with:
+          task-version: ${{ env.TASK_VERSION }}
+
+      - name: Create multi-arch manifest
+        run: |
+          task -y template-create-manifest \
+            NAMESPACE="${{ matrix.template.namespace }}" \
+            IMAGE_NAME="${{ matrix.template.name }}" \
+            GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
+            GITHUB_USER="l50"
+
+      - name: Verify multi-arch image
+        run: |
+          echo "Inspecting manifest for ghcr.io/${{ matrix.template.namespace }}/${{ matrix.template.name }}:latest"
+          docker buildx imagetools inspect "ghcr.io/${{ matrix.template.namespace }}/${{ matrix.template.name }}:latest"

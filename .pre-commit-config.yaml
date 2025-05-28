@@ -42,60 +42,9 @@ repos:
       - id: codespell
         entry: |
           codespell -q 3 -f
-          -S ".git,.github,README.md,docs/*,go.sum"
+          -S ".git,.github,README.md,docs/*"
 
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
+  - repo: https://github.com/cisagov/pre-commit-packer
+    rev: v0.3.0
     hooks:
-      - id: go-fmt
-      - id: go-imports
-      - id: go-cyclo
-        args: [-over=15]
-      # - id: golangci-lint
-      - id: go-critic
-      - id: go-build
-      - id: go-mod-tidy
-
-  # - repo: https://github.com/cisagov/pre-commit-packer
-  #   rev: v0.0.2
-  #   hooks:
-  #     - id: packer_fmt
-
-  - repo: local
-    hooks:
-      - id: go-no-replacement
-        name: Avoid committing a go module replacement
-        entry: .hooks/go-no-replacement.sh
-        language: script
-        files: go.mod
-
-      - id: go-unit-tests
-        name: Go unit tests
-        language: script
-        entry: .hooks/run-go-tests.sh coverage
-        files: '\.go$'
-
-      - id: go-vet
-        name: Run go vet
-        language: script
-        entry: .hooks/go-vet.sh
-        files: '\.go$'
-
-      - id: go-licenses
-        name: Run go-licenses
-        language: script
-        entry: .hooks/go-licenses.sh check_forbidden
-        files: '\.go$'
-
-      - id: generate-docs
-        name: Update package docs
-        language: script
-        entry: .hooks/generate-docs.sh
-        require_serial: true
-        files: '\.go$'
-
-      - id: go-copyright
-        name: Ensure all go files have the copyright header
-        language: script
-        entry: .hooks/go-copyright.sh
-        files: '\.go$'
+      - id: packer_fmt
