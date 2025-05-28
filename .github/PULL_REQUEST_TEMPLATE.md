@@ -1,27 +1,33 @@
-# Proposed Changes
+<!--
+Start your PR title with a conventional-commit style prefix
+(e.g., feat:, fix:, chore:, docs:, refactor:, perf:, test:)
+-->
 
-<!--- Provide a general summary of your changes -->
+<type>: <short, imperative summary of the change>
 
-## Related Issue(s)
+**Key Changes:**
 
-<!--- List related issues, if any -->
+- <High-level change #1>
+- <High-level change #2>
+- …
 
-## Testing
+**Added:**
 
-<!--- Describe the testing you've performed to validate the changes -->
+- <New file, endpoint, method, feature, etc.>
+- …
 
-## Documentation
+**Changed:**
 
-<!--- Mention any documentation updates you've made, if applicable -->
+- <Modified behavior, refactor, dependency, etc.>
+- …
 
-## Screenshots/GIFs (optional)
+**Removed:**
 
-<!--- Include screenshots or GIFs to showcase your changes,
-especially for UI updates -->
+- <Deleted code, deprecated API, unused config, etc.>
+- …
 
-## Checklist
+**Test Plan:**
 
-- [ ] Ran `mage runprecommit` locally and fixed any issues that arose.
-- [ ] Ran `mage runtests` locally and fixed any issues that arose.
-- [ ] Curated your commits so they are legible and easy to read and understand.
-- [ ] 🚀
+- <How to test the changes, e.g., run specific commands, check logs, etc.>
+- <Any new tests added, if applicable>
+- <Expected outcomes of the tests>

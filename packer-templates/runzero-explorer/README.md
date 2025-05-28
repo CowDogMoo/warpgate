@@ -40,40 +40,54 @@ The most important are:
 
 ## Building Docker Images
 
-This builds runZero Explorer Docker images for `amd64` and `arm64`, installs
-prerequisites, and provisions using Ansible roles.
+This builds **runZero Explorer Docker images** for `amd64` and `arm64`,
+installs prerequisites, and provisions using Ansible roles.
+
+**Commands:**
+
+Set your required variables and initialize the template (if needed):
+
+```bash
+export TASK_X_REMOTE_TASKFILES=1
+task -y template-init \
+  TEMPLATE_NAME=runzero-explorer \
+  ONLY='runzero-explorer-docker.docker.*' \
+  VARS="provision_repo_path=${HOME}/ansible-collection-bulwark \
+  blueprint_name=runzero-explorer" UPGRADE=true
+```
+
+Run the build:
 
 ```bash
 export RUNZERO_DOWNLOAD_TOKEN=your-token-here
 export TASK_X_REMOTE_TASKFILES=1
 task -y template-build \
-  TEMPLATE_DIR=blueprints/runzero-explorer/packer_templates \
   TEMPLATE_NAME=runzero-explorer \
   ONLY='runzero-explorer-docker.docker.*' \
   VARS="provision_repo_path=${HOME}/ansible-collection-bulwark \
-        blueprint_name=runzero-explorer"
+  blueprint_name=runzero-explorer"
 ```
 
-After the build, multi-arch runZero Explorer Docker images will be available locally.
+After the build, **multi-arch runZero Explorer Docker images** will be
+available locally.
 
 ---
 
 ## Building AWS AMIs
 
-To build an AWS AMI (Ubuntu-based, via `amazon-ebs`):
+To build an **AWS AMI** (Ubuntu-based, via `amazon-ebs`):
 
 ```bash
 export RUNZERO_DOWNLOAD_TOKEN=your-token-here
 export TASK_X_REMOTE_TASKFILES=1
 task -y template-build \
-  TEMPLATE_DIR=blueprints/runzero-explorer/packer_templates \
   TEMPLATE_NAME=runzero-explorer \
   ONLY='runzero-explorer-ami.amazon-ebs.*' \
   VARS="provision_repo_path=${HOME}/ansible-collection-bulwark \
-        blueprint_name=runzero-explorer"
+  blueprint_name=runzero-explorer"
 ```
 
-> 🛡️ Ensure your AWS credentials are configured and your IAM instance profile
+> 🛡️ Ensure your AWS credentials are configured, and your IAM instance profile
 > allows SSM usage and AMI creation.
 
 ---

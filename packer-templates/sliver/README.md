@@ -36,18 +36,33 @@ Configurable via `variables.pkr.hcl` or CLI `VARS=` overrides. Key variables:
 
 ## Building Docker Images
 
-This builds Sliver Docker images for `amd64` and `arm64`, installs
+This builds **Sliver** Docker images for `amd64` and `arm64`, installs
 prerequisites, and provisions using Ansible roles.
+
+**Commands:**
+
+Initialize the template:
+
+```bash
+export TASK_X_REMOTE_TASKFILES=1
+task -y template-init \
+  TEMPLATE_NAME=sliver \
+  ONLY='sliver-docker.docker.*' \
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal \
+  workstation_repo_path=${HOME}/ansible-workstation \
+  template_name=sliver" UPGRADE=true
+```
+
+Run the build:
 
 ```bash
 export TASK_X_REMOTE_TASKFILES=1
 task -y template-build \
-  TEMPLATE_DIR=blueprints/sliver/packer_templates \
   TEMPLATE_NAME=sliver \
   ONLY='sliver-docker.docker.*' \
-  VARS="arsenal_repo_path=${HOME}/ansible-collection-arsenal \
-        workstation_repo_path=${HOME}/ansible-workstation \
-        blueprint_name=sliver"
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal \
+  workstation_repo_path=${HOME}/ansible-workstation \
+  template_name=sliver"
 ```
 
 After the build, multi-arch Sliver Docker images will be available locally.
@@ -61,11 +76,10 @@ To build an AWS AMI (Ubuntu-based, via `amazon-ebs`):
 ```bash
 export TASK_X_REMOTE_TASKFILES=1
 task -y template-build \
-  TEMPLATE_DIR=blueprints/sliver/packer_templates \
   TEMPLATE_NAME=sliver \
   ONLY='sliver-ami.amazon-ebs.*' \
   VARS="provision_repo_path=${HOME}/ansible-collection-arsenal \
-        blueprint_name=sliver"
+  template_name=sliver"
 ```
 
 > 🛡️ Ensure your AWS credentials are configured and your IAM instance profile
