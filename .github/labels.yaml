@@ -1,44 +1,60 @@
 ---
 # Area
-- name: area/blueprints
+- name: area/dockerfiles
   color: "8fbcbc" # teal
   description: >-
-    Changes made to blueprint configurations and scripts
+    Changes made to Dockerfiles and Docker configurations
 
-- name: area/cmd
-  color: "a18fbf" # purple
+- name: area/packer
+  color: "bc8f8f" # salmon
   description: >-
-    Changes made to command line utilities
+    Changes made to Packer templates and configurations
 
 - name: area/docs
-  color: "8fbc8f"
+  color: "8fbc8f" # light green
   description: >-
     Changes made to project documentation
 
 - name: area/github
-  color: "72ccf3"
+  color: "72ccf3" # light blue
   description: >-
-    Changes made to github actions
+    Changes made to GitHub Actions workflows
 
-- name: area/magefiles
-  color: "7BD7E0"
+- name: area/taskfile
+  color: "7BD7E0" # cyan
   description: >-
-    Changes made to Magefiles
+    Changes made to Taskfile configurations
 
 - name: area/pre-commit
-  color: "BC9BE3"
+  color: "BC9BE3" # lavender
   description: >-
     Changes made to pre-commit hooks
 
-- name: area/templates
-  color: "bc8f8f"
+# Tool-specific labels
+- name: tool/atomic-red-team
+  color: "FF6B6B" # red
   description: >-
-    Changes made to template files
+    Changes related to Atomic Red Team configurations
 
-- name: area/go-mod-sum
-  color: "7BD7E0"
+- name: tool/attack-box
+  color: "4ECDC4" # turquoise
   description: >-
-    Changes made to go.mod and go.sum
+    Changes related to Attack Box configurations
+
+- name: tool/runzero
+  color: "45B7D1" # sky blue
+  description: >-
+    Changes related to RunZero Explorer configurations
+
+- name: tool/sliver
+  color: "96CEB4" # mint
+  description: >-
+    Changes related to Sliver C2 configurations
+
+- name: tool/ttpforge
+  color: "DDA0DD" # plum
+  description: >-
+    Changes related to TTPForge configurations
 
 # Renovate
 - name: renovate/container
