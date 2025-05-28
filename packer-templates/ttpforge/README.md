@@ -41,15 +41,27 @@ The most important are:
 This builds TTPForge Docker images for `amd64` and `arm64`, installs
 prerequisites, and provisions using Ansible roles.
 
-**Command:**
+**Commands:**
+
+Initialize the template:
+
+```bash
+export TASK_X_REMOTE_TASKFILES=1
+task -y template-init \
+  TEMPLATE_NAME=ttpforge \
+  ONLY='ttpforge-docker.docker.*' \
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal \
+  template_name=ttpforge" UPGRADE=true
+```
+
+Run the build:
 
 ```bash
 export TASK_X_REMOTE_TASKFILES=1
 task -y template-build \
-  TEMPLATE_DIR=blueprints/ttpforge/packer_templates \
   TEMPLATE_NAME=ttpforge \
   ONLY='ttpforge-docker.docker.*' \
-  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=ttpforge"
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal template_name=ttpforge"
 ```
 
 After the build, multi-arch TTPForge Docker images will be available locally.
@@ -63,10 +75,9 @@ To build an AWS AMI (Ubuntu-based, via `amazon-ebs`):
 ```bash
 export TASK_X_REMOTE_TASKFILES=1
 task -y template-build \
-  TEMPLATE_DIR=blueprints/ttpforge/packer_templates \
   TEMPLATE_NAME=ttpforge \
   ONLY='ttpforge-ami.amazon-ebs.*' \
-  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=ttpforge"
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal template_name=ttpforge"
 ```
 
 > 🛡️ Ensure your AWS credentials are configured and your IAM instance profile

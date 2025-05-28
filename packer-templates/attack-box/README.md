@@ -40,15 +40,27 @@ The most important are:
 This builds Attack Box Docker images for `amd64` and `arm64`, installs
 prerequisites, and provisions using Ansible roles.
 
-**Command:**
+**Commands:**
+
+Initialize the template:
+
+```bash
+export TASK_X_REMOTE_TASKFILES=1
+task -y template-init \
+  TEMPLATE_NAME=attack-box \
+  ONLY='attack-box-docker.docker.*' \
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal \
+  template_name=attack-box" UPGRADE=true
+```
+
+Run the build:
 
 ```bash
 export TASK_X_REMOTE_TASKFILES=1
 task -y template-build \
-  TEMPLATE_DIR=blueprints/attack-box/packer_templates \
   TEMPLATE_NAME=attack-box \
   ONLY='attack-box-docker.docker.*' \
-  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=attack-box"
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal template_name=attack-box"
 ```
 
 After the build, multi-arch Attack Box Docker images will be available locally.
@@ -62,10 +74,9 @@ To build an AWS AMI (Kali-based, via `amazon-ebs`):
 ```bash
 export TASK_X_REMOTE_TASKFILES=1
 task -y template-build \
-  TEMPLATE_DIR=blueprints/attack-box/packer_templates \
   TEMPLATE_NAME=attack-box \
   ONLY='attack-box-ami.amazon-ebs.*' \
-  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal blueprint_name=attack-box"
+  VARS="provision_repo_path=${HOME}/ansible-collection-arsenal template_name=attack-box"
 ```
 
 > 🛡️ Ensure your AWS credentials are configured and your IAM instance profile
