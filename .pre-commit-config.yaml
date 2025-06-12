@@ -45,6 +45,6 @@ repos:
           -S ".git,.github,README.md,docs/*"
 
   - repo: https://github.com/cisagov/pre-commit-packer
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: packer_fmt
