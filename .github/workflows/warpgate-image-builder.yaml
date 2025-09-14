@@ -38,7 +38,7 @@ jobs:
         template:
           - name: sliver
             namespace: l50
-            vars: "arsenal_repo_path=${HOME}/ansible-collection-arsenal workstation_repo_path=${HOME}/CowDogMoo/ansible-collection-workstation template_name=sliver"
+            vars: "arsenal_repo_path=${HOME}/ansible-collection-arsenal template_name=sliver"
           - name: atomic-red-team
             namespace: l50
             vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=atomic-red-team"
