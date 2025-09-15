@@ -22,6 +22,7 @@ source "docker" "amd64" {
     "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.user}",
     "WORKDIR ${var.workdir}",
+    "ENV PATH=/opt/sliver:/home/sliver/.sliver/go/bin:$PATH",
   ]
 
   run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
@@ -38,6 +39,7 @@ source "docker" "arm64" {
     "ENTRYPOINT ${var.entrypoint}",
     "USER ${var.user}",
     "WORKDIR ${var.workdir}",
+    "ENV PATH=/opt/sliver:/home/sliver/.sliver/go/bin:$PATH",
   ]
 
   volumes = {
@@ -60,19 +62,8 @@ build {
     inline = [
       "echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections",
       "apt-get update",
-      "apt-get install -y python3 python3-pip sudo"
-    ]
-  }
-
-  provisioner "ansible" {
-    only          = ["docker.arm64", "docker.amd64"]
-    galaxy_file   = "${var.workstation_repo_path}/requirements.yml"
-    playbook_file = "${var.workstation_repo_path}/playbooks/workstation/workstation.yml"
-    ansible_env_vars = [
-      "PACKER_BUILD_NAME={{ build_name }}"
-    ]
-    extra_arguments = [
-      "-e", "ansible_shell_executable=${var.shell}"
+      "apt-get install -y --no-install-recommends python3 python3-pip sudo",
+      "rm -rf /var/lib/apt/lists/*"
     ]
   }
 
@@ -81,20 +72,47 @@ build {
     galaxy_file   = "${var.arsenal_repo_path}/requirements.yml"
     playbook_file = "${var.arsenal_repo_path}/playbooks/sliver/sliver.yml"
     ansible_env_vars = [
-      "PACKER_BUILD_NAME={{ build_name }}"
+      "PACKER_BUILD_NAME={{ build_name }}",
+      "ANSIBLE_REMOTE_TMP=/tmp/ansible-tmp-$USER"
     ]
     extra_arguments = [
-      "-e", "ansible_shell_executable=${var.shell}"
+      "-e", "ansible_shell_executable=${var.shell}",
+      "-e", "sliver_cleanup=true",
+      "-e", "sliver_unpack_at_build=false"
     ]
   }
 
-  # Clean up to reduce image size
+  # Final cleanup after Ansible
   provisioner "shell" {
     only = ["docker.arm64", "docker.amd64"]
     inline = [
-      "apt-get clean",
-      "rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*"
+      # Clean up Ansible/Packer runtime artifacts
+      "rm -rf /home/${var.user}/.ansible",
+      "rm -rf /tmp/ansible*",
+      "rm -rf /tmp/packer*",
+
+      # Ensure no running processes are holding files open
+      "sync",
+
+      # Final permission fixes if needed
+      "chmod 755 /opt/sliver/sliver-server 2>/dev/null || true",
+      "chmod 755 /opt/sliver/sliver-client 2>/dev/null || true",
+
+      # Clear bash history and any other shell artifacts
+      "rm -f /home/${var.user}/.bash_history",
+      "rm -f /home/${var.user}/.wget-hsts",
+      "history -c 2>/dev/null || true",
+
+      # Ensure clean exit
+      "exit 0"
     ]
+  }
+
+  post-processors {
+    post-processor "docker-tag" {
+      repository = "sliver"
+      tags       = ["latest"]
+    }
   }
 
   # Create manifest with the necessary information to tag and push the created image(s)

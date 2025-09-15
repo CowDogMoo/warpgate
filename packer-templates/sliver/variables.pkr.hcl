@@ -17,11 +17,6 @@ variable "arsenal_repo_path" {
   description = "Path on disk to the repo that contains the arsenal code."
 }
 
-variable "workstation_repo_path" {
-  type        = string
-  description = "Path on disk to the repo that contains the workstation code."
-}
-
 variable "provision_script_path" {
   type        = string
   description = "Path on disk to the provisioning script."
@@ -131,8 +126,8 @@ variable "ssh_timeout" {
 
 variable "user" {
   type        = string
-  description = "Default odyssey user."
-  default     = "root"
+  description = "Default user."
+  default     = "sliver"
 }
 
 variable "user_data_file" {
@@ -153,7 +148,7 @@ variable "base_image" {
 variable "base_image_version" {
   type        = string
   description = "Version of the base image."
-  default     = "latest"
+  default     = "25.04"
 }
 
 variable "entrypoint" {
@@ -171,5 +166,5 @@ variable "manifest_path" {
 variable "workdir" {
   type        = string
   description = "Working directory for a new container."
-  default     = "/root"
+  default     = "/home/sliver"
 }
