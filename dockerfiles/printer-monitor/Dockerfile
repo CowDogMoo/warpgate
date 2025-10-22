@@ -9,7 +9,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir requests urllib3
 
 # Copy monitor script
-COPY monitor.py /app/monitor.py
+COPY dockerfiles/printer-monitor/monitor.py /app/monitor.py
 RUN chmod +x /app/monitor.py
 
 # Run as non-root user
