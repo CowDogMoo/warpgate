@@ -2,17 +2,24 @@
 name: Build and Publish Container Images
 on:
   workflow_dispatch:
+    inputs:
+      image:
+        description: "Specific image to build (leave empty for all)"
+        required: false
+        type: string
   pull_request:
+    paths:
+      - "dockerfiles/**"
+      - ".github/workflows/dockerfile-image-builder.yaml"
   push:
     branches: [main]
+    paths:
+      - "dockerfiles/**"
+      - ".github/workflows/dockerfile-image-builder.yaml"
 
 concurrency:
   cancel-in-progress: true
-  group: "${{ github.workflow }}"
-
-env:
-  PRODUCT_VERSION: "latest"
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+  group: "${{ github.workflow }}-${{ github.ref }}"
 
 permissions:
   id-token: write
@@ -20,8 +27,35 @@ permissions:
   packages: write
 
 jobs:
-  build-and-push:
+  discover-images:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Setup git repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Discover images with docker-bake.hcl
+        id: set-matrix
+        env:
+          INPUT_IMAGE: ${{ github.event.inputs.image }}
+        run: |
+          if [ -n "$INPUT_IMAGE" ]; then
+            # Single image specified via workflow_dispatch
+            echo "matrix=[\"$INPUT_IMAGE\"]" >> "$GITHUB_OUTPUT"
+          else
+            # Find all directories with docker-bake.hcl
+            images=$(find dockerfiles -mindepth 1 -maxdepth 1 -type d -exec test -f {}/docker-bake.hcl \; -exec basename {} \; | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "matrix=$images" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-push:
+    needs: discover-images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.discover-images.outputs.matrix) }}
     steps:
       - name: Setup git repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -39,16 +73,13 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Convert IMAGE_NAME to lowercase
-        run: echo "IMAGE_NAME=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
-      - name: Build and export to Docker (Test Image)
+      - name: Build and push ${{ matrix.image }}
         uses: docker/bake-action@3acf805d94d93a86cce4ca44798a76464a75b88c # v6
         with:
-          files: ./dockerfiles/atomic-red/docker-bake.hcl
+          files: ./dockerfiles/${{ matrix.image }}/docker-bake.hcl
           provenance: false # Stop unknown/unknown images from being pushed
           push: true
           set: |
             *.platform=linux/amd64,linux/arm64
-            *.args.REPO=ghcr.io/cowdogmoo/atomic-red
+            *.args.REPO=ghcr.io/cowdogmoo/${{ matrix.image }}
             *.args.TAG=latest

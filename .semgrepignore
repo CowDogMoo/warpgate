@@ -1,0 +1,3 @@
+# Semgrep ignore rules
+# Printer monitor uses self-signed certificates intentionally
+dockerfiles/printer-monitor/monitor.py
