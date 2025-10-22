@@ -85,7 +85,25 @@ class PrinterMonitor:
 
                 # Extract key information
                 info = {}
-                if "No Belt Unit" in content:
+
+                # Exclude Error History section to avoid false positives from historical errors
+                # Split content at Error History section if it exists
+                if "Error&#32;History" in content or "Error History" in content:
+                    # Find the Error History section and exclude it from our checks
+                    error_history_start = content.find("Error&#32;History")
+                    if error_history_start == -1:
+                        error_history_start = content.find("Error History")
+
+                    if error_history_start != -1:
+                        # Only check content before Error History
+                        current_status_content = content[:error_history_start]
+                    else:
+                        current_status_content = content
+                else:
+                    current_status_content = content
+
+                # Check for current belt unit errors (not historical)
+                if "No Belt Unit" in current_status_content:
                     info["belt_error"] = True
                     self.log("⚠️  Belt Unit Error detected!", "WARNING")
 
