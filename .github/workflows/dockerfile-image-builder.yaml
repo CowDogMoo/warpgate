@@ -37,14 +37,16 @@ jobs:
 
       - name: Discover images with docker-bake.hcl
         id: set-matrix
+        env:
+          INPUT_IMAGE: ${{ github.event.inputs.image }}
         run: |
-          if [ -n "${{ github.event.inputs.image }}" ]; then
+          if [ -n "$INPUT_IMAGE" ]; then
             # Single image specified via workflow_dispatch
-            echo "matrix=[\"${{ github.event.inputs.image }}\"]" >> $GITHUB_OUTPUT
+            echo "matrix=[\"$INPUT_IMAGE\"]" >> "$GITHUB_OUTPUT"
           else
             # Find all directories with docker-bake.hcl
             images=$(find dockerfiles -mindepth 1 -maxdepth 1 -type d -exec test -f {}/docker-bake.hcl \; -exec basename {} \; | jq -R -s -c 'split("\n") | map(select(length > 0))')
-            echo "matrix=$images" >> $GITHUB_OUTPUT
+            echo "matrix=$images" >> "$GITHUB_OUTPUT"
           fi
 
   build-and-push:
