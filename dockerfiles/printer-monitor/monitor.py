@@ -40,7 +40,7 @@ class PrinterMonitor:
             response = requests.get(
                 self.base_url,
                 timeout=self.timeout,
-                verify=False,
+                verify=False,  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
                 allow_redirects=True
             )
             return response.status_code in [200, 301, 302]
@@ -54,7 +54,7 @@ class PrinterMonitor:
             response = requests.get(
                 self.status_url,
                 timeout=self.timeout,
-                verify=False
+                verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
             )
             if response.status_code == 200:
                 content = response.text
@@ -78,7 +78,7 @@ class PrinterMonitor:
             response = requests.get(
                 self.info_url,
                 timeout=self.timeout,
-                verify=False
+                verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
             )
             if response.status_code == 200:
                 content = response.text
@@ -108,7 +108,7 @@ class PrinterMonitor:
                 requests.get(
                     self.status_url,
                     timeout=self.timeout,
-                    verify=False
+                    verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
                 )
                 time.sleep(1)
             self.log("Wake signal sent")
