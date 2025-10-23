@@ -29,3 +29,6 @@ manifest.json
 
 # Development artifacts
 TODO
+
+# Local tests
+*test*
