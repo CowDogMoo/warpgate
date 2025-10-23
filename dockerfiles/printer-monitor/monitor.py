@@ -29,10 +29,121 @@ class PrinterMonitor:
         self.timeout = timeout
         self.status_url = f"{self.base_url}/general/status.html"
         self.info_url = f"{self.base_url}/general/information.html"
+        self.sleep_url = f"{self.base_url}/general/sleep.html"
+        self.session = requests.Session()  # Use session to maintain cookies
 
     def log(self, message, level="INFO"):
         timestamp = datetime.now().isoformat()
         print(f"[{timestamp}] [{level}] {message}", flush=True)
+
+    def login(self):
+        """Login to printer admin interface"""
+        try:
+            login_data = {
+                'B12a1': self.password,
+                'loginurl': '/general/sleep.html'
+            }
+            response = self.session.post(
+                self.status_url,
+                data=login_data,
+                timeout=self.timeout,
+                verify=False,  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
+                allow_redirects=False  # Don't auto-redirect so we can check for passerror
+            )
+
+            # Check if login was successful (should redirect to our target page, not passerror)
+            if response.status_code in [301, 302]:
+                location = response.headers.get('Location', '')
+                if 'passerror' in location:
+                    self.log("Login failed: incorrect password", "ERROR")
+                    return False
+                elif '/general/sleep.html' in location:
+                    self.log("✓ Logged in to printer admin interface")
+                    # Follow the redirect manually
+                    self.session.get(f"{self.base_url}{location}", verify=False, timeout=self.timeout)  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
+                    return True
+
+            if response.status_code == 200:
+                self.log("✓ Logged in to printer admin interface")
+                return True
+            else:
+                self.log(f"Login failed with status {response.status_code}", "ERROR")
+                return False
+        except requests.exceptions.RequestException as e:
+            self.log(f"Login failed: {e}", "ERROR")
+            return False
+
+    def configure_sleep_time(self, minutes):
+        """Configure printer sleep time in minutes"""
+        try:
+            # First get the sleep page to extract CSRF token
+            response = self.session.get(
+                self.sleep_url,
+                timeout=self.timeout,
+                verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
+            )
+
+            if response.status_code != 200:
+                self.log("Failed to access sleep settings page", "ERROR")
+                return False
+
+            # Extract CSRF token from the page
+            import re
+            csrf_match = re.search(r'name="CSRFToken" value="([^"]+)"', response.text, re.DOTALL)
+            if not csrf_match:
+                self.log("Failed to extract CSRF token", "ERROR")
+                return False
+
+            # Get the token and preserve its exact format (including newlines)
+            csrf_token = csrf_match.group(1)
+
+            # Submit the new sleep time
+            sleep_data = {
+                'pageid': '6',
+                'CSRFToken': csrf_token,
+                'postif_registration_reject': '1',
+                'B1d': str(minutes)
+            }
+
+            self.log(f"Submitting sleep time change: {sleep_data}")
+            response = self.session.post(
+                self.sleep_url,
+                data=sleep_data,
+                timeout=self.timeout,
+                verify=False,  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
+                allow_redirects=False
+            )
+
+            self.log(f"POST response status: {response.status_code}, Location: {response.headers.get('Location', 'none')}")
+
+            # Follow any redirects
+            if response.status_code in [301, 302]:
+                location = response.headers.get('Location', '')
+                if location:
+                    response = self.session.get(f"{self.base_url}{location}", verify=False, timeout=self.timeout)  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
+
+            if response.status_code == 200:
+                # Verify the change by reading back the sleep page
+                verify_response = self.session.get(
+                    self.sleep_url,
+                    timeout=self.timeout,
+                    verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
+                )
+                import re
+                value_match = re.search(r'name="B1d"[^>]*value="(\d+)"', verify_response.text)
+                if value_match:
+                    actual_value = value_match.group(1)
+                    self.log(f"✓ Sleep time configured to {actual_value} minutes (requested: {minutes})")
+                else:
+                    self.log(f"✓ Sleep time configuration submitted (requested: {minutes} minutes)")
+                return True
+            else:
+                self.log(f"Failed to configure sleep time: status {response.status_code}", "ERROR")
+                return False
+
+        except Exception as e:
+            self.log(f"Failed to configure sleep time: {e}", "ERROR")
+            return False
 
     def check_basic_connectivity(self):
         """Check if printer responds to basic HTTP request"""
@@ -118,20 +229,52 @@ class PrinterMonitor:
         return {}
 
     def wake_printer(self):
-        """Attempt to wake printer by accessing status page"""
-        self.log("Attempting to wake printer...")
+        """Attempt to wake printer by sending raw print data to port 9100"""
+        self.log("Attempting to wake printer via JetDirect port...")
         try:
-            # Multiple quick requests can help wake the printer
-            for i in range(3):
-                requests.get(
-                    self.status_url,
-                    timeout=self.timeout,
-                    verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
-                )
-                time.sleep(1)
-            self.log("Wake signal sent")
-            return True
-        except requests.exceptions.RequestException as e:
+            import socket
+
+            # Extract hostname from base_url
+            from urllib.parse import urlparse
+            parsed = urlparse(self.base_url)
+            host = parsed.hostname
+            port = 9100  # Standard JetDirect/AppSocket port
+
+            # Send a minimal PCL wake command (form feed - won't actually print)
+            wake_data = b'\x0C'  # Form feed character
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+
+            try:
+                sock.connect((host, port))
+                sock.sendall(wake_data)
+                sock.close()
+                self.log("Wake signal sent via port 9100")
+                return True
+            except socket.error as e:
+                self.log(f"Failed to send wake via port 9100: {e}", "WARNING")
+                sock.close()
+
+                # Fallback to HTTP method
+                self.log("Trying HTTP wake method as fallback...")
+                pages = [self.status_url, self.info_url, self.base_url]
+                for round in range(3):
+                    for page in pages:
+                        try:
+                            requests.get(
+                                page,
+                                timeout=self.timeout,
+                                verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
+                            )
+                        except:
+                            pass
+                    time.sleep(0.5)
+
+                self.log("HTTP wake signals sent")
+                return True
+
+        except Exception as e:
             self.log(f"Failed to wake printer: {e}", "ERROR")
             return False
 
@@ -154,7 +297,7 @@ class PrinterMonitor:
 
         # Check status
         status = self.check_status_page()
-        if status in ["sleep", "ready"]:
+        if status == "ready":
             self.log(f"✓ Printer is responsive (Status: {status})")
 
             # Get detailed info
@@ -169,6 +312,54 @@ class PrinterMonitor:
                 self.log("  4. Reinstall drums/toners")
 
             return True
+        elif status == "sleep":
+            self.log("Printer is in sleep mode")
+
+            # First, try to wake the printer
+            self.log("Attempting to wake printer from sleep...")
+            self.wake_printer()
+
+            # Wait for printer to wake
+            self.log("Waiting 15 seconds for printer to wake...")
+            time.sleep(15)
+
+            # Check if it woke up
+            status = self.check_status_page()
+            if status == "ready":
+                self.log("✓ Printer successfully woke up!")
+            else:
+                self.log("⚠️  Printer did not fully wake, but continuing to configure sleep timer...")
+
+            # Configure sleep timer to prevent going back to sleep
+            self.log("Configuring sleep timer to prevent auto-sleep...")
+            if self.login():
+                if self.configure_sleep_time(30):
+                    self.log("✓ Sleep timer updated - printer will stay awake for 30 minutes")
+
+                    # Get detailed info
+                    info = self.get_printer_info()
+                    if info.get("belt_error"):
+                        self.log("⚠️  ACTION REQUIRED: Belt Unit error detected", "WARNING")
+                        self.log("Please reseat the belt unit:")
+                        self.log("  1. Open top cover")
+                        self.log("  2. Remove all drums/toners")
+                        self.log("  3. Remove and reseat belt unit")
+                        self.log("  4. Reinstall drums/toners")
+
+                    # Final status check
+                    final_status = self.check_status_page()
+                    if final_status == "ready":
+                        self.log("✓ Printer is now READY and configured")
+                        return True
+                    else:
+                        self.log(f"⚠️  Printer status: {final_status}", "WARNING")
+                        return True  # Still return True as config was successful
+                else:
+                    self.log("⚠️  Failed to configure sleep time", "WARNING")
+                    return False
+            else:
+                self.log("⚠️  Failed to login to printer", "WARNING")
+                return False
         else:
             self.log("⚠️  Printer status unclear, attempting wake", "WARNING")
             self.wake_printer()
