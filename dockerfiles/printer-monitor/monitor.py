@@ -5,6 +5,7 @@ Monitors printer responsiveness and attempts to wake it if unresponsive
 """
 
 import os
+import re
 import sys
 import time
 import requests
@@ -88,7 +89,6 @@ class PrinterMonitor:
                 return False
 
             # Extract CSRF token from the page
-            import re
             csrf_match = re.search(r'name="CSRFToken" value="([^"]+)"', response.text, re.DOTALL)
             if not csrf_match:
                 self.log("Failed to extract CSRF token", "ERROR")
@@ -105,7 +105,6 @@ class PrinterMonitor:
                 'B1d': str(minutes)
             }
 
-            self.log(f"Submitting sleep time change: {sleep_data}")
             response = self.session.post(
                 self.sleep_url,
                 data=sleep_data,
@@ -113,8 +112,6 @@ class PrinterMonitor:
                 verify=False,  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
                 allow_redirects=False
             )
-
-            self.log(f"POST response status: {response.status_code}, Location: {response.headers.get('Location', 'none')}")
 
             # Follow any redirects
             if response.status_code in [301, 302]:
@@ -129,7 +126,6 @@ class PrinterMonitor:
                     timeout=self.timeout,
                     verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
                 )
-                import re
                 value_match = re.search(r'name="B1d"[^>]*value="(\d+)"', verify_response.text)
                 if value_match:
                     actual_value = value_match.group(1)
@@ -169,12 +165,19 @@ class PrinterMonitor:
             )
             if response.status_code == 200:
                 content = response.text
-                if "Sleep" in content:
-                    self.log("Printer is in Sleep mode")
-                    return "sleep"
-                elif "Ready" in content:
-                    self.log("Printer is Ready")
-                    return "ready"
+                # Look for actual status in the moni_data div, not menu items
+                status_match = re.search(r'<span class="moni[^"]*">([^<]+)</span>', content)
+                if status_match:
+                    status_text = status_match.group(1).strip()
+                    if "Sleep" in status_text:
+                        self.log("Printer is in Sleep mode")
+                        return "sleep"
+                    elif "Ready" in status_text:
+                        self.log("Printer is Ready")
+                        return "ready"
+                    else:
+                        self.log(f"Printer status: {status_text}")
+                        return "ready"  # Treat other statuses as ready
                 else:
                     self.log("Printer status unknown")
                     return "unknown"
@@ -229,50 +232,45 @@ class PrinterMonitor:
         return {}
 
     def wake_printer(self):
-        """Attempt to wake printer by sending raw print data to port 9100"""
-        self.log("Attempting to wake printer via JetDirect port...")
+        """Attempt to wake printer using multiple methods (no blank pages)"""
+        self.log("Attempting to wake printer...")
+
+        # Method 1: Connect to JetDirect port without sending data
         try:
             import socket
-
-            # Extract hostname from base_url
             from urllib.parse import urlparse
+
             parsed = urlparse(self.base_url)
             host = parsed.hostname
-            port = 9100  # Standard JetDirect/AppSocket port
+            port = 9100
 
-            # Send a minimal PCL wake command (form feed - won't actually print)
-            wake_data = b'\x0C'  # Form feed character
-
+            self.log("Method 1: Connecting to JetDirect port (no data)...")
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
+            sock.connect((host, port))
+            sock.close()
+            self.log("✓ JetDirect connection made")
+        except Exception as e:
+            self.log(f"JetDirect connection failed: {e}", "WARNING")
 
-            try:
-                sock.connect((host, port))
-                sock.sendall(wake_data)
-                sock.close()
-                self.log("Wake signal sent via port 9100")
-                return True
-            except socket.error as e:
-                self.log(f"Failed to send wake via port 9100: {e}", "WARNING")
-                sock.close()
+        # Method 2: HTTP requests to web interface
+        try:
+            self.log("Method 2: Sending HTTP wake signals...")
+            pages = [self.status_url, self.info_url, self.base_url]
+            for round in range(3):
+                for page in pages:
+                    try:
+                        requests.get(
+                            page,
+                            timeout=self.timeout,
+                            verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
+                        )
+                    except:
+                        pass
+                time.sleep(0.5)
 
-                # Fallback to HTTP method
-                self.log("Trying HTTP wake method as fallback...")
-                pages = [self.status_url, self.info_url, self.base_url]
-                for round in range(3):
-                    for page in pages:
-                        try:
-                            requests.get(
-                                page,
-                                timeout=self.timeout,
-                                verify=False  # nosemgrep: python.requests.security.disabled-cert-validation.disabled-cert-validation
-                            )
-                        except:
-                            pass
-                    time.sleep(0.5)
-
-                self.log("HTTP wake signals sent")
-                return True
+            self.log("✓ HTTP wake signals sent")
+            return True
 
         except Exception as e:
             self.log(f"Failed to wake printer: {e}", "ERROR")
