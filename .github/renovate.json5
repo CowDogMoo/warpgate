@@ -31,7 +31,7 @@
   },
   packageRules: [
     {
-      description: 'Auto merge GitHub Actions minor and patch updates',
+      description: 'Auto merge GitHub Actions updates',
       matchManagers: [
         'github-actions',
       ],
@@ -39,6 +39,7 @@
         'github-tags',
       ],
       matchUpdateTypes: [
+        'major',
         'minor',
         'patch',
       ],
