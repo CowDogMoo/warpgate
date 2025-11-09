@@ -19,16 +19,16 @@ group "default" {
 
 # Target for AMD64 architecture
 target "amd64" {
-  context = "."
-  dockerfile = "dockerfiles/guacamole-provisioner/Dockerfile"
+  context = "dockerfiles/guacamole-provisioner"
+  dockerfile = "Dockerfile"
   platforms = ["linux/amd64"]
   tags = tag("")
 }
 
 # Target for ARM64 architecture
 target "arm64" {
-  context = "."
-  dockerfile = "dockerfiles/guacamole-provisioner/Dockerfile"
+  context = "dockerfiles/guacamole-provisioner"
+  dockerfile = "Dockerfile"
   platforms = ["linux/arm64"]
   tags = tag("arm64")
 }
