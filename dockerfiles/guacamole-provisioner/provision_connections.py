@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Optimized Guacamole Connection Provisioner
+Guacamole Connection Provisioner
 
-Performance improvements:
-- Uses inotify for event-driven file watching instead of polling
-- Implements connection pooling and reuse
-- Batches database operations for efficiency
-- Caches state to avoid redundant updates
+Dynamically provisions Apache Guacamole connections from YAML configuration files.
+
+Features:
+- Event-driven file watching with inotify
+- Database connection pooling and reuse
+- Batched database operations for efficiency
+- State caching to avoid redundant updates
 - Configurable via environment variables
 """
 
@@ -354,7 +356,7 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
-    print("🚀 Guacamole Connection Provisioner (Optimized)")
+    print("🚀 Guacamole Connection Provisioner")
     print(f"   Connections dir: {CONNECTIONS_DIR}")
     print(f"   Poll interval: {POLL_INTERVAL}s")
     print(f"   Batch size: {BATCH_SIZE}")
