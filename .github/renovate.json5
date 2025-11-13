@@ -62,6 +62,16 @@
       automergeStrategy: 'merge-queue',
     },
     {
+      description: 'Disable updates for guacamole-provisioner Dockerfile',
+      matchManagers: [
+        'dockerfile',
+      ],
+      matchFileNames: [
+        'dockerfiles/guacamole-provisioner/Dockerfile',
+      ],
+      enabled: false,
+    },
+    {
       description: 'Auto merge Packer plugin updates',
       matchManagers: [
         'terraform',
