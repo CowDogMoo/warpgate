@@ -1,16 +1,17 @@
-FROM python:3.11-alpine
+FROM python:3.12-alpine
 
 # Install dependencies at build time for faster startup
 RUN apk add --no-cache \
     postgresql-dev \
+    postgresql-libs \
     gcc \
     musl-dev \
     inotify-tools && \
     pip install --no-cache-dir \
     pyyaml==6.0.1 \
-    psycopg2-binary==2.9.9 \
+    psycopg2==2.9.9 \
     pyinotify==0.9.6 && \
-    apk del gcc musl-dev
+    apk del gcc musl-dev postgresql-dev
 
 # Copy the provisioner script
 COPY provision_connections.py /usr/local/bin/provision_connections.py
