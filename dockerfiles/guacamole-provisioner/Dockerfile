@@ -1,4 +1,4 @@
-FROM python:3.11-alpine
+FROM python:3.13-alpine
 
 # Install dependencies at build time for faster startup
 RUN apk add --no-cache \
