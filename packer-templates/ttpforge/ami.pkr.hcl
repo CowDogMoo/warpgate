@@ -65,6 +65,9 @@ build {
     playbook_file  = "${var.provision_repo_path}/playbooks/ttpforge/ttpforge.yml"
     inventory_file = "${var.provision_repo_path}/playbooks/ttpforge/ttpforge_inventory_aws_ec2.yml"
     galaxy_file    = "${var.provision_repo_path}/requirements.yml"
+    ansible_env_vars = [
+      "ANSIBLE_COLLECTIONS_PATH=$HOME/.ansible/collections:${var.provision_repo_path}"
+    ]
     extra_arguments = [
       "--connection", "packer",
       "-e", "ansible_aws_ssm_bucket_name=${var.ansible_aws_ssm_bucket_name}",
