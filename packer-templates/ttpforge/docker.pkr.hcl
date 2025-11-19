@@ -51,7 +51,8 @@ build {
       "PACKER_BUILD_NAME={{ build_name }}"
     ]
     extra_arguments = [
-      "-e", "ansible_shell_executable=${var.shell}"
+      "-e", "ansible_shell_executable=${var.shell}",
+      "-e", "ttpforge_cleanup=true"
     ]
   }
 
