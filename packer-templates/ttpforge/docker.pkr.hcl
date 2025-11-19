@@ -7,6 +7,7 @@ source "docker" "amd64" {
     "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
   }
   changes = [
+    "ENV PATH=/opt/ttpforge:$PATH",
     "USER ${var.user}",
     "WORKDIR ${var.workdir}",
   ]
@@ -19,6 +20,7 @@ source "docker" "arm64" {
   platform   = "linux/arm64"
   privileged = true
   changes = [
+    "ENV PATH=/opt/ttpforge:$PATH",
     "USER ${var.user}",
     "WORKDIR ${var.workdir}",
   ]
