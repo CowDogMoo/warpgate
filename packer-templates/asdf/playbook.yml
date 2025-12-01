@@ -1,0 +1,10 @@
+---
+- name: Install asdf version manager
+  hosts: all
+  become: false
+  tasks:
+    - name: Install asdf without plugins for minimal image
+      ansible.builtin.include_role:
+        name: asdf
+      vars:
+        asdf_plugins: [] # Don't install any plugins by default

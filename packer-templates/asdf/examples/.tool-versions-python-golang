@@ -1,0 +1,3 @@
+# Example .tool-versions for Python and Go project
+python 3.14.0
+golang 1.25.4

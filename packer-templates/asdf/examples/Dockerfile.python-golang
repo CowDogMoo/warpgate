@@ -1,0 +1,54 @@
+# Example: Custom base image with Python 3.14.0 and Go 1.25.4
+# This demonstrates creating a derived image with specific tool versions pre-installed
+
+FROM ghcr.io/cowdogmoo/asdf:latest
+
+# Switch to root to install additional system dependencies if needed
+USER root
+
+# Install any additional system packages required by your tools
+# For example, Python might need build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libssl-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libreadline-dev \
+    libsqlite3-dev \
+    wget \
+    llvm \
+    libncurses5-dev \
+    libncursesw5-dev \
+    xz-utils \
+    tk-dev \
+    libffi-dev \
+    liblzma-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Switch back to asdf user for installing tools
+USER asdf
+WORKDIR /workspace
+
+# Install Python plugin and version
+RUN asdf plugin add python && \
+    asdf install python 3.14.0 && \
+    asdf global python 3.14.0
+
+# Install Go plugin and version
+RUN asdf plugin add golang && \
+    asdf install golang 1.25.4 && \
+    asdf global golang 1.25.4
+
+# Verify installations
+RUN python --version && go version
+
+# Optional: Install common Python packages
+# RUN pip install --no-cache-dir requests pandas numpy
+
+# Optional: Install common Go tools
+# RUN go install golang.org/x/tools/gopls@latest
+
+# Set working directory and default command
+WORKDIR /workspace
+CMD ["/bin/bash"]
