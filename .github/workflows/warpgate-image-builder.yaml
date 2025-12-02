@@ -50,23 +50,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyyaml
 
+      - name: Setup go-task
+        run: |
+          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin v${{ env.TASK_VERSION }}
+          task --version
+
       - name: Discover templates
         id: set-matrix
         run: |
           echo "Running template discovery..."
-          python3 scripts/discover-templates.py \
-            --config warpgate-config.yaml \
-            --output template-matrix.json \
-            --format github-matrix \
-            --verbose
+          task discover-templates-matrix
 
           # Set the matrix output
-          MATRIX=$(cat template-matrix.json)
+          MATRIX=$(cat .github/workflows/template-matrix.json)
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
           # Display discovered templates
           echo "Discovered template matrix:"
-          cat template-matrix.json | jq .
+          cat .github/workflows/template-matrix.json | jq .
 
   image-builder:
     name: Build container images
@@ -270,7 +271,7 @@ jobs:
         run: |
           task -y template-init \
             TEMPLATE_NAME="${{ matrix.template.name }}" \
-            ONLY="${{ matrix.blueprint.name }}-docker.docker.*"
+            ONLY="${{ matrix.template.name }}-docker.docker.*"
 
       - name: Build image for ${{ matrix.architecture.arch }}
         run: |
