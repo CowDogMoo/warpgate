@@ -31,33 +31,48 @@ permissions:
   packages: write
 
 jobs:
+  discover-templates:
+    name: Discover templates
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+
+      - name: Setup Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Discover templates
+        id: set-matrix
+        run: |
+          echo "Running template discovery..."
+          python3 scripts/discover-templates.py \
+            --config warpgate-config.yaml \
+            --output template-matrix.json \
+            --format github-matrix \
+            --verbose
+
+          # Set the matrix output
+          MATRIX=$(cat template-matrix.json)
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
+          # Display discovered templates
+          echo "Discovered template matrix:"
+          cat template-matrix.json | jq .
+
   image-builder:
     name: Build container images
+    needs: discover-templates
     strategy:
-      matrix:
-        template:
-          - name: sliver
-            namespace: l50
-            vars: "arsenal_repo_path=${HOME}/ansible-collection-arsenal template_name=sliver"
-          - name: atomic-red-team
-            namespace: l50
-            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=atomic-red-team"
-          - name: attack-box
-            namespace: l50
-            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=attack-box"
-          - name: runzero-explorer
-            namespace: cowdogmoo
-            vars: "provision_repo_path=${HOME}/ansible-collection-bulwark template_name=runzero-explorer"
-          - name: ttpforge
-            namespace: l50
-            vars: "provision_repo_path=${HOME}/ansible-collection-arsenal template_name=ttpforge"
-        architecture:
-          - arch: amd64
-            runner: ubuntu-latest
-            platform: linux/amd64
-          - arch: arm64
-            runner: ubuntu-24.04-arm # Free ARM64 runner for public repos
-            platform: linux/arm64
+      matrix: ${{ fromJson(needs.discover-templates.outputs.matrix) }}
       fail-fast: false
     runs-on: ${{ matrix.architecture.runner }}
     steps:
@@ -300,20 +315,10 @@ jobs:
   merge-manifests:
     name: Create and push multi-arch manifest
     runs-on: ubuntu-latest
-    needs: image-builder
+    needs: [discover-templates, image-builder]
     strategy:
       matrix:
-        template:
-          - name: sliver
-            namespace: l50
-          - name: atomic-red-team
-            namespace: l50
-          - name: attack-box
-            namespace: l50
-          - name: runzero-explorer
-            namespace: cowdogmoo
-          - name: ttpforge
-            namespace: l50
+        template: ${{ fromJson(needs.discover-templates.outputs.matrix).template }}
       fail-fast: false
     steps:
       - name: Checkout repository

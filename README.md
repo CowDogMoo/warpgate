@@ -169,6 +169,97 @@ cp -R packer-templates/attack-box/ packer-templates/my-test-image/
 
 ---
 
+## Configuration File (warpgate-config.yaml)
+
+Warpgate uses a central configuration file (`warpgate-config.yaml`) to manage
+template sources, build settings, and discovery rules.
+
+### Configuration Structure
+
+```yaml
+# Template Sources Configuration
+template_sources:
+  - name: warpgate-core
+    path: ./packer-templates
+    type: local
+    enabled: true
+    description: Core Warpgate templates maintained in this repository
+
+# Template Build Configuration
+build_config:
+  # Default namespace for container images
+  default_namespace: l50
+
+  # Template-specific overrides
+  template_overrides:
+    runzero-explorer:
+      namespace: cowdogmoo
+      vars: "provision_repo_path=${HOME}/ansible-collection-bulwark template_name=runzero-explorer"
+
+    sliver:
+      namespace: l50
+      vars: "arsenal_repo_path=${HOME}/ansible-collection-arsenal template_name=sliver"
+
+  # Default build architectures
+  architectures:
+    - amd64
+    - arm64
+
+# Discovery Configuration
+discovery:
+  # Files that must exist for a directory to be considered a valid template
+  required_files:
+    - docker.pkr.hcl
+    - variables.pkr.hcl
+    - plugins.pkr.hcl
+
+  # Optional files (helpful but not required)
+  optional_files:
+    - locals.pkr.hcl
+    - ami.pkr.hcl
+    - README.md
+
+  # Exclude patterns (directories to skip during discovery)
+  exclude_patterns:
+    - ".*"           # Hidden directories
+    - "_*"           # Directories starting with underscore
+    - "deprecated"   # Deprecated templates
+    - "test"         # Test directories
+```
+
+### Key Configuration Sections
+
+**Template Sources:**
+
+- Define where Warpgate looks for Packer templates
+- Support for local directories (with potential for git repos in the future)
+- Can enable/disable sources individually
+
+**Build Configuration:**
+
+- Set default namespace for all container images
+- Override namespace and build variables per template
+- Define default architectures (amd64, arm64)
+
+**Discovery Settings:**
+
+- Specify required files that must exist for a valid template
+- Define optional files that enhance templates
+- Set exclude patterns to skip certain directories during discovery
+
+### Template Discovery
+
+Use the discovery task to find all valid templates based on the config:
+
+```bash
+task discover-templates
+```
+
+This will scan all enabled template sources and identify directories that
+contain the required files specified in `discovery.required_files`.
+
+---
+
 ## Custom Variables
 
 All template variables can be overridden from the CLI:
