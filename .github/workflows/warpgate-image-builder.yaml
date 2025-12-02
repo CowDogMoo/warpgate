@@ -59,7 +59,7 @@ jobs:
         id: set-matrix
         run: |
           echo "Running template discovery..."
-          task discover-templates-matrix
+          task -y discover-templates-matrix
 
           # Set the matrix output
           MATRIX=$(cat .github/workflows/template-matrix.json)
