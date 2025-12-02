@@ -27,6 +27,10 @@ node_modules
 # Packer artifacts
 manifest.json
 
+# Template discovery artifacts
+discovered-templates.json
+template-matrix.json
+
 # Development artifacts
 TODO
 

@@ -57,3 +57,9 @@ variable "container_gid" {
   description = "GID for container user"
   default     = "1000"
 }
+
+variable "manifest_path" {
+  type        = string
+  description = "Path to output the manifest file"
+  default     = "./manifest.json"
+}
