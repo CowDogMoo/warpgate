@@ -90,11 +90,7 @@ push_image() {
     docker tag "$image_hash" "$target_tag"
 
     echo -e "${GREEN}Pushing $ARCH image...${NC}"
-    local push_output
-    push_output=$(docker push "$target_tag" 2>&1)
-    echo "$push_output"
-
-    echo "$push_output"
+    docker push "$target_tag" 2>&1
 }
 
 # Extract digest from push output
