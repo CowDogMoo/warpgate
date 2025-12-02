@@ -127,7 +127,7 @@ build {
     }
 
     post-processor "manifest" {
-      output     = "packer-manifest-${source.name}.json"
+      output     = "${var.manifest_path}"
       strip_path = true
     }
   }
