@@ -61,12 +61,9 @@ jobs:
           echo "Running template discovery..."
           task -y discover-templates-matrix
 
-          # Set the matrix output using proper multi-line format
-          {
-            echo "matrix<<EOF"
-            cat .github/workflows/template-matrix.json
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          # Set the matrix output as a single-line JSON string
+          MATRIX=$(cat .github/workflows/template-matrix.json | jq -c .)
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
           # Display discovered templates
           echo "Discovered template matrix:"
