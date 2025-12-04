@@ -31,7 +31,6 @@ import (
 )
 
 // BuildOrchestrator coordinates multi-architecture builds
-// This replaces the complex GitHub Actions matrix workflow
 type BuildOrchestrator struct {
 	maxConcurrency int
 }

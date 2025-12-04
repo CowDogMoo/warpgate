@@ -5,9 +5,13 @@ coverage.out
 # Distribution directory for binaries
 dist/
 
-# Generated binaries
+# Generated binaries (local development)
 wg
-/warpgate
+warpgate
+*.exe
+*.dll
+*.so
+*.dylib
 
 # Generated directories
 builds/

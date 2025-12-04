@@ -53,11 +53,17 @@ run_tests() {
         go test -v -short -failfast -race ./... 2>&1 | tee -a "$LOGFILE"
     elif [[ "${TESTS_TO_RUN}" == 'modified' ]]; then
         # Run tests for modified files
-        local modified_files
-        IFS=$'\n' read -r -a modified_files <<< "$(git diff --name-only --cached | grep '\.go$')"
+        local modified_files=()
+        while IFS= read -r file; do
+            [[ -n "$file" ]] && modified_files+=("$file")
+        done < <(git diff --name-only --cached | grep '\.go$' || true)
+
+        if [[ ${#modified_files[@]} -eq 0 ]]; then
+            echo "No modified Go files found to test" | tee -a "$LOGFILE"
+            return 0
+        fi
 
         local pkg_dirs=()
-
         for file in "${modified_files[@]}"; do
             local pkg_dir
             pkg_dir=$(dirname "$file")
@@ -66,11 +72,11 @@ run_tests() {
         done
 
         # Remove duplicate package directories
-        IFS=$'\n' read -r -a pkg_dirs <<< "$(sort -u <<< "${pkg_dirs[*]}")"
+        IFS=$'\n' read -r -a pkg_dirs <<< "$(printf '%s\n' "${pkg_dirs[@]}" | sort -u)"
         unset IFS
 
         for dir in "${pkg_dirs[@]}"; do
-            go test -v -short -race -failfast "./$dir/..." 2>&1 | tee -a "$LOGFILE"
+            [[ -n "$dir" ]] && go test -v -short -race -failfast "./$dir/..." 2>&1 | tee -a "$LOGFILE"
         done
     else
         if [[ "${GITHUB_ACTIONS}" != 'true' ]]; then
