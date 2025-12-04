@@ -1,25 +1,28 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
-TESTS_TO_RUN=$1
+TESTS_TO_RUN=${1:-}
 RETURN_CODE=0
+GITHUB_ACTIONS=${GITHUB_ACTIONS:-}
+# Dynamically set project name from Go module
+PROJECT_NAME=$(go list -m -f "{{.Name}}" 2> /dev/null || basename "$(git rev-parse --show-toplevel 2> /dev/null)" || echo "project")
 
 TIMESTAMP=$(date +"%Y%m%d%H%M%S")
-LOGFILE="/tmp/goutils-unit-test-results-$TIMESTAMP.log"
+LOGFILE="/tmp/${PROJECT_NAME}-unit-test-results-$TIMESTAMP.log"
 MODULE_ROOT=$(go list -m -f "{{.Dir}}")
 
 if [[ -z "${TESTS_TO_RUN}" ]]; then
     echo "No tests input" | tee -a "$LOGFILE"
-    echo "Example - Run all shorter collection of tests: bash run-go-tests.sh short" | tee -a "$LOGFILE"
-    echo "Example - Run all tests: bash run-go-tests.sh all" | tee -a "$LOGFILE"
-    echo "Example - Run coverage for a specific version: bash run-go-tests.sh coverage" | tee -a "$LOGFILE"
-    echo "Example - Run tests for modified files: bash run-go-tests.sh modified" | tee -a "$LOGFILE"
+    echo "Example - Run all shorter collection of tests: bash .hooks/run-go-tests.sh short" | tee -a "$LOGFILE"
+    echo "Example - Run all tests: bash .hooks/run-go-tests.sh all" | tee -a "$LOGFILE"
+    echo "Example - Run coverage for a specific version: bash .hooks/run-go-tests.sh coverage" | tee -a "$LOGFILE"
+    echo "Example - Run tests for modified files: bash .hooks/run-go-tests.sh modified" | tee -a "$LOGFILE"
     exit 1
 fi
 
 run_tests() {
-    local coverage_file=$1
+    local coverage_file=${1:-}
     repo_root=$(git rev-parse --show-toplevel 2> /dev/null) || exit
     pushd "${repo_root}" || exit
     echo "Logging output to ${LOGFILE}" | tee -a "$LOGFILE"

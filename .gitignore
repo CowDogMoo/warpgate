@@ -7,7 +7,7 @@ dist/
 
 # Generated binaries
 wg
-warpgate
+/warpgate
 
 # Generated directories
 builds/
