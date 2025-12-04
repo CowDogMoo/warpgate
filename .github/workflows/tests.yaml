@@ -1,0 +1,36 @@
+---
+name: Tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  GO_VERSION: 1.25.3
+
+jobs:
+  tests:
+    name: Run tests and determine code coverage %
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout git repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5
+        with:
+          go-version: "${{ env.GO_VERSION }}"
+
+      - name: Setup git config
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+
+      - name: Generate the coverage output
+        run: |
+          bash .hooks/run-go-tests.sh coverage
+
+      # - name: Send the coverage output
+      #   uses: shogo82148/actions-goveralls@7b1bd2871942af030d707d6574e5f684f9891fb2 # v1
+      #   with:
+      #     path-to-profile: coverage-all.out
