@@ -23,18 +23,30 @@ THE SOFTWARE.
 package templates
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/lithammer/fuzzysearch/fuzzy"
 	"gopkg.in/yaml.v3"
 )
 
 // TemplateRegistry manages template repositories
 type TemplateRegistry struct {
-	repos map[string]string // name -> git URL
+	repos    map[string]string // name -> git URL
+	cacheDir string            // persistent cache directory
+}
+
+// CacheMetadata stores information about cached templates
+type CacheMetadata struct {
+	LastUpdated  time.Time               `json:"last_updated"`
+	Templates    map[string]TemplateInfo `json:"templates"`
+	Repositories map[string]string       `json:"repositories"`
 }
 
 // TemplateInfo contains information about a template
@@ -49,24 +61,60 @@ type TemplateInfo struct {
 }
 
 // NewTemplateRegistry creates a new template registry
-func NewTemplateRegistry() *TemplateRegistry {
-	return &TemplateRegistry{
+func NewTemplateRegistry() (*TemplateRegistry, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	cacheDir := filepath.Join(homeDir, ".warpgate", "cache", "registry")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	tr := &TemplateRegistry{
 		repos: map[string]string{
 			"official": "https://github.com/cowdogmoo/warpgate-templates.git",
 			// Future: support for community template repos
 		},
+		cacheDir: cacheDir,
 	}
+
+	// Load custom repositories from config
+	if err := tr.LoadRepositories(); err != nil {
+		logging.Warn("Failed to load repository config: %v", err)
+	}
+
+	return tr, nil
 }
 
 // List returns all available templates in a repository
 func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
+	// Try to load from cache first
+	cache, err := tr.loadCache(repoName)
+	if err == nil && cache != nil {
+		// Check if cache is recent (less than 1 hour old)
+		if time.Since(cache.LastUpdated) < time.Hour {
+			logging.Debug("Using cached templates for repository: %s", repoName)
+			templates := make([]TemplateInfo, 0, len(cache.Templates))
+			for _, tmpl := range cache.Templates {
+				templates = append(templates, tmpl)
+			}
+			return templates, nil
+		}
+		logging.Debug("Cache expired for repository: %s", repoName)
+	}
+
+	// Cache miss or expired - fetch fresh data
+	logging.Debug("Fetching templates from repository: %s", repoName)
 	repoURL, ok := tr.repos[repoName]
 	if !ok {
 		return nil, fmt.Errorf("unknown repository: %s", repoName)
 	}
 
-	// Clone or update the repository
-	gitOps := NewGitOperations(filepath.Join(os.TempDir(), "warpgate-registry"))
+	// Clone or update the repository using persistent cache
+	repoCache := filepath.Join(tr.cacheDir, "repos", repoName)
+	gitOps := NewGitOperations(repoCache)
 	repoPath, err := gitOps.CloneOrUpdate(repoURL, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to access repository: %w", err)
@@ -76,6 +124,11 @@ func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
 	templates, err := tr.discoverTemplates(repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover templates: %w", err)
+	}
+
+	// Save to cache
+	if err := tr.saveCache(repoName, templates); err != nil {
+		logging.Warn("Failed to save cache: %v", err)
 	}
 
 	return templates, nil
@@ -165,22 +218,43 @@ func (tr *TemplateRegistry) Search(query string) ([]TemplateInfo, error) {
 }
 
 // matchesQuery checks if a template matches a search query
+// Uses both exact substring matching and fuzzy matching for better results
 func (tr *TemplateRegistry) matchesQuery(tmpl TemplateInfo, query string) bool {
 	query = strings.ToLower(query)
 
-	// Check name
+	// Exact substring match on name (highest priority)
 	if strings.Contains(strings.ToLower(tmpl.Name), query) {
 		return true
 	}
 
-	// Check description
+	// Exact substring match on description
 	if strings.Contains(strings.ToLower(tmpl.Description), query) {
 		return true
 	}
 
-	// Check tags
+	// Exact substring match on tags
 	for _, tag := range tmpl.Tags {
 		if strings.Contains(strings.ToLower(tag), query) {
+			return true
+		}
+	}
+
+	// Fuzzy match on name
+	if fuzzy.Match(query, strings.ToLower(tmpl.Name)) {
+		return true
+	}
+
+	// Fuzzy match on tags
+	for _, tag := range tmpl.Tags {
+		if fuzzy.Match(query, strings.ToLower(tag)) {
+			return true
+		}
+	}
+
+	// Fuzzy match on description words (split description into words for better matching)
+	descWords := strings.Fields(strings.ToLower(tmpl.Description))
+	for _, word := range descWords {
+		if fuzzy.Match(query, word) {
 			return true
 		}
 	}
@@ -196,4 +270,143 @@ func (tr *TemplateRegistry) AddRepository(name, gitURL string) {
 // RemoveRepository removes a template repository from the registry
 func (tr *TemplateRegistry) RemoveRepository(name string) {
 	delete(tr.repos, name)
+}
+
+// loadCache loads cached template information for a repository
+func (tr *TemplateRegistry) loadCache(repoName string) (*CacheMetadata, error) {
+	cachePath := filepath.Join(tr.cacheDir, repoName+".json")
+
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var cache CacheMetadata
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil, err
+	}
+
+	return &cache, nil
+}
+
+// saveCache saves template information to cache
+func (tr *TemplateRegistry) saveCache(repoName string, templates []TemplateInfo) error {
+	cache := CacheMetadata{
+		LastUpdated:  time.Now(),
+		Templates:    make(map[string]TemplateInfo),
+		Repositories: tr.repos,
+	}
+
+	for _, tmpl := range templates {
+		cache.Templates[tmpl.Name] = tmpl
+	}
+
+	cachePath := filepath.Join(tr.cacheDir, repoName+".json")
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(cachePath, data, 0644)
+}
+
+// UpdateCache forces a cache refresh for a repository
+func (tr *TemplateRegistry) UpdateCache(repoName string) error {
+	logging.Info("Updating cache for repository: %s", repoName)
+
+	repoURL, ok := tr.repos[repoName]
+	if !ok {
+		return fmt.Errorf("unknown repository: %s", repoName)
+	}
+
+	// Clone or update the repository
+	repoCache := filepath.Join(tr.cacheDir, "repos", repoName)
+	gitOps := NewGitOperations(repoCache)
+	repoPath, err := gitOps.CloneOrUpdate(repoURL, "")
+	if err != nil {
+		return fmt.Errorf("failed to access repository: %w", err)
+	}
+
+	// Discover templates
+	templates, err := tr.discoverTemplates(repoPath)
+	if err != nil {
+		return fmt.Errorf("failed to discover templates: %w", err)
+	}
+
+	// Save to cache
+	if err := tr.saveCache(repoName, templates); err != nil {
+		return fmt.Errorf("failed to save cache: %w", err)
+	}
+
+	logging.Info("Cache updated successfully for repository: %s (%d templates)", repoName, len(templates))
+	return nil
+}
+
+// UpdateAllCaches forces a cache refresh for all repositories
+func (tr *TemplateRegistry) UpdateAllCaches() error {
+	var errors []string
+
+	for repoName := range tr.repos {
+		if err := tr.UpdateCache(repoName); err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", repoName, err))
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to update some caches: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+// GetRepositories returns all registered repositories
+func (tr *TemplateRegistry) GetRepositories() map[string]string {
+	repos := make(map[string]string)
+	for name, url := range tr.repos {
+		repos[name] = url
+	}
+	return repos
+}
+
+// LoadRepositories loads repository configuration from file
+func (tr *TemplateRegistry) LoadRepositories() error {
+	configPath := filepath.Join(tr.cacheDir, "repositories.json")
+
+	// If file doesn't exist, use defaults
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return nil
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read repository config: %w", err)
+	}
+
+	var repos map[string]string
+	if err := json.Unmarshal(data, &repos); err != nil {
+		return fmt.Errorf("failed to parse repository config: %w", err)
+	}
+
+	// Merge with existing repos (keeping defaults if not overridden)
+	for name, url := range repos {
+		tr.repos[name] = url
+	}
+
+	return nil
+}
+
+// SaveRepositories saves repository configuration to file
+func (tr *TemplateRegistry) SaveRepositories() error {
+	configPath := filepath.Join(tr.cacheDir, "repositories.json")
+
+	data, err := json.MarshalIndent(tr.repos, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal repository config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write repository config: %w", err)
+	}
+
+	return nil
 }

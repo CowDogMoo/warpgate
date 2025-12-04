@@ -53,9 +53,14 @@ func NewTemplateLoader() (*TemplateLoader, error) {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
+	registry, err := NewTemplateRegistry()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create template registry: %w", err)
+	}
+
 	return &TemplateLoader{
 		cacheDir:   cacheDir,
-		registry:   NewTemplateRegistry(),
+		registry:   registry,
 		configLoad: config.NewLoader(),
 		gitOps:     NewGitOperations(cacheDir),
 	}, nil

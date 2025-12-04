@@ -60,10 +60,49 @@ var templatesInfoCmd = &cobra.Command{
 	RunE:  runTemplatesInfo,
 }
 
+var templatesUpdateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update template cache",
+	Long:  `Update the local cache of templates from all configured repositories.`,
+	RunE:  runTemplatesUpdate,
+}
+
+var templatesRepoCmd = &cobra.Command{
+	Use:   "repo",
+	Short: "Manage template repositories",
+	Long:  `Add, remove, or list template repositories.`,
+}
+
+var templatesRepoListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List configured repositories",
+	RunE:  runTemplatesRepoList,
+}
+
+var templatesRepoAddCmd = &cobra.Command{
+	Use:   "add [name] [git-url]",
+	Short: "Add a template repository",
+	Args:  cobra.ExactArgs(2),
+	RunE:  runTemplatesRepoAdd,
+}
+
+var templatesRepoRemoveCmd = &cobra.Command{
+	Use:   "remove [name]",
+	Short: "Remove a template repository",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runTemplatesRepoRemove,
+}
+
 func init() {
 	templatesCmd.AddCommand(templatesListCmd)
 	templatesCmd.AddCommand(templatesSearchCmd)
 	templatesCmd.AddCommand(templatesInfoCmd)
+	templatesCmd.AddCommand(templatesUpdateCmd)
+	templatesCmd.AddCommand(templatesRepoCmd)
+
+	templatesRepoCmd.AddCommand(templatesRepoListCmd)
+	templatesRepoCmd.AddCommand(templatesRepoAddCmd)
+	templatesRepoCmd.AddCommand(templatesRepoRemoveCmd)
 }
 
 func runTemplatesList(cmd *cobra.Command, args []string) error {
@@ -118,7 +157,10 @@ func runTemplatesSearch(cmd *cobra.Command, args []string) error {
 	logging.Info("Searching for templates matching: %s", query)
 
 	// Create template registry
-	registry := templates.NewTemplateRegistry()
+	registry, err := templates.NewTemplateRegistry()
+	if err != nil {
+		return fmt.Errorf("failed to create template registry: %w", err)
+	}
 
 	// Search for templates
 	results, err := registry.Search(query)
@@ -272,4 +314,97 @@ func displayEnvironmentVars(cfg *builder.Config) {
 	for key, value := range cfg.Base.Env {
 		fmt.Printf("  %s: %v\n", key, value)
 	}
+}
+
+func runTemplatesUpdate(cmd *cobra.Command, args []string) error {
+	logging.Info("Updating template cache...")
+
+	// Create template registry
+	registry, err := templates.NewTemplateRegistry()
+	if err != nil {
+		return fmt.Errorf("failed to create template registry: %w", err)
+	}
+
+	// Update all caches
+	if err := registry.UpdateAllCaches(); err != nil {
+		return fmt.Errorf("failed to update template cache: %w", err)
+	}
+
+	logging.Info("Template cache updated successfully")
+	return nil
+}
+
+func runTemplatesRepoList(cmd *cobra.Command, args []string) error {
+	// Create template registry
+	registry, err := templates.NewTemplateRegistry()
+	if err != nil {
+		return fmt.Errorf("failed to create template registry: %w", err)
+	}
+
+	repos := registry.GetRepositories()
+	if len(repos) == 0 {
+		logging.Info("No repositories configured")
+		return nil
+	}
+
+	// Display repositories
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "NAME\tGIT URL")
+	fmt.Fprintln(w, "----\t-------")
+
+	for name, url := range repos {
+		fmt.Fprintf(w, "%s\t%s\n", name, url)
+	}
+
+	w.Flush()
+	fmt.Printf("\nTotal repositories: %d\n", len(repos))
+	return nil
+}
+
+func runTemplatesRepoAdd(cmd *cobra.Command, args []string) error {
+	name := args[0]
+	gitURL := args[1]
+
+	logging.Info("Adding repository: %s -> %s", name, gitURL)
+
+	// Create template registry
+	registry, err := templates.NewTemplateRegistry()
+	if err != nil {
+		return fmt.Errorf("failed to create template registry: %w", err)
+	}
+
+	// Add repository
+	registry.AddRepository(name, gitURL)
+
+	// Save configuration
+	if err := registry.SaveRepositories(); err != nil {
+		return fmt.Errorf("failed to save repository configuration: %w", err)
+	}
+
+	logging.Info("Repository added successfully")
+	logging.Info("Run 'warpgate templates update' to fetch templates from the new repository")
+	return nil
+}
+
+func runTemplatesRepoRemove(cmd *cobra.Command, args []string) error {
+	name := args[0]
+
+	logging.Info("Removing repository: %s", name)
+
+	// Create template registry
+	registry, err := templates.NewTemplateRegistry()
+	if err != nil {
+		return fmt.Errorf("failed to create template registry: %w", err)
+	}
+
+	// Remove repository
+	registry.RemoveRepository(name)
+
+	// Save configuration
+	if err := registry.SaveRepositories(); err != nil {
+		return fmt.Errorf("failed to save repository configuration: %w", err)
+	}
+
+	logging.Info("Repository removed successfully")
+	return nil
 }

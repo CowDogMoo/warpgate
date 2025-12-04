@@ -3,6 +3,7 @@ module github.com/cowdogmoo/warpgate
 go 1.25.4
 
 require (
+	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/aws/aws-sdk-go-v2 v1.40.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.3
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.3
@@ -12,6 +13,7 @@ require (
 	github.com/containers/common v0.64.2
 	github.com/fatih/color v1.18.0
 	github.com/go-git/go-git/v5 v5.16.4
+	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
