@@ -35,5 +35,7 @@ template-matrix.json
 # Development artifacts
 TODO
 
-# Local tests
-*test*
+# Test output files (but keep *_test.go files!)
+*.test
+test-results/
+testdata/tmp/

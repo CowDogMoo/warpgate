@@ -4,6 +4,7 @@
 [![🚨 Semgrep Analysis](https://github.com/CowDogMoo/warpgate/actions/workflows/semgrep.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/semgrep.yaml)
 [![Pre-Commit](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml)
 [![Renovate](https://github.com/CowDogMoo/warpgate/actions/workflows/renovate.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/renovate.yaml)
+[![SBOM](https://img.shields.io/badge/SBOM-SPDX%20%7C%20CycloneDX-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0wIDE4Yy00LjQxIDAtOC0zLjU5LTgtOHMzLjU5LTggOC04IDggMy41OSA4IDgtMy41OSA4LTggOHptLTEtMTNINXYyaDZ2LTJ6bTAtNEg1djJoNlY2em0wIDhoNXYtMmgtNXYyeiIvPjwvc3ZnPg==)](docs/license-compliance-sbom.md)
 
 <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
 
@@ -11,6 +12,26 @@
 golden images, and multi-architecture containers using modular Packer templates
 and Taskfile-driven workflows. Warp Gate images spin up rapidly for use in
 security labs, cyber ranges, DevOps CI, and immutable infrastructure.
+
+---
+
+## Documentation
+
+📚 **Comprehensive guides and references:**
+
+- **[Getting Started Guide](docs/getting-started.md)** - Quick start and
+  basic usage
+- **[Architecture Overview](docs/architecture.md)** - System design and
+  components
+- **[License Compliance & SBOM](docs/license-compliance-sbom.md)** -
+  Automated compliance, SBOM generation, and supply chain security
+- **[Sliver C2 Setup](docs/sliver.md)** - Deploying Sliver command &
+  control infrastructure
+
+**Additional Resources:**
+
+- [Taskfile.yaml](Taskfile.yaml) - Complete task reference
+- [Configuration File](warpgate-config.yaml) - Template sources and build settings
 
 ---
 
@@ -221,10 +242,10 @@ discovery:
 
   # Exclude patterns (directories to skip during discovery)
   exclude_patterns:
-    - ".*"           # Hidden directories
-    - "_*"           # Directories starting with underscore
-    - "deprecated"   # Deprecated templates
-    - "test"         # Test directories
+    - ".*" # Hidden directories
+    - "_*" # Directories starting with underscore
+    - "deprecated" # Deprecated templates
+    - "test" # Test directories
 ```
 
 ### Key Configuration Sections
@@ -338,3 +359,19 @@ task secrets
 ## Contributing
 
 Open Issues for template improvements, workflows, or Taskfile features!
+
+**Before contributing:**
+
+1. Review the
+   [License Compliance & SBOM documentation](docs/license-compliance-sbom.md)
+2. Install pre-commit hooks: `pre-commit install`
+3. Ensure all dependencies use
+   [allowed licenses](docs/license-compliance-sbom.md#allowed-licenses)
+   (Apache-2.0, MIT, BSD, ISC)
+
+Pre-commit hooks will automatically:
+
+- Check license compatibility
+- Update NOTICE file
+- Generate SBOMs
+- Run security scans

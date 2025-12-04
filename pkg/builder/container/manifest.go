@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/containers/buildah"
 	"github.com/containers/common/pkg/manifests"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/opencontainers/go-digest"
@@ -61,7 +62,6 @@ type ManifestEntry struct {
 }
 
 // CreateManifest creates a multi-arch manifest from individual architecture images
-// TODO: Implement multi-arch manifest support with updated containers API
 func (mm *ManifestManager) CreateManifest(ctx context.Context, manifestName string, entries []ManifestEntry) (manifests.List, error) {
 	logging.Info("Creating multi-arch manifest: %s", manifestName)
 
@@ -74,17 +74,49 @@ func (mm *ManifestManager) CreateManifest(ctx context.Context, manifestName stri
 
 	logging.Info("Manifest %s will include %d architectures:", manifestName, len(entries))
 
-	// TODO: Update to use current manifests API
-	// The Add method signature has changed in newer versions
-	// For now, return the manifest list without adding entries
-	logging.Warn("Multi-arch manifest creation not yet fully implemented")
+	// Add each architecture image to the manifest
+	for _, entry := range entries {
+		logging.Info("  - %s/%s (digest: %s)", entry.OS, entry.Architecture, entry.Digest.String())
 
+		// Get the image from the store to determine its size and type
+		img, err := mm.store.Image(entry.Digest.String())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get image for digest %s: %w", entry.Digest, err)
+		}
+
+		// Get the manifest to determine its size
+		manifestBytes, err := mm.store.ImageBigData(img.ID, "manifest")
+		if err != nil {
+			return nil, fmt.Errorf("failed to get manifest data: %w", err)
+		}
+
+		// Determine manifest type (default to OCI)
+		manifestType := "application/vnd.oci.image.manifest.v1+json"
+
+		// Add this architecture to the manifest list
+		err = manifestList.AddInstance(
+			entry.Digest,              // manifestDigest
+			int64(len(manifestBytes)), // manifestSize
+			manifestType,              // manifestType
+			entry.OS,                  // os
+			entry.Architecture,        // architecture
+			"",                        // osVersion
+			nil,                       // osFeatures
+			entry.Variant,             // variant
+			nil,                       // features
+			nil,                       // annotations
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add instance to manifest: %w", err)
+		}
+	}
+
+	logging.Info("Successfully created multi-arch manifest with %d architectures", len(entries))
 	return manifestList, nil
 }
 
 // PushManifest pushes a manifest list to a registry
-// TODO: Implement manifest push with updated containers API
-func (mm *ManifestManager) PushManifest(ctx context.Context, manifestBytes string, destination string) error {
+func (mm *ManifestManager) PushManifest(ctx context.Context, manifestList manifests.List, destination string) error {
 	logging.Info("Pushing manifest to %s", destination)
 
 	// Parse the destination reference
@@ -93,46 +125,125 @@ func (mm *ManifestManager) PushManifest(ctx context.Context, manifestBytes strin
 		destRefStr = "docker://" + destination
 	}
 
-	_, err := alltransports.ParseImageName(destRefStr)
+	destRef, err := alltransports.ParseImageName(destRefStr)
 	if err != nil {
 		return fmt.Errorf("failed to parse destination: %w", err)
 	}
 
-	// TODO: Update to use current manifests API
-	// The Push method and related types have changed
-	logging.Warn("Manifest push not yet fully implemented")
-
-	return fmt.Errorf("manifest push not yet implemented")
-}
-
-// InspectManifest inspects a manifest list
-// TODO: Implement manifest inspection with updated containers API
-func (mm *ManifestManager) InspectManifest(ctx context.Context, manifestName string) ([]ManifestEntry, error) {
-	logging.Debug("Inspecting manifest: %s", manifestName)
-
-	// Parse the manifest reference
-	_, err := alltransports.ParseImageName(manifestName)
+	// Serialize the manifest list to OCI format
+	manifestBytes, err := manifestList.Serialize("application/vnd.oci.image.index.v1+json")
 	if err != nil {
-		_, err = alltransports.ParseImageName("containers-storage:" + manifestName)
+		// Fallback to Docker format if OCI fails
+		manifestBytes, err = manifestList.Serialize("application/vnd.docker.distribution.manifest.list.v2+json")
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse manifest reference: %w", err)
+			return fmt.Errorf("failed to serialize manifest: %w", err)
 		}
 	}
 
-	// TODO: Update to use current manifests API
-	// The LoadFromImage function signature has changed
-	logging.Warn("Manifest inspection not yet fully implemented")
+	// Create a temporary image in the store with the manifest list
+	tempImageName := fmt.Sprintf("localhost/temp-manifest-%s", strings.ReplaceAll(destination, "/", "-"))
 
-	return nil, fmt.Errorf("manifest inspection not yet implemented")
+	// Store the manifest list in the image store
+	img, err := mm.store.CreateImage(tempImageName, nil, "", "", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create temporary manifest image: %w", err)
+	}
+	defer func() {
+		// Clean up temporary image
+		if _, err := mm.store.DeleteImage(img.ID, true); err != nil {
+			logging.Warn("Failed to delete temporary manifest image: %v", err)
+		}
+	}()
+
+	// Set the manifest list data
+	err = mm.store.SetImageBigData(img.ID, "manifest", manifestBytes, nil)
+	if err != nil {
+		return fmt.Errorf("failed to set manifest data: %w", err)
+	}
+
+	// Push the manifest using buildah's push functionality
+	pushOpts := buildah.PushOptions{
+		Store:         mm.store,
+		SystemContext: mm.systemContext,
+	}
+
+	_, digest, err := buildah.Push(ctx, img.ID, destRef, pushOpts)
+	if err != nil {
+		return fmt.Errorf("failed to push manifest: %w", err)
+	}
+
+	logging.Info("Successfully pushed manifest list to %s", destination)
+	logging.Info("Manifest digest: %s", digest.String())
+
+	return nil
 }
 
-// RemoveManifest removes a manifest list
-// TODO: Implement manifest removal with updated containers API
+// InspectManifest inspects a manifest list
+func (mm *ManifestManager) InspectManifest(ctx context.Context, manifestName string) ([]ManifestEntry, error) {
+	logging.Debug("Inspecting manifest: %s", manifestName)
+
+	// Get the image from storage
+	img, err := mm.store.Image(manifestName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find manifest image: %w", err)
+	}
+
+	// Get the manifest data
+	manifestBytes, err := mm.store.ImageBigData(img.ID, "manifest")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get manifest data: %w", err)
+	}
+
+	// Parse the manifest list
+	manifestList, err := manifests.FromBlob(manifestBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse manifest list: %w", err)
+	}
+
+	// Get all instances from the manifest
+	instances := manifestList.Instances()
+	entries := make([]ManifestEntry, 0, len(instances))
+
+	for _, instanceDigest := range instances {
+		os, _ := manifestList.OS(instanceDigest)
+		arch, _ := manifestList.Architecture(instanceDigest)
+		variant, _ := manifestList.Variant(instanceDigest)
+
+		entry := ManifestEntry{
+			Digest:       instanceDigest,
+			OS:           os,
+			Architecture: arch,
+			Variant:      variant,
+			Platform:     fmt.Sprintf("%s/%s", os, arch),
+		}
+
+		if variant != "" {
+			entry.Platform = fmt.Sprintf("%s/%s/%s", os, arch, variant)
+		}
+
+		entries = append(entries, entry)
+		logging.Debug("  - %s (digest: %s)", entry.Platform, entry.Digest.String())
+	}
+
+	logging.Info("Manifest %s contains %d architecture(s)", manifestName, len(entries))
+	return entries, nil
+}
+
+// RemoveManifest removes a manifest list from local storage
 func (mm *ManifestManager) RemoveManifest(ctx context.Context, manifestName string) error {
 	logging.Debug("Removing manifest: %s", manifestName)
 
-	// TODO: Update to use current manifests API
-	logging.Warn("Manifest removal not yet fully implemented")
+	// Get the image from storage
+	img, err := mm.store.Image(manifestName)
+	if err != nil {
+		return fmt.Errorf("failed to find manifest image: %w", err)
+	}
 
-	return fmt.Errorf("manifest removal not yet implemented")
+	// Delete the manifest image
+	if _, err := mm.store.DeleteImage(img.ID, true); err != nil {
+		return fmt.Errorf("failed to remove manifest: %w", err)
+	}
+
+	logging.Info("Successfully removed manifest: %s", manifestName)
+	return nil
 }
