@@ -27,6 +27,7 @@ import (
 	"fmt"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/builder/ami"
 	"github.com/cowdogmoo/warpgate/pkg/builder/container"
 	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
@@ -98,26 +99,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Execute build
-	bldr, err := initializeBuilder()
-	if err != nil {
-		return err
-	}
-	defer bldr.Close()
-
-	result, err := bldr.Build(ctx, *buildConfig)
-	if err != nil {
-		return fmt.Errorf("build failed: %w", err)
-	}
-
-	displayBuildResults(result)
-
-	// Push if requested
-	if err := pushIfRequested(ctx, bldr, result); err != nil {
-		return err
-	}
-
-	return nil
+	// Execute build based on target type
+	return executeBuild(ctx, buildConfig)
 }
 
 // loadBuildConfig loads configuration from template, git, or file
@@ -163,38 +146,114 @@ func validateConfig(buildConfig *builder.Config) error {
 	return nil
 }
 
-// initializeBuilder creates and configures a new builder
-func initializeBuilder() (*container.BuildahBuilder, error) {
+// executeBuild executes the build based on target type
+func executeBuild(ctx context.Context, buildConfig *builder.Config) error {
+	// Determine target type
+	targetType := determineTargetType(buildConfig)
+
+	switch targetType {
+	case "container":
+		return executeContainerBuild(ctx, buildConfig)
+	case "ami":
+		return executeAMIBuild(ctx, buildConfig)
+	default:
+		return fmt.Errorf("unsupported target type: %s", targetType)
+	}
+}
+
+// determineTargetType determines the target type from configuration
+func determineTargetType(buildConfig *builder.Config) string {
+	// Check CLI override
+	if buildOpts.targetType != "" {
+		return buildOpts.targetType
+	}
+
+	// Check config targets
+	if len(buildConfig.Targets) > 0 {
+		return buildConfig.Targets[0].Type
+	}
+
+	// Default to container
+	return "container"
+}
+
+// executeContainerBuild executes a container build
+func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) error {
+	logging.Info("Executing container build")
+
 	builderCfg := container.GetDefaultConfig()
 	bldr, err := container.NewBuildahBuilder(builderCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize builder: %w", err)
+		return fmt.Errorf("failed to initialize container builder: %w", err)
 	}
-	return bldr, nil
+	defer bldr.Close()
+
+	result, err := bldr.Build(ctx, *buildConfig)
+	if err != nil {
+		return fmt.Errorf("container build failed: %w", err)
+	}
+
+	displayBuildResults(result)
+
+	// Push if requested
+	if buildOpts.push && buildOpts.registry != "" {
+		logging.Info("Pushing to registry: %s", buildOpts.registry)
+		if err := bldr.Push(ctx, result.ImageRef, buildOpts.registry); err != nil {
+			return fmt.Errorf("failed to push image: %w", err)
+		}
+		logging.Info("Successfully pushed to %s", buildOpts.registry)
+	}
+
+	return nil
+}
+
+// executeAMIBuild executes an AMI build
+func executeAMIBuild(ctx context.Context, buildConfig *builder.Config) error {
+	logging.Info("Executing AMI build")
+
+	// Get AWS configuration from environment or config
+	clientConfig := ami.ClientConfig{
+		Region:          cfg.AWS.Region,
+		Profile:         cfg.AWS.Profile,
+		AccessKeyID:     cfg.AWS.AccessKeyID,
+		SecretAccessKey: cfg.AWS.SecretAccessKey,
+	}
+
+	// Create AMI builder
+	bldr, err := ami.NewImageBuilder(ctx, clientConfig)
+	if err != nil {
+		return fmt.Errorf("failed to initialize AMI builder: %w", err)
+	}
+	defer bldr.Close()
+
+	result, err := bldr.Build(ctx, *buildConfig)
+	if err != nil {
+		return fmt.Errorf("AMI build failed: %w", err)
+	}
+
+	displayBuildResults(result)
+
+	return nil
 }
 
 // displayBuildResults logs the build results
 func displayBuildResults(result *builder.BuildResult) {
 	logging.Info("Build completed successfully!")
-	logging.Info("Image: %s", result.ImageRef)
+
+	if result.ImageRef != "" {
+		logging.Info("Image: %s", result.ImageRef)
+	}
+
+	if result.AMIID != "" {
+		logging.Info("AMI ID: %s", result.AMIID)
+		logging.Info("Region: %s", result.Region)
+	}
+
 	logging.Info("Duration: %s", result.Duration)
+
 	for _, note := range result.Notes {
 		logging.Info("Note: %s", note)
 	}
-}
-
-// pushIfRequested pushes the image to registry if --push flag is set
-func pushIfRequested(ctx context.Context, bldr *container.BuildahBuilder, result *builder.BuildResult) error {
-	if !buildOpts.push || buildOpts.registry == "" {
-		return nil
-	}
-
-	logging.Info("Pushing to registry: %s", buildOpts.registry)
-	if err := bldr.Push(ctx, result.ImageRef, buildOpts.registry); err != nil {
-		return fmt.Errorf("failed to push image: %w", err)
-	}
-	logging.Info("Successfully pushed to %s", buildOpts.registry)
-	return nil
 }
 
 // loadFromFile loads config from a local file

@@ -38,6 +38,7 @@ type Config struct {
 	Templates TemplatesConfig `mapstructure:"templates"`
 	Build     BuildConfig     `mapstructure:"build"`
 	Log       LogConfig       `mapstructure:"log"`
+	AWS       AWSConfig       `mapstructure:"aws"`
 }
 
 // RegistryConfig holds registry-related configuration
@@ -70,6 +71,14 @@ type BuildConfig struct {
 type LogConfig struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
+}
+
+// AWSConfig holds AWS-related configuration
+type AWSConfig struct {
+	Region          string `mapstructure:"region"`
+	Profile         string `mapstructure:"profile"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
 }
 
 // Load reads and parses the global configuration file
@@ -163,6 +172,10 @@ func setDefaults(v *viper.Viper) {
 
 	// Templates defaults
 	v.SetDefault("templates.default_repo", "github.com/cowdogmoo/warpgate-templates")
+
+	// AWS defaults (will use AWS SDK defaults if not set)
+	v.SetDefault("aws.region", "")
+	v.SetDefault("aws.profile", "")
 }
 
 // bindEnvVars explicitly binds environment variables to config keys
@@ -188,6 +201,12 @@ func bindEnvVars(v *viper.Viper) {
 	// Log
 	_ = v.BindEnv("log.level", "WARPGATE_LOG_LEVEL")
 	_ = v.BindEnv("log.format", "WARPGATE_LOG_FORMAT")
+
+	// AWS (also supports standard AWS_ env vars through AWS SDK)
+	_ = v.BindEnv("aws.region", "AWS_REGION", "AWS_DEFAULT_REGION")
+	_ = v.BindEnv("aws.profile", "AWS_PROFILE")
+	_ = v.BindEnv("aws.access_key_id", "AWS_ACCESS_KEY_ID")
+	_ = v.BindEnv("aws.secret_access_key", "AWS_SECRET_ACCESS_KEY")
 }
 
 // Get returns the global config instance
