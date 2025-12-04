@@ -44,6 +44,10 @@ type Config struct {
 
 	// Build targets (container, AMI, etc.)
 	Targets []Target `yaml:"targets" json:"targets"`
+
+	// Runtime overrides (not in YAML, set by CLI flags)
+	Architectures []string `yaml:"-" json:"-"` // Architectures to build for
+	Registry      string   `yaml:"-" json:"-"` // Registry to push to (overrides target registry)
 }
 
 // Metadata contains template metadata

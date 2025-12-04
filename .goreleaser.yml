@@ -4,6 +4,15 @@ builds:
 
     binary: warpgate
 
+    main: ./cmd/warpgate
+
+    # Inject version info via ldflags
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
     goos:
       - linux
       - darwin
