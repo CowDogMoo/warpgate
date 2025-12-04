@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/builder/ami"
@@ -32,6 +33,7 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 )
 
@@ -188,6 +190,12 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) err
 	}
 	defer bldr.Close()
 
+	// Check if multi-arch build is required
+	if len(buildConfig.Architectures) > 1 {
+		return executeMultiArchBuild(ctx, buildConfig, bldr)
+	}
+
+	// Single architecture build
 	result, err := bldr.Build(ctx, *buildConfig)
 	if err != nil {
 		return fmt.Errorf("container build failed: %w", err)
@@ -204,6 +212,140 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) err
 		logging.Info("Successfully pushed to %s", buildOpts.registry)
 	}
 
+	return nil
+}
+
+// executeMultiArchBuild executes a multi-architecture container build
+func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bldr *container.BuildahBuilder) error {
+	logging.Info("Executing multi-arch build for %d architectures: %v", len(buildConfig.Architectures), buildConfig.Architectures)
+
+	// Create build orchestrator
+	orchestrator := builder.NewBuildOrchestrator(2) // Allow 2 concurrent builds
+
+	// Create build requests for each architecture
+	requests := make([]builder.BuildRequest, 0, len(buildConfig.Architectures))
+	for _, arch := range buildConfig.Architectures {
+		platform := fmt.Sprintf("linux/%s", arch)
+		tag := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
+
+		// Create a copy of the config for this architecture
+		archConfig := *buildConfig
+
+		// Apply architecture-specific overrides if they exist
+		if override, ok := buildConfig.ArchOverrides[arch]; ok {
+			logging.Info("Applying architecture overrides for %s", arch)
+
+			// Override base image if specified
+			if override.Base != nil {
+				archConfig.Base = *override.Base
+			}
+
+			// Override or append provisioners
+			if len(override.Provisioners) > 0 {
+				if override.AppendProvisioners {
+					archConfig.Provisioners = append(archConfig.Provisioners, override.Provisioners...)
+				} else {
+					archConfig.Provisioners = override.Provisioners
+				}
+			}
+		}
+
+		requests = append(requests, builder.BuildRequest{
+			Config:       archConfig,
+			Architecture: arch,
+			Platform:     platform,
+			Tag:          tag,
+		})
+	}
+
+	// Build all architectures in parallel
+	results, err := orchestrator.BuildMultiArch(ctx, requests, bldr)
+	if err != nil {
+		return fmt.Errorf("multi-arch build failed: %w", err)
+	}
+
+	// Display results for each architecture
+	for _, result := range results {
+		displayBuildResults(&result)
+	}
+
+	// Push if requested
+	if buildOpts.push && buildOpts.registry != "" {
+		logging.Info("Pushing multi-arch images to registry: %s", buildOpts.registry)
+
+		// Push individual architecture images
+		if err := orchestrator.PushMultiArch(ctx, results, buildOpts.registry, bldr); err != nil {
+			return fmt.Errorf("failed to push multi-arch images: %w", err)
+		}
+
+		// Create and push multi-arch manifest
+		if err := createAndPushManifest(ctx, buildConfig, results, bldr); err != nil {
+			return fmt.Errorf("failed to create multi-arch manifest: %w", err)
+		}
+
+		logging.Info("Successfully pushed multi-arch build to %s", buildOpts.registry)
+	}
+
+	return nil
+}
+
+// createAndPushManifest creates and pushes a multi-arch manifest
+func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr *container.BuildahBuilder) error {
+	manifestName := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
+	logging.Info("Creating multi-arch manifest: %s", manifestName)
+
+	// Get manifest manager
+	manifestMgr := bldr.GetManifestManager()
+
+	// Create manifest entries from build results
+	entries := make([]container.ManifestEntry, 0, len(results))
+	for _, result := range results {
+		// Parse digest
+		var imageDigest digest.Digest
+		if result.Digest != "" {
+			var err error
+			imageDigest, err = digest.Parse(result.Digest)
+			if err != nil {
+				logging.Warn("Failed to parse digest for %s: %v", result.Architecture, err)
+				continue
+			}
+		}
+
+		os := "linux"
+		variant := ""
+		if strings.Contains(result.Platform, "/") {
+			parts := strings.Split(result.Platform, "/")
+			if len(parts) >= 2 {
+				os = parts[0]
+			}
+			if len(parts) >= 3 {
+				variant = parts[2]
+			}
+		}
+
+		entries = append(entries, container.ManifestEntry{
+			ImageRef:     result.ImageRef,
+			Digest:       imageDigest,
+			Platform:     result.Platform,
+			Architecture: result.Architecture,
+			OS:           os,
+			Variant:      variant,
+		})
+	}
+
+	// Create the manifest
+	manifestList, err := manifestMgr.CreateManifest(ctx, manifestName, entries)
+	if err != nil {
+		return fmt.Errorf("failed to create manifest: %w", err)
+	}
+
+	// Push the manifest to the registry
+	destination := fmt.Sprintf("%s/%s", buildOpts.registry, manifestName)
+	if err := manifestMgr.PushManifest(ctx, manifestList, destination); err != nil {
+		return fmt.Errorf("failed to push manifest: %w", err)
+	}
+
+	logging.Info("Successfully created and pushed multi-arch manifest to %s", destination)
 	return nil
 }
 

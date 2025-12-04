@@ -133,7 +133,7 @@ func (b *BuildahBuilder) Build(ctx context.Context, cfg builder.Config) (*builde
 	}
 
 	// Commit the image
-	imageRef, err := b.commit(ctx, cfg.Name, cfg.Version)
+	imageRef, digest, err := b.commit(ctx, cfg.Name, cfg.Version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to commit image: %w", err)
 	}
@@ -141,10 +141,20 @@ func (b *BuildahBuilder) Build(ctx context.Context, cfg builder.Config) (*builde
 	duration := time.Since(startTime)
 	logging.Info("Build completed in %s", duration)
 
+	// Determine platform and architecture
+	platform := cfg.Base.Platform
+	if platform == "" {
+		platform = "linux/amd64" // Default platform
+	}
+	arch := strings.Split(platform, "/")[1] // Extract architecture from platform
+
 	return &builder.BuildResult{
-		ImageRef: imageRef,
-		Duration: duration.String(),
-		Notes:    []string{fmt.Sprintf("Built with Buildah on %s", b.storageConfig.GetDriver())},
+		ImageRef:     imageRef,
+		Digest:       digest,
+		Platform:     platform,
+		Architecture: arch,
+		Duration:     duration.String(),
+		Notes:        []string{fmt.Sprintf("Built with Buildah on %s", b.storageConfig.GetDriver())},
 	}, nil
 }
 
@@ -234,28 +244,30 @@ func (b *BuildahBuilder) runAnsibleProvisioner(ctx context.Context, prov builder
 	return ansibleProv.Provision(ctx, prov)
 }
 
-// commit commits the container to an image
-func (b *BuildahBuilder) commit(ctx context.Context, name, version string) (string, error) {
+// commit commits the container to an image and returns the image reference and digest
+func (b *BuildahBuilder) commit(ctx context.Context, name, version string) (string, string, error) {
 	imageRefStr := fmt.Sprintf("localhost/%s:%s", name, version)
 	logging.Info("Committing image: %s", imageRefStr)
 
 	// Parse image reference
 	imageRef, err := alltransports.ParseImageName("containers-storage:" + imageRefStr)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse image reference: %w", err)
+		return "", "", fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
 	options := buildah.CommitOptions{
 		Squash: false,
 	}
 
-	imageID, _, _, err := b.builder.Commit(ctx, imageRef, options)
+	imageID, _, digest, err := b.builder.Commit(ctx, imageRef, options)
 	if err != nil {
-		return "", fmt.Errorf("failed to commit: %w", err)
+		return "", "", fmt.Errorf("failed to commit: %w", err)
 	}
 
-	logging.Info("Image committed successfully: %s (ID: %s)", imageRefStr, imageID)
-	return imageRefStr, nil
+	digestStr := digest.String()
+
+	logging.Info("Image committed successfully: %s (ID: %s, Digest: %s)", imageRefStr, imageID, digestStr)
+	return imageRefStr, digestStr, nil
 }
 
 // Push pushes the image to a registry using Buildah's native push

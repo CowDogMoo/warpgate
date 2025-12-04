@@ -45,9 +45,25 @@ type Config struct {
 	// Build targets (container, AMI, etc.)
 	Targets []Target `yaml:"targets" json:"targets"`
 
+	// Architecture-specific overrides (optional)
+	// Allows specifying different configurations per architecture
+	ArchOverrides map[string]ArchOverride `yaml:"arch_overrides,omitempty" json:"arch_overrides,omitempty"`
+
 	// Runtime overrides (not in YAML, set by CLI flags)
 	Architectures []string `yaml:"-" json:"-"` // Architectures to build for
 	Registry      string   `yaml:"-" json:"-"` // Registry to push to (overrides target registry)
+}
+
+// ArchOverride allows architecture-specific configuration
+type ArchOverride struct {
+	// Override base image for this architecture
+	Base *BaseImage `yaml:"base,omitempty" json:"base,omitempty"`
+
+	// Additional or replacement provisioners for this architecture
+	Provisioners []Provisioner `yaml:"provisioners,omitempty" json:"provisioners,omitempty"`
+
+	// Whether to append provisioners or replace them entirely
+	AppendProvisioners bool `yaml:"append_provisioners,omitempty" json:"append_provisioners,omitempty"`
 }
 
 // Metadata contains template metadata
@@ -141,6 +157,15 @@ type Target struct {
 type BuildResult struct {
 	// Image reference for container builds
 	ImageRef string `json:"image_ref,omitempty"`
+
+	// Image digest for container builds (used for multi-arch manifests)
+	Digest string `json:"digest,omitempty"`
+
+	// Architecture of the built image (e.g., "amd64", "arm64")
+	Architecture string `json:"architecture,omitempty"`
+
+	// Platform of the built image (e.g., "linux/amd64", "linux/arm64")
+	Platform string `json:"platform,omitempty"`
 
 	// AMI ID for AMI builds
 	AMIID string `json:"ami_id,omitempty"`
