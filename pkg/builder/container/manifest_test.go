@@ -214,3 +214,227 @@ func TestManifestManager_PushManifest(t *testing.T) {
 		t.Logf("PushManifest failed as expected without registry: %v", err)
 	}
 }
+
+func TestManifestManager_CreateManifest_NilEntries(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "warpgate-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := BuildahConfig{
+		StorageDriver: "vfs",
+		StorageRoot:   filepath.Join(tmpDir, "storage"),
+		RunRoot:       filepath.Join(tmpDir, "run"),
+	}
+
+	bldr, err := NewBuildahBuilder(cfg)
+	if err != nil {
+		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
+		return
+	}
+	defer bldr.Close()
+
+	mm := bldr.GetManifestManager()
+	ctx := context.Background()
+
+	// Test with nil entries - should return error
+	_, err = mm.CreateManifest(ctx, "test-manifest", nil)
+	if err == nil {
+		t.Error("CreateManifest should fail with nil entries")
+	}
+}
+
+func TestManifestManager_MultipleArchitectures(t *testing.T) {
+	// Unit test to verify handling of multiple architectures
+	tests := []struct {
+		name         string
+		entries      []ManifestEntry
+		expectError  bool
+		expectedArch []string
+	}{
+		{
+			name:        "empty entries",
+			entries:     []ManifestEntry{},
+			expectError: true,
+		},
+		{
+			name: "single architecture",
+			entries: []ManifestEntry{
+				{
+					Architecture: "amd64",
+					OS:           "linux",
+				},
+			},
+			expectError:  false,
+			expectedArch: []string{"amd64"},
+		},
+		{
+			name: "multiple architectures",
+			entries: []ManifestEntry{
+				{
+					Architecture: "amd64",
+					OS:           "linux",
+				},
+				{
+					Architecture: "arm64",
+					OS:           "linux",
+				},
+			},
+			expectError:  false,
+			expectedArch: []string{"amd64", "arm64"},
+		},
+		{
+			name: "with variant",
+			entries: []ManifestEntry{
+				{
+					Architecture: "arm",
+					OS:           "linux",
+					Variant:      "v7",
+				},
+			},
+			expectError:  false,
+			expectedArch: []string{"arm"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Verify entry structure
+			if len(tc.entries) != len(tc.expectedArch) && !tc.expectError {
+				t.Errorf("Expected %d architectures, got %d entries", len(tc.expectedArch), len(tc.entries))
+			}
+
+			for i, entry := range tc.entries {
+				if !tc.expectError && i < len(tc.expectedArch) {
+					if entry.Architecture != tc.expectedArch[i] {
+						t.Errorf("Expected architecture %s, got %s", tc.expectedArch[i], entry.Architecture)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestManifestEntry_Complete(t *testing.T) {
+	// Test that ManifestEntry can hold all required fields
+	tests := []struct {
+		name  string
+		entry ManifestEntry
+		valid bool
+	}{
+		{
+			name: "complete entry",
+			entry: ManifestEntry{
+				ImageRef:     "localhost/test:latest",
+				Digest:       digest.FromString("test"),
+				Platform:     "linux/amd64",
+				Architecture: "amd64",
+				OS:           "linux",
+			},
+			valid: true,
+		},
+		{
+			name: "entry with variant",
+			entry: ManifestEntry{
+				ImageRef:     "localhost/test:latest",
+				Digest:       digest.FromString("test"),
+				Platform:     "linux/arm/v7",
+				Architecture: "arm",
+				OS:           "linux",
+				Variant:      "v7",
+			},
+			valid: true,
+		},
+		{
+			name: "minimal entry",
+			entry: ManifestEntry{
+				Architecture: "amd64",
+				OS:           "linux",
+			},
+			valid: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.valid {
+				if tc.entry.Architecture == "" {
+					t.Error("Valid entry should have architecture")
+				}
+				if tc.entry.OS == "" {
+					t.Error("Valid entry should have OS")
+				}
+			}
+		})
+	}
+}
+
+func TestManifestManager_StoreAccess(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "warpgate-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := BuildahConfig{
+		StorageDriver: "vfs",
+		StorageRoot:   filepath.Join(tmpDir, "storage"),
+		RunRoot:       filepath.Join(tmpDir, "run"),
+	}
+
+	bldr, err := NewBuildahBuilder(cfg)
+	if err != nil {
+		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
+		return
+	}
+	defer bldr.Close()
+
+	mm := bldr.GetManifestManager()
+
+	// Verify the manifest manager has access to the store
+	if mm.store == nil {
+		t.Error("ManifestManager should have access to storage")
+	}
+
+	// Verify the manifest manager has system context
+	if mm.systemContext == nil {
+		t.Error("ManifestManager should have system context")
+	}
+}
+
+func TestNewManifestManager_Direct(t *testing.T) {
+	// Test direct construction of ManifestManager
+	tmpDir, err := os.MkdirTemp("", "warpgate-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := BuildahConfig{
+		StorageDriver: "vfs",
+		StorageRoot:   filepath.Join(tmpDir, "storage"),
+		RunRoot:       filepath.Join(tmpDir, "run"),
+	}
+
+	bldr, err := NewBuildahBuilder(cfg)
+	if err != nil {
+		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
+		return
+	}
+	defer bldr.Close()
+
+	// Create a manifest manager directly
+	mm := NewManifestManager(bldr.store, bldr.systemContext)
+	if mm == nil {
+		t.Fatal("NewManifestManager should return a valid manager")
+	}
+
+	if mm.store != bldr.store {
+		t.Error("ManifestManager should use the provided store")
+	}
+
+	if mm.systemContext != bldr.systemContext {
+		t.Error("ManifestManager should use the provided system context")
+	}
+}

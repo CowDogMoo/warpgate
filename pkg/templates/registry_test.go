@@ -188,11 +188,11 @@ func TestTemplateRegistryMatchesQuery(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := registry.matchesQuery(tt.template, tt.query)
-			if result != tt.expected {
-				t.Errorf("matchesQuery() = %v, want %v for query %q", result, tt.expected, tt.query)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := registry.matchesQuery(tc.template, tc.query)
+			if result != tc.expected {
+				t.Errorf("matchesQuery() = %v, want %v for query %q", result, tc.expected, tc.query)
 			}
 		})
 	}
