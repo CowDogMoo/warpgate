@@ -47,9 +47,12 @@ func (l *Loader) LoadFromFile(path string) (*builder.Config, error) {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
+	// Expand environment variables in the YAML content
+	expandedData := os.ExpandEnv(string(data))
+
 	// Parse YAML
 	var config builder.Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	if err := yaml.Unmarshal([]byte(expandedData), &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
 
