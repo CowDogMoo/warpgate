@@ -1,5 +1,6 @@
-# Code coverage output file
+# Code coverage output files
 coverage-all.out
+coverage.out
 
 # Distribution directory for binaries
 dist/
