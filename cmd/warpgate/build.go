@@ -25,6 +25,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
@@ -39,13 +41,15 @@ import (
 
 // Build command options
 type buildOptions struct {
-	template   string
-	fromGit    string
-	targetType string
-	push       bool
-	registry   string
-	arch       []string
-	tags       []string
+	template    string
+	fromGit     string
+	targetType  string
+	push        bool
+	registry    string
+	arch        []string
+	tags        []string
+	saveDigests bool
+	digestDir   string
 }
 
 var buildOpts = &buildOptions{}
@@ -82,6 +86,8 @@ func init() {
 	buildCmd.Flags().StringVar(&buildOpts.registry, "registry", "", "Registry to push to")
 	buildCmd.Flags().StringSliceVar(&buildOpts.arch, "arch", nil, "Architectures to build (comma-separated)")
 	buildCmd.Flags().StringSliceVarP(&buildOpts.tags, "tag", "t", []string{}, "Additional tags to apply")
+	buildCmd.Flags().BoolVar(&buildOpts.saveDigests, "save-digests", false, "Save image digests to files after push")
+	buildCmd.Flags().StringVar(&buildOpts.digestDir, "digest-dir", ".", "Directory to save digest files")
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
@@ -209,6 +215,18 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) err
 		if err := bldr.Push(ctx, result.ImageRef, buildOpts.registry); err != nil {
 			return fmt.Errorf("failed to push image: %w", err)
 		}
+
+		// Save digest if requested
+		if buildOpts.saveDigests && result.Digest != "" {
+			arch := "unknown"
+			if len(buildConfig.Architectures) > 0 {
+				arch = buildConfig.Architectures[0]
+			}
+			if err := saveDigestToFile(buildConfig.Name, arch, result.Digest, buildOpts.digestDir); err != nil {
+				logging.Warn("Failed to save digest: %v", err)
+			}
+		}
+
 		logging.Info("Successfully pushed to %s", buildOpts.registry)
 	}
 
@@ -223,40 +241,7 @@ func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bld
 	orchestrator := builder.NewBuildOrchestrator(2) // Allow 2 concurrent builds
 
 	// Create build requests for each architecture
-	requests := make([]builder.BuildRequest, 0, len(buildConfig.Architectures))
-	for _, arch := range buildConfig.Architectures {
-		platform := fmt.Sprintf("linux/%s", arch)
-		tag := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
-
-		// Create a copy of the config for this architecture
-		archConfig := *buildConfig
-
-		// Apply architecture-specific overrides if they exist
-		if override, ok := buildConfig.ArchOverrides[arch]; ok {
-			logging.Info("Applying architecture overrides for %s", arch)
-
-			// Override base image if specified
-			if override.Base != nil {
-				archConfig.Base = *override.Base
-			}
-
-			// Override or append provisioners
-			if len(override.Provisioners) > 0 {
-				if override.AppendProvisioners {
-					archConfig.Provisioners = append(archConfig.Provisioners, override.Provisioners...)
-				} else {
-					archConfig.Provisioners = override.Provisioners
-				}
-			}
-		}
-
-		requests = append(requests, builder.BuildRequest{
-			Config:       archConfig,
-			Architecture: arch,
-			Platform:     platform,
-			Tag:          tag,
-		})
-	}
+	requests := createBuildRequests(buildConfig)
 
 	// Build all architectures in parallel
 	results, err := orchestrator.BuildMultiArch(ctx, requests, bldr)
@@ -271,22 +256,91 @@ func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bld
 
 	// Push if requested
 	if buildOpts.push && buildOpts.registry != "" {
-		logging.Info("Pushing multi-arch images to registry: %s", buildOpts.registry)
-
-		// Push individual architecture images
-		if err := orchestrator.PushMultiArch(ctx, results, buildOpts.registry, bldr); err != nil {
-			return fmt.Errorf("failed to push multi-arch images: %w", err)
-		}
-
-		// Create and push multi-arch manifest
-		if err := createAndPushManifest(ctx, buildConfig, results, bldr); err != nil {
-			return fmt.Errorf("failed to create multi-arch manifest: %w", err)
-		}
-
-		logging.Info("Successfully pushed multi-arch build to %s", buildOpts.registry)
+		return pushMultiArchImages(ctx, buildConfig, results, bldr, orchestrator)
 	}
 
 	return nil
+}
+
+// createBuildRequests creates build requests for each architecture
+func createBuildRequests(buildConfig *builder.Config) []builder.BuildRequest {
+	requests := make([]builder.BuildRequest, 0, len(buildConfig.Architectures))
+
+	for _, arch := range buildConfig.Architectures {
+		platform := fmt.Sprintf("linux/%s", arch)
+		tag := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
+
+		// Create a copy of the config for this architecture
+		archConfig := *buildConfig
+
+		// Apply architecture-specific overrides if they exist
+		if override, ok := buildConfig.ArchOverrides[arch]; ok {
+			applyArchOverrides(&archConfig, override, arch)
+		}
+
+		requests = append(requests, builder.BuildRequest{
+			Config:       archConfig,
+			Architecture: arch,
+			Platform:     platform,
+			Tag:          tag,
+		})
+	}
+
+	return requests
+}
+
+// applyArchOverrides applies architecture-specific overrides to the config
+func applyArchOverrides(archConfig *builder.Config, override builder.ArchOverride, arch string) {
+	logging.Info("Applying architecture overrides for %s", arch)
+
+	// Override base image if specified
+	if override.Base != nil {
+		archConfig.Base = *override.Base
+	}
+
+	// Override or append provisioners
+	if len(override.Provisioners) > 0 {
+		if override.AppendProvisioners {
+			archConfig.Provisioners = append(archConfig.Provisioners, override.Provisioners...)
+		} else {
+			archConfig.Provisioners = override.Provisioners
+		}
+	}
+}
+
+// pushMultiArchImages pushes multi-arch images and creates manifest
+func pushMultiArchImages(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr *container.BuildahBuilder, orchestrator *builder.BuildOrchestrator) error {
+	logging.Info("Pushing multi-arch images to registry: %s", buildOpts.registry)
+
+	// Push individual architecture images
+	if err := orchestrator.PushMultiArch(ctx, results, buildOpts.registry, bldr); err != nil {
+		return fmt.Errorf("failed to push multi-arch images: %w", err)
+	}
+
+	// Save digests if requested
+	if buildOpts.saveDigests {
+		saveDigests(buildConfig.Name, results)
+	}
+
+	// Create and push multi-arch manifest
+	if err := createAndPushManifest(ctx, buildConfig, results, bldr); err != nil {
+		return fmt.Errorf("failed to create multi-arch manifest: %w", err)
+	}
+
+	logging.Info("Successfully pushed multi-arch build to %s", buildOpts.registry)
+	return nil
+}
+
+// saveDigests saves digests for all architectures
+func saveDigests(imageName string, results []builder.BuildResult) {
+	logging.Info("Saving image digests to %s", buildOpts.digestDir)
+	for _, result := range results {
+		if result.Digest != "" {
+			if err := saveDigestToFile(imageName, result.Architecture, result.Digest, buildOpts.digestDir); err != nil {
+				logging.Warn("Failed to save digest for %s: %v", result.Architecture, err)
+			}
+		}
+	}
 }
 
 // createAndPushManifest creates and pushes a multi-arch manifest
@@ -396,6 +450,30 @@ func displayBuildResults(result *builder.BuildResult) {
 	for _, note := range result.Notes {
 		logging.Info("Note: %s", note)
 	}
+}
+
+// saveDigestToFile saves an image digest to a file
+func saveDigestToFile(imageName, arch, digestStr, dir string) error {
+	if digestStr == "" {
+		return fmt.Errorf("empty digest provided")
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create digest directory: %w", err)
+	}
+
+	// Create filename: digest-{image}-{arch}.txt
+	filename := fmt.Sprintf("digest-%s-%s.txt", imageName, arch)
+	filepath := filepath.Join(dir, filename)
+
+	// Write digest to file
+	if err := os.WriteFile(filepath, []byte(digestStr), 0644); err != nil {
+		return fmt.Errorf("failed to write digest file: %w", err)
+	}
+
+	logging.Info("Saved digest to %s", filepath)
+	return nil
 }
 
 // loadFromFile loads config from a local file

@@ -40,26 +40,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-      - name: Setup Python
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      - name: Setup Go
+        uses: actions/setup-go@3844e500619193f14c8c6e743c01b4cfa8c3d9f4 # v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          go-version: ${{ env.GO_VERSION }}
 
-      - name: Install dependencies
+      - name: Build warpgate binary
         run: |
-          python -m pip install --upgrade pip
-          pip install pyyaml
-
-      - name: Setup go-task
-        run: |
-          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin v${{ env.TASK_VERSION }}
-          task --version
+          echo "Building warpgate binary..."
+          go build -o warpgate ./cmd/warpgate
+          chmod +x warpgate
+          ./warpgate version
 
       - name: Discover templates
         id: set-matrix
         run: |
           echo "Running template discovery..."
-          task -y discover-templates-matrix
+          ./warpgate discover \
+            -c warpgate-config.yaml \
+            -f github-matrix \
+            -o .github/workflows/template-matrix.json
 
           # Set the matrix output as a single-line JSON string
           MATRIX=$(cat .github/workflows/template-matrix.json | jq -c .)
@@ -183,12 +183,6 @@ jobs:
       - name: Install ansible
         run: python3 -m pip install ansible
 
-      - name: Setup `packer`
-        uses: hashicorp/setup-packer@main
-        id: setup
-        with:
-          version: ${{ env.PACKER_VERSION }}
-
       - name: Free up disk space
         if: github.actor != 'nektos/act'
         run: |
@@ -262,18 +256,19 @@ jobs:
           username: l50
           password: ${{ secrets.WG_IMAGE_BUILDER_PAT }}
 
-      - name: Setup go-task
-        run: |
-          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin v${{ env.TASK_VERSION }}
-          task --version
+      - name: Setup Go
+        uses: actions/setup-go@3844e500619193f14c8c6e743c01b4cfa8c3d9f4 # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
-      - name: Initialize image template
+      - name: Build warpgate binary
         run: |
-          task -y template-init \
-            TEMPLATE_NAME="${{ matrix.template.name }}" \
-            ONLY="${{ matrix.template.name }}-docker.docker.*"
+          echo "Building warpgate binary..."
+          go build -o warpgate ./cmd/warpgate
+          chmod +x warpgate
+          ./warpgate version
 
-      - name: Build image for ${{ matrix.architecture.arch }}
+      - name: Build and push image for ${{ matrix.architecture.arch }}
         run: |
           # Create required directories with proper permissions if they don't exist
           if [ ! -d "${{ env.PACKER_TMP_DIR }}" ]; then
@@ -281,27 +276,13 @@ jobs:
             sudo chmod 777 ${{ env.PACKER_TMP_DIR }}
           fi
 
-          if [ ! -d "${{ env.PACKER_PLUGIN_PATH }}" ]; then
-            sudo mkdir -p ${{ env.PACKER_PLUGIN_PATH }}
-            sudo chmod 777 ${{ env.PACKER_PLUGIN_PATH }}
-          fi
-
-          # Build only for the specific architecture
-          timeout 2h task -y template-build \
-            TEMPLATE_NAME="${{ matrix.template.name }}" \
-            ONLY="${{ matrix.template.name }}-docker.docker.${{ matrix.architecture.arch }}" \
-            VARS="${{ matrix.template.vars }}"
-
-      # Push the architecture-specific image by digest
-      - name: Push ${{ matrix.architecture.arch }} image by digest
-        id: push
-        run: |
-          task -y template-push-digest \
-            NAMESPACE="${{ matrix.template.namespace }}" \
-            IMAGE_NAME="${{ matrix.template.name }}" \
-            ARCH="${{ matrix.architecture.arch }}" \
-            GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
-            GITHUB_USER="l50"
+          # Build and push the image with digest saving
+          timeout 2h ./warpgate build \
+            --template ${{ matrix.template.name }} \
+            --arch ${{ matrix.architecture.arch }} \
+            --registry ghcr.io/${{ matrix.template.namespace }} \
+            --push \
+            --save-digests
 
       # Upload digest info as artifact for the merge job
       - name: Upload digest
@@ -341,18 +322,26 @@ jobs:
           username: l50
           password: ${{ secrets.WG_IMAGE_BUILDER_PAT }}
 
-      - name: Setup go-task
-        uses: rnorton5432/setup-task@eec4717ae80f02d1614a4fecfa4a55d507768696 # v1.0.0
+      - name: Setup Go
+        uses: actions/setup-go@3844e500619193f14c8c6e743c01b4cfa8c3d9f4 # v5
         with:
-          task-version: ${{ env.TASK_VERSION }}
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build warpgate binary
+        run: |
+          echo "Building warpgate binary..."
+          go build -o warpgate ./cmd/warpgate
+          chmod +x warpgate
+          ./warpgate version
 
       - name: Create multi-arch manifest
         run: |
-          task -y template-create-manifest \
-            NAMESPACE="${{ matrix.template.namespace }}" \
-            IMAGE_NAME="${{ matrix.template.name }}" \
-            GITHUB_TOKEN="${{ secrets.WG_IMAGE_BUILDER_PAT }}" \
-            GITHUB_USER="l50"
+          ./warpgate manifest create \
+            --registry ghcr.io \
+            --namespace "${{ matrix.template.namespace }}" \
+            --image "${{ matrix.template.name }}" \
+            --tag latest \
+            --timestamped
 
       - name: Verify multi-arch image
         run: |
