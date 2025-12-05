@@ -247,105 +247,136 @@ func (b *BuildahBuilder) applyChange(change string) error {
 
 	switch directive {
 	case "USER":
-		if value == "" {
-			return fmt.Errorf("USER directive requires a value")
-		}
-		b.builder.SetUser(value)
-		logging.Info("Set user to: %s", value)
-
+		return b.applyUserChange(value)
 	case "WORKDIR":
-		if value == "" {
-			return fmt.Errorf("WORKDIR directive requires a value")
-		}
-		b.builder.SetWorkDir(value)
-		logging.Info("Set working directory to: %s", value)
-
+		return b.applyWorkdirChange(value)
 	case "ENV":
-		if value == "" {
-			return fmt.Errorf("ENV directive requires a value")
-		}
-		// Parse ENV KEY=VALUE or ENV KEY VALUE
-		var key, val string
-		if strings.Contains(value, "=") {
-			envParts := strings.SplitN(value, "=", 2)
-			key = strings.TrimSpace(envParts[0])
-			if len(envParts) > 1 {
-				val = envParts[1]
-			}
-		} else {
-			envParts := strings.SplitN(value, " ", 2)
-			key = strings.TrimSpace(envParts[0])
-			if len(envParts) > 1 {
-				val = envParts[1]
-			}
-		}
-		b.builder.SetEnv(key, val)
-		logging.Info("Set environment variable: %s=%s", key, val)
-
+		return b.applyEnvChange(value)
 	case "ENTRYPOINT":
-		if value == "" {
-			// Empty ENTRYPOINT clears it
-			b.builder.SetEntrypoint([]string{})
-			logging.Info("Cleared entrypoint")
-		} else {
-			// Parse as JSON array or shell form
-			entrypoint := b.parseCommandValue(value)
-			b.builder.SetEntrypoint(entrypoint)
-			logging.Info("Set entrypoint to: %v", entrypoint)
-		}
-
+		return b.applyEntrypointChange(value)
 	case "CMD":
-		if value == "" {
-			// Empty CMD clears it
-			b.builder.SetCmd([]string{})
-			logging.Info("Cleared command")
-		} else {
-			// Parse as JSON array or shell form
-			cmd := b.parseCommandValue(value)
-			b.builder.SetCmd(cmd)
-			logging.Info("Set command to: %v", cmd)
-		}
-
+		return b.applyCmdChange(value)
 	case "LABEL":
-		if value == "" {
-			return fmt.Errorf("LABEL directive requires a value")
-		}
-		// Parse LABEL key=value
-		if strings.Contains(value, "=") {
-			labelParts := strings.SplitN(value, "=", 2)
-			key := strings.TrimSpace(labelParts[0])
-			val := ""
-			if len(labelParts) > 1 {
-				val = strings.Trim(labelParts[1], "\"")
-			}
-			b.builder.SetLabel(key, val)
-			logging.Info("Set label: %s=%s", key, val)
-		} else {
-			return fmt.Errorf("invalid LABEL format: %s", value)
-		}
-
+		return b.applyLabelChange(value)
 	case "EXPOSE":
-		if value == "" {
-			return fmt.Errorf("EXPOSE directive requires a value")
-		}
-		b.builder.SetPort(value)
-		logging.Info("Exposed port: %s", value)
-
+		return b.applyExposeChange(value)
 	case "VOLUME":
-		if value == "" {
-			return fmt.Errorf("VOLUME directive requires a value")
-		}
-		// Parse as JSON array or single path
-		volumes := b.parseCommandValue(value)
-		for _, vol := range volumes {
-			b.builder.AddVolume(vol)
-			logging.Info("Added volume: %s", vol)
-		}
-
+		return b.applyVolumeChange(value)
 	default:
 		logging.Warn("Unsupported change directive: %s (skipping)", directive)
+		return nil
 	}
+}
 
+func (b *BuildahBuilder) applyUserChange(value string) error {
+	if value == "" {
+		return fmt.Errorf("USER directive requires a value")
+	}
+	b.builder.SetUser(value)
+	logging.Info("Set user to: %s", value)
+	return nil
+}
+
+func (b *BuildahBuilder) applyWorkdirChange(value string) error {
+	if value == "" {
+		return fmt.Errorf("WORKDIR directive requires a value")
+	}
+	b.builder.SetWorkDir(value)
+	logging.Info("Set working directory to: %s", value)
+	return nil
+}
+
+func (b *BuildahBuilder) applyEnvChange(value string) error {
+	if value == "" {
+		return fmt.Errorf("ENV directive requires a value")
+	}
+	// Parse ENV KEY=VALUE or ENV KEY VALUE
+	var key, val string
+	if strings.Contains(value, "=") {
+		envParts := strings.SplitN(value, "=", 2)
+		key = strings.TrimSpace(envParts[0])
+		if len(envParts) > 1 {
+			val = envParts[1]
+		}
+	} else {
+		envParts := strings.SplitN(value, " ", 2)
+		key = strings.TrimSpace(envParts[0])
+		if len(envParts) > 1 {
+			val = envParts[1]
+		}
+	}
+	b.builder.SetEnv(key, val)
+	logging.Info("Set environment variable: %s=%s", key, val)
+	return nil
+}
+
+func (b *BuildahBuilder) applyEntrypointChange(value string) error {
+	if value == "" {
+		// Empty ENTRYPOINT clears it
+		b.builder.SetEntrypoint([]string{})
+		logging.Info("Cleared entrypoint")
+	} else {
+		// Parse as JSON array or shell form
+		entrypoint := b.parseCommandValue(value)
+		b.builder.SetEntrypoint(entrypoint)
+		logging.Info("Set entrypoint to: %v", entrypoint)
+	}
+	return nil
+}
+
+func (b *BuildahBuilder) applyCmdChange(value string) error {
+	if value == "" {
+		// Empty CMD clears it
+		b.builder.SetCmd([]string{})
+		logging.Info("Cleared command")
+	} else {
+		// Parse as JSON array or shell form
+		cmd := b.parseCommandValue(value)
+		b.builder.SetCmd(cmd)
+		logging.Info("Set command to: %v", cmd)
+	}
+	return nil
+}
+
+func (b *BuildahBuilder) applyLabelChange(value string) error {
+	if value == "" {
+		return fmt.Errorf("LABEL directive requires a value")
+	}
+	// Parse LABEL key=value
+	if strings.Contains(value, "=") {
+		labelParts := strings.SplitN(value, "=", 2)
+		key := strings.TrimSpace(labelParts[0])
+		val := ""
+		if len(labelParts) > 1 {
+			val = strings.Trim(labelParts[1], "\"")
+		}
+		b.builder.SetLabel(key, val)
+		logging.Info("Set label: %s=%s", key, val)
+	} else {
+		return fmt.Errorf("invalid LABEL format: %s", value)
+	}
+	return nil
+}
+
+func (b *BuildahBuilder) applyExposeChange(value string) error {
+	if value == "" {
+		return fmt.Errorf("EXPOSE directive requires a value")
+	}
+	b.builder.SetPort(value)
+	logging.Info("Exposed port: %s", value)
+	return nil
+}
+
+func (b *BuildahBuilder) applyVolumeChange(value string) error {
+	if value == "" {
+		return fmt.Errorf("VOLUME directive requires a value")
+	}
+	// Parse as JSON array or single path
+	volumes := b.parseCommandValue(value)
+	for _, vol := range volumes {
+		b.builder.AddVolume(vol)
+		logging.Info("Added volume: %s", vol)
+	}
 	return nil
 }
 

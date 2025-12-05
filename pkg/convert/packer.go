@@ -97,7 +97,8 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 	// Parse post-processors from both docker and AMI builds
 	dockerBuilds, _ := hclParser.ParseBuildFile(dockerPath)
 	amiBuilds, _ := hclParser.ParseBuildFile(amiPath)
-	allBuilds := append(dockerBuilds, amiBuilds...)
+	allBuilds := dockerBuilds
+	allBuilds = append(allBuilds, amiBuilds...)
 	postProcessors := c.convertHCLPostProcessors(allBuilds)
 
 	// Use docker provisioners as primary (for container builds)

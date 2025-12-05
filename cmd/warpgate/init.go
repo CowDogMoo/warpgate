@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/spf13/cobra"
@@ -101,7 +102,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 func createDefaultTemplate(name, dir string) error {
 	configPath := filepath.Join(dir, "warpgate.yaml")
 
-	template := fmt.Sprintf(`metadata:
+	template := fmt.Sprintf(`%smetadata:
   name: %s
   version: 1.0.0
   description: "A new warpgate template"
@@ -147,7 +148,7 @@ targets:
 
 variables:
   example_var: "example_value"
-`, name, name, name)
+`, builder.SchemaComment, name, name, name)
 
 	if err := os.WriteFile(configPath, []byte(template), 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
