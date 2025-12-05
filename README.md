@@ -8,70 +8,162 @@
 
 <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
 
-**Warp Gate** is a robust, automatable engine for building security labs,
-golden images, and multi-architecture containers using modular Packer templates
-and Taskfile-driven workflows. Warp Gate images spin up rapidly for use in
-security labs, cyber ranges, DevOps CI, and immutable infrastructure.
+**Warp Gate** is a Go CLI tool for building container images and AWS AMIs. It
+uses [Buildah](https://buildah.io/) as a library for container builds and AWS
+[SDK](https://aws.amazon.com/sdk-for-go/) for AMI creation.
+
+---
+
+## Installation
+
+### Using Go Install
+
+```bash
+go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
+```
+
+### From Source
+
+```bash
+# Clone the repository
+gh repo clone CowDogMoo/warpgate
+cd warpgate
+
+# Build using Taskfile (recommended)
+task build
+
+# Or build directly with go
+go build -ldflags "-s -w -X main.version=$(git describe --tags --always)" -o warpgate ./cmd/warpgate
+
+# Or install to $GOPATH/bin
+task install
+```
+
+---
+
+## Quick Start
+
+### Build from a template file
+
+```bash
+# Validate template
+warpgate validate warpgate.yaml
+
+# Build container image
+warpgate build warpgate.yaml
+
+# Build with custom architectures
+warpgate build warpgate.yaml --arch amd64,arm64
+
+# Build and push
+warpgate build warpgate.yaml --push --registry ghcr.io/myorg
+```
+
+### Build from git repository
+
+```bash
+# Build from a git URL
+warpgate build --from-git https://github.com/cowdogmoo/warpgate-templates.git//templates/attack-box
+```
+
+### Template discovery
+
+```bash
+# Discover templates in configured sources
+warpgate discover
+
+# List templates
+warpgate templates list
+
+# Get template info
+warpgate templates info attack-box
+```
+
+### Multi-architecture manifests
+
+```bash
+# Create and push multi-arch manifest
+warpgate manifest create \
+  --name myorg/myimage:latest \
+  --images myorg/myimage:latest-amd64,myorg/myimage:latest-arm64
+
+# Push manifest
+warpgate manifest push myorg/myimage:latest
+```
+
+---
+
+## Configuration
+
+Warpgate uses two configuration systems:
+
+1. **Global config** (`~/.warpgate/config.yaml`) - User preferences, registry
+   credentials, build defaults
+2. **Template config** (`warpgate.yaml`) - Image definitions (portable and shareable)
+
+See [Configuration Guide](docs/configuration.md) for details.
+
+### Example Template
+
+```yaml
+metadata:
+  name: my-image
+  version: 1.0.0
+  description: "My custom image"
+
+name: my-image
+
+base:
+  image: ubuntu:22.04
+
+provisioners:
+  - type: shell
+    inline:
+      - apt-get update
+      - apt-get install -y python3 ansible
+
+  - type: ansible
+    playbook_path: playbook.yml
+    galaxy_file: requirements.yml
+
+targets:
+  - type: container
+    platforms:
+      - linux/amd64
+      - linux/arm64
+```
 
 ---
 
 ## Documentation
 
-📚 **Comprehensive guides and references:**
-
-- **[Getting Started Guide](docs/getting-started.md)** - Quick start and
-  basic usage
-- **[Architecture Overview](docs/architecture.md)** - System design and
-  components
-- **[License Compliance & SBOM](docs/license-compliance-sbom.md)** -
-  Automated compliance, SBOM generation, and supply chain security
-- **[Sliver C2 Setup](docs/sliver.md)** - Deploying Sliver command &
-  control infrastructure
-
-**Additional Resources:**
-
-- [Taskfile.yaml](Taskfile.yaml) - Complete task reference
-- [Configuration File](warpgate-config.yaml) - Template sources and build settings
+- **[Configuration Guide](docs/configuration.md)** - Global and template configuration
+- **[Getting Started](docs/getting-started.md)** - Detailed walkthrough
+- **[Architecture](docs/architecture.md)** - System design
+- **[Migration Plan](MIGRATION_PLAN.md)** - Go rewrite details
 
 ---
 
-## Refactor Notice
-
-**With the latest release, Warp Gate has migrated to a
-[Taskfile](https://taskfile.dev)-centric build system**
-using flexible Packer templates.
-_All legacy Go commands and variables are replaced!_
-If updating from an older version, **read this README and follow the new workflow**.
-
----
-
-## Key Features & Recent Changes
-
-- **Modular, directory-based Packer templates**—each configuration is self-contained.
-- **Modern Packer support for Docker and AMI builds** (atomic-red-team,
-  attack-box, sliver, ttpforge, runzero-explorer and more).
-- **Multi-architecture (amd64/arm64) image support.**
-- **Unified Taskfile workflows:** templating, validation, building, digest
-  handling, registry pushes, secrets, upgrades, and more.
-- **Local testing in CI with [act](https://github.com/nektos/act).**
-- **Automated secrets/credential usage for container registry pushes.**
-- **Namespace/image customizations per template.**
-- **Thorough, up-to-date docs for all build/test/push flows.**
-
----
-
-## Getting Started
+## Development
 
 ### Prerequisites
 
-- [go-task](https://taskfile.dev/installation/)
+**For building from source:**
+
+- [Go 1.21+](https://go.dev/doc/install)
+- [go-task](https://taskfile.dev/installation/) (optional but recommended)
   (`brew install go-task/tap/go-task` or see docs)
-- [Packer](https://www.packer.io/downloads)
-- [Docker](https://www.docker.com/)
-- [jq](https://stedolan.github.io/jq/)
-- [act](https://github.com/nektos/act) (for local GitHub Actions runs)
-- (Optional) [GitHub CLI](https://cli.github.com/)
-- (Optional) [Ansible](https://www.ansible.com/)
+
+**For runtime (depending on use case):**
+
+- [Docker](https://www.docker.com/) or [Podman](https://podman.io/)
+  (for container builds)
+- [Buildah](https://buildah.io/) (embedded as library, no installation needed)
+
+**For provisioners (optional, depending on template):**
+
+- [Ansible](https://www.ansible.com/) (for ansible provisioner)
+- [PowerShell](https://github.com/PowerShell/PowerShell) (for pwsh provisioner)
 
 ### Clone the Repo
 
@@ -80,226 +172,135 @@ gh repo clone CowDogMoo/warpgate
 cd warpgate
 ```
 
----
-
-## Usage
-
-### Typical Build/Pipeline Flow
-
-Templates are managed under `packer-templates/`. Each template provides Packer
-files for Docker/AMI builds, variable definitions, and scripts.
-
-1. Initialize a Template
-
-   Creates lockfiles, initializes submodules, and gets everything ready:
-
-   ```bash
-   export TASK_X_REMOTE_TASKFILES=1   # (Usually a no-op, good habit for portability)
-   task template-init -- TEMPLATE_NAME=attack-box
-   ```
-
-1. Validate a Template
-
-   Checks all template variables, format, and Packer syntax:
-
-   ```bash
-   task template-validate -- TEMPLATE_NAME=attack-box
-   ```
-
-1. Build an Image (Docker or AMI)
-
-   **Docker Example (multi-arch, with custom VARS):**
-
-   ```bash
-   task template-build \
-     -- TEMPLATE_NAME=atomic-red-team \
-     ONLY='atomic-red-team-docker.docker.*' \
-     VARS="provision_repo_path=${HOME}/ansible-collection-arsenal template_name=atomic-red-team"
-   ```
-
-   **AMI Example (Ubuntu-based):**
-
-   ```bash
-   task template-build \
-     -- TEMPLATE_NAME=atomic-red-team \
-     ONLY='atomic-red-team-ami.amazon-ebs.*' \
-     VARS="provision_repo_path=${HOME}/ansible-collection-arsenal template_name=atomic-red-team"
-   ```
-
-   > For any image, set `TEMPLATE_NAME=my-template` and add custom variables
-   > with VARS (see below).
-
-1. Push Docker Images to GitHub Container Registry (GHCR)
-
-   After a multi-arch build succeeds:
-
-   ```bash
-   task template-push \
-     -- NAMESPACE=l50 \
-       IMAGE_NAME=atomic-red-team \
-       GITHUB_TOKEN=$(gh auth token) \
-       GITHUB_USER=l50
-   ```
-
-   You can also push per-arch images by digest, and/or create/update a manifest:
-
-   ```bash
-   # Push just arm64 by digest:
-   task template-push-digest \
-     -- NAMESPACE=l50 \
-       IMAGE_NAME=atomic-red-team \
-       ARCH=arm64 \
-       GITHUB_TOKEN=$(gh auth token) \
-       GITHUB_USER=l50
-
-   # Merge/push the multi-arch manifest:
-   task template-create-manifest \
-     -- NAMESPACE=l50 \
-       IMAGE_NAME=atomic-red-team \
-       GITHUB_TOKEN=$(gh auth token) \
-       GITHUB_USER=l50
-   ```
-
-1. Run Everything in CI, or Simulate CI Locally
-
-   You can use [GitHub Actions](.github/workflows/image-builder.yaml) for all of
-   the above.
-   Want a local dry run of your workflows? Use [act](https://github.com/nektos/act):
-
-   ```bash
-   task run-image-builder-action -- TEMPLATE=attack-box
-   ```
-
----
-
-## Template Structure & Customization
-
-- All image templates live under `packer-templates/*` (ex: `packer-templates/attack-box`).
-- Each template typically contains:
-  - `docker.pkr.hcl` and/or `ami.pkr.hcl` (platform-specific builds)
-  - `locals.pkr.hcl` (variables)
-  - Provisioning scripts/playbooks
-
-**To create a new image template:**
+### Building and Testing
 
 ```bash
-cp -R packer-templates/attack-box/ packer-templates/my-test-image/
-# Edit docker.pkr.hcl, ami.pkr.hcl, and locals.pkr.hcl as needed
-# Add provisioning logic (scripts or ansible) to packer-templates/my-test-image/
+# Build for current platform
+task build
+
+# Run tests
+task test
+
+# Run tests with coverage
+task test-coverage
+
+# Build for all platforms
+task build-all
+
+# Format code
+task fmt
+
+# Run linter
+task lint
+
+# Clean build artifacts
+task clean
 ```
 
 ---
 
-## Configuration File (warpgate-config.yaml)
+## Commands
 
-Warpgate uses a central configuration file (`warpgate-config.yaml`) to manage
-template sources, build settings, and discovery rules.
-
-### Configuration Structure
-
-```yaml
-# Template Sources Configuration
-template_sources:
-  - name: warpgate-core
-    path: ./packer-templates
-    type: local
-    enabled: true
-    description: Core Warpgate templates maintained in this repository
-
-# Template Build Configuration
-build_config:
-  # Default namespace for container images
-  default_namespace: l50
-
-  # Template-specific overrides
-  template_overrides:
-    runzero-explorer:
-      namespace: cowdogmoo
-      vars: "provision_repo_path=${HOME}/ansible-collection-bulwark template_name=runzero-explorer"
-
-    sliver:
-      namespace: l50
-      vars: "arsenal_repo_path=${HOME}/ansible-collection-arsenal template_name=sliver"
-
-  # Default build architectures
-  architectures:
-    - amd64
-    - arm64
-
-# Discovery Configuration
-discovery:
-  # Files that must exist for a directory to be considered a valid template
-  required_files:
-    - docker.pkr.hcl
-    - variables.pkr.hcl
-    - plugins.pkr.hcl
-
-  # Optional files (helpful but not required)
-  optional_files:
-    - locals.pkr.hcl
-    - ami.pkr.hcl
-    - README.md
-
-  # Exclude patterns (directories to skip during discovery)
-  exclude_patterns:
-    - ".*" # Hidden directories
-    - "_*" # Directories starting with underscore
-    - "deprecated" # Deprecated templates
-    - "test" # Test directories
-```
-
-### Key Configuration Sections
-
-**Template Sources:**
-
-- Define where Warpgate looks for Packer templates
-- Support for local directories (with potential for git repos in the future)
-- Can enable/disable sources individually
-
-**Build Configuration:**
-
-- Set default namespace for all container images
-- Override namespace and build variables per template
-- Define default architectures (amd64, arm64)
-
-**Discovery Settings:**
-
-- Specify required files that must exist for a valid template
-- Define optional files that enhance templates
-- Set exclude patterns to skip certain directories during discovery
-
-### Template Discovery
-
-Use the discovery task to find all valid templates based on the config:
+### Build
 
 ```bash
-task discover-templates
+# Build from local template file
+warpgate build warpgate.yaml
+
+# Build from git repository
+warpgate build --from-git https://github.com/user/repo.git//path/to/template
+
+# Build specific architectures
+warpgate build warpgate.yaml --arch amd64,arm64
+
+# Build and push to registry
+warpgate build warpgate.yaml --push --registry ghcr.io/myorg
+
+# Save digests after build and push
+warpgate build warpgate.yaml --push --save-digests --digest-dir ./digests
 ```
 
-This will scan all enabled template sources and identify directories that
-contain the required files specified in `discovery.required_files`.
+### Templates
+
+```bash
+# Discover templates from configured sources
+warpgate discover
+
+# List available templates
+warpgate templates list
+
+# Show template information
+warpgate templates info <template-name>
+```
+
+### Validation
+
+```bash
+# Validate template configuration
+warpgate validate warpgate.yaml
+```
+
+### Manifests
+
+```bash
+# Create multi-arch manifest
+warpgate manifest create \
+  --name myorg/myimage:latest \
+  --images myorg/myimage:amd64,myorg/myimage:arm64
+
+# Push manifest to registry
+warpgate manifest push myorg/myimage:latest
+
+# Inspect manifest
+warpgate manifest inspect myorg/myimage:latest
+```
+
+### Convert
+
+```bash
+# Convert Packer template to warpgate format
+warpgate convert packer-template.pkr.hcl
+```
 
 ---
 
-## Custom Variables
+## Available Taskfile Commands
 
-All template variables can be overridden from the CLI:
+The project includes a comprehensive Taskfile for development tasks:
 
-- `template_name`: Main image/tag prefix (`attack-box`, `atomic-red-team`, etc)
-- `provision_repo_path`: Path to extra provisioning repo/playbooks/scripts
-- `ami_region`: AWS region (for AMI builds; default: `us-east-1`)
-- `os_version`: OS base/version (default: Ubuntu, specific version per template)
+### Build Commands
 
-Example to build with custom vars:
+- `task build` - Build for current platform
+- `task build-all` - Build for all supported platforms
+- `task build-linux` - Build for Linux (amd64, arm64, armv7)
+- `task build-darwin` - Build for macOS (amd64, arm64)
+- `task build-windows` - Build for Windows (amd64)
+- `task install` - Install to $GOPATH/bin
 
-```bash
-task template-build \
-  -- TEMPLATE_NAME=sliver \
-     VARS="provision_repo_path=${HOME}/ansible-collection-arsenal template_name=sliver"
-```
+### Development Commands
 
-See each template's `locals.pkr.hcl` and the generated Taskfile for all
-supported vars.
+- `task test` - Run tests with race detector
+- `task test-coverage` - Generate HTML coverage report
+- `task lint` - Run golangci-lint
+- `task fmt` - Format code with go fmt
+- `task tidy` - Tidy go modules
+- `task clean` - Clean build artifacts
+
+### Running
+
+- `task run` - Build and run warpgate
+- `task dev` - Run in development mode with verbose logging
+- `task show-arch` - Show detected architecture
+
+### CI/CD Commands
+
+- `task ci-build` - Build for CI/CD environment
+- `task ci-test` - Run tests with JSON output for CI
+- `task release TAG=v1.0.0` - Create and push release tag
+
+### Pre-commit
+
+- `task run-pre-commit` - Update and run pre-commit hooks
 
 ---
 
@@ -327,47 +328,17 @@ gh auth status --show-token
 echo "<your_token>" | docker login ghcr.io -u yourusername --password-stdin
 ```
 
-**Set secrets for Taskfile push:**
-
-- `NAMESPACE`, `IMAGE_NAME`, `GITHUB_TOKEN`, `GITHUB_USER`
-  (pass as ENV or CLI args to `task`)
-
-**Secrets troubleshooting:**
-
-```bash
-task secrets
-```
-
----
-
-## Migrating from the Go CLI
-
-- **The old `wg` CLI is obsolete—use `task ...` commands as shown above.**
-- All image builds, pushes, and CI/CD are done via the Taskfile.
-- Variables, secrets, and build steps are now standardized.
-
----
-
-## Troubleshooting, Advanced Options & Best Practice
-
-- All supported commands/vars are discoverable in `Taskfile.yaml` and in the
-  help for `task`.
-- Use `VAR_FILES` and per-template overrides for advanced customization.
-
 ---
 
 ## Contributing
 
-Open Issues for template improvements, workflows, or Taskfile features!
+We welcome contributions! Please open issues for bug reports and feature requests.
 
 **Before contributing:**
 
-1. Review the
-   [License Compliance & SBOM documentation](docs/license-compliance-sbom.md)
-2. Install pre-commit hooks: `pre-commit install`
-3. Ensure all dependencies use
-   [allowed licenses](docs/license-compliance-sbom.md#allowed-licenses)
-   (Apache-2.0, MIT, BSD, ISC)
+1. Install pre-commit hooks: `pre-commit install`
+2. Run tests and linting: `task test && task lint`
+3. Format your code: `task fmt`
 
 Pre-commit hooks will automatically:
 
@@ -375,3 +346,32 @@ Pre-commit hooks will automatically:
 - Update NOTICE file
 - Generate SBOMs
 - Run security scans
+- Format code and run linters
+
+### Development Workflow
+
+```bash
+# 1. Fork and clone the repository
+gh repo fork CowDogMoo/warpgate --clone
+
+# 2. Create a feature branch
+git checkout -b feature/my-feature
+
+# 3. Make your changes and test
+task build
+task test
+
+# 4. Format and lint
+task fmt
+task lint
+
+# 5. Run pre-commit checks
+task run-pre-commit
+
+# 6. Commit and push
+git commit -am "feat: add my feature"
+git push origin feature/my-feature
+
+# 7. Create a pull request
+gh pr create
+```

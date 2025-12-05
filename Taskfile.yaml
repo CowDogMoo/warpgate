@@ -2,564 +2,381 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: "3"
 
+vars:
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
+  LDFLAGS: -s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}
+  HOST_OS:
+    sh: go env GOOS
+  HOST_ARCH:
+    sh: go env GOARCH
+
 includes:
   docker:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/docker/Taskfile.yaml"
   github:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/github/Taskfile.yaml"
-  packer:
-    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/packer/Taskfile.yaml"
   pre-commit:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
   secrets:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/secrets/Taskfile.yaml"
-  terraform:
-    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/terraform/Taskfile.yaml"
   renovate:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/renovate/Taskfile.yaml"
 
 tasks:
   default:
-    desc: "Run all CI tasks"
+    desc: Build, test, and clean
     cmds:
-      - task: run-pre-commit
+      - task: clean
+      - task: build
+      - task: test
 
-  run-pre-commit:
-    desc: "Update, clear cache, and run pre-commit hooks"
+  build:
+    desc: Build warpgate binary for current platform
+    deps:
+      - tidy
     cmds:
-      - task: pre-commit:update-hooks
-      - task: pre-commit:clear-cache
-      - task: pre-commit:run-hooks
+      - echo "Building warpgate for {{.HOST_OS}}/{{.HOST_ARCH}}"
+      - go build -ldflags "{{.LDFLAGS}}" -o warpgate ./cmd/warpgate
+    sources:
+      - cmd/**/*.go
+      - pkg/**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - warpgate
 
-  run-image-builder-action:
-    desc: "Run GitHub Actions image-builder workflow using act. Optionally specify TEMPLATE"
-    vars:
-      TEMPLATE: '{{.TEMPLATE | default ""}}'
-      WORKFLOW_FILE: ".github/workflows/warpgate-image-builder.yaml"
-      EVENT_FILE: "/tmp/github-event.json"
-      TEMP_SECRETS_FILE: ".secrets.tmp"
-      OS: "{{OS}}"
-      ARCH: "{{ARCH}}"
+  build-all:
+    desc: Build for all supported platforms
+    deps:
+      - build-linux
+      - build-darwin
+      - build-windows
+
+  build-linux:
+    desc: Build for Linux (amd64, arm64, armv7)
+    deps:
+      - build-linux-amd64
+      - build-linux-arm64
+      - build-linux-arm
+
+  build-linux-amd64:
+    desc: Build warpgate for linux/amd64
+    deps:
+      - tidy
+    cmds:
+      - mkdir -p dist
+      - GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o dist/warpgate-linux-amd64 ./cmd/warpgate
+    sources:
+      - cmd/**/*.go
+      - pkg/**/*.go
+    generates:
+      - dist/warpgate-linux-amd64
+
+  build-linux-arm64:
+    desc: Build warpgate for linux/arm64
+    deps:
+      - tidy
+    cmds:
+      - mkdir -p dist
+      - GOOS=linux GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o dist/warpgate-linux-arm64 ./cmd/warpgate
+    sources:
+      - cmd/**/*.go
+      - pkg/**/*.go
+    generates:
+      - dist/warpgate-linux-arm64
+
+  build-linux-arm:
+    desc: Build warpgate for linux/arm (armv7)
+    deps:
+      - tidy
+    cmds:
+      - mkdir -p dist
+      - GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "{{.LDFLAGS}}" -o dist/warpgate-linux-armv7 ./cmd/warpgate
+    sources:
+      - cmd/**/*.go
+      - pkg/**/*.go
+    generates:
+      - dist/warpgate-linux-armv7
+
+  build-darwin:
+    desc: Build for macOS (amd64, arm64)
+    deps:
+      - build-darwin-amd64
+      - build-darwin-arm64
+
+  build-darwin-amd64:
+    desc: Build warpgate for darwin/amd64
+    deps:
+      - tidy
+    cmds:
+      - mkdir -p dist
+      - GOOS=darwin GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o dist/warpgate-darwin-amd64 ./cmd/warpgate
+    sources:
+      - cmd/**/*.go
+      - pkg/**/*.go
+    generates:
+      - dist/warpgate-darwin-amd64
+
+  build-darwin-arm64:
+    desc: Build warpgate for darwin/arm64
+    deps:
+      - tidy
+    cmds:
+      - mkdir -p dist
+      - GOOS=darwin GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o dist/warpgate-darwin-arm64 ./cmd/warpgate
+    sources:
+      - cmd/**/*.go
+      - pkg/**/*.go
+    generates:
+      - dist/warpgate-darwin-arm64
+
+  build-windows:
+    desc: Build for Windows (amd64)
+    deps:
+      - build-windows-amd64
+
+  build-windows-amd64:
+    desc: Build warpgate for windows/amd64
+    deps:
+      - tidy
+    cmds:
+      - mkdir -p dist
+      - GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o dist/warpgate-windows-amd64.exe ./cmd/warpgate
+    sources:
+      - cmd/**/*.go
+      - pkg/**/*.go
+    generates:
+      - dist/warpgate-windows-amd64.exe
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f warpgate warpgate
+      - rm -rf dist/
+      - go clean
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test -v -race -coverprofile=coverage.out ./...
+
+  test-coverage:
+    desc: Run tests with coverage report
+    deps:
+      - test
+    cmds:
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report generated at coverage.html"
+
+  lint:
+    desc: Run linter (requires golangci-lint)
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  tidy:
+    desc: Tidy dependencies
+    cmds:
+      - go mod tidy
+
+  install:
+    desc: Install warpgate to GOPATH/bin
+    deps:
+      - tidy
+    cmds:
+      - go install -ldflags "{{.LDFLAGS}}" ./cmd/warpgate
+      - echo "Installed to $(go env GOPATH)/bin/warpgate"
+
+  show-arch:
+    desc: Show detected architecture and build strategy
+    cmds:
+      - echo "Host OS{{":"}} {{.HOST_OS}}"
+      - echo "Host ARCH{{":"}} {{.HOST_ARCH}}"
+      - echo "Version{{":"}} {{.VERSION}}"
+      - echo "Build strategy{{":"}} native"
+
+  run:
+    desc: Build and run warpgate
+    deps:
+      - build
+    cmds:
+      - ./warpgate {{.CLI_ARGS}}
+
+  dev:
+    desc: Run in development mode with verbose logging
+    deps:
+      - build
+    cmds:
+      - ./warpgate --verbose {{.CLI_ARGS}}
+
+  # CI/CD specific tasks
+  ci-test:
+    desc: Run tests for CI/CD (with JSON output)
+    cmds:
+      - go test -v -race -coverprofile=coverage.out -json ./... > test-results.json
+      - go tool cover -func=coverage.out
+
+  ci-build:
+    desc: Build for CI/CD environment
+    cmds:
+      - task: build
+      - task: test
+      - echo "Build completed successfully"
+
+  # Architecture-specific CI tasks
+  ci-build-native:
+    desc: Build for native architecture in CI
+    cmds:
+      - echo "Building for native arch{{":"}} {{.HOST_ARCH}}"
+      - task: build
+      - file warpgate || true
+
+  ci-matrix:
+    desc: Show build matrix for CI/CD
     cmds:
       - |
-        # Detect platform and architecture
-        OS="${OS:-$(uname -s)}"
-        ARCH="${ARCH:-$(uname -m)}"
-        ARCH_FLAG=""
+        echo "Recommended CI/CD build matrix:"
+        echo "  - arch: amd64"
+        echo "    runner: ubuntu-latest"
+        echo "    strategy: native"
+        echo ""
+        echo "  - arch: arm64"
+        echo "    runner: ubuntu-24.04-arm"
+        echo "    strategy: native"
 
-        # Check if we're on Mac ARM
-        if [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
-          ARCH_FLAG="--container-architecture linux/amd64"
-        fi
+  # Release tasks
+  release:
+    desc: Create and push a new release tag (triggers goreleaser GHA)
+    vars:
+      TAG: '{{.TAG | default ""}}'
+    preconditions:
+      - sh: command -v gh
+        msg: "gh CLI is required. Install from https://cli.github.com/"
+      - sh: '[ -n "{{.TAG}}" ]'
+        msg: "TAG is required. Usage: task release TAG=v1.0.0"
+      - sh: git diff --quiet
+        msg: "Working directory is not clean. Commit or stash changes first."
+      - sh: git diff --cached --quiet
+        msg: "Staged changes detected. Commit or unstage changes first."
+    cmds:
+      - echo "Creating release tag {{.TAG}}..."
+      - git tag -a {{.TAG}} -m "Release {{.TAG}}"
+      - echo "Pushing tag {{.TAG}} to remote..."
+      - git push origin {{.TAG}}
+      - echo "Tag pushed successfully. GoReleaser GitHub Action will build and publish the release."
+      - echo "Monitor the release at$(":")"
+      - gh run list --workflow=goreleaser.yaml --limit 1
 
-        # Clean up existing act containers
-        echo "Cleaning up existing act containers..."
-        docker ps -q -f name=act-Image-Builder | xargs -r docker rm -f 2> /dev/null || true
-
-        # Set up secrets file
-        SECRETS_FILE="${ACT_SECRETS_FILE:-.secrets}"
-
-        if [ ! -f "$SECRETS_FILE" ]; then
-          echo "Warning: $SECRETS_FILE file not found. Creating temporary one with GITHUB_TOKEN=dummy for testing."
-          echo "GITHUB_TOKEN=dummy" > "{{.TEMP_SECRETS_FILE}}"
-          SECRETS_FILE="{{.TEMP_SECRETS_FILE}}"
-        fi
-
-        # Run act
-        EXIT_CODE=0
-        if [ -n "{{.TEMPLATE}}" ]; then
-          echo "Building template: {{.TEMPLATE}}"
-          echo '{"inputs":{"TEMPLATE":"{{.TEMPLATE}}"}}' > "{{.EVENT_FILE}}"
-          act -W "{{.WORKFLOW_FILE}}" $ARCH_FLAG -e "{{.EVENT_FILE}}" --secret-file "$SECRETS_FILE" || EXIT_CODE=$?
+  release-check:
+    desc: Check if a release exists and view its status
+    vars:
+      TAG: '{{.TAG | default ""}}'
+    preconditions:
+      - sh: command -v gh
+        msg: "gh CLI is required. Install from https://cli.github.com/"
+    cmds:
+      - |
+        if [ -n "{{.TAG}}" ]; then
+          echo "Checking release status for {{.TAG}}..."
+          gh release view {{.TAG}} || echo "Release {{.TAG}} not found"
         else
-          echo "Building all templates"
-          act -W "{{.WORKFLOW_FILE}}" $ARCH_FLAG --secret-file "$SECRETS_FILE" || EXIT_CODE=$?
+          echo "Latest releases:"
+          gh release list --limit 5
         fi
 
-        # Clean up temporary files
-        if [ "$SECRETS_FILE" = "{{.TEMP_SECRETS_FILE}}" ]; then
-          rm -f "{{.TEMP_SECRETS_FILE}}"
-        fi
-        rm -f "{{.EVENT_FILE}}"
-
-        if [ $EXIT_CODE -eq 0 ]; then
-          echo "✓ Image builder workflow completed successfully"
+  release-watch:
+    desc: Watch the goreleaser workflow run in real-time
+    preconditions:
+      - sh: command -v gh
+        msg: "gh CLI is required. Install from https://cli.github.com/"
+    cmds:
+      - |
+        echo "Watching latest goreleaser workflow run..."
+        RUN_ID=$(gh run list --workflow=goreleaser.yaml --limit 1 --json databaseId --jq '.[0].databaseId')
+        if [ -n "$RUN_ID" ]; then
+          gh run watch $RUN_ID
         else
-          echo "✗ Image builder workflow failed with exit code $EXIT_CODE"
+          echo "No goreleaser workflow runs found"
         fi
 
-        exit $EXIT_CODE
+  release-test:
+    desc: Test goreleaser locally (snapshot build, no publish)
+    preconditions:
+      - sh: command -v goreleaser
+        msg: "goreleaser is required. Install from https://goreleaser.com/install/"
+    cmds:
+      - echo "Running goreleaser in snapshot mode (no publish)..."
+      - goreleaser release --snapshot --clean --skip=publish
+      - echo "Snapshot build completed. Check dist/ directory for artifacts."
 
-  discover-templates:
-    desc: "Discover templates from all configured sources"
+  release-draft:
+    desc: Create a draft release with gh CLI
     vars:
-      CONFIG_FILE: '{{.CONFIG_FILE | default "warpgate-config.yaml"}}'
-      OUTPUT_FILE: '{{.OUTPUT_FILE | default "discovered-templates.json"}}'
-      FORMAT: '{{.FORMAT | default "json"}}'
-      VERBOSE: '{{.VERBOSE | default "false"}}'
+      TAG: '{{.TAG | default ""}}'
+      TITLE: '{{.TITLE | default .TAG}}'
+      NOTES: '{{.NOTES | default ""}}'
+    preconditions:
+      - sh: command -v gh
+        msg: "gh CLI is required. Install from https://cli.github.com/"
+      - sh: '[ -n "{{.TAG}}" ]'
+        msg: "TAG is required. Usage: task release-draft TAG=v1.0.0"
     cmds:
       - |
-        echo "Discovering templates from configured sources..."
-        python3 -c '
-        import json
-        import os
-        import sys
-        from pathlib import Path
-        import yaml
+        echo "Creating draft release for {{.TAG}}..."
+        if [ -n "{{.NOTES}}" ]; then
+          gh release create {{.TAG}} --draft --title "{{.TITLE}}" --notes "{{.NOTES}}"
+        else
+          gh release create {{.TAG}} --draft --title "{{.TITLE}}" --generate-notes
+        fi
+        echo "Draft release created. Edit and publish it at:"
+        gh release view {{.TAG}} --web
 
-        verbose = "{{.VERBOSE}}" == "true"
-        config_path = Path("{{.CONFIG_FILE}}")
-        output_format = "{{.FORMAT}}"
-        output_path = Path("{{.OUTPUT_FILE}}")
-
-        def log(msg):
-            if verbose:
-                print(f"[DISCOVERY] {msg}", file=sys.stderr)
-
-        # Load config
-        if not config_path.exists():
-            print(f"Error: Configuration file not found: {config_path}", file=sys.stderr)
-            sys.exit(1)
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        if not config or "template_sources" not in config:
-            print("Error: Invalid configuration: template_sources not found", file=sys.stderr)
-            sys.exit(1)
-
-        # Discover templates
-        discovered = []
-        sources = config.get("template_sources", [])
-        build_config = config.get("build_config", {})
-        template_overrides = build_config.get("template_overrides", {})
-        default_namespace = build_config.get("default_namespace", "l50")
-        required_files = config.get("discovery", {}).get("required_files", ["docker.pkr.hcl", "variables.pkr.hcl", "plugins.pkr.hcl"])
-        exclude_patterns = config.get("discovery", {}).get("exclude_patterns", [])
-
-        for source in sources:
-            source_name = source.get("name", "unknown")
-            enabled = source.get("enabled", True)
-
-            if not enabled:
-                log(f"Source {source_name} is disabled, skipping")
-                continue
-
-            source_path = Path(os.path.expandvars(os.path.expanduser(source["path"])))
-
-            if not source_path.exists() or not source_path.is_dir():
-                log(f"Source path does not exist or is not a directory: {source_path}")
-                continue
-
-            log(f"Discovering templates from source {source_name} at {source_path}")
-
-            for item in source_path.iterdir():
-                if not item.is_dir():
-                    continue
-
-                template_name = item.name
-
-                # Check exclude patterns
-                excluded = False
-                for pattern in exclude_patterns:
-                    if pattern.startswith("*") and template_name.endswith(pattern[1:]):
-                        excluded = True
-                    elif pattern.endswith("*") and template_name.startswith(pattern[:-1]):
-                        excluded = True
-                    elif template_name == pattern:
-                        excluded = True
-
-                if excluded:
-                    log(f"Excluding template {template_name} (matches exclude pattern)")
-                    continue
-
-                # Validate template structure
-                valid = all((item / req_file).exists() for req_file in required_files)
-                if not valid:
-                    log(f"Skipping {template_name} (invalid template structure)")
-                    continue
-
-                # Get template config
-                template_config = template_overrides.get(template_name, {})
-                metadata = {
-                    "name": template_name,
-                    "path": str(item.absolute()),
-                    "source": source_name,
-                    "namespace": template_config.get("namespace", default_namespace),
-                    "vars": template_config.get("vars", f"template_name={template_name}"),
-                    "has_ami": (item / "ami.pkr.hcl").exists(),
-                    "has_locals": (item / "locals.pkr.hcl").exists(),
-                    "has_readme": (item / "README.md").exists(),
-                }
-
-                discovered.append(metadata)
-                log(f"Discovered template: {template_name}")
-
-        log(f"Discovery complete: found {len(discovered)} templates")
-
-        # Write output
-        if output_format == "json":
-            with open(output_path, "w") as f:
-                json.dump(discovered, f, indent=2)
-        elif output_format == "yaml":
-            with open(output_path, "w") as f:
-                yaml.dump(discovered, f, default_flow_style=False)
-        elif output_format == "github-matrix":
-            architectures = build_config.get("architectures", ["amd64", "arm64"])
-            templates = [{"name": t["name"], "namespace": t["namespace"], "vars": t["vars"]} for t in discovered]
-            arch_configs = []
-            for arch in architectures:
-                if arch == "amd64":
-                    arch_configs.append({"arch": "amd64", "runner": "ubuntu-latest", "platform": "linux/amd64"})
-                elif arch == "arm64":
-                    arch_configs.append({"arch": "arm64", "runner": "ubuntu-24.04-arm", "platform": "linux/arm64"})
-
-            matrix = {"template": templates, "architecture": arch_configs}
-            with open(output_path, "w") as f:
-                json.dump(matrix, f, indent=2)
-
-        log(f"Wrote output to {output_path}")
-
-        # Print summary
-        print(f"Discovered {len(discovered)} templates:")
-        for template in discovered:
-            name = template.get("name")
-            source = template.get("source")
-            print(f"  - {name} (from {source})")
-        '
-
-  discover-templates-matrix:
-    desc: "Generate GitHub Actions matrix from discovered templates"
-    cmds:
-      - task: discover-templates
-        vars:
-          CONFIG_FILE: warpgate-config.yaml
-          OUTPUT_FILE: .github/workflows/template-matrix.json
-          FORMAT: github-matrix
-          VERBOSE: "true"
-
-  template-build:
-    desc: Build a template image from anywhere in the repo
-    env:
-      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
+  release-delete:
+    desc: Delete a release and its tag
     vars:
-      RESOLVED_TEMPLATE_DIR:
-        sh: |
-          python3 -c '
-          import json
-          import sys
-          from pathlib import Path
-
-          template_name = "{{.TEMPLATE_NAME}}"
-          template_dir = "{{.TEMPLATE_DIR}}"
-          discovered_file = "discovered-templates.json"
-
-          # Priority 1: Explicit template directory
-          if template_dir:
-              print(template_dir)
-              sys.exit(0)
-
-          # Priority 2: Look up in discovered templates
-          discovered_path = Path(discovered_file)
-          if discovered_path.exists():
-              try:
-                  with open(discovered_path) as f:
-                      templates = json.load(f)
-
-                  for template in templates:
-                      if template.get("name") == template_name:
-                          print(template["path"])
-                          sys.exit(0)
-              except (json.JSONDecodeError, KeyError, IOError):
-                  pass
-
-          # Priority 3: Default location
-          if template_name:
-              print(f"packer-templates/{template_name}")
-          else:
-              print("./")
-          '
+      TAG: '{{.TAG | default ""}}'
+    preconditions:
+      - sh: command -v gh
+        msg: "gh CLI is required. Install from https://cli.github.com/"
+      - sh: '[ -n "{{.TAG}}" ]'
+        msg: "TAG is required. Usage: task release-delete TAG=v1.0.0"
+    prompt: "Are you sure you want to delete release {{.TAG}}? This will also delete the git tag."
     cmds:
-      - task: packer:cleanup-packer-manifest
-        vars:
-          MANIFEST_PATH: '{{.MANIFEST_PATH | default "./manifest.json"}}'
+      - echo "Deleting release {{.TAG}}..."
+      - gh release delete {{.TAG}} --yes || echo "Release not found on GitHub"
+      - echo "Deleting local tag {{.TAG}}..."
+      - git tag -d {{.TAG}} || echo "Local tag not found"
+      - echo "Deleting remote tag {{.TAG}}..."
+      - git push origin :refs/tags/{{.TAG}} || echo "Remote tag not found"
+      - echo "Release and tag deleted successfully."
 
-      - task: packer:packer-template-build
-        vars:
-          COMMAND: "build"
-          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
-          TEMPLATE_DIR: "{{.RESOLVED_TEMPLATE_DIR}}"
-          ONLY: '{{.ONLY   | default ""}}'
-          VARS: '{{.VARS   | default ""}}'
-          FORCE: '{{.FORCE | default "false"}}'
-
-  template-init:
-    desc: "Initialize a Packer template from anywhere in the repo (supports multi-source)"
-    env:
-      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
+  release-changelog:
+    desc: Generate changelog between two tags
     vars:
-      RESOLVED_TEMPLATE_DIR:
-        sh: |
-          python3 -c '
-          import json
-          import sys
-          from pathlib import Path
-
-          template_name = "{{.TEMPLATE_NAME}}"
-          template_dir = "{{.TEMPLATE_DIR}}"
-          discovered_file = "discovered-templates.json"
-
-          # Priority 1: Explicit template directory
-          if template_dir:
-              print(template_dir)
-              sys.exit(0)
-
-          # Priority 2: Look up in discovered templates
-          discovered_path = Path(discovered_file)
-          if discovered_path.exists():
-              try:
-                  with open(discovered_path) as f:
-                      templates = json.load(f)
-
-                  for template in templates:
-                      if template.get("name") == template_name:
-                          print(template["path"])
-                          sys.exit(0)
-              except (json.JSONDecodeError, KeyError, IOError):
-                  pass
-
-          # Priority 3: Default location
-          if template_name:
-              print(f"packer-templates/{template_name}")
-          else:
-              print("./")
-          '
-    cmds:
-      - task: packer:packer-init
-        vars:
-          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
-          TEMPLATE_DIR: "{{.RESOLVED_TEMPLATE_DIR}}"
-          VARS: '{{.VARS | default ""}}'
-
-  template-validate:
-    desc: "Validate a template packer template from anywhere in the repo"
-    cmds:
-      - task: packer:_packer-base
-        vars:
-          COMMAND: "validate"
-          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
-          VAR_FILE: '{{.VAR_FILE | default ""}}'
-
-  template-push:
-    desc: "Push multi-architecture Docker images using Packer manifest"
-    requires:
-      vars: ["NAMESPACE", "IMAGE_NAME", "GITHUB_TOKEN", "GITHUB_USER"]
-    vars:
-      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
-      NAMESPACE: "{{ .NAMESPACE }}"
-      IMAGE_NAME: "{{ .IMAGE_NAME }}"
-      TAG: '{{ .TAG | default "latest" }}'
-      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
-      GITHUB_USER: "{{ .GITHUB_USER }}"
-      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
-      ARM64_HASH:
-        sh: |
-          # Check if jq is installed
-          if ! command -v jq &> /dev/null; then
-            echo "Error: jq is not installed. Please install jq to parse JSON files." >&2
-            exit 1
-          fi
-
-          # Check if manifest file exists
-          if [ ! -f "{{ .MANIFEST_PATH }}" ]; then
-            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
-            echo "Please run 'task template-build' first to generate the manifest." >&2
-            exit 1
-          fi
-
-          # Extract hash
-          HASH=$(jq -r '.builds[] | select(.name == "arm64") | .artifact_id' {{ .MANIFEST_PATH }} 2> /dev/null)
-
-          if [ -z "$HASH" ] || [ "$HASH" == "null" ]; then
-            echo "Error: Could not extract arm64 hash from manifest" >&2
-            echo "Manifest may be missing the 'arm64' build." >&2
-            exit 1
-          fi
-
-          echo "$HASH"
-      AMD64_HASH:
-        sh: |
-          # Check if jq is installed
-          if ! command -v jq &> /dev/null; then
-            echo "Error: jq is not installed. Please install jq to parse JSON files." >&2
-            exit 1
-          fi
-
-          # Check if manifest file exists
-          if [ ! -f "{{ .MANIFEST_PATH }}" ]; then
-            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
-            echo "Please run 'task template-build' first to generate the manifest." >&2
-            exit 1
-          fi
-
-          # Extract hash
-          HASH=$(jq -r '.builds[] | select(.name == "amd64") | .artifact_id' {{ .MANIFEST_PATH }} 2> /dev/null)
-
-          if [ -z "$HASH" ] || [ "$HASH" == "null" ]; then
-            echo "Error: Could not extract amd64 hash from manifest" >&2
-            echo "Manifest may be missing the 'amd64' build." >&2
-            exit 1
-          fi
-
-          echo "$HASH"
+      FROM: '{{.FROM | default ""}}'
+      TO: '{{.TO | default "HEAD"}}'
     cmds:
       - |
-        echo "Validating prerequisites for multi-arch push..."
-        echo "Extracting image hashes from manifest:"
-        echo "ARM64_HASH: {{ .ARM64_HASH }}"
-        echo "AMD64_HASH: {{ .AMD64_HASH }}"
-        echo "✓ Prerequisites validated successfully"
-      - task: docker:push-multi-arch
-        vars:
-          REGISTRY: "{{ .REGISTRY }}"
-          NAMESPACE: "{{ .NAMESPACE }}"
-          IMAGE_NAME: "{{ .IMAGE_NAME }}"
-          TAG: "{{ .TAG }}"
-          ARM64_HASH: "{{ .ARM64_HASH }}"
-          AMD64_HASH: "{{ .AMD64_HASH }}"
-          GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
-          GITHUB_USER: "{{ .GITHUB_USER }}"
-
-  template-push-digest:
-    desc: "Push architecture-specific Docker image by digest"
-    requires:
-      vars: ["NAMESPACE", "IMAGE_NAME", "ARCH", "GITHUB_TOKEN", "GITHUB_USER"]
-    vars:
-      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
-      NAMESPACE: "{{ .NAMESPACE }}"
-      IMAGE_NAME: "{{ .IMAGE_NAME }}"
-      ARCH: "{{ .ARCH }}"
-      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
-      GITHUB_USER: "{{ .GITHUB_USER }}"
-      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
-      DIGEST_FILE: "digest-{{.IMAGE_NAME}}-{{.ARCH}}.txt"
-    cmds:
-      - |
-        echo "Pushing {{.ARCH}} image for {{.IMAGE_NAME}}..."
-
-        # Check if jq is installed
-        if ! command -v jq &> /dev/null; then
-          echo "Error: jq is not installed. Please install jq to parse JSON files." >&2
-          exit 1
+        if [ -z "{{.FROM}}" ]; then
+          # Get the latest tag if FROM not specified
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No previous tags found. Showing all commits:"
+            git log --oneline --decorate
+          else
+            echo "Changelog since $LATEST_TAG:"
+            git log ${LATEST_TAG}..{{.TO}} --oneline --decorate
+          fi
+        else
+          echo "Changelog from {{.FROM}} to {{.TO}}:"
+          git log {{.FROM}}..{{.TO}} --oneline --decorate
         fi
-
-        # Check if manifest file exists
-        if [ ! -f "{{.MANIFEST_PATH}}" ]; then
-          echo "Error: Manifest file not found at {{.MANIFEST_PATH}}" >&2
-          exit 1
-        fi
-
-        # Extract image hash from manifest
-        IMAGE_HASH=$(jq -r '.builds[] | select(.name == "{{.ARCH}}") | .artifact_id' "{{.MANIFEST_PATH}}" 2> /dev/null)
-
-        if [ -z "$IMAGE_HASH" ] || [ "$IMAGE_HASH" == "null" ]; then
-          echo "Error: Could not extract {{.ARCH}} hash from manifest" >&2
-          exit 1
-        fi
-
-        echo "Image hash: $IMAGE_HASH"
-
-        # Login to registry
-        echo "Logging in to {{.REGISTRY}}..."
-        echo "{{.GITHUB_TOKEN}}" | docker login "{{.REGISTRY}}" -u "{{.GITHUB_USER}}" --password-stdin
-
-        # Tag and push the image
-        TARGET_TAG="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}:{{.ARCH}}"
-        echo "Tagging image: $IMAGE_HASH → $TARGET_TAG"
-        docker tag "$IMAGE_HASH" "$TARGET_TAG"
-
-        echo "Pushing {{.ARCH}} image..."
-        PUSH_OUTPUT=$(docker push "$TARGET_TAG" 2>&1)
-
-        # Extract digest from push output
-        DIGEST=$(echo "$PUSH_OUTPUT" | grep -oE 'digest: sha256:[a-f0-9]{64}' | cut -d' ' -f2)
-
-        if [ -z "$DIGEST" ]; then
-          echo "Error: Failed to extract digest from push output" >&2
-          echo "Push output:" >&2
-          echo "$PUSH_OUTPUT" >&2
-          exit 1
-        fi
-
-        echo "Pushed {{.ARCH}} image with digest: $DIGEST"
-
-        # Save digest to file
-        echo "$DIGEST" > "{{.DIGEST_FILE}}"
-        echo "Saved digest to {{.DIGEST_FILE}}"
-
-        echo "✓ Successfully pushed {{.ARCH}} image"
-
-  template-create-manifest:
-    desc: "Create and push multi-architecture manifest"
-    requires:
-      vars: ["NAMESPACE", "IMAGE_NAME", "GITHUB_TOKEN", "GITHUB_USER"]
-    vars:
-      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
-      NAMESPACE: "{{ .NAMESPACE }}"
-      IMAGE_NAME: "{{ .IMAGE_NAME }}"
-      TAG: '{{ .TAG | default "latest" }}'
-      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
-      GITHUB_USER: "{{ .GITHUB_USER }}"
-      AMD64_DIGEST_FILE: "digest-{{.IMAGE_NAME}}-amd64.txt"
-      ARM64_DIGEST_FILE: "digest-{{.IMAGE_NAME}}-arm64.txt"
-    cmds:
-      - |
-        # Check if digest files exist
-        if [ ! -f "{{.AMD64_DIGEST_FILE}}" ] || [ ! -f "{{.ARM64_DIGEST_FILE}}" ]; then
-          echo "Error: Required digest files not found"
-          [ ! -f "{{.AMD64_DIGEST_FILE}}" ] && echo "  Missing: {{.AMD64_DIGEST_FILE}}"
-          [ ! -f "{{.ARM64_DIGEST_FILE}}" ] && echo "  Missing: {{.ARM64_DIGEST_FILE}}"
-          echo "Please run 'task template-push-digest' first for both architectures."
-          exit 1
-        fi
-      - |
-        # Login to Docker registry
-        echo "Logging in to {{.REGISTRY}}..."
-        echo "{{.GITHUB_TOKEN}}" | docker login "{{.REGISTRY}}" -u "{{.GITHUB_USER}}" --password-stdin
-      - |
-        # Read digests from files
-        AMD64_DIGEST=$(cat "{{.AMD64_DIGEST_FILE}}" | tr -d '[:space:]')
-        ARM64_DIGEST=$(cat "{{.ARM64_DIGEST_FILE}}" | tr -d '[:space:]')
-
-        if [ -z "$AMD64_DIGEST" ] || [ -z "$ARM64_DIGEST" ]; then
-          echo "Error: Empty digest found"
-          exit 1
-        fi
-
-        echo "AMD64 digest: $AMD64_DIGEST"
-        echo "ARM64 digest: $ARM64_DIGEST"
-
-        # Create manifest with specified tag
-        MANIFEST_TAG="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}:{{.TAG}}"
-        AMD64_IMAGE="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}@$AMD64_DIGEST"
-        ARM64_IMAGE="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}@$ARM64_DIGEST"
-
-        echo "Creating manifest: $MANIFEST_TAG"
-        echo "  AMD64: $AMD64_IMAGE"
-        echo "  ARM64: $ARM64_IMAGE"
-
-        docker buildx imagetools create -t "$MANIFEST_TAG" "$AMD64_IMAGE" "$ARM64_IMAGE"
-
-        echo "✓ Successfully created and pushed manifest: $MANIFEST_TAG"
-
-        # Create manifest with timestamp tag
-        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-        echo "Also creating timestamped manifest..."
-        TIMESTAMP_TAG="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}:$TIMESTAMP"
-
-        docker buildx imagetools create -t "$TIMESTAMP_TAG" "$AMD64_IMAGE" "$ARM64_IMAGE"
-
-        echo "✓ Multi-architecture manifest creation complete"
-        echo "Available tags:"
-        echo "  - {{.TAG}}"
-        echo "  - $TIMESTAMP"

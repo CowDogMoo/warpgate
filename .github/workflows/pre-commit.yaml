@@ -76,4 +76,4 @@ jobs:
           task-version: ${{ env.TASK_VERSION }}
 
       - name: Run pre-commit
-        run: task -y run-pre-commit || true
+        run: task -y pre-commit:run-pre-commit
