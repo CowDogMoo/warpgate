@@ -105,9 +105,11 @@ type PackerAMISource struct {
 
 // HCLParser parses Packer HCL templates using the official HCL library
 type HCLParser struct {
-	parser    *hclparse.Parser
-	evalCtx   *hcl.EvalContext
-	variables map[string]PackerVariable
+	parser       *hclparse.Parser
+	evalCtx      *hcl.EvalContext
+	variables    map[string]PackerVariable
+	dockerSource *PackerDockerSource
+	amiSource    *PackerAMISource
 }
 
 // NewHCLParser creates a new HCL parser
@@ -424,4 +426,148 @@ func (p *HCLParser) GetVariable(name string) (PackerVariable, bool) {
 // GetAllVariables returns all parsed variables
 func (p *HCLParser) GetAllVariables() map[string]PackerVariable {
 	return p.variables
+}
+
+// ParseSourceBlocks parses source blocks from a build file
+func (p *HCLParser) ParseSourceBlocks(path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read build file: %w", err)
+	}
+
+	file, diags := p.parser.ParseHCL(content, filepath.Base(path))
+	if diags.HasErrors() {
+		return fmt.Errorf("failed to parse HCL: %s", diags.Error())
+	}
+
+	body, ok := file.Body.(*hclsyntax.Body)
+	if !ok {
+		return fmt.Errorf("unexpected body type")
+	}
+
+	for _, block := range body.Blocks {
+		if block.Type == "source" {
+			if len(block.Labels) < 2 {
+				continue
+			}
+
+			sourceType := block.Labels[0]
+			switch sourceType {
+			case "docker":
+				dockerSrc, err := p.parseDockerSourceBlock(block, content)
+				if err == nil {
+					p.dockerSource = &dockerSrc
+				}
+			case "amazon-ebs":
+				amiSrc, err := p.parseAMISourceBlock(block, content)
+				if err == nil {
+					p.amiSource = &amiSrc
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// parseDockerSourceBlock parses a docker source block
+func (p *HCLParser) parseDockerSourceBlock(block *hclsyntax.Block, content []byte) (PackerDockerSource, error) {
+	source := PackerDockerSource{
+		Name: block.Labels[1], // Second label is the name
+	}
+
+	// Extract attributes
+	source.Image = p.getStringAttribute(block, "image")
+	source.Platform = p.getStringAttribute(block, "platform")
+
+	// Extract boolean attributes
+	if attr, exists := block.Body.Attributes["commit"]; exists {
+		val, diags := attr.Expr.Value(p.evalCtx)
+		if !diags.HasErrors() && val.Type() == cty.Bool {
+			source.Commit = val.True()
+		}
+	}
+
+	if attr, exists := block.Body.Attributes["privileged"]; exists {
+		val, diags := attr.Expr.Value(p.evalCtx)
+		if !diags.HasErrors() && val.Type() == cty.Bool {
+			source.Privileged = val.True()
+		}
+	}
+
+	if attr, exists := block.Body.Attributes["pull"]; exists {
+		val, diags := attr.Expr.Value(p.evalCtx)
+		if !diags.HasErrors() && val.Type() == cty.Bool {
+			source.Pull = val.True()
+		}
+	}
+
+	// Extract volumes map
+	source.Volumes = p.getMapAttribute(block, "volumes")
+
+	// Extract run_command array
+	source.RunCommand = p.getStringListAttribute(block, "run_command")
+
+	// Extract changes array
+	source.Changes = p.getStringListAttribute(block, "changes")
+
+	return source, nil
+}
+
+// parseAMISourceBlock parses an amazon-ebs source block
+func (p *HCLParser) parseAMISourceBlock(block *hclsyntax.Block, content []byte) (PackerAMISource, error) {
+	source := PackerAMISource{
+		Name: block.Labels[1],
+	}
+
+	source.InstanceType = p.getStringAttribute(block, "instance_type")
+	source.Region = p.getStringAttribute(block, "region")
+	source.AMIName = p.getStringAttribute(block, "ami_name")
+	source.SubnetID = p.getStringAttribute(block, "subnet_id")
+
+	// Extract volume_size from launch_block_device_mappings
+	for _, nestedBlock := range block.Body.Blocks {
+		if nestedBlock.Type == "launch_block_device_mappings" {
+			if attr, exists := nestedBlock.Body.Attributes["volume_size"]; exists {
+				val, diags := attr.Expr.Value(p.evalCtx)
+				if !diags.HasErrors() {
+					if val.Type() == cty.Number {
+						intVal, _ := val.AsBigFloat().Int64()
+						source.VolumeSize = int(intVal)
+					} else if val.Type() == cty.String {
+						// Try to parse as string (in case it's a variable reference)
+						// For now, skip variable references in volume_size
+					}
+				}
+			}
+		}
+	}
+
+	return source, nil
+}
+
+// getMapAttribute extracts a map from an HCL attribute
+func (p *HCLParser) getMapAttribute(block *hclsyntax.Block, attrName string) map[string]string {
+	result := make(map[string]string)
+	if attr, exists := block.Body.Attributes[attrName]; exists {
+		val, diags := attr.Expr.Value(p.evalCtx)
+		if !diags.HasErrors() && val.Type().IsObjectType() {
+			for key, v := range val.AsValueMap() {
+				if v.Type() == cty.String {
+					result[key] = v.AsString()
+				}
+			}
+		}
+	}
+	return result
+}
+
+// GetDockerSource returns the parsed docker source
+func (p *HCLParser) GetDockerSource() *PackerDockerSource {
+	return p.dockerSource
+}
+
+// GetAMISource returns the parsed AMI source
+func (p *HCLParser) GetAMISource() *PackerAMISource {
+	return p.amiSource
 }

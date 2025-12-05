@@ -137,7 +137,10 @@ func TestBuildTargets(t *testing.T) {
 				IncludeAMI: tc.includeAMI,
 			})
 			require.NoError(t, err)
-			result := converter.buildTargets()
+
+			// Create HCL parser for buildTargets
+			hclParser := NewHCLParser()
+			result := converter.buildTargets(hclParser)
 			assert.Len(t, result, tc.expectedLen)
 
 			// Verify container target
@@ -846,4 +849,92 @@ func TestParseAnsibleExtraArgs(t *testing.T) {
 			assert.Equal(t, tc.expected, result)
 		})
 	}
+}
+
+func TestConvertWithDockerSourceConfiguration(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create README.md
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test Docker Source"), 0644)
+	require.NoError(t, err)
+
+	// Create variables.pkr.hcl
+	varsContent := `variable "base_image" {
+  type    = string
+  default = "ubuntu"
+}
+
+variable "base_image_version" {
+  type    = string
+  default = "22.04"
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "variables.pkr.hcl"), []byte(varsContent), 0644)
+	require.NoError(t, err)
+
+	// Create docker.pkr.hcl with source block containing Docker-specific configuration
+	dockerContent := `source "docker" "amd64" {
+  commit     = true
+  image      = "${var.base_image}:${var.base_image_version}"
+  platform   = "linux/amd64"
+  privileged = true
+  pull       = true
+
+  volumes = {
+    "/sys/fs/cgroup" = "/sys/fs/cgroup:rw"
+  }
+
+  changes = [
+    "ENTRYPOINT [\"/bin/bash\"]",
+    "USER sliver",
+    "WORKDIR /home/sliver",
+    "ENV PATH=/opt/sliver:$PATH"
+  ]
+
+  run_command = ["-d", "-i", "-t", "--cgroupns=host", "{{ .Image }}"]
+}
+
+build {
+  sources = ["source.docker.amd64"]
+
+  provisioner "shell" {
+    inline = ["apt-get update"]
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
+	require.NoError(t, err)
+
+	// Run conversion
+	converter, err := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+	require.NoError(t, err)
+
+	config, err := converter.Convert()
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Verify Docker-specific configuration was captured
+	assert.True(t, config.Base.Privileged, "Privileged flag should be set")
+	assert.True(t, config.Base.Pull, "Pull flag should be set")
+
+	// Verify volumes
+	require.NotNil(t, config.Base.Volumes)
+	assert.Equal(t, "/sys/fs/cgroup:rw", config.Base.Volumes["/sys/fs/cgroup"])
+
+	// Verify run_command
+	require.NotNil(t, config.Base.RunCommand)
+	assert.Len(t, config.Base.RunCommand, 5)
+	assert.Contains(t, config.Base.RunCommand, "-d")
+	assert.Contains(t, config.Base.RunCommand, "--cgroupns=host")
+
+	// Verify changes (Dockerfile instructions)
+	require.NotNil(t, config.Base.Changes)
+	assert.Len(t, config.Base.Changes, 4)
+	assert.Contains(t, config.Base.Changes, "ENTRYPOINT [\"/bin/bash\"]")
+	assert.Contains(t, config.Base.Changes, "USER sliver")
+	assert.Contains(t, config.Base.Changes, "WORKDIR /home/sliver")
+	assert.Contains(t, config.Base.Changes, "ENV PATH=/opt/sliver:$PATH")
 }
