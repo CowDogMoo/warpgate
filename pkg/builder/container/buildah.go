@@ -200,7 +200,184 @@ func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) 
 		}
 	}
 
+	// Apply Changes directives (USER, WORKDIR, ENV, ENTRYPOINT, CMD, etc.)
+	if len(base.Changes) > 0 {
+		if err := b.applyChanges(base.Changes); err != nil {
+			return fmt.Errorf("failed to apply changes: %w", err)
+		}
+	}
+
 	return nil
+}
+
+// applyChanges applies a list of Dockerfile-style change directives
+func (b *BuildahBuilder) applyChanges(changes []string) error {
+	logging.Info("Applying %d change directives", len(changes))
+
+	for _, change := range changes {
+		if err := b.applyChange(change); err != nil {
+			return fmt.Errorf("failed to apply change '%s': %w", change, err)
+		}
+	}
+
+	return nil
+}
+
+// applyChange applies a single Dockerfile-style change directive
+func (b *BuildahBuilder) applyChange(change string) error {
+	// Trim whitespace
+	change = strings.TrimSpace(change)
+	if change == "" {
+		return nil
+	}
+
+	// Parse directive (e.g., "USER sliver" or "ENV KEY=VALUE")
+	parts := strings.SplitN(change, " ", 2)
+	if len(parts) < 1 {
+		return fmt.Errorf("invalid change directive: %s", change)
+	}
+
+	directive := strings.ToUpper(parts[0])
+	var value string
+	if len(parts) > 1 {
+		value = strings.TrimSpace(parts[1])
+	}
+
+	logging.Debug("Applying change: %s %s", directive, value)
+
+	switch directive {
+	case "USER":
+		if value == "" {
+			return fmt.Errorf("USER directive requires a value")
+		}
+		b.builder.SetUser(value)
+		logging.Info("Set user to: %s", value)
+
+	case "WORKDIR":
+		if value == "" {
+			return fmt.Errorf("WORKDIR directive requires a value")
+		}
+		b.builder.SetWorkDir(value)
+		logging.Info("Set working directory to: %s", value)
+
+	case "ENV":
+		if value == "" {
+			return fmt.Errorf("ENV directive requires a value")
+		}
+		// Parse ENV KEY=VALUE or ENV KEY VALUE
+		var key, val string
+		if strings.Contains(value, "=") {
+			envParts := strings.SplitN(value, "=", 2)
+			key = strings.TrimSpace(envParts[0])
+			if len(envParts) > 1 {
+				val = envParts[1]
+			}
+		} else {
+			envParts := strings.SplitN(value, " ", 2)
+			key = strings.TrimSpace(envParts[0])
+			if len(envParts) > 1 {
+				val = envParts[1]
+			}
+		}
+		b.builder.SetEnv(key, val)
+		logging.Info("Set environment variable: %s=%s", key, val)
+
+	case "ENTRYPOINT":
+		if value == "" {
+			// Empty ENTRYPOINT clears it
+			b.builder.SetEntrypoint([]string{})
+			logging.Info("Cleared entrypoint")
+		} else {
+			// Parse as JSON array or shell form
+			entrypoint := b.parseCommandValue(value)
+			b.builder.SetEntrypoint(entrypoint)
+			logging.Info("Set entrypoint to: %v", entrypoint)
+		}
+
+	case "CMD":
+		if value == "" {
+			// Empty CMD clears it
+			b.builder.SetCmd([]string{})
+			logging.Info("Cleared command")
+		} else {
+			// Parse as JSON array or shell form
+			cmd := b.parseCommandValue(value)
+			b.builder.SetCmd(cmd)
+			logging.Info("Set command to: %v", cmd)
+		}
+
+	case "LABEL":
+		if value == "" {
+			return fmt.Errorf("LABEL directive requires a value")
+		}
+		// Parse LABEL key=value
+		if strings.Contains(value, "=") {
+			labelParts := strings.SplitN(value, "=", 2)
+			key := strings.TrimSpace(labelParts[0])
+			val := ""
+			if len(labelParts) > 1 {
+				val = strings.Trim(labelParts[1], "\"")
+			}
+			b.builder.SetLabel(key, val)
+			logging.Info("Set label: %s=%s", key, val)
+		} else {
+			return fmt.Errorf("invalid LABEL format: %s", value)
+		}
+
+	case "EXPOSE":
+		if value == "" {
+			return fmt.Errorf("EXPOSE directive requires a value")
+		}
+		b.builder.SetPort(value)
+		logging.Info("Exposed port: %s", value)
+
+	case "VOLUME":
+		if value == "" {
+			return fmt.Errorf("VOLUME directive requires a value")
+		}
+		// Parse as JSON array or single path
+		volumes := b.parseCommandValue(value)
+		for _, vol := range volumes {
+			b.builder.AddVolume(vol)
+			logging.Info("Added volume: %s", vol)
+		}
+
+	default:
+		logging.Warn("Unsupported change directive: %s (skipping)", directive)
+	}
+
+	return nil
+}
+
+// parseCommandValue parses a command value that can be either JSON array format or shell form
+// Examples:
+//   - JSON: ["executable", "param1", "param2"]
+//   - Shell: /bin/sh -c "echo hello"
+func (b *BuildahBuilder) parseCommandValue(value string) []string {
+	value = strings.TrimSpace(value)
+
+	// Check if it's JSON array format (starts with '[')
+	if strings.HasPrefix(value, "[") {
+		// Parse JSON array
+		var result []string
+		// Simple JSON array parser (handles basic cases)
+		value = strings.TrimPrefix(value, "[")
+		value = strings.TrimSuffix(value, "]")
+
+		// Split by comma and clean up
+		parts := strings.Split(value, ",")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			part = strings.Trim(part, "\"")
+			if part != "" {
+				result = append(result, part)
+			}
+		}
+		return result
+	}
+
+	// Shell form - return as single string with /bin/sh -c
+	return []string{"/bin/sh", "-c", value}
 }
 
 // runProvisioners executes all provisioners in order

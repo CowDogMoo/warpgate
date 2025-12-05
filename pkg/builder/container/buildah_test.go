@@ -593,3 +593,208 @@ func TestBuildahBuilder_ProvisionerTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildahBuilder_ParseCommandValue(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := BuildahConfig{
+		StorageDriver: "vfs",
+		StorageRoot:   filepath.Join(tmpDir, "storage"),
+		RunRoot:       filepath.Join(tmpDir, "run"),
+	}
+
+	bldr, err := NewBuildahBuilder(cfg)
+	if err != nil {
+		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
+		return
+	}
+	defer bldr.Close()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "JSON array format",
+			input:    `["/bin/bash", "-c", "echo hello"]`,
+			expected: []string{"/bin/bash", "-c", "echo hello"},
+		},
+		{
+			name:     "Shell form",
+			input:    "/bin/bash -c 'echo hello'",
+			expected: []string{"/bin/sh", "-c", "/bin/bash -c 'echo hello'"},
+		},
+		{
+			name:     "Single command",
+			input:    "/bin/bash",
+			expected: []string{"/bin/sh", "-c", "/bin/bash"},
+		},
+		{
+			name:     "JSON array with spaces",
+			input:    `[ "/bin/bash" , "-c" , "echo hello" ]`,
+			expected: []string{"/bin/bash", "-c", "echo hello"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := bldr.parseCommandValue(tc.input)
+			if len(result) != len(tc.expected) {
+				t.Errorf("Expected %d elements, got %d", len(tc.expected), len(result))
+				return
+			}
+			for i, val := range result {
+				if val != tc.expected[i] {
+					t.Errorf("Element %d: expected '%s', got '%s'", i, tc.expected[i], val)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildahBuilder_ApplyChange(t *testing.T) {
+	if os.Getenv("INTEGRATION_TEST") != "true" {
+		t.Skip("Skipping integration test (set INTEGRATION_TEST=true to run)")
+	}
+
+	tmpDir := t.TempDir()
+	cfg := BuildahConfig{
+		StorageDriver: "vfs",
+		StorageRoot:   filepath.Join(tmpDir, "storage"),
+		RunRoot:       filepath.Join(tmpDir, "run"),
+		WorkDir:       filepath.Join(tmpDir, "work"),
+	}
+
+	bldr, err := NewBuildahBuilder(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create builder: %v", err)
+	}
+	defer bldr.Close()
+
+	// Create a builder container
+	ctx := context.Background()
+	baseImage := builder.BaseImage{
+		Image: "alpine:latest",
+		Pull:  true,
+	}
+	if err := bldr.fromImage(ctx, baseImage); err != nil {
+		t.Fatalf("Failed to create from image: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		change    string
+		expectErr bool
+	}{
+		{
+			name:      "Set USER",
+			change:    "USER sliver",
+			expectErr: false,
+		},
+		{
+			name:      "Set WORKDIR",
+			change:    "WORKDIR /home/sliver",
+			expectErr: false,
+		},
+		{
+			name:      "Set ENV with equals",
+			change:    "ENV PATH=/opt/sliver:/usr/bin:$PATH",
+			expectErr: false,
+		},
+		{
+			name:      "Set ENV with space",
+			change:    "ENV MY_VAR my_value",
+			expectErr: false,
+		},
+		{
+			name:      "Set ENTRYPOINT JSON",
+			change:    `ENTRYPOINT ["/bin/bash"]`,
+			expectErr: false,
+		},
+		{
+			name:      "Set CMD shell",
+			change:    "CMD /bin/bash",
+			expectErr: false,
+		},
+		{
+			name:      "Set LABEL",
+			change:    `LABEL version="1.0"`,
+			expectErr: false,
+		},
+		{
+			name:      "Empty change",
+			change:    "",
+			expectErr: false,
+		},
+		{
+			name:      "USER without value",
+			change:    "USER",
+			expectErr: true,
+		},
+		{
+			name:      "WORKDIR without value",
+			change:    "WORKDIR",
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := bldr.applyChange(tc.change)
+			if tc.expectErr && err == nil {
+				t.Error("Expected error but got none")
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestBuildahBuilder_ApplyChanges(t *testing.T) {
+	if os.Getenv("INTEGRATION_TEST") != "true" {
+		t.Skip("Skipping integration test (set INTEGRATION_TEST=true to run)")
+	}
+
+	tmpDir := t.TempDir()
+	cfg := BuildahConfig{
+		StorageDriver: "vfs",
+		StorageRoot:   filepath.Join(tmpDir, "storage"),
+		RunRoot:       filepath.Join(tmpDir, "run"),
+		WorkDir:       filepath.Join(tmpDir, "work"),
+	}
+
+	bldr, err := NewBuildahBuilder(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create builder: %v", err)
+	}
+	defer bldr.Close()
+
+	// Create a builder container
+	ctx := context.Background()
+	baseImage := builder.BaseImage{
+		Image: "alpine:latest",
+		Pull:  true,
+		Changes: []string{
+			"USER sliver",
+			"WORKDIR /home/sliver",
+			"ENV PATH=/opt/sliver:/home/sliver/.sliver/go/bin:$PATH",
+			`ENTRYPOINT ["/bin/bash"]`,
+		},
+	}
+
+	if err := bldr.fromImage(ctx, baseImage); err != nil {
+		t.Fatalf("Failed to create from image with changes: %v", err)
+	}
+
+	// Verify the builder has the expected configuration
+	if bldr.builder.User() != "sliver" {
+		t.Errorf("Expected user 'sliver', got '%s'", bldr.builder.User())
+	}
+
+	if bldr.builder.WorkDir() != "/home/sliver" {
+		t.Errorf("Expected workdir '/home/sliver', got '%s'", bldr.builder.WorkDir())
+	}
+
+	t.Logf("Successfully applied all changes to the builder")
+}
