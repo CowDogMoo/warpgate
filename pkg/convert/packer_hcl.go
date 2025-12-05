@@ -44,22 +44,63 @@ type PackerVariable struct {
 
 // PackerProvisioner represents a Packer provisioner block
 type PackerProvisioner struct {
-	Type           string
-	Inline         []string
-	PlaybookFile   string
-	GalaxyFile     string
-	ExtraArguments []string
-	AnsibleEnvVars []string
-	User           string
-	Script         string
-	Scripts        []string
+	Type            string
+	Only            []string
+	Except          []string
+	Inline          []string
+	PlaybookFile    string
+	GalaxyFile      string
+	InventoryFile   string
+	ExtraArguments  []string
+	AnsibleEnvVars  []string
+	CollectionsPath string
+	UseProxy        bool
+	User            string
+	Script          string
+	Scripts         []string
 }
 
 // PackerBuild represents a Packer build block
 type PackerBuild struct {
+	Name           string
+	Sources        []string
+	Provisioners   []PackerProvisioner
+	PostProcessors []PackerPostProcessor
+}
+
+// PackerPostProcessor represents a Packer post-processor block
+type PackerPostProcessor struct {
+	Type       string
+	Only       []string
+	Except     []string
+	Output     string
+	StripPath  bool
+	Repository string
+	Tags       []string
+	Force      bool
+}
+
+// PackerDockerSource represents a Packer docker source block
+type PackerDockerSource struct {
+	Name       string
+	Image      string
+	Platform   string
+	Commit     bool
+	Privileged bool
+	Pull       bool
+	Volumes    map[string]string
+	RunCommand []string
+	Changes    []string
+}
+
+// PackerAMISource represents a Packer amazon-ebs source block
+type PackerAMISource struct {
 	Name         string
-	Sources      []string
-	Provisioners []PackerProvisioner
+	InstanceType string
+	Region       string
+	AMIName      string
+	SubnetID     string
+	VolumeSize   int
 }
 
 // HCLParser parses Packer HCL templates using the official HCL library
@@ -213,7 +254,7 @@ func (p *HCLParser) parseBuildBlock(block *hclsyntax.Block, content []byte) (Pac
 		}
 	}
 
-	// Extract provisioners
+	// Extract provisioners and post-processors
 	for _, provBlock := range block.Body.Blocks {
 		if provBlock.Type == "provisioner" {
 			provisioner, err := p.parseProvisionerBlock(provBlock, content)
@@ -222,6 +263,13 @@ func (p *HCLParser) parseBuildBlock(block *hclsyntax.Block, content []byte) (Pac
 				continue
 			}
 			build.Provisioners = append(build.Provisioners, provisioner)
+		} else if provBlock.Type == "post-processor" {
+			postProc, err := p.parsePostProcessorBlock(provBlock, content)
+			if err != nil {
+				// Log but continue - don't fail entire parse for one post-processor
+				continue
+			}
+			build.PostProcessors = append(build.PostProcessors, postProc)
 		}
 	}
 
@@ -237,6 +285,10 @@ func (p *HCLParser) parseProvisionerBlock(block *hclsyntax.Block, content []byte
 	provisioner := PackerProvisioner{
 		Type: block.Labels[0],
 	}
+
+	// Extract only/except conditionals using helper function
+	provisioner.Only = p.getStringListAttribute(block, "only")
+	provisioner.Except = p.getStringListAttribute(block, "except")
 
 	// Parse based on type
 	switch provisioner.Type {
@@ -287,8 +339,59 @@ func (p *HCLParser) parseShellProvisionerHCL(block *hclsyntax.Block, provisioner
 func (p *HCLParser) parseAnsibleProvisionerHCL(block *hclsyntax.Block, provisioner *PackerProvisioner) {
 	provisioner.PlaybookFile = p.getStringAttribute(block, "playbook_file")
 	provisioner.GalaxyFile = p.getStringAttribute(block, "galaxy_file")
+	provisioner.InventoryFile = p.getStringAttribute(block, "inventory_file")
+	provisioner.CollectionsPath = p.getStringAttribute(block, "ansible_collections_path")
 	provisioner.ExtraArguments = p.getStringListAttribute(block, "extra_arguments")
+	provisioner.AnsibleEnvVars = p.getStringListAttribute(block, "ansible_env_vars")
 	provisioner.User = p.getStringAttribute(block, "user")
+
+	// Extract use_proxy boolean
+	if attr, exists := block.Body.Attributes["use_proxy"]; exists {
+		val, diags := attr.Expr.Value(p.evalCtx)
+		if !diags.HasErrors() && val.Type() == cty.Bool {
+			provisioner.UseProxy = val.True()
+		}
+	}
+}
+
+// parsePostProcessorBlock parses a post-processor block
+func (p *HCLParser) parsePostProcessorBlock(block *hclsyntax.Block, content []byte) (PackerPostProcessor, error) {
+	if len(block.Labels) == 0 {
+		return PackerPostProcessor{}, fmt.Errorf("post-processor block missing type label")
+	}
+
+	postProc := PackerPostProcessor{
+		Type: block.Labels[0],
+	}
+
+	// Extract only/except conditionals
+	postProc.Only = p.getStringListAttribute(block, "only")
+	postProc.Except = p.getStringListAttribute(block, "except")
+
+	// Extract fields based on type
+	switch postProc.Type {
+	case "manifest":
+		postProc.Output = p.getStringAttribute(block, "output")
+		// Extract strip_path boolean
+		if attr, exists := block.Body.Attributes["strip_path"]; exists {
+			val, diags := attr.Expr.Value(p.evalCtx)
+			if !diags.HasErrors() && val.Type() == cty.Bool {
+				postProc.StripPath = val.True()
+			}
+		}
+	case "docker-tag":
+		postProc.Repository = p.getStringAttribute(block, "repository")
+		postProc.Tags = p.getStringListAttribute(block, "tags")
+		// Extract force boolean
+		if attr, exists := block.Body.Attributes["force"]; exists {
+			val, diags := attr.Expr.Value(p.evalCtx)
+			if !diags.HasErrors() && val.Type() == cty.Bool {
+				postProc.Force = val.True()
+			}
+		}
+	}
+
+	return postProc, nil
 }
 
 // GetVariable returns a parsed variable by name

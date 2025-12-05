@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -261,4 +262,574 @@ func TestConvertWithBaseImageOverride(t *testing.T) {
 
 	// Verify base image was overridden
 	assert.Equal(t, "debian:bullseye:latest", config.Base.Image)
+}
+
+func TestConvertWithPostProcessors(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create README.md
+	readmeContent := `# Test Template
+
+Test template with post-processors.`
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(readmeContent), 0644)
+	require.NoError(t, err)
+
+	// Create variables.pkr.hcl
+	varsContent := `variable "base_image" {
+  type    = string
+  default = "ubuntu"
+}
+
+variable "base_image_version" {
+  type    = string
+  default = "22.04"
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "variables.pkr.hcl"), []byte(varsContent), 0644)
+	require.NoError(t, err)
+
+	// Create docker.pkr.hcl with post-processors
+	dockerContent := `build {
+  provisioner "shell" {
+    inline = ["echo 'test'"]
+  }
+
+  post-processor "manifest" {
+    output     = "manifest.json"
+    strip_path = true
+  }
+
+  post-processor "docker-tag" {
+    repository = "ghcr.io/test/example"
+    tags       = ["latest", "v1.0.0"]
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
+	require.NoError(t, err)
+
+	// Run conversion
+	converter := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test Author",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+
+	config, err := converter.Convert()
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Verify post-processors
+	assert.Len(t, config.PostProcessors, 2)
+
+	// Verify manifest post-processor
+	assert.Equal(t, "manifest", config.PostProcessors[0].Type)
+	assert.Equal(t, "manifest.json", config.PostProcessors[0].Output)
+	assert.True(t, config.PostProcessors[0].StripPath)
+
+	// Verify docker-tag post-processor
+	assert.Equal(t, "docker-tag", config.PostProcessors[1].Type)
+	assert.Equal(t, "ghcr.io/test/example", config.PostProcessors[1].Repository)
+	assert.Contains(t, config.PostProcessors[1].Tags, "latest")
+	assert.Contains(t, config.PostProcessors[1].Tags, "v1.0.0")
+}
+
+func TestConvertWithProvisionerConditionals(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create README.md
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test"), 0644)
+	require.NoError(t, err)
+
+	// Create variables.pkr.hcl
+	varsContent := `variable "base_image" {
+  type    = string
+  default = "ubuntu"
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "variables.pkr.hcl"), []byte(varsContent), 0644)
+	require.NoError(t, err)
+
+	// Create docker.pkr.hcl with only/except conditionals
+	dockerContent := `build {
+  provisioner "shell" {
+    only = ["docker.amd64", "docker.arm64"]
+    inline = ["apt-get update"]
+  }
+
+  provisioner "shell" {
+    except = ["amazon-ebs.ubuntu"]
+    inline = ["echo 'docker only'"]
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
+	require.NoError(t, err)
+
+	// Run conversion
+	converter := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+
+	config, err := converter.Convert()
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Verify provisioners with conditionals
+	assert.Len(t, config.Provisioners, 2)
+
+	// First provisioner with "only"
+	assert.Equal(t, "shell", config.Provisioners[0].Type)
+	assert.Len(t, config.Provisioners[0].Only, 2)
+	assert.Contains(t, config.Provisioners[0].Only, "docker.amd64")
+	assert.Contains(t, config.Provisioners[0].Only, "docker.arm64")
+
+	// Second provisioner with "except"
+	assert.Equal(t, "shell", config.Provisioners[1].Type)
+	assert.Len(t, config.Provisioners[1].Except, 1)
+	assert.Contains(t, config.Provisioners[1].Except, "amazon-ebs.ubuntu")
+}
+
+func TestConvertWithEnhancedAnsible(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create README.md
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test"), 0644)
+	require.NoError(t, err)
+
+	// Create variables.pkr.hcl
+	varsContent := `variable "base_image" {
+  type    = string
+  default = "ubuntu"
+}
+
+variable "provision_repo_path" {
+  type = string
+  description = "Path to provision repo"
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "variables.pkr.hcl"), []byte(varsContent), 0644)
+	require.NoError(t, err)
+
+	// Create docker.pkr.hcl with enhanced Ansible provisioner
+	dockerContent := `build {
+  provisioner "ansible" {
+    user                     = "ubuntu"
+    playbook_file            = "${var.provision_repo_path}/playbook.yml"
+    galaxy_file              = "${var.provision_repo_path}/requirements.yml"
+    inventory_file           = "inventory.yml"
+    ansible_collections_path = "/path/to/collections"
+    use_proxy                = true
+    ansible_env_vars = [
+      "ANSIBLE_ROLES_PATH=/path/to/roles",
+      "PACKER_BUILD_NAME={{ build_name }}"
+    ]
+    extra_arguments = [
+      "-e", "ansible_python_interpreter=/usr/bin/python3",
+      "-e", "custom_var=value"
+    ]
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
+	require.NoError(t, err)
+
+	// Run conversion
+	converter := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+
+	config, err := converter.Convert()
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Verify enhanced Ansible fields
+	assert.Len(t, config.Provisioners, 1)
+	ansible := config.Provisioners[0]
+
+	assert.Equal(t, "ansible", ansible.Type)
+	assert.Equal(t, "ubuntu", ansible.User)
+	assert.Equal(t, "${PROVISION_REPO_PATH}/playbook.yml", ansible.PlaybookPath)
+	assert.Equal(t, "${PROVISION_REPO_PATH}/requirements.yml", ansible.GalaxyFile)
+	assert.Equal(t, "inventory.yml", ansible.InventoryFile)
+	assert.Equal(t, "/path/to/collections", ansible.CollectionsPath)
+	assert.True(t, ansible.UseProxy)
+
+	// Verify ansible_env_vars
+	assert.Len(t, ansible.AnsibleEnvVars, 2)
+	assert.Contains(t, ansible.AnsibleEnvVars, "ANSIBLE_ROLES_PATH=/path/to/roles")
+	assert.Contains(t, ansible.AnsibleEnvVars, "PACKER_BUILD_NAME={{ build_name }}")
+
+	// Verify extra_vars parsed from extra_arguments
+	assert.NotEmpty(t, ansible.ExtraVars)
+	assert.Equal(t, "/usr/bin/python3", ansible.ExtraVars["ansible_python_interpreter"])
+	assert.Equal(t, "value", ansible.ExtraVars["custom_var"])
+}
+
+func TestConvertWithMultipleFeatures(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create README.md
+	readmeContent := `# Full Featured Template
+
+Template with all supported features.`
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(readmeContent), 0644)
+	require.NoError(t, err)
+
+	// Create variables.pkr.hcl
+	varsContent := `variable "base_image" {
+  type    = string
+  default = "ubuntu"
+}
+
+variable "base_image_version" {
+  type    = string
+  default = "22.04"
+}
+
+variable "container_user" {
+  type    = string
+  default = "security"
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "variables.pkr.hcl"), []byte(varsContent), 0644)
+	require.NoError(t, err)
+
+	// Create docker.pkr.hcl with multiple features
+	dockerContent := `build {
+  provisioner "shell" {
+    only = ["docker.amd64", "docker.arm64"]
+    inline = [
+      "apt-get update",
+      "useradd ${var.container_user}"
+    ]
+  }
+
+  provisioner "ansible" {
+    only = ["docker.amd64", "docker.arm64"]
+    user = "${var.container_user}"
+    playbook_file = "/playbook.yml"
+    ansible_env_vars = [
+      "ANSIBLE_REMOTE_TMP=/tmp/ansible"
+    ]
+  }
+
+  post-processor "manifest" {
+    output = "manifest.json"
+    strip_path = true
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
+	require.NoError(t, err)
+
+	// Run conversion
+	converter := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test Author",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+
+	config, err := converter.Convert()
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Verify we have all components
+	assert.Len(t, config.Provisioners, 2)
+	assert.Len(t, config.PostProcessors, 1)
+
+	// Verify shell provisioner with conditionals
+	shell := config.Provisioners[0]
+	assert.Equal(t, "shell", shell.Type)
+	assert.Contains(t, shell.Only, "docker.amd64")
+	assert.Contains(t, shell.Only, "docker.arm64")
+	assert.Contains(t, shell.Inline, "apt-get update")
+
+	// Verify ansible provisioner with user and conditionals
+	ansible := config.Provisioners[1]
+	assert.Equal(t, "ansible", ansible.Type)
+	assert.Equal(t, "security", ansible.User) // Variable is evaluated to its default value
+	assert.Contains(t, ansible.Only, "docker.amd64")
+	assert.Contains(t, ansible.AnsibleEnvVars, "ANSIBLE_REMOTE_TMP=/tmp/ansible")
+
+	// Verify post-processor
+	assert.Equal(t, "manifest", config.PostProcessors[0].Type)
+	assert.Equal(t, "manifest.json", config.PostProcessors[0].Output)
+}
+
+func TestConvertHCLPostProcessors(t *testing.T) {
+	converter := NewPackerConverter(PackerConverterOptions{})
+
+	tests := []struct {
+		name     string
+		builds   []PackerBuild
+		expected int
+		validate func(t *testing.T, postProcs []builder.PostProcessor)
+	}{
+		{
+			name: "manifest post-processor",
+			builds: []PackerBuild{
+				{
+					PostProcessors: []PackerPostProcessor{
+						{
+							Type:      "manifest",
+							Output:    "manifest.json",
+							StripPath: true,
+						},
+					},
+				},
+			},
+			expected: 1,
+			validate: func(t *testing.T, postProcs []builder.PostProcessor) {
+				assert.Equal(t, "manifest", postProcs[0].Type)
+				assert.Equal(t, "manifest.json", postProcs[0].Output)
+				assert.True(t, postProcs[0].StripPath)
+			},
+		},
+		{
+			name: "docker-tag post-processor",
+			builds: []PackerBuild{
+				{
+					PostProcessors: []PackerPostProcessor{
+						{
+							Type:       "docker-tag",
+							Repository: "ghcr.io/org/image",
+							Tags:       []string{"latest", "v1.0"},
+							Force:      true,
+						},
+					},
+				},
+			},
+			expected: 1,
+			validate: func(t *testing.T, postProcs []builder.PostProcessor) {
+				assert.Equal(t, "docker-tag", postProcs[0].Type)
+				assert.Equal(t, "ghcr.io/org/image", postProcs[0].Repository)
+				assert.Contains(t, postProcs[0].Tags, "latest")
+				assert.Contains(t, postProcs[0].Tags, "v1.0")
+				assert.True(t, postProcs[0].Force)
+			},
+		},
+		{
+			name: "post-processor with conditionals",
+			builds: []PackerBuild{
+				{
+					PostProcessors: []PackerPostProcessor{
+						{
+							Type:   "manifest",
+							Output: "manifest.json",
+							Only:   []string{"docker.amd64"},
+							Except: []string{"amazon-ebs.ubuntu"},
+						},
+					},
+				},
+			},
+			expected: 1,
+			validate: func(t *testing.T, postProcs []builder.PostProcessor) {
+				assert.Equal(t, "manifest", postProcs[0].Type)
+				assert.Contains(t, postProcs[0].Only, "docker.amd64")
+				assert.Contains(t, postProcs[0].Except, "amazon-ebs.ubuntu")
+			},
+		},
+		{
+			name: "multiple post-processors",
+			builds: []PackerBuild{
+				{
+					PostProcessors: []PackerPostProcessor{
+						{Type: "manifest", Output: "manifest.json"},
+						{Type: "docker-tag", Repository: "ghcr.io/test"},
+					},
+				},
+			},
+			expected: 2,
+			validate: func(t *testing.T, postProcs []builder.PostProcessor) {
+				assert.Equal(t, "manifest", postProcs[0].Type)
+				assert.Equal(t, "docker-tag", postProcs[1].Type)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := converter.convertHCLPostProcessors(tc.builds)
+			assert.Len(t, result, tc.expected)
+			if tc.validate != nil {
+				tc.validate(t, result)
+			}
+		})
+	}
+}
+
+func TestConvertHCLProvisioners(t *testing.T) {
+	converter := NewPackerConverter(PackerConverterOptions{})
+
+	tests := []struct {
+		name     string
+		builds   []PackerBuild
+		expected int
+		validate func(t *testing.T, provs []builder.Provisioner)
+	}{
+		{
+			name: "shell provisioner with conditionals",
+			builds: []PackerBuild{
+				{
+					Provisioners: []PackerProvisioner{
+						{
+							Type:   "shell",
+							Only:   []string{"docker.amd64", "docker.arm64"},
+							Except: []string{"amazon-ebs.ubuntu"},
+							Inline: []string{"echo test"},
+						},
+					},
+				},
+			},
+			expected: 1,
+			validate: func(t *testing.T, provs []builder.Provisioner) {
+				assert.Equal(t, "shell", provs[0].Type)
+				assert.Contains(t, provs[0].Only, "docker.amd64")
+				assert.Contains(t, provs[0].Only, "docker.arm64")
+				assert.Contains(t, provs[0].Except, "amazon-ebs.ubuntu")
+				assert.Contains(t, provs[0].Inline, "echo test")
+			},
+		},
+		{
+			name: "ansible provisioner with enhanced fields",
+			builds: []PackerBuild{
+				{
+					Provisioners: []PackerProvisioner{
+						{
+							Type:            "ansible",
+							User:            "ubuntu",
+							PlaybookFile:    "/playbook.yml",
+							GalaxyFile:      "/requirements.yml",
+							InventoryFile:   "inventory.yml",
+							CollectionsPath: "/collections",
+							UseProxy:        true,
+							AnsibleEnvVars:  []string{"ANSIBLE_REMOTE_TMP=/tmp"},
+							ExtraArguments:  []string{"-e", "var=value"},
+						},
+					},
+				},
+			},
+			expected: 1,
+			validate: func(t *testing.T, provs []builder.Provisioner) {
+				assert.Equal(t, "ansible", provs[0].Type)
+				assert.Equal(t, "ubuntu", provs[0].User)
+				assert.Equal(t, "/playbook.yml", provs[0].PlaybookPath)
+				assert.Equal(t, "/requirements.yml", provs[0].GalaxyFile)
+				assert.Equal(t, "inventory.yml", provs[0].InventoryFile)
+				assert.Equal(t, "/collections", provs[0].CollectionsPath)
+				assert.True(t, provs[0].UseProxy)
+				assert.Contains(t, provs[0].AnsibleEnvVars, "ANSIBLE_REMOTE_TMP=/tmp")
+				assert.Equal(t, "value", provs[0].ExtraVars["var"])
+			},
+		},
+		{
+			name: "shell provisioner with script",
+			builds: []PackerBuild{
+				{
+					Provisioners: []PackerProvisioner{
+						{
+							Type:   "shell",
+							Script: "/path/to/script.sh",
+						},
+					},
+				},
+			},
+			expected: 1,
+			validate: func(t *testing.T, provs []builder.Provisioner) {
+				assert.Equal(t, "shell", provs[0].Type)
+				assert.Len(t, provs[0].Scripts, 1)
+				assert.Contains(t, provs[0].Scripts, "/path/to/script.sh")
+			},
+		},
+		{
+			name: "shell provisioner with scripts array",
+			builds: []PackerBuild{
+				{
+					Provisioners: []PackerProvisioner{
+						{
+							Type:    "shell",
+							Scripts: []string{"/script1.sh", "/script2.sh"},
+						},
+					},
+				},
+			},
+			expected: 1,
+			validate: func(t *testing.T, provs []builder.Provisioner) {
+				assert.Equal(t, "shell", provs[0].Type)
+				assert.Len(t, provs[0].Scripts, 2)
+				assert.Contains(t, provs[0].Scripts, "/script1.sh")
+				assert.Contains(t, provs[0].Scripts, "/script2.sh")
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := converter.convertHCLProvisioners(tc.builds)
+			assert.Len(t, result, tc.expected)
+			if tc.validate != nil {
+				tc.validate(t, result)
+			}
+		})
+	}
+}
+
+func TestParseAnsibleExtraArgs(t *testing.T) {
+	converter := NewPackerConverter(PackerConverterOptions{})
+
+	tests := []struct {
+		name     string
+		args     []string
+		expected map[string]string
+	}{
+		{
+			name:     "empty args",
+			args:     []string{},
+			expected: map[string]string{},
+		},
+		{
+			name: "single -e flag",
+			args: []string{"-e", "var=value"},
+			expected: map[string]string{
+				"var": "value",
+			},
+		},
+		{
+			name: "multiple -e flags",
+			args: []string{"-e", "var1=value1", "-e", "var2=value2"},
+			expected: map[string]string{
+				"var1": "value1",
+				"var2": "value2",
+			},
+		},
+		{
+			name: "--extra-vars long form",
+			args: []string{"--extra-vars", "var=value"},
+			expected: map[string]string{
+				"var": "value",
+			},
+		},
+		{
+			name: "mixed with other flags",
+			args: []string{"-vvv", "-e", "var=value", "--connection", "packer"},
+			expected: map[string]string{
+				"var": "value",
+			},
+		},
+		{
+			name: "value with equals sign",
+			args: []string{"-e", "var=key=value"},
+			expected: map[string]string{
+				"var": "key=value",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := converter.parseAnsibleExtraArgs(tc.args)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }
