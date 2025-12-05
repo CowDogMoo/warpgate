@@ -29,13 +29,13 @@ gh repo clone CowDogMoo/warpgate
 cd warpgate
 
 # Build using Taskfile (recommended)
-task build
+task go:build
 
 # Or build directly with go
 go build -ldflags "-s -w -X main.version=$(git describe --tags --always)" -o warpgate ./cmd/warpgate
 
 # Or install to $GOPATH/bin
-task install
+task go:install
 ```
 
 ---
@@ -164,25 +164,25 @@ cd warpgate
 
 ```bash
 # Build for current platform
-task build
+task go:build
 
 # Run tests
-task test
+task go:test
 
 # Run tests with coverage
-task test-coverage
+task go:test-coverage
 
 # Build for all platforms
-task build-all
+task go:build-all
 
 # Format code
-task fmt
+task go:fmt
 
 # Run linter
-task lint
+task go:lint
 
 # Clean build artifacts
-task clean
+task go:clean
 ```
 
 ---
@@ -254,41 +254,41 @@ warpgate convert packer-template.pkr.hcl
 
 ## Available Taskfile Commands
 
-The project includes a comprehensive Taskfile for development tasks:
+The project uses modular taskfiles for development tasks. All Go-specific tasks use the `go:` namespace:
 
 ### Build Commands
 
-- `task build` - Build for current platform
-- `task build-all` - Build for all supported platforms
-- `task build-linux` - Build for Linux (amd64, arm64, armv7)
-- `task build-darwin` - Build for macOS (amd64, arm64)
-- `task build-windows` - Build for Windows (amd64)
-- `task install` - Install to $GOPATH/bin
+- `task go:build` - Build for current platform
+- `task go:build OS=linux ARCH=amd64` - Build for specific platform
+- `task go:build-all` - Build for all supported platforms (Linux, macOS, Windows)
+- `task go:install` - Install to $GOPATH/bin
 
 ### Development Commands
 
-- `task test` - Run tests with race detector
-- `task test-coverage` - Generate HTML coverage report
-- `task lint` - Run golangci-lint
-- `task fmt` - Format code with go fmt
-- `task tidy` - Tidy go modules
-- `task clean` - Clean build artifacts
+- `task go:test` - Run tests with race detector
+- `task go:test-coverage` - Generate HTML coverage report
+- `task go:lint` - Run golangci-lint
+- `task go:fmt` - Format code with go fmt
+- `task go:tidy` - Tidy go modules
+- `task go:clean` - Clean build artifacts
 
 ### Running
 
-- `task run` - Build and run warpgate
-- `task dev` - Run in development mode with verbose logging
-- `task show-arch` - Show detected architecture
+- `task go:run` - Build and run warpgate
+- `task go:dev` - Run in development mode with verbose logging
+- `task go:show-arch` - Show detected architecture
 
 ### CI/CD Commands
 
-- `task ci-build` - Build for CI/CD environment
-- `task ci-test` - Run tests with JSON output for CI
-- `task release TAG=v1.0.0` - Create and push release tag
+- `task go:ci-build` - Build for CI/CD environment
+- `task go:ci-test` - Run tests with JSON output for CI
+- `task go:release TAG=v1.0.0` - Create and push release tag
 
-### Pre-commit
+### Other Commands
 
-- `task run-pre-commit` - Update and run pre-commit hooks
+- `task pre-commit:run` - Run pre-commit hooks
+- `task github:pr-merge` - Merge current PR with cleanup
+- See [taskfile-templates](https://github.com/CowDogMoo/taskfile-templates) for full list of available tasks
 
 ---
 
@@ -325,8 +325,8 @@ We welcome contributions! Please open issues for bug reports and feature request
 **Before contributing:**
 
 1. Install pre-commit hooks: `pre-commit install`
-2. Run tests and linting: `task test && task lint`
-3. Format your code: `task fmt`
+2. Run tests and linting: `task go:test && task go:lint`
+3. Format your code: `task go:fmt`
 
 Pre-commit hooks will automatically:
 
@@ -343,15 +343,15 @@ gh repo fork CowDogMoo/warpgate --clone
 git checkout -b feature/my-feature
 
 # 3. Make your changes and test
-task build
-task test
+task go:build
+task go:test
 
 # 4. Format and lint
-task fmt
-task lint
+task go:fmt
+task go:lint
 
 # 5. Run pre-commit checks
-task run-pre-commit
+task pre-commit:run
 
 # 6. Commit and push
 git commit -am "feat: add my feature"
