@@ -27,7 +27,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
@@ -66,18 +65,21 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 	// Parse README for description
 	description := c.extractDescription()
 
+	// Create HCL parser
+	hclParser := NewHCLParser()
+
 	// Parse variables file for base image info
-	baseImage, baseVersion := c.extractBaseImage()
+	baseImage, baseVersion := c.extractBaseImageHCL(hclParser)
 	if c.options.BaseImage != "" {
 		baseImage = c.options.BaseImage
 		baseVersion = "latest"
 	}
 
-	// Parse docker.pkr.hcl for container provisioners
-	dockerProvisioners := c.parseDockerProvisioners()
+	// Parse docker.pkr.hcl for container provisioners using HCL parser
+	dockerProvisioners := c.parseDockerProvisionersHCL(hclParser)
 
-	// Parse ami.pkr.hcl for AMI-specific provisioners
-	amiProvisioners := c.parseAMIProvisioners()
+	// Parse ami.pkr.hcl for AMI-specific provisioners using HCL parser
+	amiProvisioners := c.parseAMIProvisionersHCL(hclParser)
 
 	// Merge provisioners (prefer docker as it's usually more complete)
 	provisioners := dockerProvisioners
@@ -151,213 +153,6 @@ func (c *PackerConverter) extractDescription() string {
 	return description
 }
 
-// extractBaseImage parses variables.pkr.hcl to extract base image info
-func (c *PackerConverter) extractBaseImage() (string, string) {
-	varsPath := filepath.Join(c.options.TemplateDir, "variables.pkr.hcl")
-
-	content, err := os.ReadFile(varsPath)
-	if err != nil {
-		logging.Debug("No variables.pkr.hcl found, using defaults")
-		return "ubuntu", "latest"
-	}
-
-	// Extract base_image variable default value
-	baseImageRe := regexp.MustCompile(`variable\s+"base_image"\s+{[^}]*default\s*=\s*"([^"]+)"`)
-	baseVersionRe := regexp.MustCompile(`variable\s+"base_image_version"\s+{[^}]*default\s*=\s*"([^"]+)"`)
-
-	baseImage := "ubuntu"
-	baseVersion := "latest"
-
-	if matches := baseImageRe.FindSubmatch(content); len(matches) > 1 {
-		baseImage = string(matches[1])
-	}
-
-	if matches := baseVersionRe.FindSubmatch(content); len(matches) > 1 {
-		baseVersion = string(matches[1])
-	}
-
-	return baseImage, baseVersion
-}
-
-// parseDockerProvisioners parses docker.pkr.hcl for provisioner blocks
-func (c *PackerConverter) parseDockerProvisioners() []builder.Provisioner {
-	dockerPath := filepath.Join(c.options.TemplateDir, "docker.pkr.hcl")
-
-	content, err := os.ReadFile(dockerPath)
-	if err != nil {
-		logging.Debug("No docker.pkr.hcl found")
-		return nil
-	}
-
-	return c.parseProvisionersFromContent(string(content))
-}
-
-// parseAMIProvisioners parses ami.pkr.hcl for provisioner blocks
-func (c *PackerConverter) parseAMIProvisioners() []builder.Provisioner {
-	amiPath := filepath.Join(c.options.TemplateDir, "ami.pkr.hcl")
-
-	content, err := os.ReadFile(amiPath)
-	if err != nil {
-		logging.Debug("No ami.pkr.hcl found")
-		return nil
-	}
-
-	return c.parseProvisionersFromContent(string(content))
-}
-
-// parseProvisionersFromContent extracts provisioner blocks from HCL content
-func (c *PackerConverter) parseProvisionersFromContent(content string) []builder.Provisioner {
-	var provisioners []builder.Provisioner
-
-	// Find all provisioner blocks using a more robust approach
-	// Match provisioner "type" { ... } with proper brace counting
-	lines := strings.Split(content, "\n")
-	inProvisioner := false
-	provType := ""
-	provBody := ""
-	braceCount := 0
-
-	for _, line := range lines {
-		// Check for provisioner start
-		if !inProvisioner {
-			provStartRe := regexp.MustCompile(`^\s*provisioner\s+"(\w+)"\s+\{`)
-			if matches := provStartRe.FindStringSubmatch(line); len(matches) > 1 {
-				inProvisioner = true
-				provType = matches[1]
-				provBody = ""
-				braceCount = 1
-				continue
-			}
-		}
-
-		// If we're in a provisioner, accumulate the body
-		if inProvisioner {
-			// Count braces
-			braceCount += strings.Count(line, "{")
-			braceCount -= strings.Count(line, "}")
-
-			provBody += line + "\n"
-
-			// If braces are balanced, we've reached the end
-			if braceCount == 0 {
-				// Parse the provisioner
-				switch provType {
-				case "shell":
-					if prov := c.parseShellProvisioner(provBody); prov != nil {
-						provisioners = append(provisioners, *prov)
-					}
-				case "ansible":
-					if prov := c.parseAnsibleProvisioner(provBody); prov != nil {
-						provisioners = append(provisioners, *prov)
-					}
-				}
-				inProvisioner = false
-			}
-		}
-	}
-
-	return provisioners
-}
-
-// parseShellProvisioner parses a shell provisioner block
-func (c *PackerConverter) parseShellProvisioner(body string) *builder.Provisioner {
-	// Extract inline commands
-	inlineRe := regexp.MustCompile(`inline\s*=\s*\[((?:[^][]|\[[^]]*\])*)\]`)
-	matches := inlineRe.FindStringSubmatch(body)
-
-	if len(matches) < 2 {
-		return nil
-	}
-
-	// Parse inline commands
-	commandsStr := matches[1]
-	commandRe := regexp.MustCompile(`"([^"]*)"`)
-	commandMatches := commandRe.FindAllStringSubmatch(commandsStr, -1)
-
-	var commands []string
-	for _, cmdMatch := range commandMatches {
-		if len(cmdMatch) > 1 {
-			commands = append(commands, cmdMatch[1])
-		}
-	}
-
-	if len(commands) == 0 {
-		return nil
-	}
-
-	return &builder.Provisioner{
-		Type:   "shell",
-		Inline: commands,
-	}
-}
-
-// parseAnsibleProvisioner parses an ansible provisioner block
-func (c *PackerConverter) parseAnsibleProvisioner(body string) *builder.Provisioner {
-	// Extract playbook_file
-	playbookRe := regexp.MustCompile(`playbook_file\s*=\s*"([^"]*)"`)
-	galaxyRe := regexp.MustCompile(`galaxy_file\s*=\s*"([^"]*)"`)
-
-	playbookMatches := playbookRe.FindStringSubmatch(body)
-	galaxyMatches := galaxyRe.FindStringSubmatch(body)
-
-	if len(playbookMatches) < 2 {
-		return nil
-	}
-
-	playbook := playbookMatches[1]
-	galaxy := ""
-
-	if len(galaxyMatches) > 1 {
-		galaxy = galaxyMatches[1]
-	}
-
-	// Extract variable references (e.g., ${var.provision_repo_path})
-	// Replace with environment variable placeholders
-	playbook = c.replaceVarReferences(playbook)
-	galaxy = c.replaceVarReferences(galaxy)
-
-	prov := &builder.Provisioner{
-		Type:         "ansible",
-		PlaybookPath: playbook,
-	}
-
-	if galaxy != "" {
-		prov.GalaxyFile = galaxy
-	}
-
-	// Extract extra_arguments for environment variables
-	prov.ExtraVars = c.extractAnsibleExtraVars(body)
-
-	return prov
-}
-
-// replaceVarReferences replaces Packer variable references with placeholders
-func (c *PackerConverter) replaceVarReferences(s string) string {
-	// Replace ${var.provision_repo_path} with ${PROVISION_REPO_PATH}
-	varRe := regexp.MustCompile(`\$\{var\.([^}]+)\}`)
-	return varRe.ReplaceAllStringFunc(s, func(match string) string {
-		matches := varRe.FindStringSubmatch(match)
-		if len(matches) > 1 {
-			varName := strings.ToUpper(matches[1])
-			return fmt.Sprintf("${%s}", varName)
-		}
-		return match
-	})
-}
-
-// extractAnsibleExtraVars extracts extra variables from ansible provisioner
-func (c *PackerConverter) extractAnsibleExtraVars(body string) map[string]string {
-	extraVars := make(map[string]string)
-
-	// Extract shell executable if present
-	shellRe := regexp.MustCompile(`ansible_shell_executable=\$\{var\.shell\}`)
-	if shellRe.MatchString(body) {
-		extraVars["ansible_shell_executable"] = "/bin/bash"
-	}
-
-	return extraVars
-}
-
 // buildTargets creates target configurations
 func (c *PackerConverter) buildTargets() []builder.Target {
 	var targets []builder.Target
@@ -383,4 +178,114 @@ func (c *PackerConverter) buildTargets() []builder.Target {
 	}
 
 	return targets
+}
+
+// extractBaseImageHCL uses HCL parser to extract base image from variables
+func (c *PackerConverter) extractBaseImageHCL(parser *HCLParser) (string, string) {
+	varsPath := filepath.Join(c.options.TemplateDir, "variables.pkr.hcl")
+
+	// Try to parse with HCL
+	err := parser.ParseVariablesFile(varsPath)
+	if err != nil {
+		logging.Debug("Failed to parse variables with HCL, using defaults: %v", err)
+		return "ubuntu", "latest"
+	}
+
+	// Extract base_image and base_image_version
+	baseImage := "ubuntu"
+	baseVersion := "latest"
+
+	if v, ok := parser.GetVariable("base_image"); ok && v.Default != "" {
+		baseImage = v.Default
+	}
+
+	if v, ok := parser.GetVariable("base_image_version"); ok && v.Default != "" {
+		baseVersion = v.Default
+	}
+
+	return baseImage, baseVersion
+}
+
+// parseDockerProvisionersHCL uses HCL parser to extract provisioners from docker.pkr.hcl
+func (c *PackerConverter) parseDockerProvisionersHCL(parser *HCLParser) []builder.Provisioner {
+	dockerPath := filepath.Join(c.options.TemplateDir, "docker.pkr.hcl")
+
+	builds, err := parser.ParseBuildFile(dockerPath)
+	if err != nil {
+		logging.Debug("Failed to parse docker.pkr.hcl with HCL: %v", err)
+		return nil
+	}
+
+	return c.convertHCLProvisioners(builds)
+}
+
+// parseAMIProvisionersHCL uses HCL parser to extract provisioners from ami.pkr.hcl
+func (c *PackerConverter) parseAMIProvisionersHCL(parser *HCLParser) []builder.Provisioner {
+	amiPath := filepath.Join(c.options.TemplateDir, "ami.pkr.hcl")
+
+	builds, err := parser.ParseBuildFile(amiPath)
+	if err != nil {
+		logging.Debug("Failed to parse ami.pkr.hcl with HCL: %v", err)
+		return nil
+	}
+
+	return c.convertHCLProvisioners(builds)
+}
+
+// convertHCLProvisioners converts HCL provisioners to Warpgate provisioners
+func (c *PackerConverter) convertHCLProvisioners(builds []PackerBuild) []builder.Provisioner {
+	var provisioners []builder.Provisioner
+
+	for _, build := range builds {
+		for _, hclProv := range build.Provisioners {
+			var prov builder.Provisioner
+
+			switch hclProv.Type {
+			case "shell":
+				prov = builder.Provisioner{
+					Type:   "shell",
+					Inline: hclProv.Inline,
+				}
+				// Convert single script to scripts array
+				if hclProv.Script != "" {
+					prov.Scripts = []string{hclProv.Script}
+				} else if len(hclProv.Scripts) > 0 {
+					prov.Scripts = hclProv.Scripts
+				}
+			case "ansible":
+				prov = builder.Provisioner{
+					Type:         "ansible",
+					PlaybookPath: hclProv.PlaybookFile,
+					GalaxyFile:   hclProv.GalaxyFile,
+				}
+
+				// Parse extra_arguments into ExtraVars
+				prov.ExtraVars = c.parseAnsibleExtraArgs(hclProv.ExtraArguments)
+			}
+
+			provisioners = append(provisioners, prov)
+		}
+	}
+
+	return provisioners
+}
+
+// parseAnsibleExtraArgs parses Ansible extra_arguments array into a map
+func (c *PackerConverter) parseAnsibleExtraArgs(args []string) map[string]string {
+	extraVars := make(map[string]string)
+
+	for i := 0; i < len(args); i++ {
+		// Look for -e or --extra-vars flag
+		if args[i] == "-e" || args[i] == "--extra-vars" {
+			if i+1 < len(args) {
+				i++
+				// Parse key=value format
+				if parts := strings.SplitN(args[i], "=", 2); len(parts) == 2 {
+					extraVars[parts[0]] = parts[1]
+				}
+			}
+		}
+	}
+
+	return extraVars
 }
