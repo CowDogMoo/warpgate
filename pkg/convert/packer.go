@@ -81,6 +81,12 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 	// Parse ami.pkr.hcl for AMI-specific provisioners using HCL parser
 	amiProvisioners := c.parseAMIProvisionersHCL(hclParser)
 
+	// Parse post-processors from both docker and AMI builds
+	allBuilds, _ := hclParser.ParseBuildFile(filepath.Join(c.options.TemplateDir, "docker.pkr.hcl"))
+	amiBuilds, _ := hclParser.ParseBuildFile(filepath.Join(c.options.TemplateDir, "ami.pkr.hcl"))
+	allBuilds = append(allBuilds, amiBuilds...)
+	postProcessors := c.convertHCLPostProcessors(allBuilds)
+
 	// Merge provisioners (prefer docker as it's usually more complete)
 	provisioners := dockerProvisioners
 	if len(provisioners) == 0 {
@@ -106,11 +112,12 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 			Image: fmt.Sprintf("%s:%s", baseImage, baseVersion),
 			Pull:  true,
 		},
-		Provisioners: provisioners,
-		Targets:      c.buildTargets(),
+		Provisioners:   provisioners,
+		PostProcessors: postProcessors,
+		Targets:        c.buildTargets(),
 	}
 
-	logging.Info("Conversion complete: %d provisioners, %d targets", len(provisioners), len(config.Targets))
+	logging.Info("Conversion complete: %d provisioners, %d post-processors, %d targets", len(provisioners), len(postProcessors), len(config.Targets))
 
 	return config, nil
 }
@@ -240,12 +247,15 @@ func (c *PackerConverter) convertHCLProvisioners(builds []PackerBuild) []builder
 		for _, hclProv := range build.Provisioners {
 			var prov builder.Provisioner
 
+			// Set common fields
+			prov.Type = hclProv.Type
+			prov.Only = hclProv.Only
+			prov.Except = hclProv.Except
+			prov.User = hclProv.User
+
 			switch hclProv.Type {
 			case "shell":
-				prov = builder.Provisioner{
-					Type:   "shell",
-					Inline: hclProv.Inline,
-				}
+				prov.Inline = hclProv.Inline
 				// Convert single script to scripts array
 				if hclProv.Script != "" {
 					prov.Scripts = []string{hclProv.Script}
@@ -253,11 +263,12 @@ func (c *PackerConverter) convertHCLProvisioners(builds []PackerBuild) []builder
 					prov.Scripts = hclProv.Scripts
 				}
 			case "ansible":
-				prov = builder.Provisioner{
-					Type:         "ansible",
-					PlaybookPath: hclProv.PlaybookFile,
-					GalaxyFile:   hclProv.GalaxyFile,
-				}
+				prov.PlaybookPath = hclProv.PlaybookFile
+				prov.GalaxyFile = hclProv.GalaxyFile
+				prov.InventoryFile = hclProv.InventoryFile
+				prov.AnsibleEnvVars = hclProv.AnsibleEnvVars
+				prov.CollectionsPath = hclProv.CollectionsPath
+				prov.UseProxy = hclProv.UseProxy
 
 				// Parse extra_arguments into ExtraVars
 				prov.ExtraVars = c.parseAnsibleExtraArgs(hclProv.ExtraArguments)
@@ -268,6 +279,35 @@ func (c *PackerConverter) convertHCLProvisioners(builds []PackerBuild) []builder
 	}
 
 	return provisioners
+}
+
+// convertHCLPostProcessors converts HCL post-processors to Warpgate post-processors
+func (c *PackerConverter) convertHCLPostProcessors(builds []PackerBuild) []builder.PostProcessor {
+	var postProcessors []builder.PostProcessor
+
+	for _, build := range builds {
+		for _, hclPost := range build.PostProcessors {
+			postProc := builder.PostProcessor{
+				Type:   hclPost.Type,
+				Only:   hclPost.Only,
+				Except: hclPost.Except,
+			}
+
+			switch hclPost.Type {
+			case "manifest":
+				postProc.Output = hclPost.Output
+				postProc.StripPath = hclPost.StripPath
+			case "docker-tag":
+				postProc.Repository = hclPost.Repository
+				postProc.Tags = hclPost.Tags
+				postProc.Force = hclPost.Force
+			}
+
+			postProcessors = append(postProcessors, postProc)
+		}
+	}
+
+	return postProcessors
 }
 
 // parseAnsibleExtraArgs parses Ansible extra_arguments array into a map

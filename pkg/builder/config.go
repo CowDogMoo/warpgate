@@ -42,6 +42,9 @@ type Config struct {
 	// Provisioners to run during the build
 	Provisioners []Provisioner `yaml:"provisioners" json:"provisioners"`
 
+	// Post-processors to run after the build
+	PostProcessors []PostProcessor `yaml:"post_processors,omitempty" json:"post_processors,omitempty"`
+
 	// Build targets (container, AMI, etc.)
 	Targets []Target `yaml:"targets" json:"targets"`
 
@@ -98,6 +101,12 @@ type BaseImage struct {
 	Pull     bool              `yaml:"pull,omitempty" json:"pull,omitempty"`
 	Auth     *ImageAuth        `yaml:"auth,omitempty" json:"auth,omitempty"`
 	Env      map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	// Docker-specific options
+	Privileged bool              `yaml:"privileged,omitempty" json:"privileged,omitempty"`
+	Volumes    map[string]string `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+	RunCommand []string          `yaml:"run_command,omitempty" json:"run_command,omitempty"`
+	Changes    []string          `yaml:"changes,omitempty" json:"changes,omitempty"` // Dockerfile instructions (ENV, USER, WORKDIR, ENTRYPOINT, CMD)
 }
 
 // ImageAuth contains authentication information for pulling images
@@ -112,15 +121,23 @@ type Provisioner struct {
 	// Type of provisioner (shell, ansible, script, powershell)
 	Type string `yaml:"type" json:"type"`
 
+	// Conditionals - restrict provisioner to specific sources
+	Only   []string `yaml:"only,omitempty" json:"only,omitempty"`     // Only run for these sources (e.g., ["docker.amd64", "docker.arm64"])
+	Except []string `yaml:"except,omitempty" json:"except,omitempty"` // Skip these sources
+
 	// Shell provisioner fields
 	Inline      []string          `yaml:"inline,omitempty" json:"inline,omitempty"`
 	Environment map[string]string `yaml:"environment,omitempty" json:"environment,omitempty"`
 
 	// Ansible provisioner fields
-	PlaybookPath string            `yaml:"playbook_path,omitempty" json:"playbook_path,omitempty"`
-	GalaxyFile   string            `yaml:"galaxy_file,omitempty" json:"galaxy_file,omitempty"`
-	ExtraVars    map[string]string `yaml:"extra_vars,omitempty" json:"extra_vars,omitempty"`
-	Inventory    string            `yaml:"inventory,omitempty" json:"inventory,omitempty"`
+	PlaybookPath    string            `yaml:"playbook_path,omitempty" json:"playbook_path,omitempty"`
+	GalaxyFile      string            `yaml:"galaxy_file,omitempty" json:"galaxy_file,omitempty"`
+	ExtraVars       map[string]string `yaml:"extra_vars,omitempty" json:"extra_vars,omitempty"`
+	Inventory       string            `yaml:"inventory,omitempty" json:"inventory,omitempty"`
+	InventoryFile   string            `yaml:"inventory_file,omitempty" json:"inventory_file,omitempty"`
+	AnsibleEnvVars  []string          `yaml:"ansible_env_vars,omitempty" json:"ansible_env_vars,omitempty"`
+	UseProxy        bool              `yaml:"use_proxy,omitempty" json:"use_proxy,omitempty"`
+	CollectionsPath string            `yaml:"collections_path,omitempty" json:"collections_path,omitempty"`
 
 	// Script provisioner fields
 	Scripts []string `yaml:"scripts,omitempty" json:"scripts,omitempty"`
@@ -131,6 +148,38 @@ type Provisioner struct {
 	// Common fields
 	WorkingDir string `yaml:"working_dir,omitempty" json:"working_dir,omitempty"`
 	User       string `yaml:"user,omitempty" json:"user,omitempty"`
+}
+
+// PostProcessor represents a post-processing step after the build
+type PostProcessor struct {
+	// Type of post-processor (manifest, docker-tag, docker-push, compress, checksum)
+	Type string `yaml:"type" json:"type"`
+
+	// Manifest post-processor fields
+	Output    string `yaml:"output,omitempty" json:"output,omitempty"`         // Output path for manifest
+	StripPath bool   `yaml:"strip_path,omitempty" json:"strip_path,omitempty"` // Strip path from artifact names
+
+	// Docker-tag post-processor fields
+	Repository string   `yaml:"repository,omitempty" json:"repository,omitempty"` // Repository name (e.g., "ghcr.io/org/name")
+	Tags       []string `yaml:"tags,omitempty" json:"tags,omitempty"`             // Tags to apply (e.g., ["latest", "v1.0.0"])
+	Force      bool     `yaml:"force,omitempty" json:"force,omitempty"`           // Force tag even if exists
+
+	// Docker-push post-processor fields
+	LoginServer   string `yaml:"login_server,omitempty" json:"login_server,omitempty"`     // ECR/ACR login server
+	LoginUsername string `yaml:"login_username,omitempty" json:"login_username,omitempty"` // Registry username
+	LoginPassword string `yaml:"login_password,omitempty" json:"login_password,omitempty"` // Registry password
+
+	// Compress post-processor fields
+	Format           string `yaml:"format,omitempty" json:"format,omitempty"`                       // Compression format (tar.gz, zip, etc.)
+	CompressionLevel int    `yaml:"compression_level,omitempty" json:"compression_level,omitempty"` // 1-9
+
+	// Checksum post-processor fields
+	ChecksumTypes []string `yaml:"checksum_types,omitempty" json:"checksum_types,omitempty"` // Hash types (md5, sha1, sha256, sha512)
+
+	// Common fields
+	Only              []string `yaml:"only,omitempty" json:"only,omitempty"`                               // Only run for these sources
+	Except            []string `yaml:"except,omitempty" json:"except,omitempty"`                           // Skip these sources
+	KeepInputArtifact bool     `yaml:"keep_input_artifact,omitempty" json:"keep_input_artifact,omitempty"` // Keep original artifact
 }
 
 // Target represents a build target
