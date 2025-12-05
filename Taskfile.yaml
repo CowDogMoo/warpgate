@@ -9,6 +9,9 @@ vars:
 includes:
   go:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/go/Taskfile.yaml"
+    vars:
+      BINARY_NAME: warpgate
+      CMD_PATH: ./cmd/warpgate
   docker:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/docker/Taskfile.yaml"
   github:
