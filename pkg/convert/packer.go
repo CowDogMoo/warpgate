@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -45,14 +46,22 @@ type PackerConverterOptions struct {
 
 // PackerConverter converts Packer HCL templates to Warpgate YAML
 type PackerConverter struct {
-	options PackerConverterOptions
+	options      PackerConverterOptions
+	globalConfig *globalconfig.Config
 }
 
 // NewPackerConverter creates a new Packer converter
-func NewPackerConverter(opts PackerConverterOptions) *PackerConverter {
-	return &PackerConverter{
-		options: opts,
+func NewPackerConverter(opts PackerConverterOptions) (*PackerConverter, error) {
+	// Load global config
+	globalCfg, err := globalconfig.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}
+
+	return &PackerConverter{
+		options:      opts,
+		globalConfig: globalCfg,
+	}, nil
 }
 
 // Convert performs the conversion from Packer to Warpgate format
@@ -93,17 +102,27 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 		provisioners = amiProvisioners
 	}
 
+	// Use config defaults if options are not provided
+	version := c.options.Version
+	if version == "" {
+		version = c.globalConfig.Convert.DefaultVersion
+	}
+
+	license := c.options.License
+	if license == "" {
+		license = c.globalConfig.Convert.DefaultLicense
+	}
+
 	// Build config
 	config := &builder.Config{
 		Metadata: builder.Metadata{
 			Name:        templateName,
-			Version:     c.options.Version,
+			Version:     version,
 			Description: description,
 			Author:      c.options.Author,
-			License:     c.options.License,
-			Tags:        []string{"security", "red-team"},
+			License:     license,
 			Requires: builder.Requirements{
-				Warpgate: ">=1.0.0",
+				Warpgate: c.globalConfig.Convert.WarpgateVersion,
 			},
 		},
 		Name:    templateName,
@@ -164,23 +183,19 @@ func (c *PackerConverter) extractDescription() string {
 func (c *PackerConverter) buildTargets() []builder.Target {
 	var targets []builder.Target
 
-	// Add container target
+	// Add container target with platforms from config
 	targets = append(targets, builder.Target{
-		Type: "container",
-		Platforms: []string{
-			"linux/amd64",
-			"linux/arm64",
-		},
-		Tags: []string{"latest"},
+		Type:      "container",
+		Platforms: c.globalConfig.Container.DefaultPlatforms,
 	})
 
 	// Add AMI target if requested
 	if c.options.IncludeAMI {
 		targets = append(targets, builder.Target{
 			Type:         "ami",
-			Region:       "us-east-1",
-			InstanceType: "t3.micro",
-			VolumeSize:   50,
+			Region:       c.globalConfig.AWS.Region,
+			InstanceType: c.globalConfig.Convert.AMIInstanceType,
+			VolumeSize:   c.globalConfig.Convert.AMIVolumeSize,
 		})
 	}
 
@@ -195,12 +210,12 @@ func (c *PackerConverter) extractBaseImageHCL(parser *HCLParser) (string, string
 	err := parser.ParseVariablesFile(varsPath)
 	if err != nil {
 		logging.Debug("Failed to parse variables with HCL, using defaults: %v", err)
-		return "ubuntu", "latest"
+		return c.globalConfig.Container.DefaultBaseImage, c.globalConfig.Container.DefaultBaseVersion
 	}
 
 	// Extract base_image and base_image_version
-	baseImage := "ubuntu"
-	baseVersion := "latest"
+	baseImage := c.globalConfig.Container.DefaultBaseImage
+	baseVersion := c.globalConfig.Container.DefaultBaseVersion
 
 	if v, ok := parser.GetVariable("base_image"); ok && v.Default != "" {
 		baseImage = v.Default

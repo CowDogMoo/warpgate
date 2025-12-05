@@ -33,6 +33,7 @@ import (
 	"github.com/containers/buildah"
 	"github.com/containers/buildah/define"
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/provisioner"
 	"go.podman.io/image/v5/transports/alltransports"
@@ -48,6 +49,7 @@ type BuildahBuilder struct {
 	workDir       string
 	builder       *buildah.Builder
 	containerID   string
+	globalConfig  *globalconfig.Config
 }
 
 // BuildahConfig holds configuration for BuildahBuilder
@@ -61,6 +63,12 @@ type BuildahConfig struct {
 // NewBuildahBuilder creates a new Buildah-based builder
 func NewBuildahBuilder(cfg BuildahConfig) (*BuildahBuilder, error) {
 	logging.Info("Initializing Buildah builder")
+
+	// Load global config
+	globalCfg, err := globalconfig.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load global config: %w", err)
+	}
 
 	// Set up work directory
 	workDir := cfg.WorkDir
@@ -114,6 +122,7 @@ func NewBuildahBuilder(cfg BuildahConfig) (*BuildahBuilder, error) {
 		systemContext: systemContext,
 		storageConfig: storageConfig,
 		workDir:       workDir,
+		globalConfig:  globalCfg,
 	}, nil
 }
 
@@ -144,7 +153,7 @@ func (b *BuildahBuilder) Build(ctx context.Context, cfg builder.Config) (*builde
 	// Determine platform and architecture
 	platform := cfg.Base.Platform
 	if platform == "" {
-		platform = "linux/amd64" // Default platform
+		platform = b.globalConfig.Container.DefaultPlatform
 	}
 	arch := strings.Split(platform, "/")[1] // Extract architecture from platform
 
@@ -246,7 +255,7 @@ func (b *BuildahBuilder) runAnsibleProvisioner(ctx context.Context, prov builder
 
 // commit commits the container to an image and returns the image reference and digest
 func (b *BuildahBuilder) commit(ctx context.Context, name, version string) (string, string, error) {
-	imageRefStr := fmt.Sprintf("localhost/%s:%s", name, version)
+	imageRefStr := fmt.Sprintf("%s/%s:%s", b.globalConfig.Container.DefaultRegistry, name, version)
 	logging.Info("Committing image: %s", imageRefStr)
 
 	// Parse image reference
@@ -381,18 +390,38 @@ func (b *BuildahBuilder) Close() error {
 
 // GetDefaultConfig returns a default BuildahConfig
 func GetDefaultConfig() BuildahConfig {
+	// Load global config for defaults
+	globalCfg, err := globalconfig.Load()
+	if err != nil {
+		logging.Warn("Failed to load global config, using hardcoded defaults: %v", err)
+		// Fallback to hardcoded defaults if config load fails
+		homeDir, _ := os.UserHomeDir()
+		return BuildahConfig{
+			StorageDriver: "vfs",
+			StorageRoot:   filepath.Join(homeDir, ".local", "share", "containers", "storage"),
+			RunRoot:       filepath.Join(homeDir, ".local", "share", "containers", "runroot"),
+		}
+	}
+
 	homeDir, _ := os.UserHomeDir()
+
+	// Use storage driver from config
+	storageDriver := globalCfg.Storage.Driver
 
 	// Use platform-appropriate paths
 	var storageRoot, runRoot string
 
-	// On macOS and other non-Linux platforms, use home directory for both
-	// On Linux, try to use /run for better performance, fall back to home dir
-	if os.Getenv("HOME") != "" && filepath.Base(homeDir) != "" {
+	// Check if config has custom paths
+	if globalCfg.Storage.Root != "" {
+		storageRoot = globalCfg.Storage.Root
+	} else if os.Getenv("HOME") != "" && filepath.Base(homeDir) != "" {
 		storageRoot = filepath.Join(homeDir, ".local", "share", "containers", "storage")
+	}
+
+	// On Linux, try to use /run if available and writable
+	if os.Getenv("HOME") != "" && filepath.Base(homeDir) != "" {
 		runRoot = filepath.Join(homeDir, ".local", "share", "containers", "runroot")
 
-		// On Linux, try to use /run if available and writable
 		runDir := filepath.Join("/run", "user", fmt.Sprintf("%d", os.Getuid()), "containers")
 		if _, err := os.Stat(filepath.Dir(runDir)); err == nil {
 			// Check if we can create the directory
@@ -403,7 +432,7 @@ func GetDefaultConfig() BuildahConfig {
 	}
 
 	return BuildahConfig{
-		StorageDriver: "vfs", // Use vfs for better compatibility across platforms
+		StorageDriver: storageDriver,
 		StorageRoot:   storageRoot,
 		RunRoot:       runRoot,
 	}

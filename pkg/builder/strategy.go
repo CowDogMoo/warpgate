@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -41,16 +42,23 @@ const (
 
 // StrategyDetector determines the best build strategy for a given architecture
 type StrategyDetector struct {
-	hostArch string
-	hostOS   string
+	hostArch     string
+	hostOS       string
+	globalConfig *globalconfig.Config
 }
 
 // NewStrategyDetector creates a new build strategy detector
-func NewStrategyDetector() *StrategyDetector {
-	return &StrategyDetector{
-		hostArch: runtime.GOARCH,
-		hostOS:   runtime.GOOS,
+func NewStrategyDetector() (*StrategyDetector, error) {
+	cfg, err := globalconfig.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}
+
+	return &StrategyDetector{
+		hostArch:     runtime.GOARCH,
+		hostOS:       runtime.GOOS,
+		globalConfig: cfg,
+	}, nil
 }
 
 // DetectStrategy determines the build strategy for a target architecture
@@ -110,10 +118,10 @@ func (sd *StrategyDetector) EstimateBuildTime(targetArch string, baselineMinutes
 	case NativeBuild:
 		return baselineMinutes, "native speed"
 	case CrossCompile:
-		// QEMU cross-compilation is typically 2-5x slower
-		// Using a conservative 3x multiplier
-		slowMinutes := baselineMinutes * 3
-		return slowMinutes, fmt.Sprintf("~%dx slower due to QEMU emulation", 3)
+		// QEMU cross-compilation slowdown from config
+		slowdownFactor := sd.globalConfig.Build.QEMUSlowdownFactor
+		slowMinutes := baselineMinutes * slowdownFactor
+		return slowMinutes, fmt.Sprintf("~%dx slower due to QEMU emulation", slowdownFactor)
 	default:
 		return baselineMinutes, "unknown"
 	}
@@ -137,8 +145,8 @@ func (sd *StrategyDetector) RecommendParallelism(architectures []string) int {
 	// Conservative parallelism to avoid resource exhaustion
 	// Native builds can be more parallel since they're faster
 	if crossCount > 0 {
-		// If we have cross-compilation, limit parallelism
-		return 2
+		// If we have cross-compilation, limit parallelism (from config)
+		return sd.globalConfig.Build.ParallelismLimit
 	}
 
 	// All native builds can be more aggressive
@@ -147,7 +155,8 @@ func (sd *StrategyDetector) RecommendParallelism(architectures []string) int {
 		return nativeCount
 	}
 
-	return cpus / 2 // Use half the CPUs to avoid thrashing
+	// Use configured CPU fraction (from config)
+	return int(float64(cpus) * sd.globalConfig.Build.CPUFraction)
 }
 
 // GetBuildMatrix returns the build matrix for CI/CD
