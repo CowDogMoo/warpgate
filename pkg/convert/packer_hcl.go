@@ -232,15 +232,28 @@ func (p *HCLParser) ParseBuildFile(path string) ([]PackerBuild, error) {
 func (p *HCLParser) parseBuildBlock(block *hclsyntax.Block, content []byte) (PackerBuild, error) {
 	build := PackerBuild{}
 
-	// Extract name if present
+	// Extract name and sources
+	p.extractBuildName(block, &build)
+	p.extractBuildSources(block, &build)
+
+	// Extract provisioners and post-processors
+	p.extractBuildBlocks(block, content, &build)
+
+	return build, nil
+}
+
+// extractBuildName extracts the build name from block attributes
+func (p *HCLParser) extractBuildName(block *hclsyntax.Block, build *PackerBuild) {
 	if attr, exists := block.Body.Attributes["name"]; exists {
 		val, diags := attr.Expr.Value(p.evalCtx)
 		if !diags.HasErrors() && val.Type() == cty.String {
 			build.Name = val.AsString()
 		}
 	}
+}
 
-	// Extract sources
+// extractBuildSources extracts the sources list from block attributes
+func (p *HCLParser) extractBuildSources(block *hclsyntax.Block, build *PackerBuild) {
 	if attr, exists := block.Body.Attributes["sources"]; exists {
 		val, diags := attr.Expr.Value(p.evalCtx)
 		if !diags.HasErrors() {
@@ -253,27 +266,35 @@ func (p *HCLParser) parseBuildBlock(block *hclsyntax.Block, content []byte) (Pac
 			}
 		}
 	}
+}
 
-	// Extract provisioners and post-processors
+// extractBuildBlocks extracts provisioners and post-processors from nested blocks
+func (p *HCLParser) extractBuildBlocks(block *hclsyntax.Block, content []byte, build *PackerBuild) {
 	for _, provBlock := range block.Body.Blocks {
-		if provBlock.Type == "provisioner" {
-			provisioner, err := p.parseProvisionerBlock(provBlock, content)
-			if err != nil {
-				// Log but continue - don't fail entire parse for one provisioner
-				continue
+		switch provBlock.Type {
+		case "provisioner":
+			if provisioner, err := p.parseProvisionerBlock(provBlock, content); err == nil {
+				build.Provisioners = append(build.Provisioners, provisioner)
 			}
-			build.Provisioners = append(build.Provisioners, provisioner)
-		} else if provBlock.Type == "post-processor" {
-			postProc, err := p.parsePostProcessorBlock(provBlock, content)
-			if err != nil {
-				// Log but continue - don't fail entire parse for one post-processor
-				continue
+		case "post-processor":
+			if postProc, err := p.parsePostProcessorBlock(provBlock, content); err == nil {
+				build.PostProcessors = append(build.PostProcessors, postProc)
 			}
-			build.PostProcessors = append(build.PostProcessors, postProc)
+		case "post-processors":
+			p.extractNestedPostProcessors(provBlock, content, build)
 		}
 	}
+}
 
-	return build, nil
+// extractNestedPostProcessors handles post-processors wrapper block
+func (p *HCLParser) extractNestedPostProcessors(provBlock *hclsyntax.Block, content []byte, build *PackerBuild) {
+	for _, nestedBlock := range provBlock.Body.Blocks {
+		if nestedBlock.Type == "post-processor" {
+			if postProc, err := p.parsePostProcessorBlock(nestedBlock, content); err == nil {
+				build.PostProcessors = append(build.PostProcessors, postProc)
+			}
+		}
+	}
 }
 
 // parseProvisionerBlock parses a provisioner block

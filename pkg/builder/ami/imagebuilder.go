@@ -31,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -41,10 +42,17 @@ type ImageBuilder struct {
 	pipelineManager *PipelineManager
 	operations      *AMIOperations
 	config          ClientConfig
+	globalConfig    *globalconfig.Config
 }
 
 // NewImageBuilder creates a new AMI builder
 func NewImageBuilder(ctx context.Context, config ClientConfig) (*ImageBuilder, error) {
+	// Load global config
+	globalCfg, err := globalconfig.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load global config: %w", err)
+	}
+
 	// Create AWS clients
 	clients, err := NewAWSClients(ctx, config)
 	if err != nil {
@@ -55,8 +63,9 @@ func NewImageBuilder(ctx context.Context, config ClientConfig) (*ImageBuilder, e
 		clients:         clients,
 		componentGen:    NewComponentGenerator(clients),
 		pipelineManager: NewPipelineManager(clients),
-		operations:      NewAMIOperations(clients),
+		operations:      NewAMIOperations(clients, globalCfg),
 		config:          config,
+		globalConfig:    globalCfg,
 	}, nil
 }
 
@@ -241,7 +250,7 @@ func (b *ImageBuilder) Deregister(ctx context.Context, amiID, region string) err
 		if err != nil {
 			return fmt.Errorf("failed to create clients for region %s: %w", region, err)
 		}
-		regionOps := NewAMIOperations(regionClients)
+		regionOps := NewAMIOperations(regionClients, b.globalConfig)
 		return regionOps.DeregisterAMI(ctx, amiID, true)
 	}
 
@@ -282,10 +291,10 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name string, target *builder.Target) (string, error) {
 	logging.Info("Creating infrastructure configuration")
 
-	// Determine instance type
+	// Determine instance type (target > globalConfig > default)
 	instanceType := target.InstanceType
 	if instanceType == "" {
-		instanceType = "t3.medium" // Default
+		instanceType = b.globalConfig.AWS.AMI.InstanceType
 	}
 
 	input := &imagebuilder.CreateInfrastructureConfigurationInput{
@@ -355,10 +364,13 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 	logging.Info("Creating image recipe")
 
 	// Determine parent image (base AMI)
+	// Priority: config.Base.Image > globalConfig > error (no default)
 	parentImage := config.Base.Image
 	if parentImage == "" {
-		// Default to Amazon Linux 2023
-		parentImage = "ami-0c55b159cbfafe1f0"
+		parentImage = b.globalConfig.AWS.AMI.DefaultParentImage
+		if parentImage == "" {
+			return "", fmt.Errorf("parent image (base AMI) must be specified in template config or global config (aws.ami.default_parent_image)")
+		}
 	}
 
 	// Create component configurations
@@ -369,10 +381,35 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 		})
 	}
 
-	// Determine volume size
+	// Determine volume size (target > globalConfig > default)
 	volumeSize := int32(target.VolumeSize)
 	if volumeSize == 0 {
-		volumeSize = 8 // Default 8 GB
+		volumeSize = int32(b.globalConfig.AWS.AMI.VolumeSize)
+	}
+
+	// Get device name and volume type from config
+	deviceName := b.globalConfig.AWS.AMI.DeviceName
+	volumeTypeStr := b.globalConfig.AWS.AMI.VolumeType
+
+	// Convert string volume type to AWS enum
+	var volumeType types.EbsVolumeType
+	switch volumeTypeStr {
+	case "gp2":
+		volumeType = types.EbsVolumeTypeGp2
+	case "gp3":
+		volumeType = types.EbsVolumeTypeGp3
+	case "io1":
+		volumeType = types.EbsVolumeTypeIo1
+	case "io2":
+		volumeType = types.EbsVolumeTypeIo2
+	case "sc1":
+		volumeType = types.EbsVolumeTypeSc1
+	case "st1":
+		volumeType = types.EbsVolumeTypeSt1
+	case "standard":
+		volumeType = types.EbsVolumeTypeStandard
+	default:
+		volumeType = types.EbsVolumeTypeGp3 // Fallback to gp3
 	}
 
 	input := &imagebuilder.CreateImageRecipeInput{
@@ -383,10 +420,10 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 		Description:     aws.String(fmt.Sprintf("Image recipe for %s", config.Name)),
 		BlockDeviceMappings: []types.InstanceBlockDeviceMapping{
 			{
-				DeviceName: aws.String("/dev/sda1"),
+				DeviceName: aws.String(deviceName),
 				Ebs: &types.EbsInstanceBlockDeviceSpecification{
 					VolumeSize:          aws.Int32(volumeSize),
-					VolumeType:          types.EbsVolumeTypeGp3,
+					VolumeType:          volumeType,
 					DeleteOnTermination: aws.Bool(true),
 				},
 			},

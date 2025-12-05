@@ -40,8 +40,9 @@ func TestNewPackerConverter(t *testing.T) {
 		Version:     "1.0.0",
 	}
 
-	converter := NewPackerConverter(opts)
+	converter, err := NewPackerConverter(opts)
 
+	require.NoError(t, err)
 	assert.NotNil(t, converter)
 	assert.Equal(t, "/path/to/template", converter.options.TemplateDir)
 	assert.Equal(t, "Test Author", converter.options.Author)
@@ -101,9 +102,10 @@ Some more content here.`,
 				require.NoError(t, err)
 			}
 
-			converter := NewPackerConverter(PackerConverterOptions{
+			converter, err := NewPackerConverter(PackerConverterOptions{
 				TemplateDir: templateDir,
 			})
+			require.NoError(t, err)
 
 			result := converter.extractDescription()
 			assert.Equal(t, tc.expected, result)
@@ -131,9 +133,10 @@ func TestBuildTargets(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			converter := NewPackerConverter(PackerConverterOptions{
+			converter, err := NewPackerConverter(PackerConverterOptions{
 				IncludeAMI: tc.includeAMI,
 			})
+			require.NoError(t, err)
 			result := converter.buildTargets()
 			assert.Len(t, result, tc.expectedLen)
 
@@ -145,7 +148,9 @@ func TestBuildTargets(t *testing.T) {
 			// Verify AMI target if included
 			if tc.includeAMI {
 				assert.Equal(t, "ami", result[1].Type)
-				assert.Equal(t, "us-east-1", result[1].Region)
+				// Region now comes from config (defaults to empty)
+				assert.Equal(t, "t3.micro", result[1].InstanceType)
+				assert.Equal(t, 50, result[1].VolumeSize)
 			}
 		})
 	}
@@ -200,12 +205,13 @@ variable "provision_repo_path" {
 	require.NoError(t, err)
 
 	// Run conversion
-	converter := NewPackerConverter(PackerConverterOptions{
+	converter, err := NewPackerConverter(PackerConverterOptions{
 		TemplateDir: tmpDir,
 		Author:      "Test Author",
 		License:     "MIT",
 		Version:     "1.0.0",
 	})
+	require.NoError(t, err)
 
 	config, err := converter.Convert()
 	require.NoError(t, err)
@@ -248,13 +254,14 @@ func TestConvertWithBaseImageOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run conversion with base image override
-	converter := NewPackerConverter(PackerConverterOptions{
+	converter, err := NewPackerConverter(PackerConverterOptions{
 		TemplateDir: tmpDir,
 		BaseImage:   "debian:bullseye",
 		Author:      "Test",
 		License:     "MIT",
 		Version:     "1.0.0",
 	})
+	require.NoError(t, err)
 
 	config, err := converter.Convert()
 	require.NoError(t, err)
@@ -307,12 +314,13 @@ variable "base_image_version" {
 	require.NoError(t, err)
 
 	// Run conversion
-	converter := NewPackerConverter(PackerConverterOptions{
+	converter, err := NewPackerConverter(PackerConverterOptions{
 		TemplateDir: tmpDir,
 		Author:      "Test Author",
 		License:     "MIT",
 		Version:     "1.0.0",
 	})
+	require.NoError(t, err)
 
 	config, err := converter.Convert()
 	require.NoError(t, err)
@@ -364,12 +372,13 @@ func TestConvertWithProvisionerConditionals(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run conversion
-	converter := NewPackerConverter(PackerConverterOptions{
+	converter, err := NewPackerConverter(PackerConverterOptions{
 		TemplateDir: tmpDir,
 		Author:      "Test",
 		License:     "MIT",
 		Version:     "1.0.0",
 	})
+	require.NoError(t, err)
 
 	config, err := converter.Convert()
 	require.NoError(t, err)
@@ -433,12 +442,13 @@ variable "provision_repo_path" {
 	require.NoError(t, err)
 
 	// Run conversion
-	converter := NewPackerConverter(PackerConverterOptions{
+	converter, err := NewPackerConverter(PackerConverterOptions{
 		TemplateDir: tmpDir,
 		Author:      "Test",
 		License:     "MIT",
 		Version:     "1.0.0",
 	})
+	require.NoError(t, err)
 
 	config, err := converter.Convert()
 	require.NoError(t, err)
@@ -523,12 +533,13 @@ variable "container_user" {
 	require.NoError(t, err)
 
 	// Run conversion
-	converter := NewPackerConverter(PackerConverterOptions{
+	converter, err := NewPackerConverter(PackerConverterOptions{
 		TemplateDir: tmpDir,
 		Author:      "Test Author",
 		License:     "MIT",
 		Version:     "1.0.0",
 	})
+	require.NoError(t, err)
 
 	config, err := converter.Convert()
 	require.NoError(t, err)
@@ -558,7 +569,8 @@ variable "container_user" {
 }
 
 func TestConvertHCLPostProcessors(t *testing.T) {
-	converter := NewPackerConverter(PackerConverterOptions{})
+	converter, err := NewPackerConverter(PackerConverterOptions{})
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
@@ -660,7 +672,8 @@ func TestConvertHCLPostProcessors(t *testing.T) {
 }
 
 func TestConvertHCLProvisioners(t *testing.T) {
-	converter := NewPackerConverter(PackerConverterOptions{})
+	converter, err := NewPackerConverter(PackerConverterOptions{})
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
@@ -776,7 +789,8 @@ func TestConvertHCLProvisioners(t *testing.T) {
 }
 
 func TestParseAnsibleExtraArgs(t *testing.T) {
-	converter := NewPackerConverter(PackerConverterOptions{})
+	converter, err := NewPackerConverter(PackerConverterOptions{})
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string

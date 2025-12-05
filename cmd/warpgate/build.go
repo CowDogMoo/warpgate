@@ -41,15 +41,17 @@ import (
 
 // Build command options
 type buildOptions struct {
-	template    string
-	fromGit     string
-	targetType  string
-	push        bool
-	registry    string
-	arch        []string
-	tags        []string
-	saveDigests bool
-	digestDir   string
+	template     string
+	fromGit      string
+	targetType   string
+	push         bool
+	registry     string
+	arch         []string
+	tags         []string
+	saveDigests  bool
+	digestDir    string
+	region       string
+	instanceType string
 }
 
 var buildOpts = &buildOptions{}
@@ -73,7 +75,10 @@ Examples:
   warpgate build --from-git https://github.com/user/templates.git//my-template
 
   # Build multiple architectures and push
-  warpgate build --template attack-box --arch amd64,arm64 --push`,
+  warpgate build --template attack-box --arch amd64,arm64 --push
+
+  # Build AMI in different region with custom instance type
+  warpgate build --template attack-box --target ami --region us-west-2 --instance-type t3.large`,
 	RunE: runBuild,
 }
 
@@ -88,6 +93,8 @@ func init() {
 	buildCmd.Flags().StringSliceVarP(&buildOpts.tags, "tag", "t", []string{}, "Additional tags to apply")
 	buildCmd.Flags().BoolVar(&buildOpts.saveDigests, "save-digests", false, "Save image digests to files after push")
 	buildCmd.Flags().StringVar(&buildOpts.digestDir, "digest-dir", ".", "Directory to save digest files")
+	buildCmd.Flags().StringVar(&buildOpts.region, "region", "", "AWS region for AMI builds (overrides config)")
+	buildCmd.Flags().StringVar(&buildOpts.instanceType, "instance-type", "", "EC2 instance type for AMI builds (overrides config)")
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
@@ -142,6 +149,20 @@ func applyConfigOverrides(buildConfig *builder.Config) {
 		buildConfig.Registry = buildOpts.registry
 	} else if buildConfig.Registry == "" {
 		buildConfig.Registry = cfg.Registry.Default
+	}
+
+	// Override region and instance type for AMI targets
+	if buildOpts.region != "" || buildOpts.instanceType != "" {
+		for i := range buildConfig.Targets {
+			if buildConfig.Targets[i].Type == "ami" {
+				if buildOpts.region != "" {
+					buildConfig.Targets[i].Region = buildOpts.region
+				}
+				if buildOpts.instanceType != "" {
+					buildConfig.Targets[i].InstanceType = buildOpts.instanceType
+				}
+			}
+		}
 	}
 }
 

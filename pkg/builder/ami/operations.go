@@ -30,18 +30,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
 // AMIOperations provides operations for managing AMIs
 type AMIOperations struct {
-	clients *AWSClients
+	clients      *AWSClients
+	globalConfig *globalconfig.Config
 }
 
 // NewAMIOperations creates a new AMI operations handler
-func NewAMIOperations(clients *AWSClients) *AMIOperations {
+func NewAMIOperations(clients *AWSClients, cfg *globalconfig.Config) *AMIOperations {
 	return &AMIOperations{
-		clients: clients,
+		clients:      clients,
+		globalConfig: cfg,
 	}
 }
 
@@ -180,10 +183,13 @@ func (o *AMIOperations) deleteSnapshot(ctx context.Context, snapshotID string) e
 func (o *AMIOperations) waitForAMIAvailable(ctx context.Context, ec2Client *ec2.Client, amiID string) error {
 	logging.Debug("Waiting for AMI to be available: %s", amiID)
 
-	ticker := time.NewTicker(30 * time.Second)
+	pollingInterval := time.Duration(o.globalConfig.AWS.AMI.PollingIntervalSec) * time.Second
+	buildTimeout := time.Duration(o.globalConfig.AWS.AMI.BuildTimeoutMin) * time.Minute
+
+	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
 
-	timeout := time.After(30 * time.Minute)
+	timeout := time.After(buildTimeout)
 
 	for {
 		select {
