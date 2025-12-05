@@ -4,7 +4,6 @@
 [![🚨 Semgrep Analysis](https://github.com/CowDogMoo/warpgate/actions/workflows/semgrep.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/semgrep.yaml)
 [![Pre-Commit](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml)
 [![Renovate](https://github.com/CowDogMoo/warpgate/actions/workflows/renovate.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/renovate.yaml)
-[![SBOM](https://img.shields.io/badge/SBOM-SPDX%20%7C%20CycloneDX-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0wIDE4Yy00LjQxIDAtOC0zLjU5LTgtOHMzLjU5LTggOC04IDggMy41OSA4IDgtMy41OSA4LTggOHptLTEtMTNINXYyaDZ2LTJ6bTAtNEg1djJoNlY2em0wIDhoNXYtMmgtNXYyeiIvPjwvc3ZnPg==)](docs/license-compliance-sbom.md)
 
 <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
 
@@ -101,8 +100,6 @@ Warpgate uses two configuration systems:
    credentials, build defaults
 2. **Template config** (`warpgate.yaml`) - Image definitions (portable and shareable)
 
-See [Configuration Guide](docs/configuration.md) for details.
-
 ### Example Template
 
 ```yaml
@@ -132,15 +129,6 @@ targets:
       - linux/amd64
       - linux/arm64
 ```
-
----
-
-## Documentation
-
-- **[Configuration Guide](docs/configuration.md)** - Global and template configuration
-- **[Getting Started](docs/getting-started.md)** - Detailed walkthrough
-- **[Architecture](docs/architecture.md)** - System design
-- **[Migration Plan](MIGRATION_PLAN.md)** - Go rewrite details
 
 ---
 
@@ -342,9 +330,6 @@ We welcome contributions! Please open issues for bug reports and feature request
 
 Pre-commit hooks will automatically:
 
-- Check license compatibility
-- Update NOTICE file
-- Generate SBOMs
 - Run security scans
 - Format code and run linters
 
