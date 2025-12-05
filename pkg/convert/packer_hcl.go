@@ -534,10 +534,8 @@ func (p *HCLParser) parseAMISourceBlock(block *hclsyntax.Block, content []byte) 
 					if val.Type() == cty.Number {
 						intVal, _ := val.AsBigFloat().Int64()
 						source.VolumeSize = int(intVal)
-					} else if val.Type() == cty.String {
-						// Try to parse as string (in case it's a variable reference)
-						// For now, skip variable references in volume_size
 					}
+					// Skip string type (variable references) for volume_size
 				}
 			}
 		}

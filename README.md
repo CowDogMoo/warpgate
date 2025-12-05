@@ -254,7 +254,8 @@ warpgate convert packer-template.pkr.hcl
 
 ## Available Taskfile Commands
 
-The project uses modular taskfiles for development tasks. All Go-specific tasks use the `go:` namespace:
+The project uses modular taskfiles for development tasks. All Go-specific
+tasks use the `go:` namespace:
 
 ### Build Commands
 
@@ -288,7 +289,8 @@ The project uses modular taskfiles for development tasks. All Go-specific tasks 
 
 - `task pre-commit:run` - Run pre-commit hooks
 - `task github:pr-merge` - Merge current PR with cleanup
-- See [taskfile-templates](https://github.com/CowDogMoo/taskfile-templates) for full list of available tasks
+- See [taskfile-templates](https://github.com/CowDogMoo/taskfile-templates)
+  for full list of available tasks
 
 ---
 

@@ -101,3 +101,11 @@ repos:
         pass_filenames: false
         files: '(go\.mod|go\.sum)$'
         description: "Run govulncheck to check for vulnerabilities in Go dependencies"
+
+      - id: schema-validate
+        name: Validate JSON schema is in sync
+        entry: .hooks/schema-validate.sh
+        language: script
+        files: '(pkg/builder/.*\.go|cmd/schema-gen/.*\.go)$'
+        pass_filenames: true
+        description: "Ensure JSON schema is regenerated when Go structs change"

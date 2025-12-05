@@ -28,3 +28,19 @@ tasks:
     desc: Build, test, and clean
     cmds:
       - task: go:default
+
+  schema:generate:
+    desc: Generate JSON schema for warpgate templates
+    cmds:
+      - go run ./cmd/schema-gen -o schema/warpgate-template.json
+    sources:
+      - pkg/builder/config.go
+      - cmd/schema-gen/main.go
+    generates:
+      - schema/warpgate-template.json
+
+  schema:validate:
+    desc: Validate that JSON schema is up to date
+    cmds:
+      - task: schema:generate
+      - git diff --exit-code schema/warpgate-template.json || (echo "Schema is out of date. Run 'task schema:generate' and commit the changes." && exit 1)
