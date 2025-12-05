@@ -58,6 +58,7 @@ func init() {
 
 	// Add subcommands
 	rootCmd.AddCommand(buildCmd)
+	rootCmd.AddCommand(convertCmd)
 	rootCmd.AddCommand(templatesCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(initCmd)
