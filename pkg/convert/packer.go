@@ -84,22 +84,35 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 		baseVersion = "latest"
 	}
 
-	// Parse docker.pkr.hcl for container provisioners using HCL parser
+	// Parse docker.pkr.hcl for source blocks and provisioners
+	dockerPath := filepath.Join(c.options.TemplateDir, "docker.pkr.hcl")
+	_ = hclParser.ParseSourceBlocks(dockerPath)
 	dockerProvisioners := c.parseDockerProvisionersHCL(hclParser)
 
-	// Parse ami.pkr.hcl for AMI-specific provisioners using HCL parser
+	// Parse ami.pkr.hcl for AMI-specific source blocks and provisioners
+	amiPath := filepath.Join(c.options.TemplateDir, "ami.pkr.hcl")
+	_ = hclParser.ParseSourceBlocks(amiPath)
 	amiProvisioners := c.parseAMIProvisionersHCL(hclParser)
 
 	// Parse post-processors from both docker and AMI builds
-	allBuilds, _ := hclParser.ParseBuildFile(filepath.Join(c.options.TemplateDir, "docker.pkr.hcl"))
-	amiBuilds, _ := hclParser.ParseBuildFile(filepath.Join(c.options.TemplateDir, "ami.pkr.hcl"))
-	allBuilds = append(allBuilds, amiBuilds...)
+	dockerBuilds, _ := hclParser.ParseBuildFile(dockerPath)
+	amiBuilds, _ := hclParser.ParseBuildFile(amiPath)
+	allBuilds := append(dockerBuilds, amiBuilds...)
 	postProcessors := c.convertHCLPostProcessors(allBuilds)
 
-	// Merge provisioners (prefer docker as it's usually more complete)
+	// Use docker provisioners as primary (for container builds)
+	// AMI builds will have their own provisioners applied when building AMI targets
 	provisioners := dockerProvisioners
 	if len(provisioners) == 0 {
 		provisioners = amiProvisioners
+	}
+
+	// Warn if AMI provisioners differ from Docker provisioners
+	if len(dockerProvisioners) > 0 && len(amiProvisioners) > 0 {
+		if !c.provisionersMatch(dockerProvisioners, amiProvisioners) {
+			logging.Warn("AMI provisioners differ from Docker provisioners - using Docker provisioners for conversion")
+			logging.Warn("You may need to manually review and adjust provisioners for AMI builds")
+		}
 	}
 
 	// Use config defaults if options are not provided
@@ -111,6 +124,20 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 	license := c.options.License
 	if license == "" {
 		license = c.globalConfig.Convert.DefaultLicense
+	}
+
+	// Build base image configuration with Docker-specific settings
+	base := builder.BaseImage{
+		Image: fmt.Sprintf("%s:%s", baseImage, baseVersion),
+		Pull:  true,
+	}
+
+	// Apply Docker source configuration if available
+	if dockerSrc := hclParser.GetDockerSource(); dockerSrc != nil {
+		base.Privileged = dockerSrc.Privileged
+		base.Volumes = dockerSrc.Volumes
+		base.RunCommand = dockerSrc.RunCommand
+		base.Changes = dockerSrc.Changes
 	}
 
 	// Build config
@@ -125,15 +152,12 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 				Warpgate: c.globalConfig.Convert.WarpgateVersion,
 			},
 		},
-		Name:    templateName,
-		Version: "latest",
-		Base: builder.BaseImage{
-			Image: fmt.Sprintf("%s:%s", baseImage, baseVersion),
-			Pull:  true,
-		},
+		Name:           templateName,
+		Version:        "latest",
+		Base:           base,
 		Provisioners:   provisioners,
 		PostProcessors: postProcessors,
-		Targets:        c.buildTargets(),
+		Targets:        c.buildTargets(hclParser),
 	}
 
 	logging.Info("Conversion complete: %d provisioners, %d post-processors, %d targets", len(provisioners), len(postProcessors), len(config.Targets))
@@ -180,7 +204,7 @@ func (c *PackerConverter) extractDescription() string {
 }
 
 // buildTargets creates target configurations
-func (c *PackerConverter) buildTargets() []builder.Target {
+func (c *PackerConverter) buildTargets(hclParser *HCLParser) []builder.Target {
 	var targets []builder.Target
 
 	// Add container target with platforms from config
@@ -191,7 +215,7 @@ func (c *PackerConverter) buildTargets() []builder.Target {
 
 	// Add AMI target if requested
 	if c.options.IncludeAMI {
-		// Use convert-specific AMI settings, falling back to general AWS AMI settings
+		// Start with config defaults
 		instanceType := c.globalConfig.Convert.AMIInstanceType
 		if instanceType == "" {
 			instanceType = c.globalConfig.AWS.AMI.InstanceType
@@ -202,15 +226,51 @@ func (c *PackerConverter) buildTargets() []builder.Target {
 			volumeSize = c.globalConfig.AWS.AMI.VolumeSize
 		}
 
+		region := c.globalConfig.AWS.Region
+
+		// Override with values from AMI source if available
+		if amiSrc := hclParser.GetAMISource(); amiSrc != nil {
+			if amiSrc.InstanceType != "" {
+				instanceType = amiSrc.InstanceType
+			}
+			if amiSrc.VolumeSize > 0 {
+				volumeSize = amiSrc.VolumeSize
+			}
+			if amiSrc.Region != "" {
+				region = amiSrc.Region
+			}
+		}
+
 		targets = append(targets, builder.Target{
 			Type:         "ami",
-			Region:       c.globalConfig.AWS.Region,
+			Region:       region,
 			InstanceType: instanceType,
 			VolumeSize:   volumeSize,
 		})
 	}
 
 	return targets
+}
+
+// provisionersMatch checks if two provisioner lists are equivalent
+func (c *PackerConverter) provisionersMatch(p1, p2 []builder.Provisioner) bool {
+	if len(p1) != len(p2) {
+		return false
+	}
+
+	for i := range p1 {
+		if p1[i].Type != p2[i].Type {
+			return false
+		}
+		// For ansible provisioners, check if playbook paths differ
+		if p1[i].Type == "ansible" {
+			if p1[i].PlaybookPath != p2[i].PlaybookPath {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 // extractBaseImageHCL uses HCL parser to extract base image from variables
