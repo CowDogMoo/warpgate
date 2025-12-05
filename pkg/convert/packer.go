@@ -191,11 +191,22 @@ func (c *PackerConverter) buildTargets() []builder.Target {
 
 	// Add AMI target if requested
 	if c.options.IncludeAMI {
+		// Use convert-specific AMI settings, falling back to general AWS AMI settings
+		instanceType := c.globalConfig.Convert.AMIInstanceType
+		if instanceType == "" {
+			instanceType = c.globalConfig.AWS.AMI.InstanceType
+		}
+
+		volumeSize := c.globalConfig.Convert.AMIVolumeSize
+		if volumeSize == 0 {
+			volumeSize = c.globalConfig.AWS.AMI.VolumeSize
+		}
+
 		targets = append(targets, builder.Target{
 			Type:         "ami",
 			Region:       c.globalConfig.AWS.Region,
-			InstanceType: c.globalConfig.Convert.AMIInstanceType,
-			VolumeSize:   c.globalConfig.Convert.AMIVolumeSize,
+			InstanceType: instanceType,
+			VolumeSize:   volumeSize,
 		})
 	}
 

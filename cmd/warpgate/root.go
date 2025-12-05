@@ -61,6 +61,7 @@ func init() {
 	rootCmd.AddCommand(templatesCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)
 }

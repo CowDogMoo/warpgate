@@ -110,12 +110,17 @@ type ContainerConfig struct {
 }
 
 // ConvertConfig holds Packer conversion defaults
+// These settings are ONLY used when converting Packer templates to warpgate format.
+// For actual builds, use the settings in AWS.AMI and Container configs.
 type ConvertConfig struct {
-	DefaultVersion  string `mapstructure:"default_version"`
-	DefaultLicense  string `mapstructure:"default_license"`
-	WarpgateVersion string `mapstructure:"warpgate_version"`
-	AMIInstanceType string `mapstructure:"ami_instance_type"`
-	AMIVolumeSize   int    `mapstructure:"ami_volume_size"`
+	DefaultVersion  string `mapstructure:"default_version"`  // Default version for converted templates
+	DefaultLicense  string `mapstructure:"default_license"`  // Default license for converted templates
+	WarpgateVersion string `mapstructure:"warpgate_version"` // Required warpgate version
+
+	// AMI conversion overrides - these override AWS.AMI settings ONLY during Packer->Warpgate conversion
+	// If empty/zero, falls back to AWS.AMI settings
+	AMIInstanceType string `mapstructure:"ami_instance_type"` // Override for AWS.AMI.InstanceType during conversion
+	AMIVolumeSize   int    `mapstructure:"ami_volume_size"`   // Override for AWS.AMI.VolumeSize during conversion
 }
 
 // Load reads and parses the global configuration file
