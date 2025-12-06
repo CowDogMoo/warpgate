@@ -66,24 +66,52 @@ func NewStorageConfig() *StorageConfig {
 		xdgRuntimeDir = fmt.Sprintf("/run/user/%d", os.Getuid())
 	}
 
+	// Use vfs driver for rootless by default (slower but more compatible)
+	// overlay requires fuse-overlayfs or special kernel capabilities
+	driver := "vfs"
+	if hasFuseOverlayfs() {
+		driver = "overlay"
+		logging.Debug("fuse-overlayfs detected, using overlay driver")
+	} else {
+		logging.Debug("fuse-overlayfs not available, using vfs driver")
+	}
+
 	return &StorageConfig{
 		root:    filepath.Join(homeDir, ".local", "share", "containers", "storage"),
 		runroot: filepath.Join(xdgRuntimeDir, "containers"),
-		driver:  "overlay",
+		driver:  driver,
 	}
+}
+
+// hasFuseOverlayfs checks if fuse-overlayfs is available
+func hasFuseOverlayfs() bool {
+	_, err := os.Stat("/usr/bin/fuse-overlayfs")
+	return err == nil
 }
 
 // Configure sets up the container storage directories and configuration
 func (sc *StorageConfig) Configure() error {
-	logging.Info("Configuring container storage")
+	logging.Info("Configuring container storage with driver: %s", sc.driver)
 
-	// Create storage directories
+	// Create base storage directories
 	dirs := []string{
 		sc.root,
 		sc.runroot,
-		filepath.Join(sc.root, "overlay"),
-		filepath.Join(sc.root, "overlay-images"),
-		filepath.Join(sc.root, "overlay-layers"),
+	}
+
+	// Add driver-specific directories
+	if sc.driver == "overlay" {
+		dirs = append(dirs,
+			filepath.Join(sc.root, "overlay"),
+			filepath.Join(sc.root, "overlay-images"),
+			filepath.Join(sc.root, "overlay-layers"),
+		)
+	} else if sc.driver == "vfs" {
+		dirs = append(dirs,
+			filepath.Join(sc.root, "vfs"),
+			filepath.Join(sc.root, "vfs-images"),
+			filepath.Join(sc.root, "vfs-layers"),
+		)
 	}
 
 	for _, dir := range dirs {
@@ -135,13 +163,16 @@ func (sc *StorageConfig) IsConfigured() bool {
 
 // WriteStorageConf writes a storage.conf file
 func (sc *StorageConfig) WriteStorageConf(path string) error {
-	// Use fuse-overlayfs for rootless overlay
-	mountProgram := ""
-	if sc.driver == "overlay" && os.Geteuid() != 0 {
-		mountProgram = "mount_program = \"/usr/bin/fuse-overlayfs\"\n"
-	}
+	var content string
 
-	content := fmt.Sprintf(`[storage]
+	if sc.driver == "overlay" {
+		// Use fuse-overlayfs for rootless overlay
+		mountProgram := ""
+		if os.Geteuid() != 0 {
+			mountProgram = "mount_program = \"/usr/bin/fuse-overlayfs\"\n"
+		}
+
+		content = fmt.Sprintf(`[storage]
 driver = "%s"
 runroot = "%s"
 graphroot = "%s"
@@ -152,6 +183,17 @@ additionalimagestores = []
 [storage.options.overlay]
 %smountopt = "nodev,metacopy=on"
 `, sc.driver, sc.runroot, sc.root, mountProgram)
+	} else {
+		// vfs or other drivers
+		content = fmt.Sprintf(`[storage]
+driver = "%s"
+runroot = "%s"
+graphroot = "%s"
+
+[storage.options]
+additionalimagestores = []
+`, sc.driver, sc.runroot, sc.root)
+	}
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write storage.conf: %w", err)
