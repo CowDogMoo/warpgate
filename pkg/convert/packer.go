@@ -101,15 +101,8 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 	allBuilds = append(allBuilds, amiBuilds...)
 	postProcessors := c.convertHCLPostProcessors(allBuilds)
 
-	// Extract image name from docker-tag post-processor if available
+	// Use template name as the image name
 	imageName := templateName
-	for _, pp := range postProcessors {
-		if pp.Type == "docker-tag" && pp.Repository != "" {
-			imageName = pp.Repository
-			logging.Debug("Using image name from docker-tag post-processor: %s", imageName)
-			break
-		}
-	}
 
 	// Use docker provisioners as primary (for container builds)
 	// AMI builds will have their own provisioners applied when building AMI targets

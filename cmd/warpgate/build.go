@@ -137,6 +137,17 @@ func loadBuildConfig(args []string) (*builder.Config, error) {
 
 // applyConfigOverrides applies CLI flag overrides to build config
 func applyConfigOverrides(buildConfig *builder.Config) {
+	// Filter targets if target type override is specified
+	if buildOpts.targetType != "" {
+		filteredTargets := []builder.Target{}
+		for _, target := range buildConfig.Targets {
+			if target.Type == buildOpts.targetType {
+				filteredTargets = append(filteredTargets, target)
+			}
+		}
+		buildConfig.Targets = filteredTargets
+	}
+
 	// Override architectures if specified
 	if len(buildOpts.arch) > 0 {
 		buildConfig.Architectures = buildOpts.arch
