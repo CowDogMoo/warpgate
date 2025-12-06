@@ -41,9 +41,34 @@ type StorageConfig struct {
 
 // NewStorageConfig creates a new storage configuration
 func NewStorageConfig() *StorageConfig {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		logging.Warn("Failed to get home directory, using default paths: %v", err)
+		return &StorageConfig{
+			root:    "/var/lib/containers/storage",
+			runroot: "/run/containers/storage",
+			driver:  "overlay",
+		}
+	}
+
+	// Check if running as root
+	if os.Geteuid() == 0 {
+		return &StorageConfig{
+			root:    "/var/lib/containers/storage",
+			runroot: "/run/containers/storage",
+			driver:  "overlay",
+		}
+	}
+
+	// Rootless configuration
+	xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	if xdgRuntimeDir == "" {
+		xdgRuntimeDir = fmt.Sprintf("/run/user/%d", os.Getuid())
+	}
+
 	return &StorageConfig{
-		root:    "/var/lib/containers/storage",
-		runroot: "/run/containers/storage",
+		root:    filepath.Join(homeDir, ".local", "share", "containers", "storage"),
+		runroot: filepath.Join(xdgRuntimeDir, "containers"),
 		driver:  "overlay",
 	}
 }
@@ -110,6 +135,12 @@ func (sc *StorageConfig) IsConfigured() bool {
 
 // WriteStorageConf writes a storage.conf file
 func (sc *StorageConfig) WriteStorageConf(path string) error {
+	// Use fuse-overlayfs for rootless overlay
+	mountProgram := ""
+	if sc.driver == "overlay" && os.Geteuid() != 0 {
+		mountProgram = "mount_program = \"/usr/bin/fuse-overlayfs\"\n"
+	}
+
 	content := fmt.Sprintf(`[storage]
 driver = "%s"
 runroot = "%s"
@@ -119,8 +150,8 @@ graphroot = "%s"
 additionalimagestores = []
 
 [storage.options.overlay]
-mountopt = "nodev,metacopy=on"
-`, sc.driver, sc.runroot, sc.root)
+%smountopt = "nodev,metacopy=on"
+`, sc.driver, sc.runroot, sc.root, mountProgram)
 
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write storage.conf: %w", err)

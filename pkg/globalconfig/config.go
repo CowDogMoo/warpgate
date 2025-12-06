@@ -197,7 +197,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.format", "color")
 
 	// Storage defaults
-	v.SetDefault("storage.driver", "vfs")
+	v.SetDefault("storage.driver", "overlay")
 	home, err := os.UserHomeDir()
 	if err == nil {
 		v.SetDefault("storage.root", filepath.Join(home, ".local", "share", "containers", "storage"))

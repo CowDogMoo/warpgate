@@ -42,6 +42,10 @@ type Config struct {
 	// Provisioners to run during the build
 	Provisioners []Provisioner `yaml:"provisioners" json:"provisioners"`
 
+	// PostChanges applies Dockerfile-style instructions after provisioners complete
+	// Useful for setting USER/WORKDIR after creating users during provisioning
+	PostChanges []string `yaml:"post_changes,omitempty" json:"post_changes,omitempty"`
+
 	// Post-processors to run after the build
 	PostProcessors []PostProcessor `yaml:"post_processors,omitempty" json:"post_processors,omitempty"`
 

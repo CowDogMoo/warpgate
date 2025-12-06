@@ -82,29 +82,12 @@ build {
     ]
   }
 
-  # Final cleanup after Ansible
+  # Post-Ansible cleanup using generated script
+  # The build_cleanup role generates this script during Ansible provisioning
   provisioner "shell" {
     only = ["docker.arm64", "docker.amd64"]
     inline = [
-      # Clean up Ansible/Packer runtime artifacts
-      "rm -rf /home/${var.user}/.ansible",
-      "rm -rf /tmp/ansible*",
-      "rm -rf /tmp/packer*",
-
-      # Ensure no running processes are holding files open
-      "sync",
-
-      # Final permission fixes if needed
-      "chmod 755 /opt/sliver/sliver-server 2>/dev/null || true",
-      "chmod 755 /opt/sliver/sliver-client 2>/dev/null || true",
-
-      # Clear bash history and any other shell artifacts
-      "rm -f /home/${var.user}/.bash_history",
-      "rm -f /home/${var.user}/.wget-hsts",
-      "history -c 2>/dev/null || true",
-
-      # Ensure clean exit
-      "exit 0"
+      "/tmp/post_ansible_cleanup.sh"
     ]
   }
 

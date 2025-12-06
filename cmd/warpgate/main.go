@@ -24,9 +24,17 @@ package main
 
 import (
 	"os"
+
+	"go.podman.io/storage/pkg/reexec"
 )
 
 func main() {
+	// Initialize reexec for container storage operations
+	// This MUST be called before any storage operations
+	if reexec.Init() {
+		return
+	}
+
 	// Execute root command
 	// Cobra handles error printing and exit codes automatically
 	if err := Execute(); err != nil {

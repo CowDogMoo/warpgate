@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/go-git/go-git/v5"
 )
 
 // CollectionManager manages Ansible Galaxy collections
@@ -109,12 +110,12 @@ func (cm *CollectionManager) CloneCustomCollection(repoURL, namespace, collectio
 		return fmt.Errorf("failed to create collection directory: %w", err)
 	}
 
-	// Clone the repository
-	cmd := exec.Command("git", "clone", repoURL, collectionPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
+	// Clone the repository using go-git
+	_, err := git.PlainClone(collectionPath, false, &git.CloneOptions{
+		URL:      repoURL,
+		Progress: os.Stdout,
+	})
+	if err != nil {
 		return fmt.Errorf("failed to clone collection: %w", err)
 	}
 

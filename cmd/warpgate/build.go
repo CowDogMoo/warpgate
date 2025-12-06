@@ -141,7 +141,12 @@ func applyConfigOverrides(buildConfig *builder.Config) {
 	if len(buildOpts.arch) > 0 {
 		buildConfig.Architectures = buildOpts.arch
 	} else if len(buildConfig.Architectures) == 0 {
-		buildConfig.Architectures = cfg.Build.DefaultArch
+		// Extract architectures from target platforms
+		buildConfig.Architectures = extractArchitecturesFromTargets(buildConfig)
+		// Fallback to default architectures if none found
+		if len(buildConfig.Architectures) == 0 {
+			buildConfig.Architectures = cfg.Build.DefaultArch
+		}
 	}
 
 	// Override registry if specified
@@ -164,6 +169,30 @@ func applyConfigOverrides(buildConfig *builder.Config) {
 			}
 		}
 	}
+}
+
+// extractArchitecturesFromTargets extracts architectures from target platforms
+func extractArchitecturesFromTargets(buildConfig *builder.Config) []string {
+	archMap := make(map[string]bool)
+
+	for _, target := range buildConfig.Targets {
+		for _, platform := range target.Platforms {
+			// Platform format is "os/arch" or "os/arch/variant"
+			parts := strings.Split(platform, "/")
+			if len(parts) >= 2 {
+				arch := parts[1]
+				archMap[arch] = true
+			}
+		}
+	}
+
+	// Convert map to slice
+	archs := make([]string, 0, len(archMap))
+	for arch := range archMap {
+		archs = append(archs, arch)
+	}
+
+	return archs
 }
 
 // validateConfig validates the build configuration
@@ -222,7 +251,11 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) err
 		return executeMultiArchBuild(ctx, buildConfig, bldr)
 	}
 
-	// Single architecture build
+	// Single architecture build - set platform if not already set
+	if buildConfig.Base.Platform == "" && len(buildConfig.Architectures) > 0 {
+		buildConfig.Base.Platform = fmt.Sprintf("linux/%s", buildConfig.Architectures[0])
+	}
+
 	result, err := bldr.Build(ctx, *buildConfig)
 	if err != nil {
 		return fmt.Errorf("container build failed: %w", err)

@@ -32,6 +32,7 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/convert"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/spf13/cobra"
+	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -106,10 +107,19 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 
 	logging.Info("Converting Packer template to Warpgate format: %s", absTemplateDir)
 
+	// If author not provided, try to get from git config
+	author := convertOpts.author
+	if author == "" {
+		author = getGitAuthor()
+		if author != "" {
+			logging.Info("Using git config for author: %s", author)
+		}
+	}
+
 	// Create converter options
 	opts := convert.PackerConverterOptions{
 		TemplateDir: absTemplateDir,
-		Author:      convertOpts.author,
+		Author:      author,
 		License:     convertOpts.license,
 		Version:     convertOpts.version,
 		BaseImage:   convertOpts.baseImage,
@@ -256,4 +266,70 @@ func displayConversionSummary(buildConfig *builder.Config, outputPath string) {
 	}
 
 	fmt.Printf("\n  Output file:  %s\n", outputPath)
+}
+
+// getGitAuthor retrieves author information from git config
+func getGitAuthor() string {
+	var name, email string
+
+	// Get home directory
+	home, err := os.UserHomeDir()
+	if err != nil {
+		logging.Debug("Failed to get home directory: %v", err)
+		return ""
+	}
+
+	// Try to load global .gitconfig
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	cfg, err := ini.Load(gitconfigPath)
+	if err != nil {
+		logging.Debug("Failed to load .gitconfig: %v", err)
+		return ""
+	}
+
+	// Get user section from main config
+	userSection := cfg.Section("user")
+	if userSection != nil {
+		name = userSection.Key("name").String()
+		email = userSection.Key("email").String()
+	}
+
+	// If not found, check for include.path and load those files
+	if name == "" || email == "" {
+		includeSection := cfg.Section("include")
+		if includeSection != nil {
+			includePath := includeSection.Key("path").String()
+			if includePath != "" {
+				// Expand ~ to home directory
+				if strings.HasPrefix(includePath, "~/") {
+					includePath = filepath.Join(home, includePath[2:])
+				}
+
+				// Try to load the included file
+				includedCfg, err := ini.Load(includePath)
+				if err == nil {
+					includedUserSection := includedCfg.Section("user")
+					if includedUserSection != nil {
+						if name == "" {
+							name = includedUserSection.Key("name").String()
+						}
+						if email == "" {
+							email = includedUserSection.Key("email").String()
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Format as "Name <email>"
+	if name != "" && email != "" {
+		return fmt.Sprintf("%s <%s>", name, email)
+	} else if name != "" {
+		return name
+	} else if email != "" {
+		return email
+	}
+
+	return ""
 }

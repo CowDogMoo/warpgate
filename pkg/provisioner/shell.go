@@ -30,6 +30,7 @@ import (
 	"github.com/containers/buildah"
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // ShellProvisioner runs shell commands inside the container
@@ -52,10 +53,21 @@ func (sp *ShellProvisioner) Provision(ctx context.Context, config builder.Provis
 
 	logging.Info("Running %d shell commands", len(config.Inline))
 
-	// Set up run options
+	// Set up run options with chroot isolation for macOS nested container compatibility
+	// OCI isolation fails on macOS when Buildah runs inside Podman (mkdir /dev/mqueue: operation not permitted)
 	runOpts := buildah.RunOptions{
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
+		Stdout:    os.Stdout,
+		Stderr:    os.Stderr,
+		Isolation: buildah.IsolationChroot,
+		// Bind mount /dev from host to avoid /dev/mqueue creation issues in nested containers
+		Mounts: []specs.Mount{
+			{
+				Destination: "/dev",
+				Type:        "bind",
+				Source:      "/dev",
+				Options:     []string{"rbind", "rw"},
+			},
+		},
 	}
 
 	// Set working directory if specified

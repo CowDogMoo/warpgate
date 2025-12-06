@@ -97,20 +97,47 @@ func NewBuildahBuilder(cfg BuildahConfig) (*BuildahBuilder, error) {
 		return nil, fmt.Errorf("failed to configure storage: %w", err)
 	}
 
-	// Set up storage options
-	storeOpts, err := storage.DefaultStoreOptions()
+	// Write storage.conf to ensure clean configuration without conflicts
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get default store options: %w", err)
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+	configDir := filepath.Join(homeDir, ".config", "containers")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create config directory: %w", err)
+	}
+	storageConfPath := filepath.Join(configDir, "storage.conf")
+	if err := storageConfig.WriteStorageConf(storageConfPath); err != nil {
+		return nil, fmt.Errorf("failed to write storage config: %w", err)
 	}
 
-	storeOpts.GraphRoot = storageConfig.GetRoot()
-	storeOpts.RunRoot = storageConfig.GetRunRoot()
-	storeOpts.GraphDriverName = storageConfig.GetDriver()
+	// Set up storage options
+	// Create clean storage options without system defaults to avoid conflicts
+	// between different storage drivers (e.g., VFS vs overlay imagestore)
+	storeOpts := storage.StoreOptions{
+		GraphRoot:       storageConfig.GetRoot(),
+		RunRoot:         storageConfig.GetRunRoot(),
+		GraphDriverName: storageConfig.GetDriver(),
+		// Clear additional image stores to avoid driver conflicts
+		GraphDriverOptions: []string{},
+	}
+
+	// For overlay driver, set appropriate mount options
+	if storageConfig.GetDriver() == "overlay" {
+		storeOpts.GraphDriverOptions = []string{
+			"overlay.mountopt=nodev,metacopy=on",
+		}
+	}
 
 	// Initialize storage
 	store, err := storage.GetStore(storeOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize storage: %w", err)
+	}
+
+	// Ensure container configuration files exist
+	if err := ensureContainerConfig(); err != nil {
+		return nil, fmt.Errorf("failed to ensure container config: %w", err)
 	}
 
 	// Set up system context
@@ -141,6 +168,13 @@ func (b *BuildahBuilder) Build(ctx context.Context, cfg builder.Config) (*builde
 		return nil, fmt.Errorf("failed to run provisioners: %w", err)
 	}
 
+	// Apply post-provisioner changes (USER, WORKDIR, etc.)
+	if len(cfg.PostChanges) > 0 {
+		if err := b.applyChanges(cfg.PostChanges); err != nil {
+			return nil, fmt.Errorf("failed to apply post-changes: %w", err)
+		}
+	}
+
 	// Commit the image
 	imageRef, digest, err := b.commit(ctx, cfg.Name, cfg.Version)
 	if err != nil {
@@ -169,13 +203,43 @@ func (b *BuildahBuilder) Build(ctx context.Context, cfg builder.Config) (*builde
 
 // fromImage creates a builder from a base image
 func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) error {
+	fmt.Fprintf(os.Stderr, "DEBUG: Entered fromImage - base.Image='%s', base.Platform='%s'\n", base.Image, base.Platform)
 	logging.Info("Pulling base image: %s", base.Image)
 
-	// Build options
+	// Configure system context for the platform
+	// We need to set the OS to "linux" since we're building Linux containers
+	// Force this regardless of host OS (e.g., darwin/macOS) since containers are always Linux
+	// Create a new SystemContext to avoid any inherited platform settings
+	systemContext := &imagetypes.SystemContext{
+		OSChoice: "linux",
+	}
+
+	// If a platform is specified in the base config, extract the architecture
+	if base.Platform != "" {
+		parts := strings.Split(base.Platform, "/")
+		if len(parts) >= 1 {
+			// Explicitly set OS from platform if provided (should be "linux")
+			systemContext.OSChoice = parts[0]
+		}
+		if len(parts) >= 2 {
+			systemContext.ArchitectureChoice = parts[1]
+		}
+		if len(parts) >= 3 && parts[2] != "" {
+			systemContext.VariantChoice = parts[2]
+		}
+		// Don't set VariantChoice if not specified - leave it uninitialized
+	}
+
+	// Log the platform settings being used (before buildah.NewBuilder)
+	fmt.Fprintf(os.Stderr, "DEBUG: SystemContext settings - OS: '%s', Arch: '%s', Variant: '%s', Platform: '%s'\n",
+		systemContext.OSChoice, systemContext.ArchitectureChoice, systemContext.VariantChoice, base.Platform)
+
+	// Build options with chroot isolation for macOS nested container compatibility
 	options := buildah.BuilderOptions{
 		FromImage:     base.Image,
 		PullPolicy:    define.PullIfMissing,
-		SystemContext: b.systemContext,
+		SystemContext: systemContext,
+		Isolation:     define.IsolationChroot,
 	}
 
 	if base.Pull {
@@ -596,6 +660,74 @@ func (b *BuildahBuilder) Close() error {
 	return nil
 }
 
+// ensureContainerConfig ensures that required container configuration files exist
+func ensureContainerConfig() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	configDir := filepath.Join(homeDir, ".config", "containers")
+
+	// Create the config directory if it doesn't exist
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Ensure registries.conf exists
+	registriesPath := filepath.Join(configDir, "registries.conf")
+	if _, err := os.Stat(registriesPath); os.IsNotExist(err) {
+		defaultRegistries := `# Generated by Warpgate
+# Container registries configuration
+
+[registries.search]
+registries = ['docker.io']
+
+[registries.insecure]
+registries = []
+
+[registries.block]
+registries = []
+`
+		if err := os.WriteFile(registriesPath, []byte(defaultRegistries), 0644); err != nil {
+			return fmt.Errorf("failed to write registries config: %w", err)
+		}
+		logging.Info("Created default registries config at: %s", registriesPath)
+	} else {
+		logging.Debug("Registries config already exists at: %s", registriesPath)
+	}
+
+	// Ensure policy.json exists
+	policyPath := filepath.Join(configDir, "policy.json")
+	if _, err := os.Stat(policyPath); os.IsNotExist(err) {
+		defaultPolicy := `{
+  "default": [
+    {
+      "type": "insecureAcceptAnything"
+    }
+  ],
+  "transports": {
+    "docker-daemon": {
+      "": [
+        {
+          "type": "insecureAcceptAnything"
+        }
+      ]
+    }
+  }
+}
+`
+		if err := os.WriteFile(policyPath, []byte(defaultPolicy), 0644); err != nil {
+			return fmt.Errorf("failed to write policy config: %w", err)
+		}
+		logging.Info("Created default policy config at: %s", policyPath)
+	} else {
+		logging.Debug("Policy config already exists at: %s", policyPath)
+	}
+
+	return nil
+}
+
 // GetDefaultConfig returns a default BuildahConfig
 func GetDefaultConfig() BuildahConfig {
 	// Load global config for defaults
@@ -605,7 +737,7 @@ func GetDefaultConfig() BuildahConfig {
 		// Fallback to hardcoded defaults if config load fails
 		homeDir, _ := os.UserHomeDir()
 		return BuildahConfig{
-			StorageDriver: "vfs",
+			StorageDriver: "overlay",
 			StorageRoot:   filepath.Join(homeDir, ".local", "share", "containers", "storage"),
 			RunRoot:       filepath.Join(homeDir, ".local", "share", "containers", "runroot"),
 		}
