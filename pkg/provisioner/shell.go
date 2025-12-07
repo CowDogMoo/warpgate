@@ -65,7 +65,7 @@ func (sp *ShellProvisioner) Provision(ctx context.Context, config builder.Provis
 		Isolation:        buildah.IsolationOCI,
 		Runtime:          runtime,
 		AddCapabilities:  []string{"CAP_SETUID", "CAP_SETGID", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER"},
-		ConfigureNetwork: buildah.NetworkDefault,
+		ConfigureNetwork: buildah.NetworkDisabled,
 	}
 
 	// Set working directory if specified
