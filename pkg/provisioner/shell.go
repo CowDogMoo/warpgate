@@ -28,8 +28,10 @@ import (
 	"os"
 
 	"github.com/containers/buildah"
+	"github.com/containers/buildah/define"
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // ShellProvisioner runs shell commands inside the container
@@ -62,7 +64,22 @@ func (sp *ShellProvisioner) Provision(ctx context.Context, config builder.Provis
 	runOpts := buildah.RunOptions{
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
-		Isolation: buildah.IsolationChroot,
+		Isolation: buildah.IsolationOCI,
+		Runtime:   runtime,
+		// Use host networking to allow apt-get to resolve hostnames
+		// while avoiding netavark nftables issues in nested containers
+		NamespaceOptions: define.NamespaceOptions{
+			{Name: string(specs.NetworkNamespace), Host: true},
+		},
+		// Add capabilities needed for apt-get and package managers to drop privileges
+		AddCapabilities: []string{
+			"CAP_SETUID",
+			"CAP_SETGID",
+			"CAP_SETFCAP",
+			"CAP_CHOWN",
+			"CAP_DAC_OVERRIDE",
+			"CAP_FOWNER",
+		},
 	}
 
 	// Set working directory if specified

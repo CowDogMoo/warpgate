@@ -26,11 +26,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/containers/buildah"
+	"github.com/containers/buildah/define"
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // AnsibleProvisioner runs Ansible playbooks inside the container
@@ -56,7 +59,22 @@ func (ap *AnsibleProvisioner) getRunOptions() buildah.RunOptions {
 	return buildah.RunOptions{
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
-		Isolation: buildah.IsolationChroot,
+		Isolation: buildah.IsolationOCI,
+		Runtime:   runtime,
+		// Use host networking to allow package managers to resolve hostnames
+		// while avoiding netavark nftables issues in nested containers
+		NamespaceOptions: define.NamespaceOptions{
+			{Name: string(specs.NetworkNamespace), Host: true},
+		},
+		// Add capabilities needed for apt-get and package managers to drop privileges
+		AddCapabilities: []string{
+			"CAP_SETUID",
+			"CAP_SETGID",
+			"CAP_SETFCAP",
+			"CAP_CHOWN",
+			"CAP_DAC_OVERRIDE",
+			"CAP_FOWNER",
+		},
 	}
 }
 
@@ -81,10 +99,18 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 		return fmt.Errorf("failed to ensure Ansible is installed: %w", err)
 	}
 
-	// Install collections if galaxy_file is specified
+	// Install collections and roles if galaxy_file is specified
 	if config.GalaxyFile != "" {
 		if err := ap.installCollections(config.GalaxyFile); err != nil {
 			return fmt.Errorf("failed to install Ansible collections: %w", err)
+		}
+		if err := ap.installRoles(config.GalaxyFile); err != nil {
+			return fmt.Errorf("failed to install Ansible roles: %w", err)
+		}
+		// Check if the directory containing galaxy_file also has a galaxy.yml
+		// If so, build and install that collection
+		if err := ap.installLocalCollection(config.GalaxyFile); err != nil {
+			return fmt.Errorf("failed to install local collection: %w", err)
 		}
 	}
 
@@ -206,5 +232,80 @@ func (ap *AnsibleProvisioner) installCollections(galaxyFile string) error {
 	}
 
 	logging.Info("Ansible collections installed successfully")
+	return nil
+}
+
+// installRoles installs Ansible Galaxy roles from requirements.yml
+func (ap *AnsibleProvisioner) installRoles(galaxyFile string) error {
+	logging.Info("Installing Ansible roles from %s", galaxyFile)
+
+	// Copy galaxy file to container
+	galaxyDest := "/tmp/requirements.yml"
+	if err := ap.builder.Add(galaxyDest, false, buildah.AddAndCopyOptions{}, galaxyFile); err != nil {
+		return fmt.Errorf("failed to copy galaxy file to container: %w", err)
+	}
+
+	runOpts := ap.getRunOptions()
+
+	// Install roles
+	installCmd := []string{
+		"/bin/sh", "-c",
+		fmt.Sprintf("ansible-galaxy role install -r %s --force", galaxyDest),
+	}
+
+	if err := ap.builder.Run(installCmd, runOpts); err != nil {
+		return fmt.Errorf("failed to install roles: %w", err)
+	}
+
+	// Clean up
+	cleanupCmd := []string{"/bin/sh", "-c", fmt.Sprintf("rm -f %s", galaxyDest)}
+	if err := ap.builder.Run(cleanupCmd, runOpts); err != nil {
+		logging.Warn("Failed to clean up galaxy file: %v", err)
+	}
+
+	logging.Info("Ansible roles installed successfully")
+	return nil
+}
+
+// installLocalCollection checks if a galaxy.yml exists in the same directory as
+// the requirements file, and if so, builds and installs that collection
+func (ap *AnsibleProvisioner) installLocalCollection(requirementsPath string) error {
+	// Get the directory containing requirements.yml
+	requirementsDir := filepath.Dir(requirementsPath)
+
+	// Check if galaxy.yml exists in that directory
+	galaxyYmlPath := filepath.Join(requirementsDir, "galaxy.yml")
+	if _, err := os.Stat(galaxyYmlPath); os.IsNotExist(err) {
+		logging.Debug("No galaxy.yml found at %s, skipping local collection install", galaxyYmlPath)
+		return nil
+	}
+
+	logging.Info("Found galaxy.yml at %s, building and installing local collection", galaxyYmlPath)
+
+	// Copy the entire collection directory to /tmp/collection in the container
+	collectionDest := "/tmp/collection"
+	if err := ap.builder.Add(collectionDest, false, buildah.AddAndCopyOptions{}, requirementsDir); err != nil {
+		return fmt.Errorf("failed to copy collection directory to container: %w", err)
+	}
+
+	runOpts := ap.getRunOptions()
+
+	// Build and install the collection
+	installCmd := []string{
+		"/bin/sh", "-c",
+		fmt.Sprintf("cd %s && ansible-galaxy collection build --force && ansible-galaxy collection install *.tar.gz --force", collectionDest),
+	}
+
+	if err := ap.builder.Run(installCmd, runOpts); err != nil {
+		return fmt.Errorf("failed to build and install local collection: %w", err)
+	}
+
+	// Clean up
+	cleanupCmd := []string{"/bin/sh", "-c", fmt.Sprintf("rm -rf %s", collectionDest)}
+	if err := ap.builder.Run(cleanupCmd, runOpts); err != nil {
+		logging.Warn("Failed to clean up collection directory: %v", err)
+	}
+
+	logging.Info("Local collection installed successfully")
 	return nil
 }

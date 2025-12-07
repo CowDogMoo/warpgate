@@ -53,10 +53,20 @@ func NewStorageConfig() *StorageConfig {
 
 	// Check if running as root
 	if os.Geteuid() == 0 {
+		// When running inside a container (Docker/Podman), we need VFS
+		// because overlay cannot be stacked on top of overlay
+		driver := "vfs"
+		if !isRunningInContainer() && hasFuseOverlayfs() {
+			driver = "overlay"
+			logging.Debug("Not in container and fuse-overlayfs available, using overlay driver")
+		} else {
+			logging.Debug("Running in container or no fuse-overlayfs, using vfs driver for compatibility")
+		}
+
 		return &StorageConfig{
 			root:    "/var/lib/containers/storage",
 			runroot: "/run/containers/storage",
-			driver:  "overlay",
+			driver:  driver,
 		}
 	}
 
@@ -81,6 +91,28 @@ func NewStorageConfig() *StorageConfig {
 		runroot: filepath.Join(xdgRuntimeDir, "containers"),
 		driver:  driver,
 	}
+}
+
+// isRunningInContainer detects if we're running inside a container
+// This checks for common container indicators
+func isRunningInContainer() bool {
+	// Check for /.dockerenv file (Docker)
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+
+	// Check for container environment in /proc/1/cgroup
+	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
+		content := string(data)
+		if len(content) > 0 && (
+			// Docker/Podman indicators
+			os.Getenv("container") != "" ||
+			os.Getenv("KUBERNETES_SERVICE_HOST") != "") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // hasFuseOverlayfs checks if fuse-overlayfs is available

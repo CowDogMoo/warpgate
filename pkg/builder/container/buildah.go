@@ -747,8 +747,14 @@ func GetDefaultConfig() BuildahConfig {
 
 	homeDir, _ := os.UserHomeDir()
 
-	// Use storage driver from config
-	storageDriver := globalCfg.Storage.Driver
+	// Use storage driver from config, but leave empty to enable auto-detection
+	// if running in a nested container environment where overlay won't work
+	storageDriver := ""
+	if globalCfg.Storage.Driver != "" && globalCfg.Storage.Driver != "overlay" {
+		// Only use non-overlay drivers from config
+		// For overlay, let NewStorageConfig() auto-detect based on environment
+		storageDriver = globalCfg.Storage.Driver
+	}
 
 	// Use platform-appropriate paths
 	var storageRoot, runRoot string

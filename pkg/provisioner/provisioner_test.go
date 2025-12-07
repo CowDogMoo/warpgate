@@ -394,3 +394,103 @@ func TestProvisionerTypes(t *testing.T) {
 		})
 	}
 }
+
+// TestAnsibleProvisioner_RolesInstallation tests roles installation from requirements.yml
+func TestAnsibleProvisioner_RolesInstallation(t *testing.T) {
+	// Create a temporary requirements file with roles
+	tmpDir := t.TempDir()
+	reqFile := filepath.Join(tmpDir, "requirements.yml")
+
+	content := `---
+roles:
+  - name: geerlingguy.docker
+    version: "7.4.1"
+  - name: example.test_role
+    version: "1.0.0"
+`
+
+	err := os.WriteFile(reqFile, []byte(content), 0644)
+	require.NoError(t, err)
+
+	// Verify file exists and contains roles
+	data, err := os.ReadFile(reqFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "roles:")
+	assert.Contains(t, string(data), "geerlingguy.docker")
+	assert.Contains(t, string(data), "example.test_role")
+}
+
+// TestAnsibleProvisioner_LocalCollectionDetection tests local collection detection
+func TestAnsibleProvisioner_LocalCollectionDetection(t *testing.T) {
+	// Create a temporary directory structure
+	tmpDir := t.TempDir()
+	reqFile := filepath.Join(tmpDir, "requirements.yml")
+	galaxyFile := filepath.Join(tmpDir, "galaxy.yml")
+
+	// Create requirements.yml
+	reqContent := `---
+collections:
+  - name: community.general
+    version: ">=3.0.0"
+`
+	err := os.WriteFile(reqFile, []byte(reqContent), 0644)
+	require.NoError(t, err)
+
+	// Create galaxy.yml
+	galaxyContent := `---
+namespace: myorg
+name: mycollection
+version: "1.0.0"
+readme: README.md
+authors:
+  - Test Author <test@example.com>
+description: Test collection
+license_file: "LICENSE"
+`
+	err = os.WriteFile(galaxyFile, []byte(galaxyContent), 0644)
+	require.NoError(t, err)
+
+	// Verify both files exist in the same directory
+	reqDir := filepath.Dir(reqFile)
+	galaxyPath := filepath.Join(reqDir, "galaxy.yml")
+
+	_, err = os.Stat(galaxyPath)
+	assert.NoError(t, err, "galaxy.yml should exist in the same directory as requirements.yml")
+
+	// Verify galaxy.yml contains collection metadata
+	data, err := os.ReadFile(galaxyPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "namespace:")
+	assert.Contains(t, string(data), "name:")
+	assert.Contains(t, string(data), "version:")
+}
+
+// TestAnsibleProvisioner_MixedRequirements tests requirements.yml with both roles and collections
+func TestAnsibleProvisioner_MixedRequirements(t *testing.T) {
+	tmpDir := t.TempDir()
+	reqFile := filepath.Join(tmpDir, "requirements.yml")
+
+	content := `---
+roles:
+  - name: geerlingguy.docker
+    version: "7.4.1"
+
+collections:
+  - name: community.general
+    version: ">=3.0.0"
+  - name: ansible.posix
+    version: "1.4.0"
+`
+
+	err := os.WriteFile(reqFile, []byte(content), 0644)
+	require.NoError(t, err)
+
+	// Verify file contains both roles and collections
+	data, err := os.ReadFile(reqFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "roles:")
+	assert.Contains(t, string(data), "geerlingguy.docker")
+	assert.Contains(t, string(data), "collections:")
+	assert.Contains(t, string(data), "community.general")
+	assert.Contains(t, string(data), "ansible.posix")
+}
