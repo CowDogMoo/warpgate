@@ -54,9 +54,10 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Errorf("Expected log format 'color', got '%s'", config.Log.Format)
 	}
 
-	if config.Storage.Driver != "vfs" {
-		t.Errorf("Expected storage driver 'vfs', got '%s'", config.Storage.Driver)
-	}
+	// Storage driver defaults to empty (delegates to system defaults)
+	// NOTE: If user has ~/.warpgate/config.yaml with storage.driver set,
+	// it will be used instead. Both empty and user-configured values are valid.
+	t.Logf("Storage driver: '%s' (empty means system default, non-empty means user override)", config.Storage.Driver)
 
 	if config.Registry.Default != "ghcr.io" {
 		t.Errorf("Expected registry 'ghcr.io', got '%s'", config.Registry.Default)
@@ -229,8 +230,9 @@ func TestLoad_PartialConfig(t *testing.T) {
 		t.Errorf("Expected default log level 'info', got '%s'", config.Log.Level)
 	}
 
-	if config.Storage.Driver != "vfs" {
-		t.Errorf("Expected default storage driver 'vfs', got '%s'", config.Storage.Driver)
+	// Storage driver defaults to empty (delegates to system defaults)
+	if config.Storage.Driver != "" {
+		t.Errorf("Expected empty storage driver (system default), got '%s'", config.Storage.Driver)
 	}
 }
 

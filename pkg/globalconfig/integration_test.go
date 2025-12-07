@@ -67,8 +67,9 @@ log:
 	}
 
 	// Values not set anywhere should have defaults
-	if config.Storage.Driver != "vfs" {
-		t.Errorf("Expected default storage driver 'vfs', got '%s'", config.Storage.Driver)
+	// Storage driver defaults to empty (delegates to system defaults)
+	if config.Storage.Driver != "" {
+		t.Errorf("Expected empty storage driver (system default), got '%s'", config.Storage.Driver)
 	}
 }
 
