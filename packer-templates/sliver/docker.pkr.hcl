@@ -59,10 +59,13 @@ build {
   # Pre-provisioner for ansible
   provisioner "shell" {
     only = ["docker.arm64", "docker.amd64"]
+    environment_vars = [
+      "DEBIAN_FRONTEND=noninteractive"
+    ]
     inline = [
-      "echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections",
       "apt-get update",
       "apt-get install -y --no-install-recommends python3 python3-pip sudo",
+      "apt-get install -y --no-install-recommends ansible || dpkg --configure -a && apt-get install -y --no-install-recommends ansible",
       "rm -rf /var/lib/apt/lists/*"
     ]
   }

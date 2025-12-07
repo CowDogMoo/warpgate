@@ -38,9 +38,13 @@ build {
 
   # Install minimal Python dependencies for Ansible and create non-root user
   provisioner "shell" {
+    environment_vars = [
+      "DEBIAN_FRONTEND=noninteractive"
+    ]
     inline = [
       "apt-get update",
       "apt-get install -y --no-install-recommends python3 python3-pip sudo git curl ca-certificates",
+      "apt-get install -y --no-install-recommends ansible || dpkg --configure -a && apt-get install -y --no-install-recommends ansible",
       "groupadd -g ${var.container_gid} ${var.container_user}",
       "useradd -m -u ${var.container_uid} -g ${var.container_gid} -s /bin/bash ${var.container_user}",
       "echo '${var.container_user} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/${var.container_user}",
