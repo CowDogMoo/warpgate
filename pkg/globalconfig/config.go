@@ -107,6 +107,7 @@ type ContainerConfig struct {
 	DefaultRegistry    string   `mapstructure:"default_registry"`
 	DefaultBaseImage   string   `mapstructure:"default_base_image"`
 	DefaultBaseVersion string   `mapstructure:"default_base_version"`
+	Runtime            string   `mapstructure:"runtime"` // OCI runtime path (e.g., /usr/bin/crun, /usr/bin/runc)
 }
 
 // ConvertConfig holds Packer conversion defaults
@@ -239,6 +240,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("container.default_registry", "localhost")
 	v.SetDefault("container.default_base_image", "ubuntu")
 	v.SetDefault("container.default_base_version", "latest")
+	v.SetDefault("container.runtime", "/usr/bin/crun") // Default to crun, fallback to runc if not available
 
 	// Convert/Packer defaults
 	v.SetDefault("convert.default_version", "1.0.0")
@@ -298,6 +300,7 @@ func bindEnvVars(v *viper.Viper) {
 	_ = v.BindEnv("container.default_registry", "WARPGATE_CONTAINER_DEFAULT_REGISTRY")
 	_ = v.BindEnv("container.default_base_image", "WARPGATE_CONTAINER_DEFAULT_BASE_IMAGE")
 	_ = v.BindEnv("container.default_base_version", "WARPGATE_CONTAINER_DEFAULT_BASE_VERSION")
+	_ = v.BindEnv("container.runtime", "WARPGATE_CONTAINER_RUNTIME")
 
 	// Convert
 	_ = v.BindEnv("convert.default_version", "WARPGATE_CONVERT_DEFAULT_VERSION")

@@ -36,22 +36,28 @@ import (
 // AnsibleProvisioner runs Ansible playbooks inside the container
 type AnsibleProvisioner struct {
 	builder *buildah.Builder
+	runtime string // OCI runtime path (e.g., /usr/bin/crun, /usr/bin/runc)
 }
 
 // NewAnsibleProvisioner creates a new Ansible provisioner
-func NewAnsibleProvisioner(bldr *buildah.Builder) *AnsibleProvisioner {
+func NewAnsibleProvisioner(bldr *buildah.Builder, runtime string) *AnsibleProvisioner {
 	return &AnsibleProvisioner{
 		builder: bldr,
+		runtime: runtime,
 	}
 }
 
 // getRunOptions returns standard run options with OCI isolation and necessary capabilities
-func getRunOptions() buildah.RunOptions {
+func (ap *AnsibleProvisioner) getRunOptions() buildah.RunOptions {
+	runtime := ap.runtime
+	if runtime == "" {
+		runtime = "/usr/bin/crun" // Default fallback
+	}
 	return buildah.RunOptions{
 		Stdout:          os.Stdout,
 		Stderr:          os.Stderr,
 		Isolation:       buildah.IsolationOCI,
-		Runtime:         "/usr/bin/runc",
+		Runtime:         runtime,
 		AddCapabilities: []string{"CAP_SETUID", "CAP_SETGID", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER"},
 	}
 }
@@ -65,7 +71,7 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 	logging.Info("Running Ansible playbook: %s", config.PlaybookPath)
 
 	// Set up run options
-	runOpts := getRunOptions()
+	runOpts := ap.getRunOptions()
 
 	// Set working directory if specified
 	if config.WorkingDir != "" {
@@ -139,7 +145,7 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 func (ap *AnsibleProvisioner) ensureAnsible() error {
 	logging.Debug("Checking for Ansible installation")
 
-	runOpts := getRunOptions()
+	runOpts := ap.getRunOptions()
 
 	// Check if ansible is already installed
 	checkCmd := []string{"/bin/sh", "-c", "command -v ansible-playbook"}
@@ -183,7 +189,7 @@ func (ap *AnsibleProvisioner) installCollections(galaxyFile string) error {
 		return fmt.Errorf("failed to copy galaxy file to container: %w", err)
 	}
 
-	runOpts := getRunOptions()
+	runOpts := ap.getRunOptions()
 
 	// Install collections
 	installCmd := []string{

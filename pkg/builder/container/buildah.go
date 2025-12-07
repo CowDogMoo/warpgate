@@ -509,7 +509,8 @@ func (b *BuildahBuilder) runProvisioners(ctx context.Context, provisioners []bui
 
 // runShellProvisioner runs shell commands inside the container
 func (b *BuildahBuilder) runShellProvisioner(ctx context.Context, prov builder.Provisioner) error {
-	shellProv := provisioner.NewShellProvisioner(b.builder)
+	runtime := b.globalConfig.Container.Runtime
+	shellProv := provisioner.NewShellProvisioner(b.builder, runtime)
 	return shellProv.Provision(ctx, prov)
 }
 
@@ -521,7 +522,8 @@ func (b *BuildahBuilder) runScriptProvisioner(ctx context.Context, prov builder.
 
 // runAnsibleProvisioner runs Ansible playbooks
 func (b *BuildahBuilder) runAnsibleProvisioner(ctx context.Context, prov builder.Provisioner) error {
-	ansibleProv := provisioner.NewAnsibleProvisioner(b.builder)
+	runtime := b.globalConfig.Container.Runtime
+	ansibleProv := provisioner.NewAnsibleProvisioner(b.builder, runtime)
 	return ansibleProv.Provision(ctx, prov)
 }
 

@@ -35,12 +35,14 @@ import (
 // ShellProvisioner runs shell commands inside the container
 type ShellProvisioner struct {
 	builder *buildah.Builder
+	runtime string // OCI runtime path (e.g., /usr/bin/crun, /usr/bin/runc)
 }
 
 // NewShellProvisioner creates a new shell provisioner
-func NewShellProvisioner(bldr *buildah.Builder) *ShellProvisioner {
+func NewShellProvisioner(bldr *buildah.Builder, runtime string) *ShellProvisioner {
 	return &ShellProvisioner{
 		builder: bldr,
+		runtime: runtime,
 	}
 }
 
@@ -53,11 +55,15 @@ func (sp *ShellProvisioner) Provision(ctx context.Context, config builder.Provis
 	logging.Info("Running %d shell commands", len(config.Inline))
 
 	// Set up run options with OCI isolation for full container capabilities
+	runtime := sp.runtime
+	if runtime == "" {
+		runtime = "/usr/bin/crun" // Default fallback
+	}
 	runOpts := buildah.RunOptions{
 		Stdout:          os.Stdout,
 		Stderr:          os.Stderr,
 		Isolation:       buildah.IsolationOCI,
-		Runtime:         "/usr/bin/runc",
+		Runtime:         runtime,
 		AddCapabilities: []string{"CAP_SETUID", "CAP_SETGID", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER"},
 	}
 

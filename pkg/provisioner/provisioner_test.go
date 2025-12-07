@@ -36,13 +36,13 @@ import (
 // TestNewShellProvisioner tests the shell provisioner constructor
 func TestNewShellProvisioner(t *testing.T) {
 	// Shell provisioner can be created with nil builder for unit tests
-	sp := NewShellProvisioner(nil)
+	sp := NewShellProvisioner(nil, "/usr/bin/crun")
 	assert.NotNil(t, sp)
 }
 
 // TestShellProvisioner_Provision_NoCommands tests error handling when no commands provided
 func TestShellProvisioner_Provision_NoCommands(t *testing.T) {
-	sp := NewShellProvisioner(nil)
+	sp := NewShellProvisioner(nil, "/usr/bin/crun")
 	ctx := context.Background()
 
 	config := builder.Provisioner{
@@ -156,13 +156,13 @@ func TestScriptProvisioner_ScriptPaths(t *testing.T) {
 
 // TestNewAnsibleProvisioner tests the ansible provisioner constructor
 func TestNewAnsibleProvisioner(t *testing.T) {
-	ap := NewAnsibleProvisioner(nil)
+	ap := NewAnsibleProvisioner(nil, "/usr/bin/crun")
 	assert.NotNil(t, ap)
 }
 
 // TestAnsibleProvisioner_Provision_NoPlaybook tests error handling when no playbook provided
 func TestAnsibleProvisioner_Provision_NoPlaybook(t *testing.T) {
-	ap := NewAnsibleProvisioner(nil)
+	ap := NewAnsibleProvisioner(nil, "/usr/bin/crun")
 	ctx := context.Background()
 
 	config := builder.Provisioner{

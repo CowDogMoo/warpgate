@@ -1,0 +1,73 @@
+# Warpgate Container Image
+
+Container image builder and template manager. Warpgate provides a unified interface
+for building container images using Buildah and managing infrastructure templates.
+
+## Container Image Creation and Pushing to GHCR
+
+To push the container image to the `GitHub Container Registry` (`GHCR`), you
+will need to create a classic personal access token by following
+[these instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+Once you have the token, assign the value to the `GITHUB_TOKEN` environment variable.
+
+Next you'll want to create a new buildx builder instance and set it as the
+active builder. This will allow you to build and push the container image to
+`GHCR` for multiple architectures.
+
+```bash
+export BUILDX_NO_DEFAULT_ATTESTATIONS=1 # Avoid unknown/unknown images from being pushed
+docker buildx create --name mybuilder --bootstrap --use --driver docker-container
+```
+
+With that out of the way, you can login to `GHCR` and proceed to build and push
+the container image:
+
+```bash
+YOUR_GITHUB_USER=cowdogmoo # Replace with your GitHub username
+
+# GITHUB_TOKEN is a personal access token with the `write:packages` scope
+echo $GITHUB_TOKEN | docker login ghcr.io -u $YOUR_GITHUB_USER --password-stdin
+
+docker buildx bake --file dockerfiles/warpgate/docker-bake.hcl \
+  --push \
+  --set "*.tags=ghcr.io/$YOUR_GITHUB_USER/warpgate:latest"
+```
+
+### Testing the Container Image
+
+If everything worked, you should now be able to pull the new container image
+from `GHCR`:
+
+```bash
+docker pull ghcr.io/$YOUR_GITHUB_USER/warpgate:latest
+```
+
+## Usage
+
+Run warpgate commands using the container:
+
+```bash
+# Show help
+docker run --rm ghcr.io/cowdogmoo/warpgate:latest --help
+
+# Build a template
+docker run --rm -v $(pwd):/workspace \
+  --privileged \
+  ghcr.io/cowdogmoo/warpgate:latest build <template-name>
+
+# List available templates
+docker run --rm -v $(pwd):/workspace \
+  ghcr.io/cowdogmoo/warpgate:latest list
+```
+
+**Note:** The `--privileged` flag is required for Buildah to function properly
+within the container.
+
+## Development
+
+For local development and testing, you can build the image locally:
+
+```bash
+docker build -f dockerfiles/warpgate/Dockerfile -t warpgate:dev .
+```
