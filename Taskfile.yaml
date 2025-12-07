@@ -44,3 +44,90 @@ tasks:
     cmds:
       - task: schema:generate
       - git diff --exit-code schema/warpgate-template.json || (echo "Schema is out of date. Run 'task schema:generate' and commit the changes." && exit 1)
+
+  images:discover:
+    desc: Discover all container images with docker-bake.hcl files
+    silent: true
+    cmds:
+      - |
+        echo "Discovering container images..."
+        find dockerfiles -mindepth 1 -maxdepth 1 -type d -exec test -f {}/docker-bake.hcl \; -exec basename {} \;
+
+  images:build:
+    desc: "Build a specific container image (usage: task images:build IMAGE=warpgate)"
+    vars:
+      IMAGE: '{{.IMAGE | default ""}}'
+      PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64"}}'
+      PUSH: '{{.PUSH | default "false"}}'
+    preconditions:
+      - sh: test -n "{{.IMAGE}}"
+        msg: "IMAGE variable is required. Usage - task images:build IMAGE=warpgate"
+      - sh: test -f "dockerfiles/{{.IMAGE}}/docker-bake.hcl"
+        msg: "docker-bake.hcl not found for image {{.IMAGE}}"
+    cmds:
+      - |
+        echo "Building container image: {{.IMAGE}}"
+        echo "Platforms: {{.PLATFORMS}}"
+        echo "Push: {{.PUSH}}"
+
+        # Ensure buildx builder exists and is active
+        docker buildx inspect multiarch-builder 2>/dev/null || \
+          docker buildx create --name multiarch-builder --bootstrap --use --driver docker-container
+        docker buildx use multiarch-builder
+
+        # Build using docker bake
+        PUSH_FLAG=""
+        if [ "{{.PUSH}}" = "true" ]; then
+          PUSH_FLAG="--push"
+        fi
+
+        docker buildx bake \
+          --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
+          --set "*.platform={{.PLATFORMS}}" \
+          $PUSH_FLAG \
+          multi
+
+  images:build-all:
+    desc: "Build all container images (use PUSH=true to push to registry)"
+    vars:
+      PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64"}}'
+      PUSH: '{{.PUSH | default "false"}}'
+    cmds:
+      - |
+        echo "Discovering and building all container images..."
+        echo "Platforms: {{.PLATFORMS}}"
+        echo "Push: {{.PUSH}}"
+        echo ""
+
+        IMAGES=$(find dockerfiles -mindepth 1 -maxdepth 1 -type d -exec test -f {}/docker-bake.hcl \; -exec basename {} \;)
+
+        for image in $IMAGES; do
+          echo "========================================="
+          echo "Building: $image"
+          echo "========================================="
+          task images:build IMAGE=$image PLATFORMS={{.PLATFORMS}} PUSH={{.PUSH}}
+          echo ""
+        done
+
+        echo "✅ All images built successfully!"
+
+  images:load:
+    desc: "Build and load a container image locally (single platform)"
+    vars:
+      IMAGE: '{{.IMAGE | default ""}}'
+      PLATFORM: '{{.PLATFORM | default "linux/amd64"}}'
+    preconditions:
+      - sh: test -n "{{.IMAGE}}"
+        msg: "IMAGE variable is required. Usage - task images:load IMAGE=warpgate"
+      - sh: test -f "dockerfiles/{{.IMAGE}}/docker-bake.hcl"
+        msg: "docker-bake.hcl not found for image: {{.IMAGE}}"
+    cmds:
+      - |
+        echo "Building and loading container image: {{.IMAGE}}"
+        echo "Platform: {{.PLATFORM}}"
+
+        docker buildx bake \
+          --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
+          --set "*.platform={{.PLATFORM}}" \
+          --load \
+          amd64

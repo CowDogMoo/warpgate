@@ -10,11 +10,13 @@ on:
   pull_request:
     paths:
       - "dockerfiles/**"
+      - "Taskfile.yaml"
       - ".github/workflows/dockerfile-image-builder.yaml"
   push:
     branches: [main]
     paths:
       - "dockerfiles/**"
+      - "Taskfile.yaml"
       - ".github/workflows/dockerfile-image-builder.yaml"
 
 concurrency:
@@ -35,7 +37,13 @@ jobs:
       - name: Setup git repository
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-      - name: Discover images with docker-bake.hcl
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discover images with Taskfile
         id: set-matrix
         env:
           INPUT_IMAGE: ${{ github.event.inputs.image }}
@@ -44,8 +52,8 @@ jobs:
             # Single image specified via workflow_dispatch
             echo "matrix=[\"$INPUT_IMAGE\"]" >> "$GITHUB_OUTPUT"
           else
-            # Find all directories with docker-bake.hcl
-            images=$(find dockerfiles -mindepth 1 -maxdepth 1 -type d -exec test -f {}/docker-bake.hcl \; -exec basename {} \; | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            # Use Taskfile to discover images
+            images=$(task images:discover | grep -v "Discovering" | jq -R -s -c 'split("\n") | map(select(length > 0))')
             echo "matrix=$images" >> "$GITHUB_OUTPUT"
           fi
 
@@ -60,11 +68,14 @@ jobs:
       - name: Setup git repository
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
 
       - name: Log in to the GitHub Container Registry
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
@@ -73,13 +84,8 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.image }}
-        uses: docker/bake-action@5be5f02ff8819ecd3092ea6b2e6261c31774f2b4 # v6
-        with:
-          files: ./dockerfiles/${{ matrix.image }}/docker-bake.hcl
-          provenance: false # Stop unknown/unknown images from being pushed
-          push: true
-          set: |
-            *.platform=linux/amd64,linux/arm64
-            *.args.REPO=ghcr.io/cowdogmoo/${{ matrix.image }}
-            *.args.TAG=latest
+      - name: Build and push ${{ matrix.image }} using Taskfile
+        env:
+          BUILDX_NO_DEFAULT_ATTESTATIONS: 1
+        run: |
+          task images:build IMAGE=${{ matrix.image }} PUSH=true
