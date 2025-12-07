@@ -76,16 +76,21 @@ tasks:
         docker buildx use multiarch-builder
 
         # Build using docker bake
-        PUSH_FLAG=""
         if [ "{{.PUSH}}" = "true" ]; then
-          PUSH_FLAG="--push"
+          # Push to registry
+          docker buildx bake \
+            --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
+            --set "*.platform={{.PLATFORMS}}" \
+            --set "*.output=type=registry,push=true" \
+            multi
+        else
+          # Build locally without push (multi-platform images stay in build cache)
+          docker buildx bake \
+            --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
+            --set "*.platform={{.PLATFORMS}}" \
+            --set "*.output=type=image,push=false" \
+            multi
         fi
-
-        docker buildx bake \
-          --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
-          --set "*.platform={{.PLATFORMS}}" \
-          $PUSH_FLAG \
-          multi
 
   images:build-all:
     desc: "Build all container images (use PUSH=true to push to registry)"
@@ -126,8 +131,17 @@ tasks:
         echo "Building and loading container image: {{.IMAGE}}"
         echo "Platform: {{.PLATFORM}}"
 
+        # Determine which target to use based on platform
+        if echo "{{.PLATFORM}}" | grep -q "arm64"; then
+          TARGET="arm64"
+        else
+          TARGET="amd64"
+        fi
+
+        echo "Target: $TARGET"
+
         docker buildx bake \
           --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
-          --set "*.platform={{.PLATFORM}}" \
+          --set "${TARGET}.tags={{.IMAGE}}:latest" \
           --load \
-          amd64
+          ${TARGET}

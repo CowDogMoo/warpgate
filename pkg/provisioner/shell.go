@@ -56,15 +56,25 @@ func (sp *ShellProvisioner) Provision(ctx context.Context, config builder.Provis
 
 	logging.Info("Running %d shell commands", len(config.Inline))
 
-	// Set up run options with OCI isolation for full container capabilities
+	// Detect if running in a nested container environment (e.g., Docker-in-Docker)
+	// In nested environments, OCI isolation may not work properly, so we fall back to chroot
+	isolation := buildah.IsolationOCI
 	runtime := sp.runtime
 	if runtime == "" {
 		runtime = "/usr/bin/crun" // Default fallback
 	}
+
+	// Check for nested container indicators
+	if isNestedContainer() {
+		logging.Info("Detected nested container environment, using chroot isolation")
+		isolation = buildah.IsolationChroot
+		runtime = "" // Runtime not needed for chroot isolation
+	}
+
 	runOpts := buildah.RunOptions{
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
-		Isolation: buildah.IsolationOCI,
+		Isolation: isolation,
 		Runtime:   runtime,
 		// Use host networking to allow apt-get to resolve hostnames
 		// while avoiding netavark nftables issues in nested containers
@@ -72,6 +82,7 @@ func (sp *ShellProvisioner) Provision(ctx context.Context, config builder.Provis
 			{Name: string(specs.NetworkNamespace), Host: true},
 		},
 		// Add capabilities needed for apt-get and package managers to drop privileges
+		// Only set these for OCI isolation (chroot doesn't support them)
 		AddCapabilities: []string{
 			"CAP_SETUID",
 			"CAP_SETGID",

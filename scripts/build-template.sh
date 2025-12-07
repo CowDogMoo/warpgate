@@ -106,9 +106,19 @@ if ! docker images | grep -q "^warpgate.*latest"; then
     echo -e "${YELLOW}warpgate:latest image not found locally${NC}"
     echo -e "${YELLOW}Building warpgate:latest image using task...${NC}"
     echo ""
-    task -y images:build IMAGE=warpgate
+
+    # Detect current platform for local loading
+    CURRENT_ARCH=$(uname -m)
+    if [ "$CURRENT_ARCH" = "arm64" ] || [ "$CURRENT_ARCH" = "aarch64" ]; then
+        PLATFORM="linux/arm64"
+    else
+        PLATFORM="linux/amd64"
+    fi
+
+    echo -e "${YELLOW}Detected platform: $PLATFORM${NC}"
+    task -y images:load IMAGE=warpgate PLATFORM="$PLATFORM"
     echo ""
-    echo -e "${GREEN}warpgate:latest image built successfully${NC}"
+    echo -e "${GREEN}warpgate:latest image built and loaded successfully${NC}"
     echo ""
 fi
 

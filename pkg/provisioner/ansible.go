@@ -145,7 +145,12 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 	}
 
 	// Build ansible-playbook command
-	ansibleCmd := fmt.Sprintf("ansible-playbook %s %s %s", inventoryArg, extraVarsArg, playbookDest)
+	// If no inventory is specified, use connection=local to run against the container itself
+	connectionArg := ""
+	if inventoryArg == "" {
+		connectionArg = "-c local"
+	}
+	ansibleCmd := fmt.Sprintf("ansible-playbook %s %s %s %s", connectionArg, inventoryArg, extraVarsArg, playbookDest)
 	cmdArray := []string{"/bin/sh", "-c", ansibleCmd}
 
 	logging.Info("Executing: %s", ansibleCmd)

@@ -38,5 +38,4 @@ target "multi" {
   inherits = ["amd64"]
   tags = tag("")
   platforms = ["linux/amd64", "linux/arm64"]
-  output = ["type=registry,push=true"]
 }
