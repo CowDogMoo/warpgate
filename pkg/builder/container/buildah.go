@@ -234,12 +234,12 @@ func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) 
 	fmt.Fprintf(os.Stderr, "DEBUG: SystemContext settings - OS: '%s', Arch: '%s', Variant: '%s', Platform: '%s'\n",
 		systemContext.OSChoice, systemContext.ArchitectureChoice, systemContext.VariantChoice, base.Platform)
 
-	// Build options with chroot isolation for macOS nested container compatibility
+	// Build options with OCI isolation for full container capabilities
 	options := buildah.BuilderOptions{
 		FromImage:     base.Image,
 		PullPolicy:    define.PullIfMissing,
 		SystemContext: systemContext,
-		Isolation:     define.IsolationChroot,
+		Isolation:     define.IsolationOCI,
 	}
 
 	if base.Pull {

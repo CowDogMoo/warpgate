@@ -45,6 +45,17 @@ func NewAnsibleProvisioner(bldr *buildah.Builder) *AnsibleProvisioner {
 	}
 }
 
+// getRunOptions returns standard run options with OCI isolation and necessary capabilities
+func getRunOptions() buildah.RunOptions {
+	return buildah.RunOptions{
+		Stdout:          os.Stdout,
+		Stderr:          os.Stderr,
+		Isolation:       buildah.IsolationOCI,
+		Runtime:         "/usr/bin/runc",
+		AddCapabilities: []string{"CAP_SETUID", "CAP_SETGID", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER"},
+	}
+}
+
 // Provision runs an Ansible playbook in the container
 func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Provisioner) error {
 	if config.PlaybookPath == "" {
@@ -54,10 +65,7 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 	logging.Info("Running Ansible playbook: %s", config.PlaybookPath)
 
 	// Set up run options
-	runOpts := buildah.RunOptions{
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	}
+	runOpts := getRunOptions()
 
 	// Set working directory if specified
 	if config.WorkingDir != "" {
@@ -131,10 +139,7 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 func (ap *AnsibleProvisioner) ensureAnsible() error {
 	logging.Debug("Checking for Ansible installation")
 
-	runOpts := buildah.RunOptions{
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	}
+	runOpts := getRunOptions()
 
 	// Check if ansible is already installed
 	checkCmd := []string{"/bin/sh", "-c", "command -v ansible-playbook"}
@@ -178,10 +183,7 @@ func (ap *AnsibleProvisioner) installCollections(galaxyFile string) error {
 		return fmt.Errorf("failed to copy galaxy file to container: %w", err)
 	}
 
-	runOpts := buildah.RunOptions{
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-	}
+	runOpts := getRunOptions()
 
 	// Install collections
 	installCmd := []string{
