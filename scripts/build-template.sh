@@ -121,6 +121,7 @@ echo -e "${YELLOW}Target: $TARGET${NC}"
 echo ""
 
 docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$TEMPLATE_PATH:/workspace/warpgate.yaml:ro" \
     -v "$COLLECTION_PATH:/provision:ro" \
     -e ARSENAL_REPO_PATH=/provision \
