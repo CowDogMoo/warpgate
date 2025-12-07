@@ -45,7 +45,6 @@ import (
 type BuildahBuilder struct {
 	store         storage.Store
 	systemContext *imagetypes.SystemContext
-	storageConfig *StorageConfig
 	workDir       string
 	builder       *buildah.Builder
 	containerID   string
@@ -80,54 +79,31 @@ func NewBuildahBuilder(cfg BuildahConfig) (*BuildahBuilder, error) {
 		workDir = tmpDir
 	}
 
-	// Initialize storage configuration
-	storageConfig := NewStorageConfig()
+	// Use containers/storage default options - respects system configuration
+	// This delegates storage configuration to the containers/storage library
+	// which properly handles /etc/containers/storage.conf and ~/.config/containers/storage.conf
+	storeOpts, err := storage.DefaultStoreOptions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get default storage options: %w", err)
+	}
+
+	// Allow user overrides from warpgate config or BuildahConfig
+	// Only override if explicitly provided - otherwise trust system defaults
 	if cfg.StorageRoot != "" {
-		storageConfig.SetRoot(cfg.StorageRoot)
+		storeOpts.GraphRoot = cfg.StorageRoot
+		logging.Debug("Using custom storage root: %s", cfg.StorageRoot)
 	}
 	if cfg.RunRoot != "" {
-		storageConfig.SetRunRoot(cfg.RunRoot)
+		storeOpts.RunRoot = cfg.RunRoot
+		logging.Debug("Using custom run root: %s", cfg.RunRoot)
 	}
 	if cfg.StorageDriver != "" {
-		storageConfig.SetDriver(cfg.StorageDriver)
+		storeOpts.GraphDriverName = cfg.StorageDriver
+		logging.Debug("Using custom storage driver: %s", cfg.StorageDriver)
 	}
 
-	// Configure storage
-	if err := storageConfig.Configure(); err != nil {
-		return nil, fmt.Errorf("failed to configure storage: %w", err)
-	}
-
-	// Write storage.conf to ensure clean configuration without conflicts
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-	configDir := filepath.Join(homeDir, ".config", "containers")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create config directory: %w", err)
-	}
-	storageConfPath := filepath.Join(configDir, "storage.conf")
-	if err := storageConfig.WriteStorageConf(storageConfPath); err != nil {
-		return nil, fmt.Errorf("failed to write storage config: %w", err)
-	}
-
-	// Set up storage options
-	// Create clean storage options without system defaults to avoid conflicts
-	// between different storage drivers (e.g., VFS vs overlay imagestore)
-	storeOpts := storage.StoreOptions{
-		GraphRoot:       storageConfig.GetRoot(),
-		RunRoot:         storageConfig.GetRunRoot(),
-		GraphDriverName: storageConfig.GetDriver(),
-		// Clear additional image stores to avoid driver conflicts
-		GraphDriverOptions: []string{},
-	}
-
-	// For overlay driver, set appropriate mount options
-	if storageConfig.GetDriver() == "overlay" {
-		storeOpts.GraphDriverOptions = []string{
-			"overlay.mountopt=nodev,metacopy=on",
-		}
-	}
+	logging.Info("Storage configuration: driver=%s, root=%s, runroot=%s",
+		storeOpts.GraphDriverName, storeOpts.GraphRoot, storeOpts.RunRoot)
 
 	// Initialize storage
 	store, err := storage.GetStore(storeOpts)
@@ -147,7 +123,6 @@ func NewBuildahBuilder(cfg BuildahConfig) (*BuildahBuilder, error) {
 	return &BuildahBuilder{
 		store:         store,
 		systemContext: systemContext,
-		storageConfig: storageConfig,
 		workDir:       workDir,
 		globalConfig:  globalCfg,
 	}, nil
@@ -197,7 +172,7 @@ func (b *BuildahBuilder) Build(ctx context.Context, cfg builder.Config) (*builde
 		Platform:     platform,
 		Architecture: arch,
 		Duration:     duration.String(),
-		Notes:        []string{fmt.Sprintf("Built with Buildah on %s", b.storageConfig.GetDriver())},
+		Notes:        []string{"Built with Buildah"},
 	}, nil
 }
 
@@ -731,57 +706,21 @@ registries = []
 }
 
 // GetDefaultConfig returns a default BuildahConfig
+// This now returns minimal overrides - storage.DefaultStoreOptions() handles the rest
 func GetDefaultConfig() BuildahConfig {
-	// Load global config for defaults
+	// Load global config to check for user overrides
 	globalCfg, err := globalconfig.Load()
 	if err != nil {
-		logging.Warn("Failed to load global config, using hardcoded defaults: %v", err)
-		// Fallback to hardcoded defaults if config load fails
-		homeDir, _ := os.UserHomeDir()
-		return BuildahConfig{
-			StorageDriver: "overlay",
-			StorageRoot:   filepath.Join(homeDir, ".local", "share", "containers", "storage"),
-			RunRoot:       filepath.Join(homeDir, ".local", "share", "containers", "runroot"),
-		}
+		logging.Warn("Failed to load global config, using system defaults: %v", err)
+		// Return empty config - storage.DefaultStoreOptions() will provide sensible defaults
+		return BuildahConfig{}
 	}
 
-	homeDir, _ := os.UserHomeDir()
-
-	// Use storage driver from config, but leave empty to enable auto-detection
-	// if running in a nested container environment where overlay won't work
-	storageDriver := ""
-	if globalCfg.Storage.Driver != "" && globalCfg.Storage.Driver != "overlay" {
-		// Only use non-overlay drivers from config
-		// For overlay, let NewStorageConfig() auto-detect based on environment
-		storageDriver = globalCfg.Storage.Driver
-	}
-
-	// Use platform-appropriate paths
-	var storageRoot, runRoot string
-
-	// Check if config has custom paths
-	if globalCfg.Storage.Root != "" {
-		storageRoot = globalCfg.Storage.Root
-	} else if os.Getenv("HOME") != "" && filepath.Base(homeDir) != "" {
-		storageRoot = filepath.Join(homeDir, ".local", "share", "containers", "storage")
-	}
-
-	// On Linux, try to use /run if available and writable
-	if os.Getenv("HOME") != "" && filepath.Base(homeDir) != "" {
-		runRoot = filepath.Join(homeDir, ".local", "share", "containers", "runroot")
-
-		runDir := filepath.Join("/run", "user", fmt.Sprintf("%d", os.Getuid()), "containers")
-		if _, err := os.Stat(filepath.Dir(runDir)); err == nil {
-			// Check if we can create the directory
-			if err := os.MkdirAll(runDir, 0755); err == nil {
-				runRoot = runDir
-			}
-		}
-	}
-
+	// Only populate fields if user explicitly configured them
+	// Empty values allow storage.DefaultStoreOptions() to use system defaults
 	return BuildahConfig{
-		StorageDriver: storageDriver,
-		StorageRoot:   storageRoot,
-		RunRoot:       runRoot,
+		StorageDriver: globalCfg.Storage.Driver, // Empty = use system default
+		StorageRoot:   globalCfg.Storage.Root,   // Empty = use system default
+		// RunRoot intentionally not set - system handles this
 	}
 }

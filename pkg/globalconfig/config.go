@@ -50,10 +50,12 @@ type RegistryConfig struct {
 	Token    string `mapstructure:"token"`
 }
 
-// StorageConfig holds storage backend configuration
+// StorageConfig holds storage backend configuration overrides
+// These are optional overrides for containers/storage defaults
+// If empty, warpgate delegates to system configuration (/etc/containers/storage.conf)
 type StorageConfig struct {
-	Driver string `mapstructure:"driver"`
-	Root   string `mapstructure:"root"`
+	Driver string `mapstructure:"driver"` // Optional: override storage driver (overlay, vfs, etc.)
+	Root   string `mapstructure:"root"`   // Optional: override storage root directory
 }
 
 // TemplatesConfig holds template-related configuration
@@ -197,11 +199,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "color")
 
-	// Storage defaults
-	v.SetDefault("storage.driver", "overlay")
+	// Storage defaults - empty values delegate to containers/storage system defaults
+	// Users can override these in config if needed for custom storage locations
+	v.SetDefault("storage.driver", "") // Empty = use system default from /etc/containers/storage.conf
+	v.SetDefault("storage.root", "")   // Empty = use system default
+
+	// Templates defaults
 	home, err := os.UserHomeDir()
 	if err == nil {
-		v.SetDefault("storage.root", filepath.Join(home, ".local", "share", "containers", "storage"))
 		v.SetDefault("templates.cache_dir", filepath.Join(home, ".warpgate", "cache", "templates"))
 	}
 
