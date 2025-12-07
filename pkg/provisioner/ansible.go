@@ -51,15 +51,25 @@ func NewAnsibleProvisioner(bldr *buildah.Builder, runtime string) *AnsibleProvis
 }
 
 // getRunOptions returns standard run options with OCI isolation and necessary capabilities
+// In nested container environments, falls back to chroot isolation for compatibility
 func (ap *AnsibleProvisioner) getRunOptions() buildah.RunOptions {
+	isolation := buildah.IsolationOCI
 	runtime := ap.runtime
 	if runtime == "" {
 		runtime = "/usr/bin/crun" // Default fallback
 	}
+
+	// Check for nested container environment and use chroot isolation if detected
+	if isNestedContainer() {
+		logging.Info("Detected nested container environment, using chroot isolation")
+		isolation = buildah.IsolationChroot
+		runtime = "" // Runtime not needed for chroot isolation
+	}
+
 	return buildah.RunOptions{
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,
-		Isolation: buildah.IsolationOCI,
+		Isolation: isolation,
 		Runtime:   runtime,
 		// Use host networking to allow package managers to resolve hostnames
 		// while avoiding netavark nftables issues in nested containers
@@ -67,6 +77,7 @@ func (ap *AnsibleProvisioner) getRunOptions() buildah.RunOptions {
 			{Name: string(specs.NetworkNamespace), Host: true},
 		},
 		// Add capabilities needed for apt-get and package managers to drop privileges
+		// Only applies to OCI isolation (chroot doesn't support them)
 		AddCapabilities: []string{
 			"CAP_SETUID",
 			"CAP_SETGID",
