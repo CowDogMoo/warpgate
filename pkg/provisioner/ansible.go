@@ -54,12 +54,9 @@ func (ap *AnsibleProvisioner) getRunOptions() buildah.RunOptions {
 		runtime = "/usr/bin/crun" // Default fallback
 	}
 	return buildah.RunOptions{
-		Stdout:           os.Stdout,
-		Stderr:           os.Stderr,
-		Isolation:        buildah.IsolationOCI,
-		Runtime:          runtime,
-		AddCapabilities:  []string{"CAP_SETUID", "CAP_SETGID", "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FOWNER"},
-		ConfigureNetwork: buildah.NetworkDisabled,
+		Stdout:    os.Stdout,
+		Stderr:    os.Stderr,
+		Isolation: buildah.IsolationChroot,
 	}
 }
 
