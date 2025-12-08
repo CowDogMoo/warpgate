@@ -8,8 +8,16 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Detect current architecture
+CURRENT_ARCH=$(uname -m)
+if [ "$CURRENT_ARCH" = "arm64" ] || [ "$CURRENT_ARCH" = "aarch64" ]; then
+    DEFAULT_ARCH="arm64"
+else
+    DEFAULT_ARCH="amd64"
+fi
+
 # Default values
-ARCH="arm64"
+ARCH="$DEFAULT_ARCH"
 TARGET="container"
 VERBOSE="--verbose"
 
@@ -24,7 +32,7 @@ TEMPLATES:
     sliver      Build the sliver template with arsenal collection
 
 OPTIONS:
-    -a, --arch ARCH         Architecture (default: arm64)
+    -a, --arch ARCH         Architecture (default: auto-detected)
     -t, --target TARGET     Build target (default: container)
     -v, --verbose           Enable verbose output (default: enabled)
     -q, --quiet             Disable verbose output
@@ -126,7 +134,7 @@ fi
 echo -e "${GREEN}Building $TEMPLATE template...${NC}"
 echo -e "${YELLOW}Template: $TEMPLATE_PATH${NC}"
 echo -e "${YELLOW}Collection: $COLLECTION_NAME${NC}"
-echo -e "${YELLOW}Architecture: $ARCH${NC}"
+echo -e "${YELLOW}Architecture: $ARCH (detected: $DEFAULT_ARCH)${NC}"
 echo -e "${YELLOW}Target: $TARGET${NC}"
 echo ""
 
