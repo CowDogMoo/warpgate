@@ -66,6 +66,13 @@ crun = [
 ]
 EOF
 
+# Use vfs storage driver to work around Docker Desktop 4.33+ DinD regression
+# See: https://github.com/docker/for-mac/issues/7413
+RUN cat <<'EOF' > /etc/containers/storage.conf
+[storage]
+driver = "vfs"
+EOF
+
 # Set working directory
 WORKDIR /workspace
 

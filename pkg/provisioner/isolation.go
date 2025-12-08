@@ -24,6 +24,12 @@ package provisioner
 
 import "os"
 
+// IsNested checks if we're running inside a container
+// Exported for use by other packages
+func IsNested() bool {
+	return isNestedContainer()
+}
+
 // isNestedContainer checks if we're running inside a container
 // This is used to determine if we should use chroot isolation instead of OCI
 //

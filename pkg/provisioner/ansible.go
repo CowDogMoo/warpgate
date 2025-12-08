@@ -59,13 +59,6 @@ func (ap *AnsibleProvisioner) getRunOptions() buildah.RunOptions {
 		runtime = "/usr/bin/crun" // Default fallback
 	}
 
-	// Check for nested container environment and use chroot isolation if detected
-	if isNestedContainer() {
-		logging.Info("Detected nested container environment, using chroot isolation")
-		isolation = buildah.IsolationChroot
-		runtime = "" // Runtime not needed for chroot isolation
-	}
-
 	return buildah.RunOptions{
 		Stdout:    os.Stdout,
 		Stderr:    os.Stderr,

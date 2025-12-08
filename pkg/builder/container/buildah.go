@@ -182,9 +182,6 @@ func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) 
 	logging.Info("Pulling base image: %s", base.Image)
 
 	// Configure system context for the platform
-	// We need to set the OS to "linux" since we're building Linux containers
-	// Force this regardless of host OS (e.g., darwin/macOS) since containers are always Linux
-	// Create a new SystemContext to avoid any inherited platform settings
 	systemContext := &imagetypes.SystemContext{
 		OSChoice: "linux",
 	}
@@ -193,7 +190,6 @@ func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) 
 	if base.Platform != "" {
 		parts := strings.Split(base.Platform, "/")
 		if len(parts) >= 1 {
-			// Explicitly set OS from platform if provided (should be "linux")
 			systemContext.OSChoice = parts[0]
 		}
 		if len(parts) >= 2 {
@@ -202,7 +198,6 @@ func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) 
 		if len(parts) >= 3 && parts[2] != "" {
 			systemContext.VariantChoice = parts[2]
 		}
-		// Don't set VariantChoice if not specified - leave it uninitialized
 	}
 
 	// Log the platform settings being used (before buildah.NewBuilder)
