@@ -266,7 +266,7 @@ func TestGet(t *testing.T) {
 
 // TestDetectOCIRuntime tests the runtime detection logic
 func TestDetectOCIRuntime(t *testing.T) {
-	runtime := detectOCIRuntime()
+	runtime := DetectOCIRuntime()
 
 	// On systems without crun/runc, should return empty string
 	// On systems with runtimes, should return a valid path

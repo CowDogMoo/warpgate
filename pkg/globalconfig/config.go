@@ -267,11 +267,11 @@ func populateRegistryCredentials(cfg *Config) {
 	}
 }
 
-// detectOCIRuntime finds an available OCI runtime on the system
+// DetectOCIRuntime finds an available OCI runtime on the system
 // Returns the first available runtime in order of preference: crun, runc
 // First searches PATH using exec.LookPath (most portable), then falls back to common paths
 // Paths are based on containers/common default runtime search locations
-func detectOCIRuntime() string {
+func DetectOCIRuntime() string {
 	// First try to find in PATH (most portable and idiomatic)
 	preferredRuntimes := []string{"crun", "runc"}
 	for _, runtime := range preferredRuntimes {
@@ -368,7 +368,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("container.default_base_image", "ubuntu")
 	v.SetDefault("container.default_base_version", "latest")
 	// Auto-detect available OCI runtime (crun preferred, runc fallback)
-	v.SetDefault("container.runtime", detectOCIRuntime())
+	v.SetDefault("container.runtime", DetectOCIRuntime())
 
 	// Convert/Packer defaults
 	v.SetDefault("convert.default_version", "1.0.0")

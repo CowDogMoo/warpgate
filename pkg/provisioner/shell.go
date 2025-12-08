@@ -30,6 +30,7 @@ import (
 	"github.com/containers/buildah"
 	"github.com/containers/buildah/define"
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -59,7 +60,11 @@ func (sp *ShellProvisioner) Provision(ctx context.Context, config builder.Provis
 	// Use OCI isolation with runtime and capabilities (works in Docker Desktop)
 	runtime := sp.runtime
 	if runtime == "" {
-		runtime = "/usr/bin/crun" // Default fallback
+		// Auto-detect available runtime (crun preferred, runc fallback)
+		runtime = globalconfig.DetectOCIRuntime()
+		if runtime == "" {
+			return fmt.Errorf("no OCI runtime found (tried crun, runc)")
+		}
 	}
 
 	runOpts := buildah.RunOptions{

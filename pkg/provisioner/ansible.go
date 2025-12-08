@@ -32,6 +32,7 @@ import (
 	"github.com/containers/buildah"
 	"github.com/containers/buildah/define"
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -52,11 +53,15 @@ func NewAnsibleProvisioner(bldr *buildah.Builder, runtime string) *AnsibleProvis
 
 // getRunOptions returns standard run options with OCI isolation and necessary capabilities
 // In nested container environments, falls back to chroot isolation for compatibility
-func (ap *AnsibleProvisioner) getRunOptions() buildah.RunOptions {
+func (ap *AnsibleProvisioner) getRunOptions() (buildah.RunOptions, error) {
 	isolation := buildah.IsolationOCI
 	runtime := ap.runtime
 	if runtime == "" {
-		runtime = "/usr/bin/crun" // Default fallback
+		// Auto-detect available runtime (crun preferred, runc fallback)
+		runtime = globalconfig.DetectOCIRuntime()
+		if runtime == "" {
+			return buildah.RunOptions{}, fmt.Errorf("no OCI runtime found (tried crun, runc)")
+		}
 	}
 
 	return buildah.RunOptions{
@@ -79,7 +84,7 @@ func (ap *AnsibleProvisioner) getRunOptions() buildah.RunOptions {
 			"CAP_DAC_OVERRIDE",
 			"CAP_FOWNER",
 		},
-	}
+	}, nil
 }
 
 // Provision runs an Ansible playbook in the container
@@ -91,7 +96,10 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 	logging.Info("Running Ansible playbook: %s", config.PlaybookPath)
 
 	// Set up run options
-	runOpts := ap.getRunOptions()
+	runOpts, err := ap.getRunOptions()
+	if err != nil {
+		return err
+	}
 
 	// Set working directory if specified
 	if config.WorkingDir != "" {
@@ -181,7 +189,10 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 func (ap *AnsibleProvisioner) ensureAnsible() error {
 	logging.Debug("Checking for Ansible installation")
 
-	runOpts := ap.getRunOptions()
+	runOpts, err := ap.getRunOptions()
+	if err != nil {
+		return err
+	}
 
 	// Check if ansible is already installed
 	checkCmd := []string{"/bin/sh", "-c", "command -v ansible-playbook"}
@@ -225,7 +236,10 @@ func (ap *AnsibleProvisioner) installCollections(galaxyFile string) error {
 		return fmt.Errorf("failed to copy galaxy file to container: %w", err)
 	}
 
-	runOpts := ap.getRunOptions()
+	runOpts, err := ap.getRunOptions()
+	if err != nil {
+		return err
+	}
 
 	// Install collections
 	installCmd := []string{
@@ -257,7 +271,10 @@ func (ap *AnsibleProvisioner) installRoles(galaxyFile string) error {
 		return fmt.Errorf("failed to copy galaxy file to container: %w", err)
 	}
 
-	runOpts := ap.getRunOptions()
+	runOpts, err := ap.getRunOptions()
+	if err != nil {
+		return err
+	}
 
 	// Install roles
 	installCmd := []string{
@@ -300,7 +317,10 @@ func (ap *AnsibleProvisioner) installLocalCollection(requirementsPath string) er
 		return fmt.Errorf("failed to copy collection directory to container: %w", err)
 	}
 
-	runOpts := ap.getRunOptions()
+	runOpts, err := ap.getRunOptions()
+	if err != nil {
+		return err
+	}
 
 	// Build and install the collection
 	installCmd := []string{
