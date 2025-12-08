@@ -30,16 +30,34 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	syntaxOnly bool
+)
+
 var validateCmd = &cobra.Command{
 	Use:   "validate [config]",
 	Short: "Validate a template configuration",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runValidate,
+	Long: `Validate a template configuration.
+
+By default, performs full validation including checking file existence.
+Use --syntax-only to validate only the structure and syntax without checking
+that referenced files (playbooks, scripts, etc.) exist on disk.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runValidate,
+}
+
+func init() {
+	validateCmd.Flags().BoolVar(&syntaxOnly, "syntax-only", false, "Only validate syntax and structure, skip file existence checks")
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
 	configPath := args[0]
-	logging.Info("Validating configuration: %s", configPath)
+
+	if syntaxOnly {
+		logging.Info("Validating configuration (syntax only): %s", configPath)
+	} else {
+		logging.Info("Validating configuration: %s", configPath)
+	}
 
 	// Load configuration
 	loader := config.NewLoader()
@@ -50,7 +68,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Validate configuration
 	validator := config.NewValidator()
-	if err := validator.Validate(cfg); err != nil {
+	if err := validator.ValidateWithOptions(cfg, config.ValidationOptions{
+		SyntaxOnly: syntaxOnly,
+	}); err != nil {
 		logging.Error("Validation failed: %v", err)
 		return fmt.Errorf("validation failed: %w", err)
 	}
