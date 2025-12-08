@@ -204,7 +204,7 @@ func TestBuildahConfig_Validation(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := tt.config
 			if cfg.StorageDriver == "" {
@@ -565,7 +565,7 @@ func TestBuildahBuilder_ProvisionerTypes(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.provisioner.Type != tt.expectedType {
 				t.Errorf("Expected provisioner type %s, got %s", tt.expectedType, tt.provisioner.Type)
@@ -632,7 +632,7 @@ func TestBuildahBuilder_ParseCommandValue(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := bldr.parseCommandValue(tt.input)
 			if len(result) != len(tt.expected) {
@@ -734,7 +734,7 @@ func TestBuildahBuilder_ApplyChange(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := bldr.applyChange(tt.change)
 			if tt.expectErr && err == nil {

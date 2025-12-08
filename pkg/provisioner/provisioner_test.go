@@ -146,7 +146,7 @@ func TestScriptProvisioner_ScriptPaths(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			basename := filepath.Base(tt.scriptPath)
 			assert.Equal(t, tt.expected, basename)
@@ -225,7 +225,7 @@ func TestAnsibleProvisioner_PlaybookPath(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ext := filepath.Ext(tt.playbookPath)
 			isYaml := ext == ".yml" || ext == ".yaml"
@@ -324,7 +324,7 @@ func TestEnvironmentVariables(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := builder.Provisioner{
 				Type:        "shell",
@@ -361,7 +361,7 @@ func TestWorkingDirectory(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := builder.Provisioner{
 				Type:       "shell",

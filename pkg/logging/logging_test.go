@@ -57,7 +57,7 @@ func TestNewCustomLogger(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := logging.NewCustomLogger(tt.level)
 			if logger == nil {
@@ -131,7 +131,7 @@ func TestCustomLogger_Error(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := logging.NewCustomLogger(slog.LevelError)
 			// Just ensure it doesn't panic
@@ -197,7 +197,7 @@ func TestInitialize(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := logging.Initialize(tt.logLevel, tt.logFormat, tt.quiet, tt.verbose)
 
@@ -247,7 +247,7 @@ func TestGlobalError(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Just ensure it doesn't panic
 			logging.Error(tt.firstArg, tt.args...)
@@ -288,7 +288,7 @@ func TestDetermineLogLevel(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := logging.DetermineLogLevel(tt.levelStr)
 			if got != tt.wantLevel {

@@ -75,7 +75,7 @@ func TestParseTemplateRef(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			name, version := parseTemplateRef(tt.ref)
 			assert.Equal(t, tt.expectedName, name)
@@ -113,7 +113,7 @@ func TestFileExists(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := fileExists(tt.path)
 			assert.Equal(t, tt.expected, result)
@@ -208,7 +208,7 @@ func TestTemplateLoader_LoadTemplate_ReferenceTypes(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Classify the reference type based on the logic in LoadTemplate
 			var refType string

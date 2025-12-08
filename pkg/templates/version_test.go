@@ -49,7 +49,7 @@ func TestNewVersionManager(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			vm, err := NewVersionManager(tt.version)
 			if tt.expectError {
@@ -112,7 +112,7 @@ func TestParseVersion(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ver, err := vm.ParseVersion(tt.version)
 			if tt.expectError {
@@ -177,7 +177,7 @@ func TestValidateConstraint(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := vm.ValidateConstraint(tt.version, tt.constraint)
 			if tt.expectError {
@@ -232,7 +232,7 @@ func TestCheckCompatibility(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			compatible, warnings, err := vm.CheckCompatibility(tt.templateVersion, tt.requiredWarpgateVersion)
 			if err != nil {
@@ -298,7 +298,7 @@ func TestCompareVersions(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := vm.CompareVersions(tt.v1, tt.v2)
 			if tt.expectError {
@@ -360,7 +360,7 @@ func TestIsBreakingChange(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := vm.IsBreakingChange(tt.oldVersion, tt.newVersion)
 			if tt.expectError {
@@ -417,7 +417,7 @@ func TestGetLatestVersion(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := vm.GetLatestVersion(tt.versions)
 			if tt.expectError {
@@ -492,7 +492,7 @@ func TestValidateVersionRange(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := vm.ValidateVersionRange(tt.version, tt.minVersion, tt.maxVersion)
 			if tt.expectError {

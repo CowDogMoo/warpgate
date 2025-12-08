@@ -87,7 +87,7 @@ Some more content here.`,
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create temporary directory
 			tmpDir := t.TempDir()
@@ -131,7 +131,7 @@ func TestBuildTargets(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			converter, err := NewPackerConverter(PackerConverterOptions{
 				IncludeAMI: tt.includeAMI,
@@ -663,7 +663,7 @@ func TestConvertHCLPostProcessors(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := converter.convertHCLPostProcessors(tt.builds)
 			assert.Len(t, result, tt.expected)
@@ -780,7 +780,7 @@ func TestConvertHCLProvisioners(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := converter.convertHCLProvisioners(tt.builds)
 			assert.Len(t, result, tt.expected)
@@ -843,7 +843,7 @@ func TestParseAnsibleExtraArgs(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := converter.parseAnsibleExtraArgs(tt.args)
 			assert.Equal(t, tt.expected, result)

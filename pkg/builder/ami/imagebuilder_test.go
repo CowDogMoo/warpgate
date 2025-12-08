@@ -64,7 +64,7 @@ func TestValidateConfig(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock image builder
 			ib := &ImageBuilder{
@@ -122,7 +122,7 @@ func TestDetermineTargetType(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Mock determineTargetType logic
 			var targetType string
@@ -157,7 +157,7 @@ func TestExtractAMIID(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.amiID == "" && !tt.wantErr {
 				t.Errorf("expected error for empty AMI ID")
@@ -200,7 +200,7 @@ func TestComponentDocument(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gen := &ComponentGenerator{}
 			_, err := gen.createComponentDocument(tt.provisioner)
@@ -237,7 +237,7 @@ func TestClientConfig(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.config.Region == "" && tt.config.Profile == "" && tt.config.AccessKeyID == "" {
 				t.Errorf("invalid test case - config should have at least one field set")

@@ -298,7 +298,7 @@ func TestManifestManager_MultipleArchitectures(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Verify entry structure
 			if len(tt.entries) != len(tt.expectedArch) && !tt.expectError {
@@ -356,7 +356,7 @@ func TestManifestEntry_Complete(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.valid {
 				if tt.entry.Architecture == "" {

@@ -76,7 +76,7 @@ func TestGitOperations_GetCachePath(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := gitOps.getCachePath(tt.gitURL, tt.version)
 
@@ -121,7 +121,7 @@ func TestGitOperations_CachePathCleaning(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := gitOps.getCachePath(tt.gitURL, tt.version)
 
@@ -198,7 +198,7 @@ func TestDirExists(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
+	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			path := tt.setup()
 			result := dirExists(path)
