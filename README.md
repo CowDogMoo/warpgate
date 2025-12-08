@@ -15,6 +15,8 @@ uses [Buildah](https://buildah.io/) as a library for container builds and AWS
 
 ## Installation
 
+> **Note:** Native execution of Warpgate requires Linux. On macOS and other platforms, you can use the containerized version or the provided build scripts with Docker/Podman.
+
 ### Using Go Install
 
 ```bash
@@ -92,6 +94,126 @@ warpgate manifest push myorg/myimage:latest
 
 ---
 
+## Platform-Specific Build Instructions
+
+### macOS (via Docker Desktop)
+
+On macOS, you can use the provided build script with Docker Desktop:
+
+```bash
+# Build a template using the build script
+bash scripts/build-template.sh sliver
+
+# Or build any template from the templates directory
+bash scripts/build-template.sh <template-name>
+```
+
+The script will automatically detect your architecture and use Docker Desktop's container runtime.
+
+**Using the warpgate container on macOS:**
+
+```bash
+# Pull the warpgate image
+docker pull ghcr.io/cowdogmoo/warpgate:latest
+
+# Run warpgate commands via container
+docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:latest validate /workspace/warpgate.yaml
+
+# Build using the container
+docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:latest build /workspace/warpgate.yaml
+```
+
+### Linux
+
+#### Option 1: Using the Container (Recommended for consistency)
+
+On Linux systems, you can use Docker or Podman to run warpgate in a container:
+
+```bash
+# Using Docker
+docker pull ghcr.io/cowdogmoo/warpgate:latest
+
+# Validate a template
+docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:latest validate /workspace/warpgate.yaml
+
+# Build a template
+docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:latest build /workspace/warpgate.yaml --arch amd64
+
+# Using Podman (alternative to Docker)
+podman pull ghcr.io/cowdogmoo/warpgate:latest
+
+podman run --rm -v $(pwd):/workspace:Z ghcr.io/cowdogmoo/warpgate:latest build /workspace/warpgate.yaml --arch amd64
+```
+
+**Note:** With Podman on Linux, use the `:Z` flag for proper SELinux labeling.
+
+#### Option 2: Native Execution (Linux only)
+
+On Linux systems, warpgate requires specific configuration for proper container builds:
+
+**1. Configure global config (`~/.warpgate/config.yaml`)**
+
+```yaml
+storage:
+  driver: vfs
+
+container:
+  runtime: runc
+```
+
+**2. Configure container runtime (`/etc/containers/containers.conf`)**
+
+```toml
+[engine]
+runtime = "runc"
+
+[engine.runtimes]
+runc = [
+  "/usr/bin/runc"
+]
+```
+
+**3. Build with proper permissions**
+
+When building templates that use variables (e.g., for Ansible collection paths), you have multiple options:
+
+**Option 1: CLI flags (Recommended)**
+```bash
+# Pass variables directly via CLI (no need for sudo -E)
+sudo warpgate build \
+  /path/to/warpgate-templates/templates/sliver/warpgate.yaml \
+  --var ARSENAL_REPO_PATH=/path/to/ansible-collection-arsenal \
+  --arch amd64 2>&1 | tee /tmp/warpgate.log
+```
+
+**Option 2: Variable files**
+```bash
+# Create a vars.yaml file
+cat > vars.yaml <<EOF
+ARSENAL_REPO_PATH: /path/to/ansible-collection-arsenal
+OTHER_VAR: value
+EOF
+
+# Use the var file
+sudo warpgate build warpgate.yaml --var-file vars.yaml --arch amd64
+```
+
+**Option 3: Environment variables (legacy)**
+```bash
+# Set environment variable and preserve with sudo -E
+export ARSENAL_REPO_PATH=/path/to/ansible-collection-arsenal
+sudo -E warpgate build warpgate.yaml --arch amd64
+```
+
+**Variable Precedence** (highest to lowest):
+1. CLI flags: `--var KEY=value`
+2. Variable files: `--var-file vars.yaml`
+3. Environment variables: `export KEY=value`
+
+**Important:** The `runc` runtime and `vfs` storage driver are critical for proper container builds on Linux. Without these settings, builds may fail with permission or storage errors.
+
+---
+
 ## Configuration
 
 Warpgate uses two configuration systems:
@@ -100,7 +222,28 @@ Warpgate uses two configuration systems:
    credentials, build defaults
 2. **Template config** (`warpgate.yaml`) - Image definitions (portable and shareable)
 
-### Example Template
+### Global Config Example
+
+```yaml
+storage:
+  driver: vfs           # Storage driver (overlay, vfs, etc.)
+  root: ""              # Optional: custom storage root path
+
+container:
+  runtime: runc         # Container runtime (runc, crun, etc.)
+
+registries:
+  - url: ghcr.io
+    username: myuser
+    password: ${GITHUB_TOKEN}
+
+build:
+  default_arch: amd64
+  cache_from: []
+  cache_to: []
+```
+
+### Template Config Example
 
 ```yaml
 metadata:
@@ -194,6 +337,15 @@ task go:clean
 ```bash
 # Build from local template file
 warpgate build warpgate.yaml
+
+# Build with variable overrides
+warpgate build warpgate.yaml --var ARSENAL_REPO_PATH=/path/to/arsenal
+
+# Build with multiple variables
+warpgate build warpgate.yaml --var KEY1=value1 --var KEY2=value2
+
+# Build with variables from file
+warpgate build warpgate.yaml --var-file vars.yaml
 
 # Build from git repository
 warpgate build --from-git https://github.com/user/repo.git//path/to/template

@@ -66,11 +66,13 @@ crun = [
 ]
 EOF
 
-# Use vfs storage driver to work around Docker Desktop 4.33+ DinD regression
+# Use vfs storage driver to work around Docker Desktop 4.33+ DinD regression on Mac
 # See: https://github.com/docker/for-mac/issues/7413
-RUN cat <<'EOF' > /etc/containers/storage.conf
+# On Linux, use overlay for better performance by setting STORAGE_DRIVER=overlay
+ARG STORAGE_DRIVER=vfs
+RUN cat <<EOF > /etc/containers/storage.conf
 [storage]
-driver = "vfs"
+driver = "${STORAGE_DRIVER}"
 EOF
 
 # Set working directory

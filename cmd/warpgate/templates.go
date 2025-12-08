@@ -108,27 +108,27 @@ func init() {
 func runTemplatesList(cmd *cobra.Command, args []string) error {
 	logging.Info("Fetching available templates...")
 
-	// Create template loader
-	loader, err := templates.NewTemplateLoader()
+	// Create template registry
+	registry, err := templates.NewTemplateRegistry()
 	if err != nil {
-		return fmt.Errorf("failed to create template loader: %w", err)
+		return fmt.Errorf("failed to create template registry: %w", err)
 	}
 
-	// List all templates
-	templateList, err := loader.List()
+	// List all templates from all sources
+	templateList, err := registry.List("all")
 	if err != nil {
 		return fmt.Errorf("failed to list templates: %w", err)
 	}
 
 	if len(templateList) == 0 {
-		logging.Info("No templates found in registry")
+		logging.Info("No templates found. Configure template repositories or local paths in ~/.warpgate/config.yaml")
 		return nil
 	}
 
 	// Display templates in a formatted table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tDESCRIPTION\tAUTHOR")
-	fmt.Fprintln(w, "----\t-------\t-----------\t------")
+	fmt.Fprintln(w, "NAME\tVERSION\tSOURCE\tDESCRIPTION\tAUTHOR")
+	fmt.Fprintln(w, "----\t-------\t------\t-----------\t------")
 
 	for _, tmpl := range templateList {
 		version := tmpl.Version
@@ -139,12 +139,16 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 		if author == "" {
 			author = "unknown"
 		}
+		source := tmpl.Repository
+		if source == "" {
+			source = "unknown"
+		}
 		description := tmpl.Description
-		if len(description) > 60 {
-			description = description[:57] + "..."
+		if len(description) > 50 {
+			description = description[:47] + "..."
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", tmpl.Name, version, description, author)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", tmpl.Name, version, source, description, author)
 	}
 
 	w.Flush()

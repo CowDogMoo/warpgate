@@ -37,6 +37,7 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // Build command options
@@ -52,6 +53,8 @@ type buildOptions struct {
 	digestDir    string
 	region       string
 	instanceType string
+	vars         []string // Variable overrides in key=value format
+	varFiles     []string // Files containing variable definitions
 }
 
 var buildOpts = &buildOptions{}
@@ -64,6 +67,15 @@ var buildCmd = &cobra.Command{
 Examples:
   # Build from local config file
   warpgate build warpgate.yaml
+
+  # Build with variable overrides
+  warpgate build warpgate.yaml --var ARSENAL_REPO_PATH=/path/to/arsenal
+
+  # Build with multiple variables
+  warpgate build warpgate.yaml --var KEY1=value1 --var KEY2=value2
+
+  # Build with variables from file
+  warpgate build warpgate.yaml --var-file vars.yaml
 
   # Build from official template
   warpgate build --template attack-box
@@ -95,6 +107,8 @@ func init() {
 	buildCmd.Flags().StringVar(&buildOpts.digestDir, "digest-dir", ".", "Directory to save digest files")
 	buildCmd.Flags().StringVar(&buildOpts.region, "region", "", "AWS region for AMI builds (overrides config)")
 	buildCmd.Flags().StringVar(&buildOpts.instanceType, "instance-type", "", "EC2 instance type for AMI builds (overrides config)")
+	buildCmd.Flags().StringArrayVar(&buildOpts.vars, "var", []string{}, "Set template variables (key=value)")
+	buildCmd.Flags().StringArrayVar(&buildOpts.varFiles, "var-file", []string{}, "Load variables from YAML file")
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
@@ -543,12 +557,74 @@ func saveDigestToFile(imageName, arch, digestStr, dir string) error {
 
 // loadFromFile loads config from a local file
 func loadFromFile(configPath string) (*builder.Config, error) {
+	// Parse variables from CLI flags and var files
+	variables, err := parseVariables(buildOpts.vars, buildOpts.varFiles)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse variables: %w", err)
+	}
+
 	loader := config.NewLoader()
-	cfg, err := loader.LoadFromFile(configPath)
+	cfg, err := loader.LoadFromFileWithVars(configPath, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	return cfg, nil
+}
+
+// parseVariables parses variables from CLI flags and var files
+// CLI flags take precedence over var files
+func parseVariables(vars, varFiles []string) (map[string]string, error) {
+	variables := make(map[string]string)
+
+	// First, load variables from var files (lower precedence)
+	for _, varFile := range varFiles {
+		fileVars, err := loadVariablesFromFile(varFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load var file %s: %w", varFile, err)
+		}
+		// Merge file variables (later files override earlier ones)
+		for k, v := range fileVars {
+			variables[k] = v
+		}
+	}
+
+	// Then, apply CLI variables (higher precedence)
+	for _, v := range vars {
+		key, value, err := parseKeyValue(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid variable format %q: %w", v, err)
+		}
+		variables[key] = value
+	}
+
+	return variables, nil
+}
+
+// loadVariablesFromFile loads variables from a YAML file
+func loadVariablesFromFile(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	var variables map[string]string
+	if err := yaml.Unmarshal(data, &variables); err != nil {
+		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	return variables, nil
+}
+
+// parseKeyValue parses a key=value string
+func parseKeyValue(s string) (string, string, error) {
+	parts := strings.SplitN(s, "=", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("expected format: key=value")
+	}
+	if parts[0] == "" {
+		return "", "", fmt.Errorf("key cannot be empty")
+	}
+	return parts[0], parts[1], nil
 }
 
 // loadFromTemplate loads config from a template (official registry or cached)

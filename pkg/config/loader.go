@@ -41,14 +41,21 @@ func NewLoader() *Loader {
 
 // LoadFromFile loads a template configuration from a YAML file
 func (l *Loader) LoadFromFile(path string) (*builder.Config, error) {
+	return l.LoadFromFileWithVars(path, nil)
+}
+
+// LoadFromFileWithVars loads a template configuration from a YAML file with variable substitution
+// Variables from the vars map take precedence over environment variables
+func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*builder.Config, error) {
 	// Read the file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
-	// Expand environment variables in the YAML content
-	expandedData := os.ExpandEnv(string(data))
+	// Expand variables in the YAML content
+	// Precedence: CLI vars > Environment variables
+	expandedData := l.expandVariables(string(data), vars)
 
 	// Parse YAML
 	var config builder.Config
@@ -61,6 +68,21 @@ func (l *Loader) LoadFromFile(path string) (*builder.Config, error) {
 	l.resolveRelativePaths(&config, baseDir)
 
 	return &config, nil
+}
+
+// expandVariables expands ${VAR} and $VAR style variables
+// Variables from the vars map take precedence over environment variables
+func (l *Loader) expandVariables(s string, vars map[string]string) string {
+	return os.Expand(s, func(key string) string {
+		// First check CLI/var-file variables (highest precedence)
+		if vars != nil {
+			if value, ok := vars[key]; ok {
+				return value
+			}
+		}
+		// Fall back to environment variables
+		return os.Getenv(key)
+	})
 }
 
 // resolveRelativePaths converts relative paths in the config to absolute paths

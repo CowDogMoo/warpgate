@@ -6,6 +6,10 @@ variable "TAG" {
     default = "latest"
 }
 
+variable "STORAGE_DRIVER" {
+    default = "vfs"
+}
+
 # Define a function to format tags
 function "tag" {
   params = [suffix]
@@ -23,6 +27,9 @@ target "amd64" {
   dockerfile = "dockerfiles/warpgate/Dockerfile"
   platforms = ["linux/amd64"]
   tags = tag("")
+  args = {
+    STORAGE_DRIVER = "${STORAGE_DRIVER}"
+  }
 }
 
 # Target for ARM64 architecture
@@ -31,6 +38,9 @@ target "arm64" {
   dockerfile = "dockerfiles/warpgate/Dockerfile"
   platforms = ["linux/arm64"]
   tags = tag("arm64")
+  args = {
+    STORAGE_DRIVER = "${STORAGE_DRIVER}"
+  }
 }
 
 # Target for multi-arch build
@@ -38,4 +48,7 @@ target "multi" {
   inherits = ["amd64"]
   tags = tag("")
   platforms = ["linux/amd64", "linux/arm64"]
+  args = {
+    STORAGE_DRIVER = "${STORAGE_DRIVER}"
+  }
 }

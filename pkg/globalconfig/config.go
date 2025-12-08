@@ -61,8 +61,17 @@ type StorageConfig struct {
 
 // TemplatesConfig holds template-related configuration
 type TemplatesConfig struct {
-	CacheDir    string `mapstructure:"cache_dir"`
-	DefaultRepo string `mapstructure:"default_repo"`
+	CacheDir string `mapstructure:"cache_dir"`
+	// Repositories maps repository names to their git URLs or local paths
+	// Example:
+	//   repositories:
+	//     official: https://github.com/cowdogmoo/warpgate-templates.git
+	//     local: /path/to/local/templates
+	//     private: https://github.com/myorg/private-templates.git
+	Repositories map[string]string `mapstructure:"repositories"`
+	// LocalPaths lists additional local directories to search for templates
+	// These are scanned in order when listing/discovering templates
+	LocalPaths []string `mapstructure:"local_paths"`
 }
 
 // BuildConfig holds build-related configuration
@@ -272,7 +281,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("registry.default", "ghcr.io")
 
 	// Templates defaults
-	v.SetDefault("templates.default_repo", "github.com/cowdogmoo/warpgate-templates")
+	v.SetDefault("templates.repositories", map[string]string{
+		"official": "https://github.com/cowdogmoo/warpgate-templates.git",
+	})
+	v.SetDefault("templates.local_paths", []string{})
 
 	// AWS defaults (will use AWS SDK defaults if not set)
 	v.SetDefault("aws.region", "")
@@ -317,7 +329,8 @@ func bindEnvVars(v *viper.Viper) {
 
 	// Templates
 	_ = v.BindEnv("templates.cache_dir", "WARPGATE_TEMPLATES_CACHE_DIR")
-	_ = v.BindEnv("templates.default_repo", "WARPGATE_TEMPLATES_DEFAULT_REPO")
+	_ = v.BindEnv("templates.repositories", "WARPGATE_TEMPLATES_REPOSITORIES")
+	_ = v.BindEnv("templates.local_paths", "WARPGATE_TEMPLATES_LOCAL_PATHS")
 
 	// Build
 	_ = v.BindEnv("build.default_arch", "WARPGATE_BUILD_DEFAULT_ARCH")

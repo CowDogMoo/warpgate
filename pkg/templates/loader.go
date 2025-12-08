@@ -70,16 +70,24 @@ func NewTemplateLoader() (*TemplateLoader, error) {
 func (tl *TemplateLoader) LoadTemplate(ref string) (*builder.Config, error) {
 	logging.Debug("Loading template: %s", ref)
 
-	// Strategy 1: Local file path
+	// Strategy 1: Local file path (absolute or relative warpgate.yaml)
 	if filepath.IsAbs(ref) || fileExists(ref) {
 		logging.Debug("Loading template from local file: %s", ref)
+		// If it's a directory, look for warpgate.yaml inside
+		if info, err := os.Stat(ref); err == nil && info.IsDir() {
+			configPath := filepath.Join(ref, "warpgate.yaml")
+			if fileExists(configPath) {
+				return tl.loadFromFile(configPath)
+			}
+			return nil, fmt.Errorf("no warpgate.yaml found in directory: %s", ref)
+		}
 		return tl.loadFromFile(ref)
 	}
 
-	// Strategy 2: Template name (use official repo)
-	if !strings.Contains(ref, "/") && !strings.HasPrefix(ref, "https://") {
+	// Strategy 2: Template name (search all repos/local paths)
+	if !strings.Contains(ref, "/") && !strings.HasPrefix(ref, "https://") && !strings.HasPrefix(ref, "git@") {
 		logging.Debug("Loading template by name from registry: %s", ref)
-		return tl.loadFromRegistry("cowdogmoo/warpgate-templates", ref)
+		return tl.loadTemplateByName(ref)
 	}
 
 	// Strategy 3: Full git URL
@@ -91,23 +99,76 @@ func (tl *TemplateLoader) LoadTemplate(ref string) (*builder.Config, error) {
 	return nil, fmt.Errorf("unknown template reference: %s", ref)
 }
 
-// loadFromRegistry loads a template from a git repository by name
-func (tl *TemplateLoader) loadFromRegistry(repo, templateName string) (*builder.Config, error) {
+// loadTemplateByName searches all configured repositories and local paths for a template
+func (tl *TemplateLoader) loadTemplateByName(name string) (*builder.Config, error) {
 	// Parse version if specified: attack-box@v1.2.0
-	name, version := parseTemplateRef(templateName)
+	templateName, version := parseTemplateRef(name)
 
-	// Build git URL
-	gitURL := fmt.Sprintf("https://github.com/%s.git", repo)
+	// Get all repos from registry
+	repos := tl.registry.GetRepositories()
 
+	// Try each repository
+	for repoName, repoURL := range repos {
+		// Check if it's a local path
+		if tl.isLocalPath(repoURL) {
+			configPath := filepath.Join(repoURL, "templates", templateName, "warpgate.yaml")
+			if fileExists(configPath) {
+				logging.Debug("Found template %s in local path: %s", templateName, repoURL)
+				return tl.loadFromFile(configPath)
+			}
+			continue
+		}
+
+		// Try loading from git repo
+		logging.Debug("Searching for template %s in repository: %s", templateName, repoName)
+		cfg, err := tl.loadFromRegistry(repoURL, templateName, version)
+		if err == nil {
+			return cfg, nil
+		}
+		logging.Debug("Template not found in %s: %v", repoName, err)
+	}
+
+	return nil, fmt.Errorf("template not found in any configured repository: %s", name)
+}
+
+// loadFromRegistry loads a template from a git repository by name
+func (tl *TemplateLoader) loadFromRegistry(repoURL, templateName, version string) (*builder.Config, error) {
 	// Clone or update repo
-	localPath, err := tl.gitOps.CloneOrUpdate(gitURL, version)
+	localPath, err := tl.gitOps.CloneOrUpdate(repoURL, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	// Load config from cloned repo
-	configPath := filepath.Join(localPath, "templates", name, "warpgate.yaml")
+	configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
 	return tl.loadFromFile(configPath)
+}
+
+// isLocalPath checks if a path is a local directory
+func (tl *TemplateLoader) isLocalPath(path string) bool {
+	// Absolute paths
+	if filepath.IsAbs(path) {
+		info, err := os.Stat(path)
+		return err == nil && info.IsDir()
+	}
+
+	// Relative paths or home paths
+	if strings.HasPrefix(path, ".") || strings.HasPrefix(path, "~") {
+		// Expand home directory
+		if strings.HasPrefix(path, "~") {
+			home, err := os.UserHomeDir()
+			if err == nil {
+				path = filepath.Join(home, path[1:])
+			}
+		}
+		info, err := os.Stat(path)
+		return err == nil && info.IsDir()
+	}
+
+	// Not a URL
+	return !strings.HasPrefix(path, "http://") &&
+		!strings.HasPrefix(path, "https://") &&
+		!strings.HasPrefix(path, "git@")
 }
 
 // loadFromGit loads a template from a git URL
