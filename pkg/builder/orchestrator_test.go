@@ -89,8 +89,8 @@ func TestNewBuildOrchestrator(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			orchestrator := builder.NewBuildOrchestrator(tt.maxConcurrency)
+		t.Run(tc.name, func(t *testing.T) {
+			orchestrator := builder.NewBuildOrchestrator(tc.maxConcurrency)
 			assert.NotNil(t, orchestrator)
 			// Note: We can't directly test maxConcurrency as it's private,
 			// but we can verify the orchestrator was created
@@ -190,29 +190,29 @@ func TestBuildMultiArch(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			mockBuilder := new(MockContainerBuilder)
 
-			if tt.mockBuildSetup != nil {
-				tt.mockBuildSetup(mockBuilder, tt.requests)
+			if tc.mockBuildSetup != nil {
+				tc.mockBuildSetup(mockBuilder, tc.requests)
 			}
 
 			orchestrator := builder.NewBuildOrchestrator(2)
-			results, err := orchestrator.BuildMultiArch(ctx, tt.requests, mockBuilder)
+			results, err := orchestrator.BuildMultiArch(ctx, tc.requests, mockBuilder)
 
-			if tt.expectError {
+			if tc.expectError {
 				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains)
 				}
 			} else {
 				assert.NoError(t, err)
-				assert.Len(t, results, len(tt.requests))
+				assert.Len(t, results, len(tc.requests))
 
 				// Verify results (order may vary due to parallel execution)
 				architectures := make(map[string]bool)
-				for _, req := range tt.requests {
+				for _, req := range tc.requests {
 					architectures[req.Architecture] = false
 				}
 
@@ -293,21 +293,21 @@ func TestPushMultiArch(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			mockBuilder := new(MockContainerBuilder)
 
-			if tt.mockPushSetup != nil {
-				tt.mockPushSetup(mockBuilder, tt.results)
+			if tc.mockPushSetup != nil {
+				tc.mockPushSetup(mockBuilder, tc.results)
 			}
 
 			orchestrator := builder.NewBuildOrchestrator(2)
-			err := orchestrator.PushMultiArch(ctx, tt.results, tt.registry, mockBuilder)
+			err := orchestrator.PushMultiArch(ctx, tc.results, tc.registry, mockBuilder)
 
-			if tt.expectError {
+			if tc.expectError {
 				assert.Error(t, err)
-				if tt.errorContains != "" {
-					assert.Contains(t, err.Error(), tt.errorContains)
+				if tc.errorContains != "" {
+					assert.Contains(t, err.Error(), tc.errorContains)
 				}
 			} else {
 				assert.NoError(t, err)
