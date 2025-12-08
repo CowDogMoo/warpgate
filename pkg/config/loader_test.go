@@ -76,16 +76,16 @@ func TestExpandVariables(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment variables
-			for k, v := range tc.envVars {
+			for k, v := range tt.envVars {
 				os.Setenv(k, v)
 				defer os.Unsetenv(k)
 			}
 
-			result := loader.expandVariables(tc.input, tc.vars)
-			if result != tc.expected {
-				t.Errorf("expandVariables() = %q, want %q", result, tc.expected)
+			result := loader.expandVariables(tt.input, tt.vars)
+			if result != tt.expected {
+				t.Errorf("expandVariables() = %q, want %q", result, tt.expected)
 			}
 		})
 	}
@@ -149,14 +149,14 @@ targets:
 	}
 
 	for _, tt := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment variables
-			for k, v := range tc.envVars {
+			for k, v := range tt.envVars {
 				os.Setenv(k, v)
 				defer os.Unsetenv(k)
 			}
 
-			config, err := loader.LoadFromFileWithVars(testFile, tc.vars)
+			config, err := loader.LoadFromFileWithVars(testFile, tt.vars)
 			if err != nil {
 				t.Fatalf("LoadFromFileWithVars() error = %v", err)
 			}
@@ -166,11 +166,11 @@ targets:
 			}
 
 			provisioner := config.Provisioners[0]
-			if provisioner.PlaybookPath != tc.expectedPath {
-				t.Errorf("PlaybookPath = %q, want %q", provisioner.PlaybookPath, tc.expectedPath)
+			if provisioner.PlaybookPath != tt.expectedPath {
+				t.Errorf("PlaybookPath = %q, want %q", provisioner.PlaybookPath, tt.expectedPath)
 			}
-			if provisioner.GalaxyFile != tc.expectedGalaxy {
-				t.Errorf("GalaxyFile = %q, want %q", provisioner.GalaxyFile, tc.expectedGalaxy)
+			if provisioner.GalaxyFile != tt.expectedGalaxy {
+				t.Errorf("GalaxyFile = %q, want %q", provisioner.GalaxyFile, tt.expectedGalaxy)
 			}
 		})
 	}

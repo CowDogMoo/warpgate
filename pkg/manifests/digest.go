@@ -142,3 +142,27 @@ func ParseDigestFile(path string) (DigestFile, error) {
 		ModTime:      fileInfo.ModTime(),
 	}, nil
 }
+
+// SaveDigestToFile saves an image digest to a file
+func SaveDigestToFile(imageName, arch, digestStr, dir string) error {
+	if digestStr == "" {
+		return fmt.Errorf("empty digest provided")
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create digest directory: %w", err)
+	}
+
+	// Create filename: digest-{image}-{arch}.txt
+	filename := fmt.Sprintf("digest-%s-%s.txt", imageName, arch)
+	filepath := filepath.Join(dir, filename)
+
+	// Write digest to file
+	if err := os.WriteFile(filepath, []byte(digestStr), 0644); err != nil {
+		return fmt.Errorf("failed to write digest file: %w", err)
+	}
+
+	logging.Info("Saved digest to %s", filepath)
+	return nil
+}

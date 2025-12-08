@@ -25,8 +25,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
@@ -34,10 +32,10 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/builder/container"
 	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 // Build command options
@@ -167,7 +165,7 @@ func applyConfigOverrides(buildConfig *builder.Config) {
 		buildConfig.Architectures = buildOpts.arch
 	} else if len(buildConfig.Architectures) == 0 {
 		// Extract architectures from target platforms
-		buildConfig.Architectures = extractArchitecturesFromTargets(buildConfig)
+		buildConfig.Architectures = builder.ExtractArchitecturesFromTargets(buildConfig)
 		// Fallback to default architectures if none found
 		if len(buildConfig.Architectures) == 0 {
 			buildConfig.Architectures = cfg.Build.DefaultArch
@@ -196,29 +194,6 @@ func applyConfigOverrides(buildConfig *builder.Config) {
 	}
 }
 
-// extractArchitecturesFromTargets extracts architectures from target platforms
-func extractArchitecturesFromTargets(buildConfig *builder.Config) []string {
-	archMap := make(map[string]bool)
-
-	for _, target := range buildConfig.Targets {
-		for _, platform := range target.Platforms {
-			// Platform format is "os/arch" or "os/arch/variant"
-			parts := strings.Split(platform, "/")
-			if len(parts) >= 2 {
-				arch := parts[1]
-				archMap[arch] = true
-			}
-		}
-	}
-
-	// Convert map to slice
-	archs := make([]string, 0, len(archMap))
-	for arch := range archMap {
-		archs = append(archs, arch)
-	}
-
-	return archs
-}
 
 // validateConfig validates the build configuration
 func validateConfig(buildConfig *builder.Config) error {
@@ -301,7 +276,7 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) err
 			if len(buildConfig.Architectures) > 0 {
 				arch = buildConfig.Architectures[0]
 			}
-			if err := saveDigestToFile(buildConfig.Name, arch, result.Digest, buildOpts.digestDir); err != nil {
+			if err := manifests.SaveDigestToFile(buildConfig.Name, arch, result.Digest, buildOpts.digestDir); err != nil {
 				logging.Warn("Failed to save digest: %v", err)
 			}
 		}
@@ -320,7 +295,7 @@ func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bld
 	orchestrator := builder.NewBuildOrchestrator(2) // Allow 2 concurrent builds
 
 	// Create build requests for each architecture
-	requests := createBuildRequests(buildConfig)
+	requests := builder.CreateBuildRequests(buildConfig)
 
 	// Build all architectures in parallel
 	results, err := orchestrator.BuildMultiArch(ctx, requests, bldr)
@@ -339,52 +314,6 @@ func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bld
 	}
 
 	return nil
-}
-
-// createBuildRequests creates build requests for each architecture
-func createBuildRequests(buildConfig *builder.Config) []builder.BuildRequest {
-	requests := make([]builder.BuildRequest, 0, len(buildConfig.Architectures))
-
-	for _, arch := range buildConfig.Architectures {
-		platform := fmt.Sprintf("linux/%s", arch)
-		tag := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
-
-		// Create a copy of the config for this architecture
-		archConfig := *buildConfig
-
-		// Apply architecture-specific overrides if they exist
-		if override, ok := buildConfig.ArchOverrides[arch]; ok {
-			applyArchOverrides(&archConfig, override, arch)
-		}
-
-		requests = append(requests, builder.BuildRequest{
-			Config:       archConfig,
-			Architecture: arch,
-			Platform:     platform,
-			Tag:          tag,
-		})
-	}
-
-	return requests
-}
-
-// applyArchOverrides applies architecture-specific overrides to the config
-func applyArchOverrides(archConfig *builder.Config, override builder.ArchOverride, arch string) {
-	logging.Info("Applying architecture overrides for %s", arch)
-
-	// Override base image if specified
-	if override.Base != nil {
-		archConfig.Base = *override.Base
-	}
-
-	// Override or append provisioners
-	if len(override.Provisioners) > 0 {
-		if override.AppendProvisioners {
-			archConfig.Provisioners = append(archConfig.Provisioners, override.Provisioners...)
-		} else {
-			archConfig.Provisioners = override.Provisioners
-		}
-	}
 }
 
 // pushMultiArchImages pushes multi-arch images and creates manifest
@@ -415,7 +344,7 @@ func saveDigests(imageName string, results []builder.BuildResult) {
 	logging.Info("Saving image digests to %s", buildOpts.digestDir)
 	for _, result := range results {
 		if result.Digest != "" {
-			if err := saveDigestToFile(imageName, result.Architecture, result.Digest, buildOpts.digestDir); err != nil {
+			if err := manifests.SaveDigestToFile(imageName, result.Architecture, result.Digest, buildOpts.digestDir); err != nil {
 				logging.Warn("Failed to save digest for %s: %v", result.Architecture, err)
 			}
 		}
@@ -532,34 +461,10 @@ func displayBuildResults(result *builder.BuildResult) {
 	}
 }
 
-// saveDigestToFile saves an image digest to a file
-func saveDigestToFile(imageName, arch, digestStr, dir string) error {
-	if digestStr == "" {
-		return fmt.Errorf("empty digest provided")
-	}
-
-	// Ensure directory exists
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create digest directory: %w", err)
-	}
-
-	// Create filename: digest-{image}-{arch}.txt
-	filename := fmt.Sprintf("digest-%s-%s.txt", imageName, arch)
-	filepath := filepath.Join(dir, filename)
-
-	// Write digest to file
-	if err := os.WriteFile(filepath, []byte(digestStr), 0644); err != nil {
-		return fmt.Errorf("failed to write digest file: %w", err)
-	}
-
-	logging.Info("Saved digest to %s", filepath)
-	return nil
-}
-
 // loadFromFile loads config from a local file
 func loadFromFile(configPath string) (*builder.Config, error) {
 	// Parse variables from CLI flags and var files
-	variables, err := parseVariables(buildOpts.vars, buildOpts.varFiles)
+	variables, err := config.ParseVariables(buildOpts.vars, buildOpts.varFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse variables: %w", err)
 	}
@@ -570,62 +475,6 @@ func loadFromFile(configPath string) (*builder.Config, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	return cfg, nil
-}
-
-// parseVariables parses variables from CLI flags and var files
-// CLI flags take precedence over var files
-func parseVariables(vars, varFiles []string) (map[string]string, error) {
-	variables := make(map[string]string)
-
-	// First, load variables from var files (lower precedence)
-	for _, varFile := range varFiles {
-		fileVars, err := loadVariablesFromFile(varFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load var file %s: %w", varFile, err)
-		}
-		// Merge file variables (later files override earlier ones)
-		for k, v := range fileVars {
-			variables[k] = v
-		}
-	}
-
-	// Then, apply CLI variables (higher precedence)
-	for _, v := range vars {
-		key, value, err := parseKeyValue(v)
-		if err != nil {
-			return nil, fmt.Errorf("invalid variable format %q: %w", v, err)
-		}
-		variables[key] = value
-	}
-
-	return variables, nil
-}
-
-// loadVariablesFromFile loads variables from a YAML file
-func loadVariablesFromFile(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
-	}
-
-	var variables map[string]string
-	if err := yaml.Unmarshal(data, &variables); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
-	}
-
-	return variables, nil
-}
-
-// parseKeyValue parses a key=value string
-func parseKeyValue(s string) (string, string, error) {
-	parts := strings.SplitN(s, "=", 2)
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("expected format: key=value")
-	}
-	if parts[0] == "" {
-		return "", "", fmt.Errorf("key cannot be empty")
-	}
-	return parts[0], parts[1], nil
 }
 
 // loadFromTemplate loads config from a template (official registry or cached)
