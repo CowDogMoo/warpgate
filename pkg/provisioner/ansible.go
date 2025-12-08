@@ -156,9 +156,12 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 	}
 
 	// Build ansible-playbook command
-	// If no inventory is specified, use connection=local to run against the container itself
+	// If no inventory is specified, provide a default localhost inventory with local connection
 	connectionArg := ""
 	if inventoryArg == "" {
+		// Use inline inventory with localhost (trailing comma tells Ansible it's a list, not a file)
+		// This allows playbooks with "hosts: all" to match the implicit localhost
+		inventoryArg = "-i localhost,"
 		connectionArg = "-c local"
 	}
 	ansibleCmd := fmt.Sprintf("ansible-playbook %s %s %s %s", connectionArg, inventoryArg, extraVarsArg, playbookDest)

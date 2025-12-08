@@ -26,6 +26,10 @@ import "os"
 
 // isNestedContainer checks if we're running inside a container
 // This is used to determine if we should use chroot isolation instead of OCI
+//
+// When running nested (buildah inside docker/podman), we use chroot isolation
+// for maximum compatibility. This is slower but more reliable than OCI isolation
+// which may fail depending on the host's storage driver configuration.
 func isNestedContainer() bool {
 	// Check for Docker environment file
 	if _, err := os.Stat("/.dockerenv"); err == nil {
