@@ -276,6 +276,9 @@ jobs:
             sudo chmod 777 ${{ env.PACKER_TMP_DIR }}
           fi
 
+          # Set the arsenal repo path for ansible playbooks
+          export ARSENAL_REPO_PATH=$HOME/ansible-collection-arsenal
+
           # Build and push the image with digest saving
           timeout 2h ./warpgate build \
             --template ${{ matrix.template.name }} \
