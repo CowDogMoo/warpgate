@@ -88,17 +88,17 @@ Some more content here.`,
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			// Create temporary directory
 			tmpDir := t.TempDir()
-			templateDir := filepath.Join(tmpDir, tc.templateDir)
+			templateDir := filepath.Join(tmpDir, tt.templateDir)
 			err := os.MkdirAll(templateDir, 0755)
 			require.NoError(t, err)
 
 			// Create README if needed
-			if tc.createFile {
+			if tt.createFile {
 				readmePath := filepath.Join(templateDir, "README.md")
-				err := os.WriteFile(readmePath, []byte(tc.readmeData), 0644)
+				err := os.WriteFile(readmePath, []byte(tt.readmeData), 0644)
 				require.NoError(t, err)
 			}
 
@@ -108,7 +108,7 @@ Some more content here.`,
 			require.NoError(t, err)
 
 			result := converter.extractDescription()
-			assert.Equal(t, tc.expected, result)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -132,16 +132,16 @@ func TestBuildTargets(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			converter, err := NewPackerConverter(PackerConverterOptions{
-				IncludeAMI: tc.includeAMI,
+				IncludeAMI: tt.includeAMI,
 			})
 			require.NoError(t, err)
 
 			// Create HCL parser for buildTargets
 			hclParser := NewHCLParser()
 			result := converter.buildTargets(hclParser)
-			assert.Len(t, result, tc.expectedLen)
+			assert.Len(t, result, tt.expectedLen)
 
 			// Verify container target
 			assert.Equal(t, "container", result[0].Type)
@@ -149,7 +149,7 @@ func TestBuildTargets(t *testing.T) {
 			assert.Contains(t, result[0].Platforms, "linux/arm64")
 
 			// Verify AMI target if included
-			if tc.includeAMI {
+			if tt.includeAMI {
 				assert.Equal(t, "ami", result[1].Type)
 				// Region now comes from config (defaults to empty)
 				assert.Equal(t, "t3.micro", result[1].InstanceType)
@@ -664,11 +664,11 @@ func TestConvertHCLPostProcessors(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result := converter.convertHCLPostProcessors(tc.builds)
-			assert.Len(t, result, tc.expected)
-			if tc.validate != nil {
-				tc.validate(t, result)
+		t.Run(tt.name, func(t *testing.T) {
+			result := converter.convertHCLPostProcessors(tt.builds)
+			assert.Len(t, result, tt.expected)
+			if tt.validate != nil {
+				tt.validate(t, result)
 			}
 		})
 	}
@@ -781,11 +781,11 @@ func TestConvertHCLProvisioners(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result := converter.convertHCLProvisioners(tc.builds)
-			assert.Len(t, result, tc.expected)
-			if tc.validate != nil {
-				tc.validate(t, result)
+		t.Run(tt.name, func(t *testing.T) {
+			result := converter.convertHCLProvisioners(tt.builds)
+			assert.Len(t, result, tt.expected)
+			if tt.validate != nil {
+				tt.validate(t, result)
 			}
 		})
 	}
@@ -844,9 +844,9 @@ func TestParseAnsibleExtraArgs(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result := converter.parseAnsibleExtraArgs(tc.args)
-			assert.Equal(t, tc.expected, result)
+		t.Run(tt.name, func(t *testing.T) {
+			result := converter.parseAnsibleExtraArgs(tt.args)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

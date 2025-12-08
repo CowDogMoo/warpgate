@@ -126,11 +126,11 @@ targets:
 	loader := NewLoader()
 
 	tests := []struct {
-		name            string
-		vars            map[string]string
-		envVars         map[string]string
-		expectedPath    string
-		expectedGalaxy  string
+		name           string
+		vars           map[string]string
+		envVars        map[string]string
+		expectedPath   string
+		expectedGalaxy string
 	}{
 		{
 			name:           "CLI var takes precedence",

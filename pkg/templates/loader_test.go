@@ -76,10 +76,10 @@ func TestParseTemplateRef(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			name, version := parseTemplateRef(tc.ref)
-			assert.Equal(t, tc.expectedName, name)
-			assert.Equal(t, tc.expectedVersion, version)
+		t.Run(tt.name, func(t *testing.T) {
+			name, version := parseTemplateRef(tt.ref)
+			assert.Equal(t, tt.expectedName, name)
+			assert.Equal(t, tt.expectedVersion, version)
 		})
 	}
 }
@@ -114,9 +114,9 @@ func TestFileExists(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result := fileExists(tc.path)
-			assert.Equal(t, tc.expected, result)
+		t.Run(tt.name, func(t *testing.T) {
+			result := fileExists(tt.path)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -209,21 +209,21 @@ func TestTemplateLoader_LoadTemplate_ReferenceTypes(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			// Classify the reference type based on the logic in LoadTemplate
 			var refType string
 			switch {
-			case filepath.IsAbs(tc.ref):
+			case filepath.IsAbs(tt.ref):
 				refType = "absolute"
-			case !filepath.IsAbs(tc.ref) && fileExists(tc.ref):
+			case !filepath.IsAbs(tt.ref) && fileExists(tt.ref):
 				refType = "local"
-			case strings.Contains(tc.ref, "https://") || strings.Contains(tc.ref, "git@"):
+			case strings.Contains(tt.ref, "https://") || strings.Contains(tt.ref, "git@"):
 				refType = "git"
 			default:
 				refType = "registry"
 			}
 
-			assert.Equal(t, tc.expected, refType)
+			assert.Equal(t, tt.expected, refType)
 		})
 	}
 }

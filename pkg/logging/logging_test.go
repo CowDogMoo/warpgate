@@ -58,19 +58,19 @@ func TestNewCustomLogger(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			logger := logging.NewCustomLogger(tc.level)
+		t.Run(tt.name, func(t *testing.T) {
+			logger := logging.NewCustomLogger(tt.level)
 			if logger == nil {
 				t.Fatal("expected non-nil logger")
 				return
 			}
-			if logger.LogLevel != tc.wantLevel {
+			if logger.LogLevel != tt.wantLevel {
 				t.Errorf("got level %v, want %v",
-					logger.LogLevel, tc.wantLevel)
+					logger.LogLevel, tt.wantLevel)
 			}
-			if logger.Quiet != tc.wantQuiet {
+			if logger.Quiet != tt.wantQuiet {
 				t.Errorf("got quiet %v, want %v",
-					logger.Quiet, tc.wantQuiet)
+					logger.Quiet, tt.wantQuiet)
 			}
 		})
 	}
@@ -132,10 +132,10 @@ func TestCustomLogger_Error(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			logger := logging.NewCustomLogger(slog.LevelError)
 			// Just ensure it doesn't panic
-			logger.Error(tc.firstArg, tc.args...)
+			logger.Error(tt.firstArg, tt.args...)
 		})
 	}
 }
@@ -198,12 +198,12 @@ func TestInitialize(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := logging.Initialize(tc.logLevel, tc.logFormat, tc.quiet, tc.verbose)
+		t.Run(tt.name, func(t *testing.T) {
+			err := logging.Initialize(tt.logLevel, tt.logFormat, tt.quiet, tt.verbose)
 
-			if (err != nil) != tc.wantErr {
+			if (err != nil) != tt.wantErr {
 				t.Errorf("got error %v, wantErr %v",
-					err, tc.wantErr)
+					err, tt.wantErr)
 			}
 		})
 	}
@@ -248,9 +248,9 @@ func TestGlobalError(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			// Just ensure it doesn't panic
-			logging.Error(tc.firstArg, tc.args...)
+			logging.Error(tt.firstArg, tt.args...)
 		})
 	}
 }
@@ -289,10 +289,10 @@ func TestDetermineLogLevel(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := logging.DetermineLogLevel(tc.levelStr)
-			if got != tc.wantLevel {
-				t.Errorf("got level %v, want %v", got, tc.wantLevel)
+		t.Run(tt.name, func(t *testing.T) {
+			got := logging.DetermineLogLevel(tt.levelStr)
+			if got != tt.wantLevel {
+				t.Errorf("got level %v, want %v", got, tt.wantLevel)
 			}
 		})
 	}

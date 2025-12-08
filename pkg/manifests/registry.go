@@ -35,10 +35,11 @@ import (
 
 // VerificationOptions contains options for registry verification
 type VerificationOptions struct {
-	Registry  string
-	Namespace string
-	Tag       string
-	AuthFile  string
+	Registry      string
+	Namespace     string
+	Tag           string
+	AuthFile      string
+	MaxConcurrent int // Maximum concurrent verifications (default: 5)
 }
 
 // VerifyDigestsInRegistry verifies that digests exist in the registry
@@ -63,7 +64,15 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 	var wg sync.WaitGroup
 
 	// Limit concurrency to avoid overwhelming the registry
-	maxConcurrent := 5
+	maxConcurrent := opts.MaxConcurrent
+	if maxConcurrent <= 0 {
+		maxConcurrent = 5 // Default
+	}
+	if maxConcurrent > 20 {
+		logging.Warn("Limiting concurrency to 20 (requested: %d) to avoid overwhelming the registry", maxConcurrent)
+		maxConcurrent = 20
+	}
+	logging.Debug("Using concurrency limit of %d for digest verification", maxConcurrent)
 	semaphore := make(chan struct{}, maxConcurrent)
 
 	// Verify each digest in parallel

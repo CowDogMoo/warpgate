@@ -77,10 +77,10 @@ func TestGitOperations_GetCachePath(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			path := gitOps.getCachePath(tc.gitURL, tc.version)
+		t.Run(tt.name, func(t *testing.T) {
+			path := gitOps.getCachePath(tt.gitURL, tt.version)
 
-			for _, part := range tc.contains {
+			for _, part := range tt.contains {
 				assert.Contains(t, path, part)
 			}
 
@@ -122,8 +122,8 @@ func TestGitOperations_CachePathCleaning(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			path := gitOps.getCachePath(tc.gitURL, tc.version)
+		t.Run(tt.name, func(t *testing.T) {
+			path := gitOps.getCachePath(tt.gitURL, tt.version)
 
 			// Verify path doesn't contain protocol prefixes
 			assert.NotContains(t, path, "https://")
@@ -199,10 +199,10 @@ func TestDirExists(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			path := tc.setup()
+		t.Run(tt.name, func(t *testing.T) {
+			path := tt.setup()
 			result := dirExists(path)
-			assert.Equal(t, tc.expected, result)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

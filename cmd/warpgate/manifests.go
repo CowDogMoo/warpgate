@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/spf13/cobra"
@@ -67,6 +68,9 @@ type manifestsOptions struct {
 	healthCheck bool     // Perform registry health check before operations
 	showDiff    bool     // Show manifest comparison/diff
 	noProgress  bool     // Disable progress indicators
+
+	// Phase 3: Advanced features
+	verifyConcurrency int // Number of concurrent verification requests
 }
 
 var manifestsOpts = &manifestsOptions{}
@@ -134,6 +138,7 @@ func init() {
 
 	// Security & Validation
 	manifestsCreateCmd.Flags().BoolVar(&manifestsOpts.verifyRegistry, "verify-registry", true, "Verify digests exist in registry")
+	manifestsCreateCmd.Flags().IntVar(&manifestsOpts.verifyConcurrency, "verify-concurrency", 0, "Number of concurrent digest verifications (default from config: 5)")
 	manifestsCreateCmd.Flags().DurationVar(&manifestsOpts.maxAge, "max-age", 0, "Maximum age of digest files (e.g., 1h, 30m)")
 	manifestsCreateCmd.Flags().BoolVar(&manifestsOpts.healthCheck, "health-check", false, "Perform registry health check before operations")
 
@@ -158,6 +163,63 @@ func init() {
 
 	// Add create subcommand
 	manifestsCmd.AddCommand(manifestsCreateCmd)
+	manifestsCmd.AddCommand(manifestsInspectCmd)
+	manifestsCmd.AddCommand(manifestsListCmd)
+}
+
+// manifestsInspectCmd inspects a manifest from a registry
+var manifestsInspectCmd = &cobra.Command{
+	Use:   "inspect",
+	Short: "Inspect a multi-architecture manifest",
+	Long: `Inspect a multi-architecture manifest from a registry.
+
+Shows detailed information about the manifest including all architectures,
+digests, sizes, and annotations.
+
+Examples:
+  # Inspect a manifest
+  warpgate manifests inspect --name attack-box --registry ghcr.io/cowdogmoo
+
+  # Inspect specific tag
+  warpgate manifests inspect --name attack-box --registry ghcr.io/cowdogmoo --tag v1.0.0
+
+  # Show in JSON format
+  warpgate manifests inspect --name attack-box --registry ghcr.io/cowdogmoo --format json`,
+	RunE: runManifestsInspect,
+}
+
+// manifestsListCmd lists manifests
+var manifestsListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List available manifest tags",
+	Long: `List available manifest tags for an image in the registry.
+
+Examples:
+  # List all tags
+  warpgate manifests list --name attack-box --registry ghcr.io/cowdogmoo
+
+  # List with details
+  warpgate manifests list --name attack-box --registry ghcr.io/cowdogmoo --detailed`,
+	RunE: runManifestsList,
+}
+
+func init() {
+	// Inspect command flags
+	manifestsInspectCmd.Flags().StringVar(&manifestsOpts.name, "name", "", "Image name (required)")
+	manifestsInspectCmd.Flags().StringVar(&manifestsOpts.registry, "registry", "", "Registry to inspect (required)")
+	manifestsInspectCmd.Flags().StringSliceVarP(&manifestsOpts.tags, "tag", "t", []string{"latest"}, "Image tag to inspect")
+	manifestsInspectCmd.Flags().StringVar(&manifestsOpts.namespace, "namespace", "", "Image namespace/organization")
+	manifestsInspectCmd.Flags().StringVar(&manifestsOpts.authFile, "auth-file", "", "Path to authentication file")
+	_ = manifestsInspectCmd.MarkFlagRequired("name")
+	_ = manifestsInspectCmd.MarkFlagRequired("registry")
+
+	// List command flags
+	manifestsListCmd.Flags().StringVar(&manifestsOpts.name, "name", "", "Image name (required)")
+	manifestsListCmd.Flags().StringVar(&manifestsOpts.registry, "registry", "", "Registry to list from (required)")
+	manifestsListCmd.Flags().StringVar(&manifestsOpts.namespace, "namespace", "", "Image namespace/organization")
+	manifestsListCmd.Flags().StringVar(&manifestsOpts.authFile, "auth-file", "", "Path to authentication file")
+	_ = manifestsListCmd.MarkFlagRequired("name")
+	_ = manifestsListCmd.MarkFlagRequired("registry")
 }
 
 // runManifestsCreate executes the manifest create command
@@ -235,11 +297,25 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 		if len(manifestsOpts.tags) > 0 {
 			tag = manifestsOpts.tags[0]
 		}
+
+		// Get concurrency from config if not set via CLI
+		concurrency := manifestsOpts.verifyConcurrency
+		if concurrency == 0 {
+			// Load from config
+			cfg, err := globalconfig.Load()
+			if err == nil && cfg.Manifests.VerifyConcurrency > 0 {
+				concurrency = cfg.Manifests.VerifyConcurrency
+			} else {
+				concurrency = 5 // Built-in default
+			}
+		}
+
 		if err := manifests.VerifyDigestsInRegistry(ctx, filteredDigests, manifests.VerificationOptions{
-			Registry:  manifestsOpts.registry,
-			Namespace: manifestsOpts.namespace,
-			Tag:       tag,
-			AuthFile:  manifestsOpts.authFile,
+			Registry:      manifestsOpts.registry,
+			Namespace:     manifestsOpts.namespace,
+			Tag:           tag,
+			AuthFile:      manifestsOpts.authFile,
+			MaxConcurrent: concurrency,
 		}); err != nil {
 			logging.Error("Registry verification failed: %v", err)
 			os.Exit(ExitDigestNotFound)
@@ -344,6 +420,110 @@ func parseKeyValuePairs(pairs []string) (map[string]string, error) {
 		result[parts[0]] = parts[1]
 	}
 	return result, nil
+}
+
+// runManifestsInspect inspects a manifest from the registry
+func runManifestsInspect(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	if err := initManifestLogging(); err != nil {
+		return err
+	}
+
+	// Use first tag
+	tag := "latest"
+	if len(manifestsOpts.tags) > 0 {
+		tag = manifestsOpts.tags[0]
+	}
+
+	manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
+	logging.Info("Inspecting manifest: %s", manifestRef)
+
+	// Inspect the manifest
+	manifestInfo, err := manifests.InspectManifest(ctx, manifests.InspectOptions{
+		Registry:  manifestsOpts.registry,
+		Namespace: manifestsOpts.namespace,
+		ImageName: manifestsOpts.name,
+		Tag:       tag,
+		AuthFile:  manifestsOpts.authFile,
+	})
+	if err != nil {
+		logging.Error("Failed to inspect manifest: %v", err)
+		os.Exit(ExitRegistryError)
+	}
+
+	// Display manifest information
+	displayManifestInfo(manifestInfo)
+
+	return nil
+}
+
+// runManifestsList lists available manifest tags
+func runManifestsList(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
+	if err := initManifestLogging(); err != nil {
+		return err
+	}
+
+	imageRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, "")
+	logging.Info("Listing tags for: %s", strings.TrimSuffix(imageRef, ":"))
+
+	// List tags
+	tags, err := manifests.ListTags(ctx, manifests.ListOptions{
+		Registry:  manifestsOpts.registry,
+		Namespace: manifestsOpts.namespace,
+		ImageName: manifestsOpts.name,
+		AuthFile:  manifestsOpts.authFile,
+	})
+	if err != nil {
+		logging.Error("Failed to list tags: %v", err)
+		os.Exit(ExitRegistryError)
+	}
+
+	if len(tags) == 0 {
+		logging.Info("No tags found")
+		return nil
+	}
+
+	logging.Info("Found %d tag(s):", len(tags))
+	for _, tag := range tags {
+		fmt.Printf("  - %s\n", tag)
+	}
+
+	return nil
+}
+
+// displayManifestInfo displays detailed manifest information
+func displayManifestInfo(info *manifests.ManifestInfo) {
+	fmt.Println("\n=== Manifest Information ===")
+	fmt.Printf("Name:         %s\n", info.Name)
+	fmt.Printf("Tag:          %s\n", info.Tag)
+	fmt.Printf("Digest:       %s\n", info.Digest)
+	fmt.Printf("Media Type:   %s\n", info.MediaType)
+	fmt.Printf("Size:         %d bytes\n", info.Size)
+
+	if len(info.Annotations) > 0 {
+		fmt.Println("\nAnnotations:")
+		for k, v := range info.Annotations {
+			fmt.Printf("  %s: %s\n", k, v)
+		}
+	}
+
+	fmt.Printf("\n=== Architectures (%d) ===\n", len(info.Architectures))
+	for i, arch := range info.Architectures {
+		fmt.Printf("\n[%d] %s/%s", i+1, arch.OS, arch.Architecture)
+		if arch.Variant != "" {
+			fmt.Printf("/%s", arch.Variant)
+		}
+		fmt.Println()
+		fmt.Printf("    Digest:    %s\n", arch.Digest)
+		fmt.Printf("    Size:      %d bytes\n", arch.Size)
+		if arch.MediaType != "" {
+			fmt.Printf("    Media:     %s\n", arch.MediaType)
+		}
+	}
+	fmt.Println()
 }
 
 // initManifestLogging initializes logging for manifest commands

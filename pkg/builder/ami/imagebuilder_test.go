@@ -65,15 +65,15 @@ func TestValidateConfig(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			// Create a mock image builder
 			ib := &ImageBuilder{
-				config: tc.config,
+				config: tt.config,
 			}
 
-			err := ib.validateConfig(tc.target)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("validateConfig() error = %v, wantErr %v", err, tc.wantErr)
+			err := ib.validateConfig(tt.target)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -123,17 +123,17 @@ func TestDetermineTargetType(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			// Mock determineTargetType logic
 			var targetType string
-			if len(tc.config.Targets) > 0 {
-				targetType = tc.config.Targets[0].Type
+			if len(tt.config.Targets) > 0 {
+				targetType = tt.config.Targets[0].Type
 			} else {
 				targetType = "container"
 			}
 
-			if targetType != tc.want {
-				t.Errorf("determineTargetType() = %v, want %v", targetType, tc.want)
+			if targetType != tt.want {
+				t.Errorf("determineTargetType() = %v, want %v", targetType, tt.want)
 			}
 		})
 	}
@@ -158,11 +158,11 @@ func TestExtractAMIID(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.amiID == "" && !tc.wantErr {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.amiID == "" && !tt.wantErr {
 				t.Errorf("expected error for empty AMI ID")
 			}
-			if tc.amiID != "" && len(tc.amiID) > 0 && tc.wantErr {
+			if tt.amiID != "" && len(tt.amiID) > 0 && tt.wantErr {
 				t.Errorf("unexpected error for valid AMI ID")
 			}
 		})
@@ -201,11 +201,11 @@ func TestComponentDocument(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gen := &ComponentGenerator{}
-			_, err := gen.createComponentDocument(tc.provisioner)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("createComponentDocument() error = %v, wantErr %v", err, tc.wantErr)
+			_, err := gen.createComponentDocument(tt.provisioner)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createComponentDocument() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -238,8 +238,8 @@ func TestClientConfig(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.config.Region == "" && tc.config.Profile == "" && tc.config.AccessKeyID == "" {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.config.Region == "" && tt.config.Profile == "" && tt.config.AccessKeyID == "" {
 				t.Errorf("invalid test case - config should have at least one field set")
 			}
 		})

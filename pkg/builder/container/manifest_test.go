@@ -299,16 +299,16 @@ func TestManifestManager_MultipleArchitectures(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			// Verify entry structure
-			if len(tc.entries) != len(tc.expectedArch) && !tc.expectError {
-				t.Errorf("Expected %d architectures, got %d entries", len(tc.expectedArch), len(tc.entries))
+			if len(tt.entries) != len(tt.expectedArch) && !tt.expectError {
+				t.Errorf("Expected %d architectures, got %d entries", len(tt.expectedArch), len(tt.entries))
 			}
 
-			for i, entry := range tc.entries {
-				if !tc.expectError && i < len(tc.expectedArch) {
-					if entry.Architecture != tc.expectedArch[i] {
-						t.Errorf("Expected architecture %s, got %s", tc.expectedArch[i], entry.Architecture)
+			for i, entry := range tt.entries {
+				if !tt.expectError && i < len(tt.expectedArch) {
+					if entry.Architecture != tt.expectedArch[i] {
+						t.Errorf("Expected architecture %s, got %s", tt.expectedArch[i], entry.Architecture)
 					}
 				}
 			}
@@ -357,12 +357,12 @@ func TestManifestEntry_Complete(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.valid {
-				if tc.entry.Architecture == "" {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.valid {
+				if tt.entry.Architecture == "" {
 					t.Error("Valid entry should have architecture")
 				}
-				if tc.entry.OS == "" {
+				if tt.entry.OS == "" {
 					t.Error("Valid entry should have OS")
 				}
 			}

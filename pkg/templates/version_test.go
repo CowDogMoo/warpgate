@@ -50,9 +50,9 @@ func TestNewVersionManager(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			vm, err := NewVersionManager(tc.version)
-			if tc.expectError {
+		t.Run(tt.name, func(t *testing.T) {
+			vm, err := NewVersionManager(tt.version)
+			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
@@ -113,9 +113,9 @@ func TestParseVersion(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			ver, err := vm.ParseVersion(tc.version)
-			if tc.expectError {
+		t.Run(tt.name, func(t *testing.T) {
+			ver, err := vm.ParseVersion(tt.version)
+			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
@@ -123,10 +123,10 @@ func TestParseVersion(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}
-				if tc.expectNil && ver != nil {
+				if tt.expectNil && ver != nil {
 					t.Error("Expected nil version but got non-nil")
 				}
-				if !tc.expectNil && ver == nil {
+				if !tt.expectNil && ver == nil {
 					t.Error("Expected non-nil version but got nil")
 				}
 			}
@@ -178,9 +178,9 @@ func TestValidateConstraint(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := vm.ValidateConstraint(tc.version, tc.constraint)
-			if tc.expectError {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := vm.ValidateConstraint(tt.version, tt.constraint)
+			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
@@ -188,8 +188,8 @@ func TestValidateConstraint(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}
-				if result != tc.expected {
-					t.Errorf("Expected %v, got %v", tc.expected, result)
+				if result != tt.expected {
+					t.Errorf("Expected %v, got %v", tt.expected, result)
 				}
 			}
 		})
@@ -233,16 +233,16 @@ func TestCheckCompatibility(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			compatible, warnings, err := vm.CheckCompatibility(tc.templateVersion, tc.requiredWarpgateVersion)
+		t.Run(tt.name, func(t *testing.T) {
+			compatible, warnings, err := vm.CheckCompatibility(tt.templateVersion, tt.requiredWarpgateVersion)
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
-			if compatible != tc.expectedCompatible {
-				t.Errorf("Expected compatible=%v, got %v", tc.expectedCompatible, compatible)
+			if compatible != tt.expectedCompatible {
+				t.Errorf("Expected compatible=%v, got %v", tt.expectedCompatible, compatible)
 			}
-			if len(warnings) != tc.expectedWarnings {
-				t.Errorf("Expected %d warnings, got %d: %v", tc.expectedWarnings, len(warnings), warnings)
+			if len(warnings) != tt.expectedWarnings {
+				t.Errorf("Expected %d warnings, got %d: %v", tt.expectedWarnings, len(warnings), warnings)
 			}
 		})
 	}
@@ -299,9 +299,9 @@ func TestCompareVersions(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := vm.CompareVersions(tc.v1, tc.v2)
-			if tc.expectError {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := vm.CompareVersions(tt.v1, tt.v2)
+			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
@@ -309,8 +309,8 @@ func TestCompareVersions(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}
-				if result != tc.expected {
-					t.Errorf("Expected %d, got %d", tc.expected, result)
+				if result != tt.expected {
+					t.Errorf("Expected %d, got %d", tt.expected, result)
 				}
 			}
 		})
@@ -361,9 +361,9 @@ func TestIsBreakingChange(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := vm.IsBreakingChange(tc.oldVersion, tc.newVersion)
-			if tc.expectError {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := vm.IsBreakingChange(tt.oldVersion, tt.newVersion)
+			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
@@ -371,8 +371,8 @@ func TestIsBreakingChange(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}
-				if result != tc.expected {
-					t.Errorf("Expected %v, got %v", tc.expected, result)
+				if result != tt.expected {
+					t.Errorf("Expected %v, got %v", tt.expected, result)
 				}
 			}
 		})
@@ -418,9 +418,9 @@ func TestGetLatestVersion(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := vm.GetLatestVersion(tc.versions)
-			if tc.expectError {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := vm.GetLatestVersion(tt.versions)
+			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
@@ -428,8 +428,8 @@ func TestGetLatestVersion(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}
-				if result != tc.expected {
-					t.Errorf("Expected %s, got %s", tc.expected, result)
+				if result != tt.expected {
+					t.Errorf("Expected %s, got %s", tt.expected, result)
 				}
 			}
 		})
@@ -493,9 +493,9 @@ func TestValidateVersionRange(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := vm.ValidateVersionRange(tc.version, tc.minVersion, tc.maxVersion)
-			if tc.expectError {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := vm.ValidateVersionRange(tt.version, tt.minVersion, tt.maxVersion)
+			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
 				}
@@ -503,8 +503,8 @@ func TestValidateVersionRange(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}
-				if result != tc.expected {
-					t.Errorf("Expected %v, got %v", tc.expected, result)
+				if result != tt.expected {
+					t.Errorf("Expected %v, got %v", tt.expected, result)
 				}
 			}
 		})

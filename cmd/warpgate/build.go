@@ -194,7 +194,6 @@ func applyConfigOverrides(buildConfig *builder.Config) {
 	}
 }
 
-
 // validateConfig validates the build configuration
 func validateConfig(buildConfig *builder.Config) error {
 	validator := config.NewValidator()

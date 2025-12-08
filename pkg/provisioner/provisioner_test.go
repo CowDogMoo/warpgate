@@ -147,9 +147,9 @@ func TestScriptProvisioner_ScriptPaths(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			basename := filepath.Base(tc.scriptPath)
-			assert.Equal(t, tc.expected, basename)
+		t.Run(tt.name, func(t *testing.T) {
+			basename := filepath.Base(tt.scriptPath)
+			assert.Equal(t, tt.expected, basename)
 		})
 	}
 }
@@ -226,10 +226,10 @@ func TestAnsibleProvisioner_PlaybookPath(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			ext := filepath.Ext(tc.playbookPath)
+		t.Run(tt.name, func(t *testing.T) {
+			ext := filepath.Ext(tt.playbookPath)
 			isYaml := ext == ".yml" || ext == ".yaml"
-			assert.Equal(t, tc.expectValid, isYaml)
+			assert.Equal(t, tt.expectValid, isYaml)
 		})
 	}
 }
@@ -325,14 +325,14 @@ func TestEnvironmentVariables(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			config := builder.Provisioner{
 				Type:        "shell",
 				Inline:      []string{"echo test"},
-				Environment: tc.envVars,
+				Environment: tt.envVars,
 			}
 
-			assert.Len(t, config.Environment, tc.expected)
+			assert.Len(t, config.Environment, tt.expected)
 		})
 	}
 }
@@ -362,18 +362,18 @@ func TestWorkingDirectory(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			config := builder.Provisioner{
 				Type:       "shell",
 				Inline:     []string{"pwd"},
-				WorkingDir: tc.workingDir,
+				WorkingDir: tt.workingDir,
 			}
 
-			if tc.isEmpty {
+			if tt.isEmpty {
 				assert.Empty(t, config.WorkingDir)
 			} else {
 				assert.NotEmpty(t, config.WorkingDir)
-				assert.Equal(t, tc.workingDir, config.WorkingDir)
+				assert.Equal(t, tt.workingDir, config.WorkingDir)
 			}
 		})
 	}

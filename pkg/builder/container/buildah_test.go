@@ -42,7 +42,7 @@ func TestGetDefaultConfig(t *testing.T) {
 		cfg.StorageRoot, cfg.RunRoot, cfg.StorageDriver)
 	t.Log("Empty values are expected - they delegate to containers/storage system defaults")
 
-	// Verify the config is at least valid (no nil pointers, etc.)
+	// Verify the config is at least valid (no nil pointers, ett.)
 	// The actual storage initialization will be tested in TestNewBuildahBuilder
 }
 
@@ -205,13 +205,13 @@ func TestBuildahConfig_Validation(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := tc.config
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.config
 			if cfg.StorageDriver == "" {
 				cfg.StorageDriver = "vfs"
 			}
 
-			if cfg.StorageRoot == "" && tc.wantError {
+			if cfg.StorageRoot == "" && tt.wantError {
 				t.Log("Expected validation to fail for empty storage root")
 			}
 		})
@@ -566,23 +566,23 @@ func TestBuildahBuilder_ProvisionerTypes(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.provisioner.Type != tc.expectedType {
-				t.Errorf("Expected provisioner type %s, got %s", tc.expectedType, tc.provisioner.Type)
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.provisioner.Type != tt.expectedType {
+				t.Errorf("Expected provisioner type %s, got %s", tt.expectedType, tt.provisioner.Type)
 			}
 
 			// Verify the provisioner has the expected fields
-			switch tc.expectedType {
+			switch tt.expectedType {
 			case "shell":
-				if len(tc.provisioner.Inline) == 0 {
+				if len(tt.provisioner.Inline) == 0 {
 					t.Error("Shell provisioner should have inline commands")
 				}
 			case "script":
-				if len(tc.provisioner.Scripts) == 0 {
+				if len(tt.provisioner.Scripts) == 0 {
 					t.Error("Script provisioner should have script paths")
 				}
 			case "ansible":
-				if tc.provisioner.PlaybookPath == "" {
+				if tt.provisioner.PlaybookPath == "" {
 					t.Error("Ansible provisioner should have a playbook path")
 				}
 			}
@@ -633,15 +633,15 @@ func TestBuildahBuilder_ParseCommandValue(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result := bldr.parseCommandValue(tc.input)
-			if len(result) != len(tc.expected) {
-				t.Errorf("Expected %d elements, got %d", len(tc.expected), len(result))
+		t.Run(tt.name, func(t *testing.T) {
+			result := bldr.parseCommandValue(tt.input)
+			if len(result) != len(tt.expected) {
+				t.Errorf("Expected %d elements, got %d", len(tt.expected), len(result))
 				return
 			}
 			for i, val := range result {
-				if val != tc.expected[i] {
-					t.Errorf("Element %d: expected '%s', got '%s'", i, tc.expected[i], val)
+				if val != tt.expected[i] {
+					t.Errorf("Element %d: expected '%s', got '%s'", i, tt.expected[i], val)
 				}
 			}
 		})
@@ -735,12 +735,12 @@ func TestBuildahBuilder_ApplyChange(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := bldr.applyChange(tc.change)
-			if tc.expectErr && err == nil {
+		t.Run(tt.name, func(t *testing.T) {
+			err := bldr.applyChange(tt.change)
+			if tt.expectErr && err == nil {
 				t.Error("Expected error but got none")
 			}
-			if !tc.expectErr && err != nil {
+			if !tt.expectErr && err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
 		})

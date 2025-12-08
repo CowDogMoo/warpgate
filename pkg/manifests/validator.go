@@ -77,8 +77,13 @@ func ValidateDigestFiles(digestFiles []DigestFile, opts ValidationOptions) error
 
 // FilterArchitectures filters digest files based on architecture requirements
 func FilterArchitectures(digestFiles []DigestFile, opts FilterOptions) ([]DigestFile, error) {
-	// If no requirements, return all
+	// If no requirements, return all (auto-detect mode)
 	if len(opts.RequiredArchitectures) == 0 {
+		architectures := make([]string, 0, len(digestFiles))
+		for _, df := range digestFiles {
+			architectures = append(architectures, df.Architecture)
+		}
+		logging.Info("Auto-detected %d architecture(s): %v", len(architectures), architectures)
 		return digestFiles, nil
 	}
 

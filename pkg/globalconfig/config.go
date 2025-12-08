@@ -38,6 +38,7 @@ type Config struct {
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Templates TemplatesConfig `mapstructure:"templates"`
 	Build     BuildConfig     `mapstructure:"build"`
+	Manifests ManifestsConfig `mapstructure:"manifests"`
 	Log       LogConfig       `mapstructure:"log"`
 	AWS       AWSConfig       `mapstructure:"aws"`
 	Container ContainerConfig `mapstructure:"container"`
@@ -88,6 +89,13 @@ type BuildConfig struct {
 	ParallelismLimit     int      `mapstructure:"parallelism_limit"`
 	CPUFraction          float64  `mapstructure:"cpu_fraction"`
 	BaselineBuildTimeMin int      `mapstructure:"baseline_build_time_min"`
+}
+
+// ManifestsConfig holds manifest-related configuration
+type ManifestsConfig struct {
+	// VerifyConcurrency is the number of concurrent digest verifications
+	// Default: 5, Max: 20
+	VerifyConcurrency int `mapstructure:"verify_concurrency" yaml:"verify_concurrency"`
 }
 
 // LogConfig holds logging configuration
@@ -328,6 +336,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("build.cpu_fraction", 0.5)
 	v.SetDefault("build.baseline_build_time_min", 10)
 
+	// Manifests defaults
+	v.SetDefault("manifests.verify_concurrency", 5)
+
 	// Registry defaults
 	v.SetDefault("registry.default", "ghcr.io")
 
@@ -385,6 +396,9 @@ func bindEnvVars(v *viper.Viper) {
 
 	// Build
 	_ = v.BindEnv("build.default_arch", "WARPGATE_BUILD_DEFAULT_ARCH")
+
+	// Manifests
+	_ = v.BindEnv("manifests.verify_concurrency", "WARPGATE_MANIFESTS_VERIFY_CONCURRENCY")
 	_ = v.BindEnv("build.parallel_builds", "WARPGATE_BUILD_PARALLEL_BUILDS")
 	_ = v.BindEnv("build.timeout", "WARPGATE_BUILD_TIMEOUT")
 	_ = v.BindEnv("build.concurrency", "WARPGATE_BUILD_CONCURRENCY")

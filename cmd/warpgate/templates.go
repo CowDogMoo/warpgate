@@ -574,10 +574,10 @@ func extractNamespace(repository string) string {
 func needsProvisionRepo(templateName string) bool {
 	// Templates that typically use ansible provisioning
 	provisionTemplates := map[string]bool{
-		"attack-box":        true,
-		"atomic-red-team":   true,
-		"sliver":            true,
-		"ttpforge":          true,
+		"attack-box":      true,
+		"atomic-red-team": true,
+		"sliver":          true,
+		"ttpforge":        true,
 	}
 
 	return provisionTemplates[templateName]
