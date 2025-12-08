@@ -99,24 +99,29 @@ Each digest file should contain a single line with the format:
   sha256:<64-character-hex-digest>
 
 Examples:
-  # Create manifest with all found architectures
+  # Create manifest with auto-detected architectures (from digest files)
   warpgate manifests create --name attack-box --registry ghcr.io/cowdogmoo
+
+  # Create manifest with multiple tags simultaneously
+  warpgate manifests create --name attack-box --registry ghcr.io/cowdogmoo \
+    --tag latest,v1.0.0,stable
 
   # Create manifest with specific architectures
   warpgate manifests create --name attack-box --registry ghcr.io/cowdogmoo \
     --require-arch amd64,arm64
 
-  # Create manifest with best-effort (include available architectures)
+  # Add OCI annotations and labels
   warpgate manifests create --name attack-box --registry ghcr.io/cowdogmoo \
-    --require-arch amd64,arm64 --best-effort
+    --annotation "org.opencontainers.image.version=1.0.0" \
+    --label "maintainer=security-team"
 
-  # Verify digests exist in registry before creating manifest
+  # Tune verification concurrency (default: 5, max: 20)
   warpgate manifests create --name attack-box --registry ghcr.io/cowdogmoo \
-    --verify-registry
+    --verify-concurrency 10
 
-  # Only use digests less than 1 hour old
+  # Health check registry before operations
   warpgate manifests create --name attack-box --registry ghcr.io/cowdogmoo \
-    --max-age 1h
+    --health-check
 
   # Dry run to preview manifest without pushing
   warpgate manifests create --name attack-box --registry ghcr.io/cowdogmoo \
