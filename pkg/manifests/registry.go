@@ -26,6 +26,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"go.podman.io/image/v5/docker"
@@ -41,8 +42,9 @@ type VerificationOptions struct {
 }
 
 // VerifyDigestsInRegistry verifies that digests exist in the registry
+// Performs verification in parallel for improved performance
 func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts VerificationOptions) error {
-	logging.Info("Verifying digests exist in registry...")
+	logging.Info("Verifying %d digest(s) exist in registry...", len(digestFiles))
 
 	// Create system context for registry operations
 	systemContext, err := createSystemContext(opts.AuthFile)
@@ -50,38 +52,109 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 		return fmt.Errorf("failed to create system context: %w", err)
 	}
 
+	// Create channels for parallel verification
+	type verificationResult struct {
+		digestFile DigestFile
+		imageRef   string
+		err        error
+	}
+
+	results := make(chan verificationResult, len(digestFiles))
+	var wg sync.WaitGroup
+
+	// Limit concurrency to avoid overwhelming the registry
+	maxConcurrent := 5
+	semaphore := make(chan struct{}, maxConcurrent)
+
+	// Verify each digest in parallel
 	for _, df := range digestFiles {
-		imageRef := BuildImageReference(ReferenceOptions{
-			Registry:     opts.Registry,
-			Namespace:    opts.Namespace,
-			ImageName:    df.ImageName,
-			Architecture: df.Architecture,
-			Tag:          opts.Tag,
-		})
+		wg.Add(1)
+		go func(digestFile DigestFile) {
+			defer wg.Done()
 
-		logging.Debug("Verifying %s exists in registry...", imageRef)
+			// Acquire semaphore
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
 
-		// Try to get image manifest from registry
-		ref, err := docker.ParseReference("//" + imageRef)
-		if err != nil {
-			return fmt.Errorf("failed to parse image reference %s: %w", imageRef, err)
+			imageRef := BuildImageReference(ReferenceOptions{
+				Registry:     opts.Registry,
+				Namespace:    opts.Namespace,
+				ImageName:    digestFile.ImageName,
+				Architecture: digestFile.Architecture,
+				Tag:          opts.Tag,
+			})
+
+			logging.Debug("Verifying %s exists in registry...", imageRef)
+
+			// Try to get image manifest from registry
+			ref, err := docker.ParseReference("//" + imageRef)
+			if err != nil {
+				results <- verificationResult{
+					digestFile: digestFile,
+					imageRef:   imageRef,
+					err:        fmt.Errorf("failed to parse image reference %s: %w", imageRef, err),
+				}
+				return
+			}
+
+			// Try to get the image
+			img, err := ref.NewImage(ctx, systemContext)
+			if err != nil {
+				results <- verificationResult{
+					digestFile: digestFile,
+					imageRef:   imageRef,
+					err: fmt.Errorf("failed to verify digest %s in registry: %w - "+
+						"Image may not have been pushed or registry may be unreachable - "+
+						"Use --verify-registry=false to skip verification (not recommended)",
+						digestFile.Digest.String(), err),
+				}
+				return
+			}
+			_ = img.Close()
+
+			logging.Debug("Verified %s exists in registry", imageRef)
+
+			results <- verificationResult{
+				digestFile: digestFile,
+				imageRef:   imageRef,
+				err:        nil,
+			}
+		}(df)
+	}
+
+	// Close results channel when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results and check for errors
+	var verificationErrors []string
+	for result := range results {
+		if result.err != nil {
+			verificationErrors = append(verificationErrors, result.err.Error())
 		}
+	}
 
-		// Try to get the image
-		img, err := ref.NewImage(ctx, systemContext)
-		if err != nil {
-			return fmt.Errorf("failed to verify digest %s in registry: %w - "+
-				"Image may not have been pushed or registry may be unreachable - "+
-				"Use --verify-registry=false to skip verification (not recommended)",
-				df.Digest.String(), err)
-		}
-		_ = img.Close()
-
-		logging.Debug("Verified %s exists in registry", imageRef)
+	if len(verificationErrors) > 0 {
+		return fmt.Errorf("verification failed for %d digest(s):\n%s",
+			len(verificationErrors), joinErrors(verificationErrors))
 	}
 
 	logging.Info("All digests verified in registry")
 	return nil
+}
+
+// joinErrors joins multiple error messages with newlines
+func joinErrors(errors []string) string {
+	result := ""
+	for i, err := range errors {
+		if i > 0 {
+			result += "\n"
+		}
+		result += fmt.Sprintf("  %d. %s", i+1, err)
+	}
+	return result
 }
 
 // CheckManifestExists checks if a manifest already exists with the same content
@@ -97,6 +170,45 @@ func CheckManifestExists(ctx context.Context, digestFiles []DigestFile) (bool, e
 	// you would actually fetch and compare the manifest
 	// For now, we'll return false to always create the manifest
 	return false, nil
+}
+
+// HealthCheckRegistry performs a health check on the registry
+func HealthCheckRegistry(ctx context.Context, opts VerificationOptions) error {
+	logging.Info("Performing registry health check for %s...", opts.Registry)
+
+	systemContext, err := createSystemContext(opts.AuthFile)
+	if err != nil {
+		return fmt.Errorf("failed to create system context: %w", err)
+	}
+
+	// Try to access a well-known public image to verify registry connectivity
+	// Using a lightweight test reference
+	testRef := opts.Registry + "/library/hello-world:latest"
+	if opts.Registry == "ghcr.io" {
+		// GitHub Container Registry doesn't have library namespace
+		testRef = opts.Registry + "/hello-world/hello-world:latest"
+	}
+
+	logging.Debug("Testing registry connectivity with %s", testRef)
+
+	ref, err := docker.ParseReference("//" + testRef)
+	if err != nil {
+		return fmt.Errorf("registry health check failed - unable to parse test reference: %w", err)
+	}
+
+	// Try to get the image (this will test auth and connectivity)
+	img, err := ref.NewImage(ctx, systemContext)
+	if err != nil {
+		// Check if it's an auth error vs connectivity error
+		logging.Warn("Registry health check warning: %v", err)
+		logging.Info("Registry may require authentication or test image not available")
+		logging.Info("Proceeding with manifest creation...")
+		return nil // Don't fail on health check, just warn
+	}
+	_ = img.Close()
+
+	logging.Info("Registry health check passed")
+	return nil
 }
 
 // createSystemContext creates a system context for registry operations

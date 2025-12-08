@@ -34,10 +34,12 @@ import (
 
 // CreationOptions contains options for creating manifests
 type CreationOptions struct {
-	Registry  string
-	Namespace string
-	ImageName string
-	Tag       string
+	Registry    string
+	Namespace   string
+	ImageName   string
+	Tag         string
+	Annotations map[string]string // OCI annotations
+	Labels      map[string]string // OCI labels
 }
 
 // CreateAndPushManifest creates and pushes a multi-arch manifest from digest files
@@ -106,6 +108,26 @@ func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts C
 	manifestList, err := manifestMgr.CreateManifest(ctx, manifestName, entries)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
+	}
+
+	// Set manifest-level annotations (passing nil for manifest-level)
+	if len(opts.Annotations) > 0 {
+		logging.Debug("Adding %d annotation(s) to manifest", len(opts.Annotations))
+		if err := manifestList.SetAnnotations(nil, opts.Annotations); err != nil {
+			return fmt.Errorf("failed to set manifest annotations: %w", err)
+		}
+	}
+
+	// Labels are typically added as annotations with specific keys
+	if len(opts.Labels) > 0 {
+		logging.Debug("Adding %d label(s) to manifest", len(opts.Labels))
+		labelAnnotations := make(map[string]string)
+		for k, v := range opts.Labels {
+			labelAnnotations["org.opencontainers.image."+k] = v
+		}
+		if err := manifestList.SetAnnotations(nil, labelAnnotations); err != nil {
+			return fmt.Errorf("failed to set manifest labels: %w", err)
+		}
 	}
 
 	// Push the manifest to the registry

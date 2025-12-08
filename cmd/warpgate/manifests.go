@@ -23,7 +23,9 @@ THE SOFTWARE.
 package main
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cowdogmoo/warpgate/pkg/logging"
@@ -46,7 +48,7 @@ type manifestsOptions struct {
 	registry string
 
 	// Optional flags
-	tag            string
+	tags           []string
 	digestDir      string
 	namespace      string
 	verifyRegistry bool
@@ -58,6 +60,13 @@ type manifestsOptions struct {
 	dryRun         bool
 	quiet          bool
 	verbose        bool
+
+	// Phase 2: Enhanced features
+	annotations []string // OCI annotations in key=value format
+	labels      []string // OCI labels in key=value format
+	healthCheck bool     // Perform registry health check before operations
+	showDiff    bool     // Show manifest comparison/diff
+	noProgress  bool     // Disable progress indicators
 }
 
 var manifestsOpts = &manifestsOptions{}
@@ -119,13 +128,14 @@ func init() {
 	_ = manifestsCreateCmd.MarkFlagRequired("registry")
 
 	// Optional flags
-	manifestsCreateCmd.Flags().StringVarP(&manifestsOpts.tag, "tag", "t", "latest", "Image tag")
+	manifestsCreateCmd.Flags().StringSliceVarP(&manifestsOpts.tags, "tag", "t", []string{"latest"}, "Image tags (comma-separated, can specify multiple)")
 	manifestsCreateCmd.Flags().StringVar(&manifestsOpts.digestDir, "digest-dir", ".", "Directory containing digest files")
 	manifestsCreateCmd.Flags().StringVar(&manifestsOpts.namespace, "namespace", "", "Image namespace/organization")
 
 	// Security & Validation
 	manifestsCreateCmd.Flags().BoolVar(&manifestsOpts.verifyRegistry, "verify-registry", true, "Verify digests exist in registry")
 	manifestsCreateCmd.Flags().DurationVar(&manifestsOpts.maxAge, "max-age", 0, "Maximum age of digest files (e.g., 1h, 30m)")
+	manifestsCreateCmd.Flags().BoolVar(&manifestsOpts.healthCheck, "health-check", false, "Perform registry health check before operations")
 
 	// Architecture Control
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsOpts.requireArch, "require-arch", nil, "Required architectures (comma-separated)")
@@ -133,6 +143,12 @@ func init() {
 
 	// Authentication
 	manifestsCreateCmd.Flags().StringVar(&manifestsOpts.authFile, "auth-file", "", "Path to authentication file")
+
+	// Phase 2: Enhanced features
+	manifestsCreateCmd.Flags().StringSliceVar(&manifestsOpts.annotations, "annotation", nil, "OCI annotations (key=value, can specify multiple)")
+	manifestsCreateCmd.Flags().StringSliceVar(&manifestsOpts.labels, "label", nil, "OCI labels (key=value, can specify multiple)")
+	manifestsCreateCmd.Flags().BoolVar(&manifestsOpts.showDiff, "show-diff", false, "Show manifest comparison/diff if manifest exists")
+	manifestsCreateCmd.Flags().BoolVar(&manifestsOpts.noProgress, "no-progress", false, "Disable progress indicators")
 
 	// Behavior
 	manifestsCreateCmd.Flags().BoolVar(&manifestsOpts.force, "force", false, "Force recreation even if manifest exists")
@@ -200,12 +216,29 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 		os.Exit(ExitValidationError)
 	}
 
+	// Perform registry health check if requested
+	if manifestsOpts.healthCheck {
+		if err := manifests.HealthCheckRegistry(ctx, manifests.VerificationOptions{
+			Registry:  manifestsOpts.registry,
+			Namespace: manifestsOpts.namespace,
+			AuthFile:  manifestsOpts.authFile,
+		}); err != nil {
+			logging.Error("Registry health check failed: %v", err)
+			os.Exit(ExitRegistryError)
+		}
+	}
+
 	// Verify digests exist in registry if requested
 	if manifestsOpts.verifyRegistry {
+		// Use first tag for verification
+		tag := "latest"
+		if len(manifestsOpts.tags) > 0 {
+			tag = manifestsOpts.tags[0]
+		}
 		if err := manifests.VerifyDigestsInRegistry(ctx, filteredDigests, manifests.VerificationOptions{
 			Registry:  manifestsOpts.registry,
 			Namespace: manifestsOpts.namespace,
-			Tag:       manifestsOpts.tag,
+			Tag:       tag,
 			AuthFile:  manifestsOpts.authFile,
 		}); err != nil {
 			logging.Error("Registry verification failed: %v", err)
@@ -229,20 +262,54 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 		return handleDryRun(filteredDigests)
 	}
 
-	// Create and push the manifest
-	if err := manifests.CreateAndPushManifest(ctx, filteredDigests, manifests.CreationOptions{
-		Registry:  manifestsOpts.registry,
-		Namespace: manifestsOpts.namespace,
-		ImageName: manifestsOpts.name,
-		Tag:       manifestsOpts.tag,
-	}); err != nil {
-		logging.Error("Failed to create/push manifest: %v", err)
+	// Parse annotations and labels
+	annotations, err := parseKeyValuePairs(manifestsOpts.annotations)
+	if err != nil {
+		logging.Error("Failed to parse annotations: %v", err)
+		os.Exit(ExitValidationError)
+	}
+
+	labels, err := parseKeyValuePairs(manifestsOpts.labels)
+	if err != nil {
+		logging.Error("Failed to parse labels: %v", err)
+		os.Exit(ExitValidationError)
+	}
+
+	// Create and push manifests for all tags
+	// Note: This is NOT atomic - if a later tag fails, earlier tags are already pushed
+	// This is intentional for idempotency and partial success scenarios
+	var failedTags []string
+	var successTags []string
+
+	for _, tag := range manifestsOpts.tags {
+		logging.Info("Creating manifest for tag: %s", tag)
+
+		if err := manifests.CreateAndPushManifest(ctx, filteredDigests, manifests.CreationOptions{
+			Registry:    manifestsOpts.registry,
+			Namespace:   manifestsOpts.namespace,
+			ImageName:   manifestsOpts.name,
+			Tag:         tag,
+			Annotations: annotations,
+			Labels:      labels,
+		}); err != nil {
+			logging.Error("Failed to create/push manifest for tag %s: %v", tag, err)
+			failedTags = append(failedTags, tag)
+			continue
+		}
+
+		manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
+		logging.Info("Successfully created and pushed manifest to %s", manifestRef)
+		successTags = append(successTags, tag)
+	}
+
+	// Report results
+	if len(failedTags) > 0 {
+		logging.Error("Failed to push %d of %d tag(s): %v", len(failedTags), len(manifestsOpts.tags), failedTags)
+		logging.Info("Successfully pushed %d tag(s): %v", len(successTags), successTags)
 		os.Exit(ExitRegistryError)
 	}
 
-	manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, manifestsOpts.tag)
-	logging.Info("Successfully created and pushed manifest to %s", manifestRef)
-
+	logging.Info("Successfully pushed all %d tag(s)", len(successTags))
 	return nil
 }
 
@@ -252,9 +319,31 @@ func handleDryRun(filteredDigests []manifests.DigestFile) error {
 	for _, df := range filteredDigests {
 		logging.Info("  - %s: %s", df.Architecture, df.Digest.String())
 	}
-	manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, manifestsOpts.tag)
-	logging.Info("Would push to: %s", manifestRef)
+
+	// Show all tags that would be created
+	logging.Info("Would push with %d tag(s):", len(manifestsOpts.tags))
+	for _, tag := range manifestsOpts.tags {
+		manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
+		logging.Info("  - %s", manifestRef)
+	}
+
 	return nil
+}
+
+// parseKeyValuePairs parses key=value pairs from a string slice
+func parseKeyValuePairs(pairs []string) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid key=value format: %s", pair)
+		}
+		if parts[0] == "" {
+			return nil, fmt.Errorf("key cannot be empty in: %s", pair)
+		}
+		result[parts[0]] = parts[1]
+	}
+	return result, nil
 }
 
 // initManifestLogging initializes logging for manifest commands
