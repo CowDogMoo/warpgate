@@ -46,9 +46,13 @@ type Config struct {
 
 // RegistryConfig holds registry-related configuration
 type RegistryConfig struct {
-	Default  string `mapstructure:"default"`
-	Username string `mapstructure:"username"`
-	Token    string `mapstructure:"token"`
+	// Default registry URL (safe to store in config)
+	Default string `mapstructure:"default" yaml:"default"`
+
+	// Credentials are ONLY read from environment variables (not from config file)
+	// Hidden from YAML output to prevent accidental storage in config files
+	Username string `mapstructure:"-" yaml:"-"` // From WARPGATE_REGISTRY_USERNAME or REGISTRY_USERNAME
+	Token    string `mapstructure:"-" yaml:"-"` // From WARPGATE_REGISTRY_TOKEN or REGISTRY_TOKEN
 }
 
 // StorageConfig holds storage backend configuration overrides
@@ -61,17 +65,17 @@ type StorageConfig struct {
 
 // TemplatesConfig holds template-related configuration
 type TemplatesConfig struct {
-	CacheDir string `mapstructure:"cache_dir"`
+	CacheDir string `mapstructure:"cache_dir" yaml:"cache_dir"`
 	// Repositories maps repository names to their git URLs or local paths
 	// Example:
 	//   repositories:
 	//     official: https://github.com/cowdogmoo/warpgate-templates.git
 	//     local: /path/to/local/templates
 	//     private: https://github.com/myorg/private-templates.git
-	Repositories map[string]string `mapstructure:"repositories"`
+	Repositories map[string]string `mapstructure:"repositories" yaml:"repositories"`
 	// LocalPaths lists additional local directories to search for templates
 	// These are scanned in order when listing/discovering templates
-	LocalPaths []string `mapstructure:"local_paths"`
+	LocalPaths []string `mapstructure:"local_paths" yaml:"local_paths"`
 }
 
 // BuildConfig holds build-related configuration
@@ -94,11 +98,20 @@ type LogConfig struct {
 
 // AWSConfig holds AWS-related configuration
 type AWSConfig struct {
-	Region          string    `mapstructure:"region"`
-	Profile         string    `mapstructure:"profile"`
-	AccessKeyID     string    `mapstructure:"access_key_id"`
-	SecretAccessKey string    `mapstructure:"secret_access_key"`
-	AMI             AMIConfig `mapstructure:"ami"`
+	// Region is the AWS region to use (can also be set via AWS_REGION)
+	Region string `mapstructure:"region" yaml:"region,omitempty"`
+
+	// Profile is the AWS profile to use from ~/.aws/config (recommended for SSO)
+	// Can also be set via AWS_PROFILE environment variable
+	Profile string `mapstructure:"profile" yaml:"profile,omitempty"`
+
+	// Credentials are ONLY read from environment variables (not from config file)
+	// Hidden from YAML output to prevent accidental storage in config files
+	AccessKeyID     string `mapstructure:"-" yaml:"-"` // From AWS_ACCESS_KEY_ID env var only
+	SecretAccessKey string `mapstructure:"-" yaml:"-"` // From AWS_SECRET_ACCESS_KEY env var only
+	SessionToken    string `mapstructure:"-" yaml:"-"` // From AWS_SESSION_TOKEN env var only
+
+	AMI AMIConfig `mapstructure:"ami" yaml:"ami,omitempty"`
 }
 
 // AMIConfig holds AMI-specific configuration
@@ -147,12 +160,17 @@ func Load() (*Config, error) {
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 
-	// Look in these locations (in order)
-	home, err := os.UserHomeDir()
-	if err == nil {
-		v.AddConfigPath(filepath.Join(home, ".warpgate"))
-		v.AddConfigPath(filepath.Join(home, ".config", "warpgate")) // XDG standard
+	// Look in these locations (in order of precedence):
+	// 1. XDG config directories (modern, preferred: ~/.config on all Unix-like systems)
+	// 2. Legacy ~/.warpgate directory (backward compatibility)
+	// 3. Current directory
+
+	// Add config paths using our CLI-specific XDG implementation
+	for _, dir := range getConfigDirs() {
+		v.AddConfigPath(dir)
 	}
+
+	// Current directory (lowest priority)
 	v.AddConfigPath(".")
 
 	// Set sensible defaults
@@ -172,6 +190,11 @@ func Load() (*Config, error) {
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, err
 	}
+
+	// Populate credentials directly from environment variables
+	// This ensures they can NEVER come from config files
+	populateAWSCredentials(&config)
+	populateRegistryCredentials(&config)
 
 	return &config, nil
 }
@@ -202,7 +225,38 @@ func LoadFromPath(path string) (*Config, error) {
 		return nil, err
 	}
 
+	// Populate credentials directly from environment variables
+	// This ensures they can NEVER come from config files
+	populateAWSCredentials(&config)
+	populateRegistryCredentials(&config)
+
 	return &config, nil
+}
+
+// populateAWSCredentials reads AWS credentials directly from environment variables
+// This ensures they can never come from config files, preventing accidental credential leaks
+func populateAWSCredentials(cfg *Config) {
+	cfg.AWS.AccessKeyID = os.Getenv("AWS_ACCESS_KEY_ID")
+	cfg.AWS.SecretAccessKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
+	cfg.AWS.SessionToken = os.Getenv("AWS_SESSION_TOKEN")
+}
+
+// populateRegistryCredentials reads registry credentials directly from environment variables
+// This ensures they can never come from config files, preventing accidental credential leaks
+// Supports both WARPGATE_* and standard REGISTRY_* environment variables
+func populateRegistryCredentials(cfg *Config) {
+	// Try WARPGATE_* prefix first, fall back to REGISTRY_*
+	if username := os.Getenv("WARPGATE_REGISTRY_USERNAME"); username != "" {
+		cfg.Registry.Username = username
+	} else {
+		cfg.Registry.Username = os.Getenv("REGISTRY_USERNAME")
+	}
+
+	if token := os.Getenv("WARPGATE_REGISTRY_TOKEN"); token != "" {
+		cfg.Registry.Token = token
+	} else {
+		cfg.Registry.Token = os.Getenv("REGISTRY_TOKEN")
+	}
 }
 
 // detectOCIRuntime finds an available OCI runtime on the system
@@ -261,11 +315,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("storage.driver", "") // Empty = use system default from /etc/containers/storage.conf
 	v.SetDefault("storage.root", "")   // Empty = use system default
 
-	// Templates defaults
-	home, err := os.UserHomeDir()
-	if err == nil {
-		v.SetDefault("templates.cache_dir", filepath.Join(home, ".warpgate", "cache", "templates"))
-	}
+	// Templates defaults - use CLI-specific cache directory (~/.cache on Unix-like systems)
+	v.SetDefault("templates.cache_dir", filepath.Join(getCacheHome(), "warpgate", "templates"))
 
 	// Build defaults
 	v.SetDefault("build.parallel_builds", true)
@@ -281,9 +332,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("registry.default", "ghcr.io")
 
 	// Templates defaults
-	v.SetDefault("templates.repositories", map[string]string{
-		"official": "https://github.com/cowdogmoo/warpgate-templates.git",
-	})
+	// Don't set default repositories - let the registry handle defaults
+	// This prevents Viper from merging defaults with user config
+	v.SetDefault("templates.repositories", map[string]string{})
 	v.SetDefault("templates.local_paths", []string{})
 
 	// AWS defaults (will use AWS SDK defaults if not set)
@@ -320,8 +371,8 @@ func setDefaults(v *viper.Viper) {
 func bindEnvVars(v *viper.Viper) {
 	// Registry
 	_ = v.BindEnv("registry.default", "WARPGATE_REGISTRY_DEFAULT")
-	_ = v.BindEnv("registry.username", "WARPGATE_REGISTRY_USERNAME")
-	_ = v.BindEnv("registry.token", "WARPGATE_REGISTRY_TOKEN")
+	// Note: Registry credentials are NOT bound here - they're read directly from env vars
+	// after unmarshaling to prevent them from being stored in config files
 
 	// Storage
 	_ = v.BindEnv("storage.driver", "WARPGATE_STORAGE_DRIVER")
@@ -349,8 +400,8 @@ func bindEnvVars(v *viper.Viper) {
 	// AWS (also supports standard AWS_ env vars through AWS SDK)
 	_ = v.BindEnv("aws.region", "AWS_REGION", "AWS_DEFAULT_REGION")
 	_ = v.BindEnv("aws.profile", "AWS_PROFILE")
-	_ = v.BindEnv("aws.access_key_id", "AWS_ACCESS_KEY_ID")
-	_ = v.BindEnv("aws.secret_access_key", "AWS_SECRET_ACCESS_KEY")
+	// Note: AWS credentials are NOT bound here - they're read directly from env vars
+	// after unmarshaling to prevent them from being stored in config files
 
 	// AWS AMI
 	_ = v.BindEnv("aws.ami.instance_type", "WARPGATE_AWS_AMI_INSTANCE_TYPE")

@@ -81,11 +81,9 @@ func TestLoadFromPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
-	// Create a test config file
+	// Create a test config file (credentials NOT in config file - security!)
 	configContent := `registry:
   default: docker.io/myorg
-  username: testuser
-  token: testtoken
 
 log:
   level: debug
@@ -104,12 +102,19 @@ storage:
 
 templates:
   cache_dir: /custom/cache
-  default_repo: github.com/custom/templates
+  repositories:
+    custom: github.com/custom/templates
 `
 
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
+
+	// Set credentials via environment variables (secure!)
+	os.Setenv("WARPGATE_REGISTRY_USERNAME", "testuser")
+	os.Setenv("WARPGATE_REGISTRY_TOKEN", "testtoken")
+	defer os.Unsetenv("WARPGATE_REGISTRY_USERNAME")
+	defer os.Unsetenv("WARPGATE_REGISTRY_TOKEN")
 
 	config, err := LoadFromPath(configPath)
 	if err != nil {
@@ -121,12 +126,13 @@ templates:
 		t.Errorf("Expected registry 'docker.io/myorg', got '%s'", config.Registry.Default)
 	}
 
+	// Credentials should come from environment variables
 	if config.Registry.Username != "testuser" {
-		t.Errorf("Expected username 'testuser', got '%s'", config.Registry.Username)
+		t.Errorf("Expected username 'testuser' from env var, got '%s'", config.Registry.Username)
 	}
 
 	if config.Registry.Token != "testtoken" {
-		t.Errorf("Expected token 'testtoken', got '%s'", config.Registry.Token)
+		t.Errorf("Expected token 'testtoken' from env var, got '%s'", config.Registry.Token)
 	}
 
 	if config.Log.Level != "debug" {
@@ -157,8 +163,8 @@ templates:
 		t.Errorf("Expected cache dir '/custom/cache', got '%s'", config.Templates.CacheDir)
 	}
 
-	if config.Templates.DefaultRepo != "github.com/custom/templates" {
-		t.Errorf("Expected repo 'github.com/custom/templates', got '%s'", config.Templates.DefaultRepo)
+	if config.Templates.Repositories["custom"] != "github.com/custom/templates" {
+		t.Errorf("Expected custom repo 'github.com/custom/templates', got '%s'", config.Templates.Repositories["custom"])
 	}
 }
 
@@ -288,5 +294,209 @@ func TestDetectOCIRuntime(t *testing.T) {
 		t.Logf("Detected OCI runtime: %s (permissions: %v)", runtime, mode)
 	} else {
 		t.Log("No OCI runtime detected (expected on macOS or systems without crun/runc)")
+	}
+}
+
+// TestLoad_RegistryCredentialsFallback tests that REGISTRY_* env vars work without WARPGATE_ prefix
+func TestLoad_RegistryCredentialsFallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Create a minimal config file
+	configContent := `registry:
+  default: docker.io
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// Set credentials using generic REGISTRY_* env vars (without WARPGATE_ prefix)
+	os.Setenv("REGISTRY_USERNAME", "genericuser")
+	os.Setenv("REGISTRY_TOKEN", "generictoken")
+	defer func() {
+		os.Unsetenv("REGISTRY_USERNAME")
+		os.Unsetenv("REGISTRY_TOKEN")
+	}()
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Should use generic REGISTRY_* env vars
+	if config.Registry.Username != "genericuser" {
+		t.Errorf("Expected username 'genericuser' from REGISTRY_USERNAME, got '%s'", config.Registry.Username)
+	}
+
+	if config.Registry.Token != "generictoken" {
+		t.Errorf("Expected token 'generictoken' from REGISTRY_TOKEN, got '%s'", config.Registry.Token)
+	}
+}
+
+// TestLoad_RegistryCredentialsPrecedence tests that WARPGATE_* env vars take precedence over REGISTRY_*
+func TestLoad_RegistryCredentialsPrecedence(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Create a minimal config file
+	configContent := `registry:
+  default: docker.io
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// Set both WARPGATE_* and REGISTRY_* env vars
+	os.Setenv("WARPGATE_REGISTRY_USERNAME", "warpgateuser")
+	os.Setenv("REGISTRY_USERNAME", "genericuser")
+	os.Setenv("WARPGATE_REGISTRY_TOKEN", "warpgatetoken")
+	os.Setenv("REGISTRY_TOKEN", "generictoken")
+	defer func() {
+		os.Unsetenv("WARPGATE_REGISTRY_USERNAME")
+		os.Unsetenv("REGISTRY_USERNAME")
+		os.Unsetenv("WARPGATE_REGISTRY_TOKEN")
+		os.Unsetenv("REGISTRY_TOKEN")
+	}()
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// WARPGATE_* should take precedence
+	if config.Registry.Username != "warpgateuser" {
+		t.Errorf("Expected username 'warpgateuser' from WARPGATE_REGISTRY_USERNAME, got '%s'", config.Registry.Username)
+	}
+
+	if config.Registry.Token != "warpgatetoken" {
+		t.Errorf("Expected token 'warpgatetoken' from WARPGATE_REGISTRY_TOKEN, got '%s'", config.Registry.Token)
+	}
+}
+
+// TestLoad_AWSCredentialsFromEnv tests that AWS credentials are loaded from environment variables
+func TestLoad_AWSCredentialsFromEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Create a config file with AWS region but NO credentials
+	configContent := `aws:
+  region: us-west-2
+  profile: dev
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// Save existing env vars
+	originalProfile := os.Getenv("AWS_PROFILE")
+	originalRegion := os.Getenv("AWS_REGION")
+
+	// Set AWS credentials via environment variables
+	os.Setenv("AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE")
+	os.Setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+	os.Setenv("AWS_SESSION_TOKEN", "FwoGZXIvYXdzEBYaDEXAMPLE")
+	// Unset AWS_PROFILE and AWS_REGION to let config file values take precedence
+	os.Unsetenv("AWS_PROFILE")
+	os.Unsetenv("AWS_REGION")
+	defer func() {
+		os.Unsetenv("AWS_ACCESS_KEY_ID")
+		os.Unsetenv("AWS_SECRET_ACCESS_KEY")
+		os.Unsetenv("AWS_SESSION_TOKEN")
+		// Restore original env vars
+		if originalProfile != "" {
+			os.Setenv("AWS_PROFILE", originalProfile)
+		}
+		if originalRegion != "" {
+			os.Setenv("AWS_REGION", originalRegion)
+		}
+	}()
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Verify region and profile from config file
+	if config.AWS.Region != "us-west-2" {
+		t.Errorf("Expected region 'us-west-2', got '%s'", config.AWS.Region)
+	}
+
+	if config.AWS.Profile != "dev" {
+		t.Errorf("Expected profile 'dev', got '%s'", config.AWS.Profile)
+	}
+
+	// Verify credentials from environment variables
+	if config.AWS.AccessKeyID != "AKIAIOSFODNN7EXAMPLE" {
+		t.Errorf("Expected AWS access key from env var, got '%s'", config.AWS.AccessKeyID)
+	}
+
+	if config.AWS.SecretAccessKey != "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" {
+		t.Errorf("Expected AWS secret key from env var, got '%s'", config.AWS.SecretAccessKey)
+	}
+
+	if config.AWS.SessionToken != "FwoGZXIvYXdzEBYaDEXAMPLE" {
+		t.Errorf("Expected AWS session token from env var, got '%s'", config.AWS.SessionToken)
+	}
+}
+
+// TestLoad_CredentialsNeverFromConfigFile tests that credentials are NEVER read from config files
+// This is a critical security test to ensure credentials can't be accidentally stored in config
+func TestLoad_CredentialsNeverFromConfigFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Try to put credentials in the config file (should be ignored!)
+	configContent := `registry:
+  default: docker.io
+  username: malicious_user_from_file
+  token: malicious_token_from_file
+
+aws:
+  region: us-west-2
+  access_key_id: MALICIOUS_KEY_FROM_FILE
+  secret_access_key: MALICIOUS_SECRET_FROM_FILE
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// Don't set any environment variables - credentials should be empty
+	os.Unsetenv("WARPGATE_REGISTRY_USERNAME")
+	os.Unsetenv("WARPGATE_REGISTRY_TOKEN")
+	os.Unsetenv("REGISTRY_USERNAME")
+	os.Unsetenv("REGISTRY_TOKEN")
+	os.Unsetenv("AWS_ACCESS_KEY_ID")
+	os.Unsetenv("AWS_SECRET_ACCESS_KEY")
+	os.Unsetenv("AWS_SESSION_TOKEN")
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// CRITICAL: Credentials should be empty, NOT from the config file
+	if config.Registry.Username != "" {
+		t.Errorf("SECURITY ISSUE: Registry username loaded from config file! Got '%s'", config.Registry.Username)
+	}
+
+	if config.Registry.Token != "" {
+		t.Errorf("SECURITY ISSUE: Registry token loaded from config file! Got '%s'", config.Registry.Token)
+	}
+
+	if config.AWS.AccessKeyID != "" {
+		t.Errorf("SECURITY ISSUE: AWS access key loaded from config file! Got '%s'", config.AWS.AccessKeyID)
+	}
+
+	if config.AWS.SecretAccessKey != "" {
+		t.Errorf("SECURITY ISSUE: AWS secret key loaded from config file! Got '%s'", config.AWS.SecretAccessKey)
+	}
+
+	// Non-credential fields should still be loaded normally
+	if config.Registry.Default != "docker.io" {
+		t.Errorf("Expected registry 'docker.io', got '%s'", config.Registry.Default)
+	}
+
+	if config.AWS.Region != "us-west-2" {
+		t.Errorf("Expected region 'us-west-2', got '%s'", config.AWS.Region)
 	}
 }

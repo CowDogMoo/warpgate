@@ -78,10 +78,9 @@ func TestIntegration_RealWorldScenario(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
-	// Simulate a user's config with GitHub credentials
+	// Simulate a user's config (credentials NOT in config file)
 	configContent := `registry:
   default: ghcr.io/myorg
-  username: testuser
 
 build:
   default_arch:
@@ -97,8 +96,10 @@ log:
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
-	// Simulate CI environment with token
+	// Simulate CI environment with credentials from environment variables (secure!)
+	os.Setenv("WARPGATE_REGISTRY_USERNAME", "testuser")
 	os.Setenv("WARPGATE_REGISTRY_TOKEN", "ghp_secrettoken")
+	defer os.Unsetenv("WARPGATE_REGISTRY_USERNAME")
 	defer os.Unsetenv("WARPGATE_REGISTRY_TOKEN")
 
 	config, err := LoadFromPath(configPath)

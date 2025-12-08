@@ -23,27 +23,85 @@ THE SOFTWARE.
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var templatesCmd = &cobra.Command{
 	Use:   "templates",
 	Short: "Manage warpgate templates",
-	Long:  `List, search, and inspect available templates.`,
+	Long:  `List, search, inspect, and manage template sources.`,
 }
+
+var templatesAddCmd = &cobra.Command{
+	Use:   "add [url-or-path] or add [name] [url]",
+	Short: "Add a template source",
+	Long: `Add a template source (git URL or local directory).
+
+For git URLs:
+  - Auto-generate name: warpgate templates add https://github.com/user/my-templates.git
+  - Custom name: warpgate templates add my-custom-name https://github.com/user/my-templates.git
+
+For local paths (name is not supported):
+  - warpgate templates add /Users/user/my-templates
+  - warpgate templates add ~/warpgate-templates
+  - warpgate templates add ../templates
+
+Examples:
+  warpgate templates add https://github.com/user/my-templates.git
+  warpgate templates add custom-name https://github.com/user/my-templates.git
+  warpgate templates add /Users/user/my-templates
+  warpgate templates add ~/warpgate-templates`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: runTemplatesAdd,
+}
+
+var templatesRemoveCmd = &cobra.Command{
+	Use:   "remove [path-or-name]",
+	Short: "Remove a template source",
+	Long: `Remove a template source by path or repository name.
+
+Examples:
+  warpgate templates remove /Users/user/my-templates
+  warpgate templates remove official`,
+	Args: cobra.ExactArgs(1),
+	RunE: runTemplatesRemove,
+}
+
+var (
+	templatesListFormat string
+	templatesListSource string
+)
 
 var templatesListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List available templates",
-	Long:  `List all available templates from the official registry.`,
-	RunE:  runTemplatesList,
+	Long: `List all available templates from configured sources.
+
+Examples:
+  # List all templates
+  warpgate templates list
+
+  # List only local templates
+  warpgate templates list --source local
+
+  # Output in GitHub Actions matrix format
+  warpgate templates list --format gha-matrix
+
+  # Combine filters
+  warpgate templates list --source local --format gha-matrix`,
+	RunE: runTemplatesList,
 }
 
 var templatesSearchCmd = &cobra.Command{
@@ -67,42 +125,285 @@ var templatesUpdateCmd = &cobra.Command{
 	RunE:  runTemplatesUpdate,
 }
 
-var templatesRepoCmd = &cobra.Command{
-	Use:   "repo",
-	Short: "Manage template repositories",
-	Long:  `Add, remove, or list template repositories.`,
-}
-
-var templatesRepoListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List configured repositories",
-	RunE:  runTemplatesRepoList,
-}
-
-var templatesRepoAddCmd = &cobra.Command{
-	Use:   "add [name] [git-url]",
-	Short: "Add a template repository",
-	Args:  cobra.ExactArgs(2),
-	RunE:  runTemplatesRepoAdd,
-}
-
-var templatesRepoRemoveCmd = &cobra.Command{
-	Use:   "remove [name]",
-	Short: "Remove a template repository",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runTemplatesRepoRemove,
-}
-
 func init() {
+	templatesCmd.AddCommand(templatesAddCmd)
+	templatesCmd.AddCommand(templatesRemoveCmd)
 	templatesCmd.AddCommand(templatesListCmd)
 	templatesCmd.AddCommand(templatesSearchCmd)
 	templatesCmd.AddCommand(templatesInfoCmd)
 	templatesCmd.AddCommand(templatesUpdateCmd)
-	templatesCmd.AddCommand(templatesRepoCmd)
 
-	templatesRepoCmd.AddCommand(templatesRepoListCmd)
-	templatesRepoCmd.AddCommand(templatesRepoAddCmd)
-	templatesRepoCmd.AddCommand(templatesRepoRemoveCmd)
+	// Add flags to templates list command
+	templatesListCmd.Flags().StringVarP(&templatesListFormat, "format", "f", "table", "Output format (table, json, gha-matrix)")
+	templatesListCmd.Flags().StringVarP(&templatesListSource, "source", "s", "all", "Filter by source (all, local, git, or specific repo name)")
+}
+
+func runTemplatesAdd(cmd *cobra.Command, args []string) error {
+	var name string
+	var urlOrPath string
+
+	// Handle different argument patterns
+	if len(args) == 2 {
+		// Two args: [name] [url]
+		name = args[0]
+		urlOrPath = args[1]
+
+		// Validate that second arg is a git URL
+		isGitURL := strings.HasPrefix(urlOrPath, "http://") ||
+			strings.HasPrefix(urlOrPath, "https://") ||
+			strings.HasPrefix(urlOrPath, "git@")
+
+		if !isGitURL {
+			return fmt.Errorf("when providing a name, the second argument must be a git URL (not a local path)")
+		}
+	} else {
+		// One arg: [url-or-path]
+		urlOrPath = args[0]
+	}
+
+	// Detect if this is a git URL
+	isGitURL := strings.HasPrefix(urlOrPath, "http://") ||
+		strings.HasPrefix(urlOrPath, "https://") ||
+		strings.HasPrefix(urlOrPath, "git@")
+
+	// Load current config
+	cfg, err := globalconfig.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Initialize repositories map if nil
+	if cfg.Templates.Repositories == nil {
+		cfg.Templates.Repositories = make(map[string]string)
+	}
+
+	if isGitURL {
+		// Handle git URL - add to repositories
+		if name == "" {
+			// Auto-generate name if not provided
+			name = extractRepoName(urlOrPath)
+		}
+
+		// Check if already exists
+		if existing, ok := cfg.Templates.Repositories[name]; ok {
+			if existing == urlOrPath {
+				logging.Warn("Repository '%s' already exists", name)
+				return nil
+			}
+			// Name collision with different URL
+			return fmt.Errorf("repository name '%s' already exists with different URL: %s", name, existing)
+		}
+
+		logging.Info("Adding git repository: %s -> %s", name, urlOrPath)
+		cfg.Templates.Repositories[name] = urlOrPath
+
+		// Save to config file
+		configPath, err := globalconfig.ConfigFile("config.yaml")
+		if err != nil {
+			return fmt.Errorf("failed to get config path: %w", err)
+		}
+
+		v := viper.New()
+		v.SetConfigFile(configPath)
+		v.SetConfigType("yaml")
+
+		if err := v.ReadInConfig(); err != nil {
+			return fmt.Errorf("failed to read config: %w", err)
+		}
+
+		v.Set("templates.repositories", cfg.Templates.Repositories)
+
+		if err := v.WriteConfig(); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+
+		logging.Info("Repository added successfully as '%s' to %s", name, configPath)
+		logging.Info("Run 'warpgate templates update' to fetch templates")
+		return nil
+	}
+
+	// Handle local path
+	path := urlOrPath
+
+	// Expand home directory if needed
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %w", err)
+		}
+		path = filepath.Join(home, path[2:])
+	}
+
+	// Make path absolute if relative
+	if !filepath.IsAbs(path) {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path: %w", err)
+		}
+		path = absPath
+	}
+
+	// Check if path exists and is a directory
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("path does not exist: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path is not a directory: %s", path)
+	}
+
+	logging.Info("Adding local template directory: %s", path)
+
+	// Check if already exists
+	for _, existingPath := range cfg.Templates.LocalPaths {
+		if existingPath == path {
+			logging.Warn("Path already exists in local_paths")
+			return nil
+		}
+	}
+
+	// Add to local_paths
+	cfg.Templates.LocalPaths = append(cfg.Templates.LocalPaths, path)
+
+	// Save to config file
+	configPath, err := globalconfig.ConfigFile("config.yaml")
+	if err != nil {
+		return fmt.Errorf("failed to get config path: %w", err)
+	}
+
+	v := viper.New()
+	v.SetConfigFile(configPath)
+	v.SetConfigType("yaml")
+
+	if err := v.ReadInConfig(); err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	v.Set("templates.local_paths", cfg.Templates.LocalPaths)
+
+	if err := v.WriteConfig(); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	logging.Info("Template directory added successfully to %s", configPath)
+	return nil
+}
+
+// extractRepoName extracts a repository name from a git URL
+func extractRepoName(gitURL string) string {
+	// Remove .git suffix if present
+	name := strings.TrimSuffix(gitURL, ".git")
+
+	// Extract the last part of the path
+	parts := strings.Split(name, "/")
+	if len(parts) > 0 {
+		name = parts[len(parts)-1]
+	}
+
+	// For git@github.com:user/repo format
+	if strings.Contains(name, ":") {
+		parts := strings.Split(name, ":")
+		if len(parts) > 1 {
+			subparts := strings.Split(parts[1], "/")
+			if len(subparts) > 0 {
+				name = subparts[len(subparts)-1]
+			}
+		}
+	}
+
+	// Clean up the name
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "templates"
+	}
+
+	return name
+}
+
+func runTemplatesRemove(cmd *cobra.Command, args []string) error {
+	pathOrName := args[0]
+
+	// Expand home directory if needed
+	path := pathOrName
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	}
+
+	// Make path absolute if relative (and it looks like a path)
+	if !filepath.IsAbs(path) && (strings.Contains(path, "/") || strings.HasPrefix(path, ".")) {
+		absPath, err := filepath.Abs(path)
+		if err == nil {
+			path = absPath
+		}
+	}
+
+	logging.Info("Removing template source: %s", pathOrName)
+
+	// Load current config
+	cfg, err := globalconfig.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	removedFromPaths := false
+	removedFromRepos := false
+
+	// Try to remove from local_paths
+	newLocalPaths := []string{}
+	for _, existingPath := range cfg.Templates.LocalPaths {
+		if existingPath != path && existingPath != pathOrName {
+			newLocalPaths = append(newLocalPaths, existingPath)
+		} else {
+			removedFromPaths = true
+		}
+	}
+	cfg.Templates.LocalPaths = newLocalPaths
+
+	// Try to remove from repositories by name
+	if _, exists := cfg.Templates.Repositories[pathOrName]; exists {
+		delete(cfg.Templates.Repositories, pathOrName)
+		removedFromRepos = true
+	}
+
+	if !removedFromPaths && !removedFromRepos {
+		return fmt.Errorf("template source not found: %s", pathOrName)
+	}
+
+	// Save to config file
+	configPath, err := globalconfig.ConfigFile("config.yaml")
+	if err != nil {
+		return fmt.Errorf("failed to get config path: %w", err)
+	}
+
+	// Use viper to update config
+	v := viper.New()
+	v.SetConfigFile(configPath)
+	v.SetConfigType("yaml")
+
+	// Read existing config
+	if err := v.ReadInConfig(); err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	// Update both sections
+	v.Set("templates.local_paths", cfg.Templates.LocalPaths)
+	v.Set("templates.repositories", cfg.Templates.Repositories)
+
+	// Write back
+	if err := v.WriteConfig(); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	if removedFromPaths {
+		logging.Info("Removed from local_paths in %s", configPath)
+	}
+	if removedFromRepos {
+		logging.Info("Removed from repositories in %s", configPath)
+	}
+	return nil
 }
 
 func runTemplatesList(cmd *cobra.Command, args []string) error {
@@ -120,12 +421,60 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list templates: %w", err)
 	}
 
+	// Apply source filter if specified
+	if templatesListSource != "all" {
+		templateList = filterTemplatesBySource(templateList, templatesListSource)
+	}
+
 	if len(templateList) == 0 {
 		logging.Info("No templates found. Configure template repositories or local paths in ~/.warpgate/config.yaml")
 		return nil
 	}
 
-	// Display templates in a formatted table
+	// Output in requested format
+	switch templatesListFormat {
+	case "json":
+		return outputTemplatesJSON(templateList)
+	case "gha-matrix":
+		return outputTemplatesGHAMatrix(templateList)
+	case "table":
+		return outputTemplatesTable(templateList)
+	default:
+		return fmt.Errorf("unknown format: %s (supported: table, json, gha-matrix)", templatesListFormat)
+	}
+}
+
+// filterTemplatesBySource filters templates by source type or name
+func filterTemplatesBySource(templateList []templates.TemplateInfo, source string) []templates.TemplateInfo {
+	var filtered []templates.TemplateInfo
+
+	for _, tmpl := range templateList {
+		repoSource := tmpl.Repository
+
+		switch source {
+		case "local":
+			// Match templates from local paths
+			if strings.HasPrefix(repoSource, "local:") {
+				filtered = append(filtered, tmpl)
+			}
+		case "git":
+			// Match templates from git repositories (not local)
+			if !strings.HasPrefix(repoSource, "local:") {
+				filtered = append(filtered, tmpl)
+			}
+		default:
+			// Match specific repository name
+			if repoSource == source || strings.HasSuffix(repoSource, ":"+source) {
+				filtered = append(filtered, tmpl)
+			}
+		}
+	}
+
+	return filtered
+}
+
+// outputTemplatesTable outputs templates in a formatted table
+func outputTemplatesTable(templateList []templates.TemplateInfo) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "NAME\tVERSION\tSOURCE\tDESCRIPTION\tAUTHOR")
 	fmt.Fprintln(w, "----\t-------\t------\t-----------\t------")
@@ -154,6 +503,84 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 	w.Flush()
 	fmt.Printf("\nTotal templates: %d\n", len(templateList))
 	return nil
+}
+
+// outputTemplatesJSON outputs templates as JSON
+func outputTemplatesJSON(templateList []templates.TemplateInfo) error {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(templateList)
+}
+
+// GHATemplateEntry represents a template entry in GitHub Actions matrix format
+type GHATemplateEntry struct {
+	Name        string `json:"name"`
+	Namespace   string `json:"namespace"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Vars        string `json:"vars,omitempty"`
+}
+
+// GHAMatrix represents the GitHub Actions matrix structure
+type GHAMatrix struct {
+	Template []GHATemplateEntry `json:"template"`
+}
+
+// outputTemplatesGHAMatrix outputs templates in GitHub Actions matrix format
+func outputTemplatesGHAMatrix(templateList []templates.TemplateInfo) error {
+	matrix := GHAMatrix{
+		Template: make([]GHATemplateEntry, 0, len(templateList)),
+	}
+
+	for _, tmpl := range templateList {
+		entry := GHATemplateEntry{
+			Name:        tmpl.Name,
+			Namespace:   extractNamespace(tmpl.Repository),
+			Version:     tmpl.Version,
+			Description: tmpl.Description,
+		}
+
+		// Add common variables that templates might need
+		// Users can extend this with --var flags in the build command
+		if needsProvisionRepo(tmpl.Name) {
+			entry.Vars = "PROVISION_REPO_PATH=$HOME/ansible-collection-arsenal"
+		}
+
+		matrix.Template = append(matrix.Template, entry)
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(matrix)
+}
+
+// extractNamespace extracts the namespace from a repository source
+func extractNamespace(repository string) string {
+	// For local sources, extract the repository name
+	if strings.HasPrefix(repository, "local:") {
+		parts := strings.Split(repository, ":")
+		if len(parts) > 1 {
+			// Return the base name without "local:" prefix
+			return parts[1]
+		}
+	}
+
+	// For git repositories, use the repository name
+	// Default to "cowdogmoo" as that's the common namespace
+	return "cowdogmoo"
+}
+
+// needsProvisionRepo checks if a template needs ansible provisioning repo
+func needsProvisionRepo(templateName string) bool {
+	// Templates that typically use ansible provisioning
+	provisionTemplates := map[string]bool{
+		"attack-box":        true,
+		"atomic-red-team":   true,
+		"sliver":            true,
+		"ttpforge":          true,
+	}
+
+	return provisionTemplates[templateName]
 }
 
 func runTemplatesSearch(cmd *cobra.Command, args []string) error {
@@ -335,80 +762,5 @@ func runTemplatesUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	logging.Info("Template cache updated successfully")
-	return nil
-}
-
-func runTemplatesRepoList(cmd *cobra.Command, args []string) error {
-	// Create template registry
-	registry, err := templates.NewTemplateRegistry()
-	if err != nil {
-		return fmt.Errorf("failed to create template registry: %w", err)
-	}
-
-	repos := registry.GetRepositories()
-	if len(repos) == 0 {
-		logging.Info("No repositories configured")
-		return nil
-	}
-
-	// Display repositories
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tGIT URL")
-	fmt.Fprintln(w, "----\t-------")
-
-	for name, url := range repos {
-		fmt.Fprintf(w, "%s\t%s\n", name, url)
-	}
-
-	w.Flush()
-	fmt.Printf("\nTotal repositories: %d\n", len(repos))
-	return nil
-}
-
-func runTemplatesRepoAdd(cmd *cobra.Command, args []string) error {
-	name := args[0]
-	gitURL := args[1]
-
-	logging.Info("Adding repository: %s -> %s", name, gitURL)
-
-	// Create template registry
-	registry, err := templates.NewTemplateRegistry()
-	if err != nil {
-		return fmt.Errorf("failed to create template registry: %w", err)
-	}
-
-	// Add repository
-	registry.AddRepository(name, gitURL)
-
-	// Save configuration
-	if err := registry.SaveRepositories(); err != nil {
-		return fmt.Errorf("failed to save repository configuration: %w", err)
-	}
-
-	logging.Info("Repository added successfully")
-	logging.Info("Run 'warpgate templates update' to fetch templates from the new repository")
-	return nil
-}
-
-func runTemplatesRepoRemove(cmd *cobra.Command, args []string) error {
-	name := args[0]
-
-	logging.Info("Removing repository: %s", name)
-
-	// Create template registry
-	registry, err := templates.NewTemplateRegistry()
-	if err != nil {
-		return fmt.Errorf("failed to create template registry: %w", err)
-	}
-
-	// Remove repository
-	registry.RemoveRepository(name)
-
-	// Save configuration
-	if err := registry.SaveRepositories(); err != nil {
-		return fmt.Errorf("failed to save repository configuration: %w", err)
-	}
-
-	logging.Info("Repository removed successfully")
 	return nil
 }

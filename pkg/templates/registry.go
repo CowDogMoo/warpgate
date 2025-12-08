@@ -88,10 +88,15 @@ func NewTemplateRegistry() (*TemplateRegistry, error) {
 	repos := make(map[string]string)
 	if len(cfg.Templates.Repositories) > 0 {
 		for name, url := range cfg.Templates.Repositories {
-			repos[name] = url
+			// Skip empty URLs (allows users to disable default repos)
+			if url != "" {
+				repos[name] = url
+			}
 		}
-	} else {
-		// Default repository if none configured
+	}
+	// Only add default repository if no repositories configured at all
+	// and no local paths specified
+	if len(repos) == 0 && len(cfg.Templates.LocalPaths) == 0 {
 		repos["official"] = "https://github.com/cowdogmoo/warpgate-templates.git"
 	}
 
@@ -99,11 +104,6 @@ func NewTemplateRegistry() (*TemplateRegistry, error) {
 		repos:      repos,
 		localPaths: cfg.Templates.LocalPaths,
 		cacheDir:   cacheDir,
-	}
-
-	// Load additional custom repositories from legacy config file
-	if err := tr.LoadRepositories(); err != nil {
-		logging.Debug("No legacy repository config found: %v", err)
 	}
 
 	return tr, nil

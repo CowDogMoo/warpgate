@@ -151,7 +151,7 @@ podman run --rm -v $(pwd):/workspace:Z ghcr.io/cowdogmoo/warpgate:latest build /
 
 On Linux systems, warpgate requires specific configuration for proper container builds:
 
-**1. Configure global config (`~/.warpgate/config.yaml`)**
+**1. Configure global config (`~/.config/warpgate/config.yaml`)**
 
 ```yaml
 storage:
@@ -218,9 +218,18 @@ sudo -E warpgate build warpgate.yaml --arch amd64
 
 Warpgate uses two configuration systems:
 
-1. **Global config** (`~/.warpgate/config.yaml`) - User preferences, registry
-   credentials, build defaults
+1. **Global config** (`~/.config/warpgate/config.yaml`) - User preferences, registry
+   credentials, build defaults (follows XDG Base Directory Specification)
 2. **Template config** (`warpgate.yaml`) - Image definitions (portable and shareable)
+
+**Configuration File Locations:**
+
+Warpgate follows the XDG Base Directory Specification and searches for config files in this order:
+1. `$XDG_CONFIG_HOME/warpgate/config.yaml` (typically `~/.config/warpgate/config.yaml`)
+2. `~/.warpgate/config.yaml` (legacy location, still supported for backward compatibility)
+3. `./config.yaml` (current directory)
+
+**Cache Directory:** `$XDG_CACHE_HOME/warpgate/` (typically `~/.cache/warpgate/`)
 
 ### Global Config Example
 
@@ -232,16 +241,94 @@ storage:
 container:
   runtime: runc         # Container runtime (runc, crun, etc.)
 
-registries:
-  - url: ghcr.io
-    username: myuser
-    password: ${GITHUB_TOKEN}
+# Registry Configuration (for container image pushes)
+registry:
+  default: ghcr.io      # Default registry URL
+  # Note: DO NOT put username/token here - use docker login or environment variables
+
+# AWS Configuration (for AMI builds)
+aws:
+  region: us-west-2     # AWS region (or use AWS_REGION env var)
+  profile: lab          # AWS profile from ~/.aws/config (recommended for SSO)
+  ami:
+    instance_type: t3.medium
+    volume_size: 8
 
 build:
   default_arch: amd64
-  cache_from: []
-  cache_to: []
+  parallel_builds: true
 ```
+
+### Security Best Practices
+
+#### **Container Registry Authentication**
+
+⚠️ **NEVER store registry tokens in config files!** Always use one of these secure methods:
+
+1. **Docker Login (Recommended)**
+   ```bash
+   # Uses Docker's credential store (encrypted)
+   docker login ghcr.io
+   # Or with token
+   echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+
+   # Warpgate automatically uses ~/.docker/config.json
+   warpgate build warpgate.yaml --push --registry ghcr.io
+   ```
+
+2. **GitHub CLI (for GHCR)**
+   ```bash
+   # Authenticate with GitHub
+   gh auth login
+
+   # GHCR token is automatically available
+   warpgate build warpgate.yaml --push --registry ghcr.io
+   ```
+
+3. **Environment Variables** (for CI/CD)
+   ```bash
+   export WARPGATE_REGISTRY_USERNAME=myusername
+   export WARPGATE_REGISTRY_TOKEN=$GITHUB_TOKEN
+   warpgate build warpgate.yaml --push
+   ```
+
+#### **AWS Credentials - Security Best Practices:**
+
+⚠️ **NEVER store AWS credentials in config files!** Always use one of these secure methods:
+
+1. **AWS SSO (Recommended for organizations)**
+   ```bash
+   # Configure SSO in ~/.aws/config
+   aws configure sso
+
+   # Login to SSO with your profile
+   aws sso login --profile myawsaccountwithsso
+
+   # Set profile in warpgate config or via environment
+   export AWS_PROFILE=myawsaccountwithsso
+   warpgate build --template my-ami --target ami
+   ```
+
+2. **Environment Variables (for ephemeral credentials)**
+   ```bash
+   # These are automatically picked up by the AWS SDK
+   export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+   export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+   export AWS_SESSION_TOKEN=IQoJb3JpZ2luX2VjE...  # Required for SSO/STS credentials
+   export AWS_REGION=us-west-2
+   ```
+
+3. **IAM Roles (for EC2/ECS/Lambda)**
+   ```bash
+   # No configuration needed - automatically detected
+   warpgate build --template my-ami --target ami
+   ```
+
+The AWS SDK's credential chain automatically checks (in order):
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`)
+2. AWS SSO configuration (`~/.aws/config` with `sso_*` settings)
+3. Shared credentials file (`~/.aws/credentials`)
+4. IAM roles (ECS tasks, EC2 instances)
 
 ### Template Config Example
 

@@ -492,6 +492,7 @@ func executeAMIBuild(ctx context.Context, buildConfig *builder.Config) error {
 		Profile:         cfg.AWS.Profile,
 		AccessKeyID:     cfg.AWS.AccessKeyID,
 		SecretAccessKey: cfg.AWS.SecretAccessKey,
+		SessionToken:    cfg.AWS.SessionToken,
 	}
 
 	// Create AMI builder

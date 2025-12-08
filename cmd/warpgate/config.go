@@ -43,10 +43,15 @@ var configCmd = &cobra.Command{
 The configuration file stores user preferences and environment-specific settings
 like default registry, AWS region, build options, etc.
 
+Configuration locations (searched in order):
+1. $XDG_CONFIG_HOME/warpgate/config.yaml (typically ~/.config/warpgate/config.yaml)
+2. ~/.warpgate/config.yaml (legacy, for backward compatibility)
+3. ./config.yaml (current directory)
+
 Configuration precedence (highest to lowest):
 1. CLI flags
 2. Environment variables (WARPGATE_*)
-3. Configuration file (~/.warpgate/config.yaml)
+3. Configuration file
 4. Built-in defaults`,
 }
 
@@ -55,7 +60,10 @@ var configInitCmd = &cobra.Command{
 	Short: "Initialize default configuration file",
 	Long: `Create a new configuration file with default values.
 
-This will create ~/.warpgate/config.yaml with sensible defaults.
+This will create an XDG-compliant config file at:
+  $XDG_CONFIG_HOME/warpgate/config.yaml (typically ~/.config/warpgate/config.yaml)
+
+If a legacy config exists at ~/.warpgate/config.yaml, you'll be notified.
 If the file already exists, it will be overwritten only with --force.`,
 	RunE: runConfigInit,
 }
@@ -125,22 +133,29 @@ func init() {
 }
 
 func runConfigInit(cmd *cobra.Command, args []string) error {
-	home, err := os.UserHomeDir()
+	// Use CLI-specific config directory (~/.config on Unix-like systems)
+	configPath, err := globalconfig.ConfigFile("config.yaml")
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return fmt.Errorf("failed to get config path: %w", err)
 	}
-
-	configDir := filepath.Join(home, ".warpgate")
-	configPath := filepath.Join(configDir, "config.yaml")
 
 	// Check if config already exists
-	if _, err := os.Stat(configPath); err == nil && !configForce {
-		return fmt.Errorf("config file already exists at %s (use --force to overwrite)", configPath)
+	if _, err := os.Stat(configPath); err == nil {
+		if !configForce {
+			return fmt.Errorf("config file already exists at %s (use --force to overwrite)", configPath)
+		}
+		logging.Warn("Overwriting existing config file at %s", configPath)
+		logging.Warn("This will reset all custom settings to defaults!")
 	}
 
-	// Create config directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+	// Check for legacy config and suggest migration
+	if home, err := os.UserHomeDir(); err == nil {
+		legacyPath := filepath.Join(home, ".warpgate", "config.yaml")
+		if _, err := os.Stat(legacyPath); err == nil {
+			logging.Warn("Legacy config found at %s", legacyPath)
+			logging.Info("Creating config at %s", configPath)
+			logging.Info("Consider migrating: mv \"%s\" \"%s\"", legacyPath, configPath)
+		}
 	}
 
 	// Load default config
@@ -155,7 +170,7 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// Write to file
+	// Write to file (xdg.ConfigFile already creates parent dirs)
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -187,10 +202,11 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	v := viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	home, err := os.UserHomeDir()
-	if err == nil {
-		v.AddConfigPath(filepath.Join(home, ".warpgate"))
-		v.AddConfigPath(filepath.Join(home, ".config", "warpgate"))
+
+	// Add config paths (same as globalconfig.Load)
+	configDirs := globalconfig.GetConfigDirs()
+	for _, dir := range configDirs {
+		v.AddConfigPath(dir)
 	}
 	v.AddConfigPath(".")
 
@@ -204,24 +220,26 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigPath(cmd *cobra.Command, args []string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-
 	// Try to find existing config
 	v := viper.New()
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
-	v.AddConfigPath(filepath.Join(home, ".warpgate"))
-	v.AddConfigPath(filepath.Join(home, ".config", "warpgate"))
+
+	// Add config paths
+	configDirs := globalconfig.GetConfigDirs()
+	for _, dir := range configDirs {
+		v.AddConfigPath(dir)
+	}
 	v.AddConfigPath(".")
 
 	if err := v.ReadInConfig(); err == nil {
 		fmt.Println(v.ConfigFileUsed())
 	} else {
-		// Show default path
-		defaultPath := filepath.Join(home, ".warpgate", "config.yaml")
+		// Show default path (what config init would create)
+		defaultPath, err := globalconfig.ConfigFile("config.yaml")
+		if err != nil {
+			return fmt.Errorf("failed to get default config path: %w", err)
+		}
 		fmt.Printf("%s (not created yet)\n", defaultPath)
 		logging.Info("Run 'warpgate config init' to create the config file")
 	}
@@ -233,34 +251,42 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	key := args[0]
 	value := args[1]
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	configDir := filepath.Join(home, ".warpgate")
-	configPath := filepath.Join(configDir, "config.yaml")
-
-	// Create viper instance
+	// Try to find existing config first
 	v := viper.New()
-	v.SetConfigFile(configPath)
+	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 
+	// Add config paths
+	configDirs := globalconfig.GetConfigDirs()
+	for _, dir := range configDirs {
+		v.AddConfigPath(dir)
+	}
+	v.AddConfigPath(".")
+
 	// Try to read existing config
+	configPath := ""
 	if err := v.ReadInConfig(); err != nil {
-		// Config doesn't exist, prompt to create it
-		if os.IsNotExist(err) {
+		// Config doesn't exist, create it
+		if os.IsNotExist(err) || v.ConfigFileUsed() == "" {
 			logging.Warn("Config file doesn't exist. Creating it now...")
 			if err := runConfigInit(cmd, []string{}); err != nil {
 				return err
 			}
-			// Re-read the newly created config
+			// Get the path where config init created the file
+			var pathErr error
+			configPath, pathErr = globalconfig.ConfigFile("config.yaml")
+			if pathErr != nil {
+				return fmt.Errorf("failed to get config path: %w", pathErr)
+			}
+			v.SetConfigFile(configPath)
 			if err := v.ReadInConfig(); err != nil {
 				return fmt.Errorf("failed to read newly created config: %w", err)
 			}
 		} else {
 			return fmt.Errorf("failed to read config: %w", err)
 		}
+	} else {
+		configPath = v.ConfigFileUsed()
 	}
 
 	// Set the value
