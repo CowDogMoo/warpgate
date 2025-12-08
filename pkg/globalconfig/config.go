@@ -24,6 +24,7 @@ package globalconfig
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/viper"
@@ -109,7 +110,9 @@ type ContainerConfig struct {
 	DefaultRegistry    string   `mapstructure:"default_registry"`
 	DefaultBaseImage   string   `mapstructure:"default_base_image"`
 	DefaultBaseVersion string   `mapstructure:"default_base_version"`
-	Runtime            string   `mapstructure:"runtime"` // OCI runtime path (e.g., /usr/bin/crun, /usr/bin/runc)
+	// Runtime is the OCI runtime path (auto-detected: crun preferred, runc fallback)
+	// Can be overridden via config or WARPGATE_CONTAINER_RUNTIME env var
+	Runtime string `mapstructure:"runtime"`
 }
 
 // ConvertConfig holds Packer conversion defaults
@@ -193,6 +196,51 @@ func LoadFromPath(path string) (*Config, error) {
 	return &config, nil
 }
 
+// detectOCIRuntime finds an available OCI runtime on the system
+// Returns the first available runtime in order of preference: crun, runc
+// First searches PATH using exec.LookPath (most portable), then falls back to common paths
+// Paths are based on containers/common default runtime search locations
+func detectOCIRuntime() string {
+	// First try to find in PATH (most portable and idiomatic)
+	preferredRuntimes := []string{"crun", "runc"}
+	for _, runtime := range preferredRuntimes {
+		if path, err := exec.LookPath(runtime); err == nil {
+			return path
+		}
+	}
+
+	// Fallback to common installation paths if not in PATH
+	// These paths match the search order used by containers/common
+	fallbackPaths := []string{
+		// crun locations (preferred: faster, written in C)
+		"/usr/bin/crun",
+		"/usr/sbin/crun",
+		"/usr/local/bin/crun",
+		"/usr/local/sbin/crun",
+		"/sbin/crun",
+		"/bin/crun",
+		"/run/current-system/sw/bin/crun", // NixOS
+		// runc locations (fallback: standard OCI runtime)
+		"/usr/bin/runc",
+		"/usr/sbin/runc",
+		"/usr/local/bin/runc",
+		"/usr/local/sbin/runc",
+		"/sbin/runc",
+		"/bin/runc",
+		"/usr/lib/cri-o-runc/sbin/runc",    // CRI-O specific
+		"/run/current-system/sw/bin/runc",  // NixOS
+	}
+
+	for _, path := range fallbackPaths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	// If nothing found, return empty string - let buildah use its default
+	return ""
+}
+
 // setDefaults sets default values for all configuration options
 func setDefaults(v *viper.Viper) {
 	// Log defaults
@@ -245,7 +293,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("container.default_registry", "localhost")
 	v.SetDefault("container.default_base_image", "ubuntu")
 	v.SetDefault("container.default_base_version", "latest")
-	v.SetDefault("container.runtime", "/usr/bin/crun") // Default to crun, fallback to runc if not available
+	// Auto-detect available OCI runtime (crun preferred, runc fallback)
+	v.SetDefault("container.runtime", detectOCIRuntime())
 
 	// Convert/Packer defaults
 	v.SetDefault("convert.default_version", "1.0.0")

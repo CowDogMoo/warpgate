@@ -257,3 +257,36 @@ func TestGet(t *testing.T) {
 		t.Errorf("Expected log level 'info', got '%s'", config.Log.Level)
 	}
 }
+
+// TestDetectOCIRuntime tests the runtime detection logic
+func TestDetectOCIRuntime(t *testing.T) {
+	runtime := detectOCIRuntime()
+
+	// On systems without crun/runc, should return empty string
+	// On systems with runtimes, should return a valid path
+	if runtime != "" {
+		// If a runtime was detected, verify it exists
+		info, err := os.Stat(runtime)
+		if err != nil {
+			t.Errorf("Detected runtime doesn't exist: %s", runtime)
+			return
+		}
+
+		// Verify it's actually executable (check any execute bit)
+		mode := info.Mode()
+		if mode&0111 == 0 { // Check if any execute bit (owner, group, or other) is set
+			t.Errorf("Detected runtime is not executable: %s (permissions: %v)", runtime, mode)
+			return
+		}
+
+		// Verify it's a regular file, not a directory
+		if !mode.IsRegular() {
+			t.Errorf("Detected runtime is not a regular file: %s (mode: %v)", runtime, mode)
+			return
+		}
+
+		t.Logf("Detected OCI runtime: %s (permissions: %v)", runtime, mode)
+	} else {
+		t.Log("No OCI runtime detected (expected on macOS or systems without crun/runc)")
+	}
+}
