@@ -499,7 +499,15 @@ func (b *BuildahBuilder) runAnsibleProvisioner(ctx context.Context, prov builder
 
 // commit commits the container to an image and returns the image reference and digest
 func (b *BuildahBuilder) commit(ctx context.Context, name, version string) (imageRef, digest string, err error) {
-	imageRefStr := fmt.Sprintf("%s/%s:%s", b.globalConfig.Container.DefaultRegistry, name, version)
+	// Format image reference conditionally based on whether a default registry is set
+	var imageRefStr string
+	if b.globalConfig.Container.DefaultRegistry == "" {
+		// No registry prefix - local image reference
+		imageRefStr = fmt.Sprintf("%s:%s", name, version)
+	} else {
+		// Include registry prefix
+		imageRefStr = fmt.Sprintf("%s/%s:%s", b.globalConfig.Container.DefaultRegistry, name, version)
+	}
 	logging.Info("Committing image: %s", imageRefStr)
 
 	// Parse image reference
