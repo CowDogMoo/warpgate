@@ -25,6 +25,7 @@ package container
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -143,6 +144,11 @@ func (b *BuildKitBuilder) convertToLLB(cfg builder.Config) (llb.State, error) {
 	// Apply base environment variables
 	for key, value := range cfg.Base.Env {
 		state = state.AddEnv(key, value)
+	}
+
+	// Apply base changes (from base.changes in template)
+	if len(cfg.Base.Changes) > 0 {
+		state = b.applyPostChanges(state, cfg.Base.Changes)
 	}
 
 	// Apply provisioners
@@ -282,6 +288,12 @@ func (b *BuildKitBuilder) applyAnsibleProvisioner(state llb.State, prov builder.
 
 // applyPostChanges applies post-build changes to LLB state
 func (b *BuildKitBuilder) applyPostChanges(state llb.State, postChanges []string) llb.State {
+	// Track environment for variable expansion
+	env := map[string]string{
+		// Default PATH from standard Ubuntu base image
+		"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}
+
 	for _, change := range postChanges {
 		parts := strings.Fields(change)
 		if len(parts) < 2 {
@@ -291,12 +303,24 @@ func (b *BuildKitBuilder) applyPostChanges(state llb.State, postChanges []string
 		switch parts[0] {
 		case "ENV":
 			// ENV KEY=value or ENV KEY value
-			if strings.Contains(parts[1], "=") {
+			var key, value string
+			switch {
+			case strings.Contains(parts[1], "="):
 				kv := strings.SplitN(parts[1], "=", 2)
-				state = state.AddEnv(kv[0], kv[1])
-			} else if len(parts) >= 3 {
-				state = state.AddEnv(parts[1], parts[2])
+				key, value = kv[0], kv[1]
+			case len(parts) >= 3:
+				key, value = parts[1], strings.Join(parts[2:], " ")
+			default:
+				continue
 			}
+
+			// Expand $VAR references using tracked environment
+			expandedValue := b.expandContainerVars(value, env)
+			state = state.AddEnv(key, expandedValue)
+
+			// Update tracked environment
+			env[key] = expandedValue
+
 		case "WORKDIR":
 			state = state.Dir(parts[1])
 		case "USER":
@@ -305,6 +329,17 @@ func (b *BuildKitBuilder) applyPostChanges(state llb.State, postChanges []string
 		}
 	}
 	return state
+}
+
+// expandContainerVars expands $VAR references in a string using container environment
+func (b *BuildKitBuilder) expandContainerVars(s string, env map[string]string) string {
+	result := s
+	// Simple expansion of $VAR patterns (unbraced only - braced already handled by loader)
+	for key, value := range env {
+		// Replace $KEY with value (but not ${KEY} which was already expanded)
+		result = strings.ReplaceAll(result, "$"+key, value)
+	}
+	return result
 }
 
 // detectCollectionRoot detects if a playbook is from an Ansible collection source directory
@@ -357,14 +392,21 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 	// Step 4: Determine context directory (use current directory)
 	contextDir := "."
 
-	// Step 5: Build solve options
+	// Step 5: Export to OCI tar file and load into Docker
+	ociTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
+	defer func() {
+		if err := os.Remove(ociTarPath); err != nil {
+			logging.Warn("Failed to remove temporary OCI tar: %v", err)
+		}
+	}()
+
 	solveOpt := client.SolveOpt{
 		Exports: []client.ExportEntry{
 			{
-				Type: client.ExporterImage,
+				Type:   client.ExporterOCI,
+				Output: fixedWriteCloser(ociTarPath),
 				Attrs: map[string]string{
 					"name": imageName,
-					"push": "false",
 				},
 			},
 		},
@@ -386,14 +428,41 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, fmt.Errorf("build failed: %w", err)
 	}
 
+	// Step 7: Load OCI tar into Docker
+	logging.Info("Loading image into Docker...")
+	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", ociTarPath)
+	loadCmd.Stdout = os.Stdout
+	loadCmd.Stderr = os.Stderr
+	if err := loadCmd.Run(); err != nil {
+		return nil, fmt.Errorf("failed to load image into Docker: %w", err)
+	}
+
+	// Step 8: Tag the image with proper name
+	logging.Info("Tagging image as %s", imageName)
+	tagCmd := exec.CommandContext(ctx, "docker", "tag", imageName, imageName)
+	if err := tagCmd.Run(); err != nil {
+		logging.Warn("Failed to tag image (may already be tagged): %v", err)
+	}
+
 	duration := time.Since(startTime)
 
 	return &builder.BuildResult{
 		ImageRef: imageName,
 		Platform: fmt.Sprintf("linux/%s", cfg.Architectures[0]),
 		Duration: duration.String(),
-		Notes:    []string{"Built with native BuildKit LLB"},
+		Notes:    []string{"Built with native BuildKit LLB", "Image loaded to Docker"},
 	}, nil
+}
+
+// fixedWriteCloser returns a WriteCloser that exports to a file
+func fixedWriteCloser(filepath string) func(map[string]string) (io.WriteCloser, error) {
+	return func(m map[string]string) (io.WriteCloser, error) {
+		f, err := os.Create(filepath)
+		if err != nil {
+			return nil, err
+		}
+		return f, nil
+	}
 }
 
 // displayProgress displays build progress
