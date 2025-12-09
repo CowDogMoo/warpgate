@@ -191,7 +191,7 @@ templates:
 
   # Additional local scan paths
   local_paths:
-    - ~/projects/*/templates  # Glob patterns supported
+    - ~/projects/*/templates # Glob patterns supported
     - /opt/templates
 ```
 
@@ -253,9 +253,9 @@ local_paths:
 
 ```yaml
 local_paths:
-  - ~/dev/templates           # Your development templates
-  - /opt/shared/templates     # Shared team templates
-  - /mnt/nfs/company-templates  # Network share
+  - ~/dev/templates # Your development templates
+  - /opt/shared/templates # Shared team templates
+  - /mnt/nfs/company-templates # Network share
 ```
 
 #### `cache_dir`
@@ -498,17 +498,17 @@ When building by template name, warpgate searches in this order:
 
    ```yaml
    repositories:
-     official: ...  # Searched first
-     private: ...   # Searched second
-     local: ...     # Searched third
+     official: ... # Searched first
+     private: ... # Searched second
+     local: ... # Searched third
    ```
 
 2. **Local Paths** (in configuration order)
 
    ```yaml
    local_paths:
-     - ~/dev/templates    # Searched first
-     - /opt/templates     # Searched second
+     - ~/dev/templates # Searched first
+     - /opt/templates # Searched second
    ```
 
 **First match wins!**
@@ -726,8 +726,8 @@ Local development with official templates as fallback:
 ```yaml
 templates:
   repositories:
-    dev: ~/dev/warpgate-templates        # Local development (checked first)
-    official: https://github.com/cowdogmoo/warpgate-templates.git  # Fallback
+    dev: ~/dev/warpgate-templates # Local development (checked first)
+    official: https://github.com/cowdogmoo/warpgate-templates.git # Fallback
 ```
 
 ### Production/Enterprise Setup
@@ -737,11 +737,11 @@ Private company templates with official fallback:
 ```yaml
 templates:
   repositories:
-    company: git@gitlab.company.com:infra/templates.git  # Private company templates
-    official: https://github.com/cowdogmoo/warpgate-templates.git  # Official templates
+    company: git@gitlab.company.com:infra/templates.git # Private company templates
+    official: https://github.com/cowdogmoo/warpgate-templates.git # Official templates
   local_paths:
-    - /mnt/nfs/shared-templates  # Shared team templates
-  cache_dir: /var/cache/warpgate/templates  # Shared cache
+    - /mnt/nfs/shared-templates # Shared team templates
+  cache_dir: /var/cache/warpgate/templates # Shared cache
 ```
 
 ### CI/CD Setup
@@ -844,7 +844,7 @@ Templates are found in configuration order:
 
    ```yaml
    repositories:
-     priority-first: ...  # This wins for duplicates
+     priority-first: ... # This wins for duplicates
      priority-second: ...
    ```
 
@@ -953,7 +953,7 @@ warpgate templates list | grep template-name
    ```yaml
    # Ensure correct repository is first
    repositories:
-     correct-source: ...  # Move this up
+     correct-source: ... # Move this up
    ```
 
 3. **Verify template structure:**
@@ -990,18 +990,18 @@ export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
 
    ```yaml
    repositories:
-     official: ...      # ✓ Clear
-     company: ...       # ✓ Clear
-     repo1: ...         # ✗ Vague
+     official: ... # ✓ Clear
+     company: ... # ✓ Clear
+     repo1: ... # ✗ Vague
    ```
 
 2. **Order by priority:**
 
    ```yaml
    repositories:
-     production: ...    # Highest priority
-     staging: ...       # Medium priority
-     development: ...   # Lowest priority
+     production: ... # Highest priority
+     staging: ... # Medium priority
+     development: ... # Lowest priority
    ```
 
 3. **Group related templates:**
@@ -1023,11 +1023,12 @@ export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
 
    ```yaml
    repositories:
-     private: git@github.com:org/repo.git  # ✓ SSH
+     private: git@github.com:org/repo.git # ✓ SSH
      # Not: https://github.com/org/repo.git  # ✗ Requires token management
    ```
 
 2. **Never commit credentials:**
+
    - Use git credential helpers
    - Use SSH keys, not passwords
    - Don't store tokens in config files
@@ -1059,7 +1060,7 @@ export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
 
    ```yaml
    metadata:
-     version: 2.1.0  # Use semantic versioning
+     version: 2.1.0 # Use semantic versioning
    ```
 
 4. **Document templates:**
@@ -1077,7 +1078,7 @@ export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
    ```yaml
    # Faster than git repositories
    repositories:
-     dev: ~/dev/templates  # No network access needed
+     dev: ~/dev/templates # No network access needed
    ```
 
 2. **Set reasonable cache expiry:**
@@ -1092,12 +1093,13 @@ export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
    ```yaml
    # Fewer paths = faster discovery
    local_paths:
-     - /opt/templates  # Only what you need
+     - /opt/templates # Only what you need
    ```
 
 ### Collaboration
 
 1. **Share template repositories:**
+
    - Use git for version control
    - Provide clear README in repository
    - Use branches for development
@@ -1149,11 +1151,3 @@ warpgate templates update
 # Build from template
 warpgate build <template-name>
 ```
-
----
-
-**Need help?**
-
-- Check [main README](../README.md)
-- Open an [issue](https://github.com/CowDogMoo/warpgate/issues)
-- Ask in [Discussions](https://github.com/CowDogMoo/warpgate/discussions)

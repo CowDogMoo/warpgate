@@ -109,15 +109,7 @@ Created a useful Warpgate template? Share it:
 - Add it to the
   [warpgate-templates](https://github.com/cowdogmoo/warpgate-templates)
   repository
-- Share in [Discussions](https://github.com/CowDogMoo/warpgate/discussions)
 - Blog about your use case and template
-
-### Help Others
-
-- Answer questions in [Discussions](https://github.com/CowDogMoo/warpgate/discussions)
-- Help triage and reproduce issues
-- Review pull requests
-- Share your Warpgate experience
 
 ## Getting Started
 
@@ -581,13 +573,16 @@ Include in your PR description:
 
 ```markdown
 ## Summary
+
 Adds support for building Azure VM images using Azure Image Builder.
 
 ## Motivation
+
 Users have requested Azure support in addition to AWS AMIs. This enables
 teams using Azure to build standardized VM images with Warpgate.
 
 ## Changes
+
 - Implements Azure Image Builder integration in `pkg/builder/azure.go`
 - Adds Azure authentication using Azure SDK
 - Adds `--target azure` CLI flag
@@ -595,14 +590,17 @@ teams using Azure to build standardized VM images with Warpgate.
 - Adds integration tests for Azure builds
 
 ## Testing
+
 - Added unit tests for Azure builder
 - Tested manually with real Azure subscription
 - Verified existing AWS functionality still works
 
 ## Breaking Changes
+
 None - this is purely additive.
 
 ## Related Issues
+
 Closes #123
 Relates to #456
 ```
@@ -677,7 +675,6 @@ Update CHANGELOG.md before each release with:
 
 ### Questions and Discussions
 
-- **General questions** - Use [Discussions](https://github.com/CowDogMoo/warpgate/discussions)
 - **Bug reports** - Open an [Issue](https://github.com/CowDogMoo/warpgate/issues)
 - **Feature requests** - Open an [Issue](https://github.com/CowDogMoo/warpgate/issues)
 - **Security issues** - Email security@cowdogmoo.com (do not open public issues)

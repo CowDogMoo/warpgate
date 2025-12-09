@@ -62,21 +62,21 @@ The global config file (`~/.config/warpgate/config.yaml`) controls system-wide s
 ```yaml
 # Storage and Runtime Configuration
 storage:
-  driver: vfs           # Storage driver: overlay, vfs, etc.
-  root: ""              # Optional: custom storage root path
+  driver: vfs # Storage driver: overlay, vfs, etc.
+  root: "" # Optional: custom storage root path
 
 container:
-  runtime: runc         # Container runtime: runc, crun, etc.
+  runtime: runc # Container runtime: runc, crun, etc.
 
 # Registry Configuration
 registry:
-  default: ghcr.io      # Default registry for pushes
+  default: ghcr.io # Default registry for pushes
   # NOTE: Use docker login for authentication, NOT config files
 
 # AWS Configuration
 aws:
-  region: us-west-2     # Default AWS region (or use AWS_REGION env var)
-  profile: lab          # AWS profile from ~/.aws/config (for SSO)
+  region: us-west-2 # Default AWS region (or use AWS_REGION env var)
+  profile: lab # AWS profile from ~/.aws/config (for SSO)
   ami:
     instance_type: t3.medium
     volume_size: 8
@@ -99,8 +99,8 @@ Controls how container images are stored.
 
 ```yaml
 storage:
-  driver: vfs           # Storage driver
-  root: ""              # Custom storage path (optional)
+  driver: vfs # Storage driver
+  root: "" # Custom storage path (optional)
 ```
 
 **Supported drivers:**
@@ -127,7 +127,7 @@ Specify the container runtime:
 
 ```yaml
 container:
-  runtime: runc         # or: crun, kata, gvisor
+  runtime: runc # or: crun, kata, gvisor
 ```
 
 **Common runtimes:**
@@ -143,7 +143,7 @@ Set default registry for image pushes:
 
 ```yaml
 registry:
-  default: ghcr.io      # Default: docker.io
+  default: ghcr.io # Default: docker.io
 ```
 
 **Important:** Never store credentials in config files. Use `docker login`
@@ -155,11 +155,11 @@ Default AWS settings for AMI builds:
 
 ```yaml
 aws:
-  region: us-west-2     # Default region
-  profile: myprofile    # AWS CLI profile
+  region: us-west-2 # Default region
+  profile: myprofile # AWS CLI profile
   ami:
     instance_type: t3.medium
-    volume_size: 8      # GB
+    volume_size: 8 # GB
 ```
 
 **Override at build time:**
@@ -174,8 +174,8 @@ Configure default build behavior:
 
 ```yaml
 build:
-  default_arch: amd64        # Default architecture
-  parallel_builds: true      # Build architectures in parallel
+  default_arch: amd64 # Default architecture
+  parallel_builds: true # Build architectures in parallel
 ```
 
 ### Template Repositories
@@ -531,8 +531,3 @@ DB_PASSWORD: pass456
 - **Build images** - Follow the [Usage Guide](usage-guide.md)
 - **Manage templates** - Read [Template Configuration](template-configuration.md)
 - **Troubleshoot issues** - Check [Troubleshooting Guide](troubleshooting.md)
-
----
-
-**Need help?** [Open an issue](https://github.com/CowDogMoo/warpgate/issues) or
-ask in [Discussions](https://github.com/CowDogMoo/warpgate/discussions).

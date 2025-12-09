@@ -149,14 +149,14 @@ sudo warpgate build attack-box --arch amd64
 
 # Pass variables via CLI (recommended)
 sudo warpgate build sliver \
-  --var ARSENAL_REPO_PATH=/path/to/arsenal \
+  --var PROVISION_REPO_PATH=/path/to/arsenal \
   --arch amd64
 
 # Or use variable files
 sudo warpgate build sliver --var-file vars.yaml --arch amd64
 
 # Legacy: preserve environment variables with sudo -E
-export ARSENAL_REPO_PATH=/path/to/arsenal
+export PROVISION_REPO_PATH=/path/to/arsenal
 sudo -E warpgate build sliver --arch amd64
 ```
 
@@ -307,8 +307,3 @@ ping ghcr.io
 ```
 
 For more help, see the [Troubleshooting Guide](troubleshooting.md) or [open an issue](https://github.com/CowDogMoo/warpgate/issues).
-
----
-
-**Need help?** [Open an issue](https://github.com/CowDogMoo/warpgate/issues) or
-ask in [Discussions](https://github.com/CowDogMoo/warpgate/discussions).

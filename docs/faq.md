@@ -38,7 +38,8 @@ Warpgate is a modern alternative to Packer with several key advantages:
 
 **When to use Warpgate:**
 
-- Building container images (primary focus)
+- Building container images using the same provision logic you'd use for
+  VM builds and not having to create a separate Dockerfile
 - Building AWS AMIs
 - Want simpler configuration
 - Need faster builds
@@ -544,19 +545,19 @@ provisioners:
   # Order matters - put rarely-changing steps first
   - type: shell
     inline:
-      - apt-get update              # Changes rarely
-      - apt-get install -y base     # Changes rarely
+      - apt-get update # Changes rarely
+      - apt-get install -y base # Changes rarely
 
   - type: shell
     inline:
-      - apt-get install -y custom   # Changes often
+      - apt-get install -y custom # Changes often
 ```
 
 **2. Use smaller base images:**
 
 ```yaml
 base:
-  image: alpine:3.18  # Instead of ubuntu:22.04
+  image: alpine:3.18 # Instead of ubuntu:22.04
   # 5MB vs 77MB base image
 ```
 
@@ -665,10 +666,5 @@ See [Troubleshooting - Registry Issues](troubleshooting.md#registry-issues).
 
 **Community:**
 
-- [GitHub Discussions](https://github.com/CowDogMoo/warpgate/discussions) - Ask questions
 - [GitHub Issues](https://github.com/CowDogMoo/warpgate/issues) - Report bugs
 - [Contributing Guide](../CONTRIBUTING.md) - Contribute to Warpgate
-
----
-
-**Have a question not answered here?** [Start a discussion](https://github.com/CowDogMoo/warpgate/discussions)!

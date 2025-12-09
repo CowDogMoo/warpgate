@@ -1,4 +1,5 @@
 <!-- markdownlint-disable MD024 -->
+
 # Commands Reference
 
 Complete CLI command reference for Warpgate.
@@ -77,17 +78,17 @@ warpgate build myimage --save-digests --digest-dir ./digests
 
 ### Flags
 
-| Flag | Type | Description |
-| ------ | ------ | ------------- |
-| `--arch` | string | Architectures to build: `amd64`, `arm64` |
-| `--var` | string | Override template variable (format: `KEY=value`) |
-| `--var-file` | string | Load variables from YAML file |
-| `--push` | bool | Push image to registry after build |
-| `--registry` | string | Container registry URL (e.g., `ghcr.io/myorg`) |
-| `--save-digests` | bool | Save image digests to files |
-| `--digest-dir` | string | Directory to save digests (default: `./digests`) |
-| `--target` | string | Build target: `container` (default), `ami` |
-| `--from-git` | string | Build from Git repository URL |
+| Flag             | Type   | Description                                      |
+| ---------------- | ------ | ------------------------------------------------ |
+| `--arch`         | string | Architectures to build: `amd64`, `arm64`         |
+| `--var`          | string | Override template variable (format: `KEY=value`) |
+| `--var-file`     | string | Load variables from YAML file                    |
+| `--push`         | bool   | Push image to registry after build               |
+| `--registry`     | string | Container registry URL (e.g., `ghcr.io/myorg`)   |
+| `--save-digests` | bool   | Save image digests to files                      |
+| `--digest-dir`   | string | Directory to save digests (default: `./digests`) |
+| `--target`       | string | Build target: `container` (default), `ami`       |
+| `--from-git`     | string | Build from Git repository URL                    |
 
 ### Variable Precedence
 
@@ -134,11 +135,11 @@ warpgate validate sliver --var ARSENAL_PATH=/opt/arsenal
 
 ### Flags
 
-| Flag | Type | Description |
-| ------ | ------ | ------------- |
-| `--var` | string | Override variable for validation (format: `KEY=value`) |
-| `--var-file` | string | Load variables from YAML file |
-| `--syntax-only` | bool | Check syntax only, skip semantic validation |
+| Flag            | Type   | Description                                  |
+| --------------- | ------ | -------------------------------------------- |
+| `--var`         | string | Override variable (format: `KEY=value`)      |
+| `--var-file`    | string | Load variables from YAML file                |
+| `--syntax-only` | bool   | Check syntax only, skip semantic validation  |
 
 ### Exit Codes
 
@@ -330,10 +331,10 @@ warpgate manifest create \
 
 **Flags:**
 
-| Flag      | Type   | Description                                  |
-| --------- | ------ | -------------------------------------------- |
-| `--name`  | string | Manifest name (fully qualified registry path)|
-| `--images`| string | Comma-separated list of images to include    |
+| Flag       | Type   | Description                                   |
+| ---------- | ------ | --------------------------------------------- |
+| `--name`   | string | Manifest name (fully qualified registry path) |
+| `--images` | string | Comma-separated list of images to include     |
 
 #### push
 
@@ -423,8 +424,8 @@ warpgate convert packer-template.pkr.hcl --output my-warpgate.yaml
 
 ### Flags
 
-| Flag | Type | Description |
-| --- | --- | --- |
+| Flag       | Type   | Description                                 |
+| ---------- | ------ | ------------------------------------------- |
 | `--output` | string | Output file path (default: `warpgate.yaml`) |
 
 ### Limitations
@@ -489,16 +490,16 @@ Platform: linux/amd64
 
 Warpgate respects these environment variables:
 
-| Variable | Description |
-| --- | --- |
-| `WARPGATE_CONFIG` | Config file path (overrides `--config`) |
-| `WARPGATE_CACHE_DIR` | Cache directory path |
-| `WARPGATE_REGISTRY_USERNAME` | Registry username for authentication |
-| `WARPGATE_REGISTRY_TOKEN` | Registry token/password |
-| `AWS_PROFILE` | AWS CLI profile to use |
-| `AWS_REGION` | AWS region for AMI builds |
-| `AWS_ACCESS_KEY_ID` | AWS access key |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret key |
+| Variable                     | Description                             |
+| ---------------------------- | --------------------------------------- |
+| `WARPGATE_CONFIG`            | Config file path (overrides `--config`) |
+| `WARPGATE_CACHE_DIR`         | Cache directory path                    |
+| `WARPGATE_REGISTRY_USERNAME` | Registry username for authentication    |
+| `WARPGATE_REGISTRY_TOKEN`    | Registry token/password                 |
+| `AWS_PROFILE`                | AWS CLI profile to use                  |
+| `AWS_REGION`                 | AWS region for AMI builds               |
+| `AWS_ACCESS_KEY_ID`          | AWS access key                          |
+| `AWS_SECRET_ACCESS_KEY`      | AWS secret key                          |
 
 ## Exit Codes
 
@@ -531,8 +532,3 @@ warpgate version
 - [Configuration Guide](configuration.md) - Configuration reference
 - [Template Format](template-format.md) - Template syntax reference
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions
-
----
-
-**Need help?** [Open an issue](https://github.com/CowDogMoo/warpgate/issues)
-or ask in [Discussions](https://github.com/CowDogMoo/warpgate/discussions).

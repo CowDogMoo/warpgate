@@ -93,11 +93,11 @@ Customize builds using variables:
 
 ```bash
 # Single variable
-warpgate build sliver --var ARSENAL_REPO_PATH=/path/to/arsenal
+warpgate build sliver --var PROVISION_REPO_PATH=/path/to/arsenal
 
 # Multiple variables
 warpgate build sliver \
-  --var ARSENAL_REPO_PATH=/path/to/arsenal \
+  --var PROVISION_REPO_PATH=/path/to/arsenal \
   --var VERSION=1.0.0 \
   --var DEBUG=true
 ```
@@ -107,7 +107,7 @@ warpgate build sliver \
 Create `vars.yaml`:
 
 ```yaml
-ARSENAL_REPO_PATH: /path/to/ansible-collection-arsenal
+PROVISION_REPO_PATH: /path/to/ansible-collection-arsenal
 VERSION: 1.0.0
 DEBUG: true
 ENABLE_GUI: false
@@ -122,7 +122,7 @@ warpgate build sliver --var-file vars.yaml
 **Via environment variables:**
 
 ```bash
-export ARSENAL_REPO_PATH=/path/to/arsenal
+export PROVISION_REPO_PATH=/path/to/arsenal
 export VERSION=1.0.0
 warpgate build sliver
 ```
@@ -153,7 +153,7 @@ warpgate build myimage \
 - GitHub Container Registry (ghcr.io)
 - Docker Hub (docker.io)
 - Google Container Registry (gcr.io)
-- Amazon ECR (*.dkr.ecr.*.amazonaws.com)
+- Amazon ECR (_.dkr.ecr._.amazonaws.com)
 - Any OCI-compliant registry
 
 ## AWS AMIs
@@ -460,7 +460,7 @@ name: Build Images
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
 
 jobs:
   build:
@@ -548,8 +548,3 @@ fi
 - **Configure Warpgate** - Read [Configuration Guide](configuration.md)
 - **View all commands** - Check [Commands Reference](commands.md)
 - **Troubleshoot issues** - Visit [Troubleshooting Guide](troubleshooting.md)
-
----
-
-**Need help?** [Open an issue](https://github.com/CowDogMoo/warpgate/issues) or
-ask in [Discussions](https://github.com/CowDogMoo/warpgate/discussions).

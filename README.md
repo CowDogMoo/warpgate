@@ -18,17 +18,19 @@
 
 Warp Gate is a modern, Go-based CLI tool that simplifies building container
 images and AWS AMIs using declarative YAML templates. Built on
-[Buildah](https://buildah.io/) and the AWS SDK, it provides a faster, more
-maintainable alternative to Packer for infrastructure image creation.
+[Buildah](https://buildah.io/) and the [AWS SDK](https://aws.amazon.com/sdk-for-go/),
+it provides a faster, more maintainable alternative to Packer for
+infrastructure image creation.
 
 **Why Warp Gate?**
 
+- **Unified provisioning** - Use Ansible or shell scripts for both containers
+  and VMs (no separate Dockerfiles)
 - **Faster builds** - Native Go performance with Buildah integration
 - **Simpler syntax** - Clean YAML templates instead of HCL/JSON
 - **Better portability** - Run natively on Linux or containerized anywhere
 - **Template discovery** - Built-in template repository management
 - **Multi-arch support** - Build for amd64 and arm64 simultaneously
-- **Secure by default** - Never stores credentials in config files
 
 **Perfect for:**
 
@@ -86,7 +88,7 @@ and [Usage Guide](docs/usage-guide.md).
 
 - **[Sliver C2 Guide](docs/sliver.md)** - Building Sliver C2 framework
   (complete walkthrough)
-- **[Official Templates](https://github.com/cowdogmoo/warpgate-templates)**
+- **[Official Templates](https://github.com/CowDogMoo/warpgate-templates)**
   - Ready-to-use templates
 
 ### Contributing
@@ -99,30 +101,30 @@ and [Usage Guide](docs/usage-guide.md).
 ### Core Capabilities
 
 | Feature | Description | Status |
-| ------- | ----------- | ------ |
-| **Container Images** | Build OCI-compliant images with Buildah | ✅ Stable |
-| **AWS AMIs** | Create EC2 AMIs with EC2 Image Builder | ✅ Stable |
-| **Multi-arch Builds** | Build for amd64/arm64 simultaneously | ✅ Stable |
-| **Template Discovery** | Git/local template repository mgmt | ✅ Stable |
-| **Ansible Provisioner** | Run Ansible playbooks during builds | ✅ Stable |
-| **Shell Provisioner** | Execute shell scripts in images | ✅ Stable |
-| **PowerShell Provisioner** | Run PowerShell (Windows images) | ✅ Stable |
-| **Variable Substitution** | CLI flags/files/env variables | ✅ Stable |
-| **Packer Conversion** | Convert Packer to Warpgate format | ⚠️ Beta |
-| **Registry Push** | Push images to container registries | ✅ Stable |
-| **Multi-arch Manifests** | Create/push multi-platform manifests | ✅ Stable |
+| --- | --- | --- |
+| **Container Images** | Build OCI images with Buildah | ✅  Stable |
+| **AWS AMIs** | Create EC2 AMIs | ✅  Stable |
+| **Multi-arch Builds** | Build amd64/arm64 simultaneously | ✅  Stable |
+| **Template Discovery** | Git/local template repo mgmt | ✅  Stable |
+| **Ansible Provisioner** | Run Ansible playbooks | ✅  Stable |
+| **Shell Provisioner** | Execute shell scripts | ✅  Stable |
+| **PowerShell Provisioner** | Run PowerShell (Windows) | ✅  Stable |
+| **Variable Substitution** | CLI flags/files/env vars | ✅  Stable |
+| **Packer Conversion** | Convert Packer to Warpgate | ⚠️  Beta |
+| **Registry Push** | Push images to registries | ✅  Stable |
+| **Multi-arch Manifests** | Create/push multi-arch images | ✅  Stable |
 
 ### Why Warpgate vs Packer?
 
-| Aspect | Warpgate | Packer |
-| ------ | -------- | ------ |
-| **Performance** | Fast (Go native) | Slower (plugin architecture) |
-| **Syntax** | Simple YAML | Complex HCL/JSON |
-| **Container Focus** | Native Buildah integration | Docker plugin only |
-| **Template Discovery** | Built-in repository management | Manual |
-| **Learning Curve** | Gentle | Steep |
-| **Maintenance** | Single binary | Multiple plugins |
-| **Multi-arch** | First-class support | Manual configuration |
+| Aspect                 | Warpgate                  | Packer                  |
+| ---------------------- | ------------------------- | ----------------------- |
+| **Performance**        | Fast (Go native)          | Slower (plugins)        |
+| **Syntax**             | Simple YAML               | Complex HCL/JSON        |
+| **Container Focus**    | Native Buildah            | Docker plugin only      |
+| **Template Discovery** | Built-in repo mgmt        | Manual                  |
+| **Learning Curve**     | Gentle                    | Steep                   |
+| **Maintenance**        | Single binary             | Multiple plugins        |
+| **Multi-arch**         | First-class support       | Manual configuration    |
 
 ### Security Features
 
@@ -273,8 +275,7 @@ We welcome contributions! Warpgate is built for and by the community.
 - Report bugs and request features via [Issues](https://github.com/CowDogMoo/warpgate/issues)
 - Submit pull requests for fixes and features
 - Improve documentation
-- Share templates in [warpgate-templates](https://github.com/cowdogmoo/warpgate-templates)
-- Help others in [Discussions](https://github.com/CowDogMoo/warpgate/discussions)
+- Share templates in [warpgate-templates](https://github.com/CowDogMoo/warpgate-templates)
 
 ### Quick Start for Contributors
 
@@ -312,12 +313,12 @@ task pre-commit:run
 
 **Q: What's the difference between Warpgate and Packer?**
 
-A: Warpgate offers simpler YAML syntax, faster builds, built-in template
-discovery, and better container focus.
+A: Warpgate offers simpler YAML syntax, sane licensing, faster builds,
+built-in template discovery, and a stronger focus on containerization support.
 
 **Q: Can I use my existing Packer templates?**
 
-A: Yes! Use `warpgate convert packer-template.pkr.hcl` (Beta feature).
+A: Yes! Use `warpgate convert packer-template.pkr.hcl`.
 
 **Q: Is Warpgate production-ready?**
 
@@ -338,31 +339,3 @@ Warpgate uses open-source libraries:
 - [AWS SDK for Go](https://github.com/aws/aws-sdk-go-v2) - Apache 2.0
 - [Cobra](https://github.com/spf13/cobra) - Apache 2.0
 - [Viper](https://github.com/spf13/viper) - MIT
-
-## Acknowledgments
-
-**Built with:**
-
-- [Buildah](https://buildah.io/) - Container image building library
-- [AWS SDK for Go v2](https://aws.github.io/aws-sdk-go-v2/) - AWS integration
-- [Cobra](https://cobra.dev/) - CLI framework
-- [Viper](https://github.com/spf13/viper) - Configuration management
-
-**Inspired by:**
-
-- [Packer](https://www.packer.io/) - Image building automation
-- [containers/image](https://github.com/containers/image) - Container image libraries
-
-**Special thanks to:**
-
-- Contributors and maintainers
-- The Buildah and Podman communities
-- Users providing feedback and bug reports
-
----
-
-**Need help?** Open an [issue](https://github.com/CowDogMoo/warpgate/issues)
-or start a [discussion](https://github.com/CowDogmoo/warpgate/discussions).
-
-**Found this useful?** Give us a ⭐ on
-[GitHub](https://github.com/CowDogMoo/warpgate)!

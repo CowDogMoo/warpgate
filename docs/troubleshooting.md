@@ -125,7 +125,7 @@ Edit `~/.config/warpgate/config.yaml`:
 
 ```yaml
 storage:
-  driver: vfs  # Use vfs instead of overlay
+  driver: vfs # Use vfs instead of overlay
 
 container:
   runtime: runc
@@ -476,7 +476,7 @@ docker run -it ubuntu:22.04 bash
 # Use larger instance type
 targets:
   - type: ami
-    instance_type: t3.large  # Instead of t3.micro
+    instance_type: t3.large # Instead of t3.micro
 ```
 
 **3. Network connectivity issues:**
@@ -557,7 +557,6 @@ When reporting issues, include:
 ### 4. Ask for Help
 
 - [Open an issue](https://github.com/CowDogMoo/warpgate/issues/new)
-- [Start a discussion](https://github.com/CowDogMoo/warpgate/discussions)
 - Check the [FAQ](faq.md)
 
 ### 5. Community Resources

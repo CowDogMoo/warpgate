@@ -68,7 +68,7 @@ Examples:
   warpgate build warpgate.yaml
 
   # Build with variable overrides
-  warpgate build warpgate.yaml --var ARSENAL_REPO_PATH=/path/to/arsenal
+  warpgate build warpgate.yaml --var PROVISION_REPO_PATH=/path/to/arsenal
 
   # Build with multiple variables
   warpgate build warpgate.yaml --var KEY1=value1 --var KEY2=value2

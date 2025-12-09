@@ -142,8 +142,7 @@ docker run --rm \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$TEMPLATE_PATH:/workspace/warpgate.yaml:ro" \
     -v "$COLLECTION_PATH:/provision:ro" \
-    -e ARSENAL_REPO_PATH=/provision \
-    -e WORKSTATION_REPO_PATH=/provision \
+    -e PROVISION_REPO_PATH=/provision \
     --privileged \
     --security-opt seccomp=unconfined \
     --security-opt apparmor=unconfined \

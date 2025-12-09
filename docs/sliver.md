@@ -113,17 +113,17 @@ docker images | grep sliver
 # sliver    latest    abc123def456    2 minutes ago    1.5GB
 ```
 
-### Building with Custom Arsenal Path
+### Building with Custom Provision Path
 
-If your template requires the Arsenal collection:
+If your template requires an Ansible collection:
 
 ```bash
 # Build with variable override
-warpgate build sliver --var ARSENAL_REPO_PATH=/path/to/ansible-collection-arsenal
+warpgate build sliver --var PROVISION_REPO_PATH=/path/to/ansible-collection-arsenal
 
 # Or use a variable file
 cat > sliver-vars.yaml <<EOF
-ARSENAL_REPO_PATH: /path/to/ansible-collection-arsenal
+PROVISION_REPO_PATH: /path/to/ansible-collection-arsenal
 VERSION: 1.5.0
 DEBUG: true
 EOF
@@ -547,8 +547,8 @@ provisioners:
   - type: shell
     inline:
       - apt-get update
-      - apt-get install -y git  # Add this line
-      - # ... rest of provisioning
+      - apt-get install -y git # Add this line
+      -  # ... rest of provisioning
 ```
 
 **Rebuild container:**
@@ -903,7 +903,7 @@ sliver --config alice.cfg  # Operator connects with config
 **Persistent Deployment** - Run as service with Docker Compose:
 
 ```yaml
-version: '3'
+version: "3"
 services:
   sliver:
     image: sliver:latest
@@ -1040,19 +1040,3 @@ beacons
 # Interact with beacon
 use <beacon-id>
 ```
-
----
-
-**Need help?**
-
-- [Sliver Documentation](https://github.com/BishopFox/sliver/wiki)
-- [Warpgate README](../README.md)
-- [Report Issues](https://github.com/CowDogMoo/warpgate/issues)
-
-**Security Disclosure:**
-
-If you discover security vulnerabilities in Warpgate or Sliver, please report
-them responsibly:
-
-- Warpgate: Open an issue or email security@cowdogmoo.com
-- Sliver: Follow [BishopFox's security policy](https://github.com/BishopFox/sliver/security/policy)

@@ -27,12 +27,12 @@ Warpgate templates use YAML for simple, readable configuration. Templates define
 Every template requires these top-level keys:
 
 ```yaml
-metadata:      # Template information
-name:          # Image name
-base:          # Base image configuration
-provisioners:  # Build steps (optional)
-targets:       # Build targets
-variables:     # Template variables (optional)
+metadata: # Template information
+name: # Image name
+base: # Base image configuration
+provisioners: # Build steps (optional)
+targets: # Build targets
+variables: # Template variables (optional)
 ```
 
 ## Metadata Section
@@ -41,11 +41,11 @@ Template metadata for documentation and versioning:
 
 ```yaml
 metadata:
-  name: my-image             # Required: template name
-  version: 1.0.0             # Required: semantic version
+  name: my-image # Required: template name
+  version: 1.0.0 # Required: semantic version
   description: "Description" # Recommended: what this builds
-  author: "Your Name"        # Optional: author/team
-  tags:                      # Optional: categorization
+  author: "Your Name" # Optional: author/team
+  tags: # Optional: categorization
     - security
     - tools
 ```
@@ -62,7 +62,7 @@ Specify the starting image:
 
 ```yaml
 base:
-  image: ubuntu:22.04        # Required: base image with tag
+  image: ubuntu:22.04 # Required: base image with tag
 ```
 
 **Supported base images:**
@@ -94,9 +94,9 @@ Define customizable parameters:
 ```yaml
 variables:
   VAR_NAME:
-    type: string|bool|int           # Variable type
-    default: "value"                # Default value
-    description: "What this does"   # User-facing description
+    type: string|bool|int # Variable type
+    default: "value" # Default value
+    description: "What this does" # User-facing description
 ```
 
 **Variable types:**
@@ -198,9 +198,9 @@ Run Ansible playbooks:
 ```yaml
 provisioners:
   - type: ansible
-    playbook_path: playbook.yml      # Required: playbook file
-    galaxy_file: requirements.yml    # Optional: Galaxy requirements
-    extra_vars:                      # Optional: extra variables
+    playbook_path: playbook.yml # Required: playbook file
+    galaxy_file: requirements.yml # Optional: Galaxy requirements
+    extra_vars: # Optional: extra variables
       var1: value1
       var2: ${TEMPLATE_VAR}
 ```
@@ -600,10 +600,3 @@ Common validation errors:
 - [Template Configuration Guide](template-configuration.md) - Repository management
 - [Main README](../README.md) - Getting started
 - [Sliver Guide](sliver.md) - Example: Building Sliver C2
-
----
-
-**Need help?**
-
-- [Report issues](https://github.com/CowDogMoo/warpgate/issues)
-- [Ask questions](https://github.com/CowDogMoo/warpgate/discussions)
