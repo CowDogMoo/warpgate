@@ -31,10 +31,14 @@ import (
 func TestNewTemplateRegistry(t *testing.T) {
 	// Clear any config-related env vars to ensure clean test environment
 	originalLocalPaths := os.Getenv("WARPGATE_TEMPLATES_LOCAL_PATHS")
-	os.Unsetenv("WARPGATE_TEMPLATES_LOCAL_PATHS")
+	if err := os.Unsetenv("WARPGATE_TEMPLATES_LOCAL_PATHS"); err != nil {
+		t.Logf("Failed to unset WARPGATE_TEMPLATES_LOCAL_PATHS: %v", err)
+	}
 	defer func() {
 		if originalLocalPaths != "" {
-			os.Setenv("WARPGATE_TEMPLATES_LOCAL_PATHS", originalLocalPaths)
+			if err := os.Setenv("WARPGATE_TEMPLATES_LOCAL_PATHS", originalLocalPaths); err != nil {
+				t.Logf("Failed to restore WARPGATE_TEMPLATES_LOCAL_PATHS: %v", err)
+			}
 		}
 	}()
 
@@ -95,7 +99,11 @@ func TestTemplateRegistrySaveLoadRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create registry with temp cache dir
 	registry := &TemplateRegistry{
@@ -215,7 +223,11 @@ func TestTemplateRegistryCacheMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	registry := &TemplateRegistry{
 		repos: map[string]string{

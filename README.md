@@ -15,7 +15,9 @@ uses [Buildah](https://buildah.io/) as a library for container builds and AWS
 
 ## Installation
 
-> **Note:** Native execution of Warpgate requires Linux. On macOS and other platforms, you can use the containerized version or the provided build scripts with Docker/Podman.
+> **Note:** Native execution of Warpgate requires Linux. On macOS and other
+> platforms, you can use the containerized version or the provided build
+> scripts with Docker/Podman.
 
 ### Using Go Install
 
@@ -108,7 +110,8 @@ bash scripts/build-template.sh sliver
 bash scripts/build-template.sh <template-name>
 ```
 
-The script will automatically detect your architecture and use Docker Desktop's container runtime.
+The script will automatically detect your architecture and use Docker
+Desktop's container runtime.
 
 **Using the warpgate container on macOS:**
 
@@ -173,11 +176,13 @@ runc = [
 ]
 ```
 
-**3. Build with proper permissions**
+### 3. Build with proper permissions
 
-When building templates that use variables (e.g., for Ansible collection paths), you have multiple options:
+When building templates that use variables (e.g., for Ansible collection
+paths), you have multiple options:
 
-**Option 1: CLI flags (Recommended)**
+#### Option 1: CLI flags (Recommended)
+
 ```bash
 # Pass variables directly via CLI (no need for sudo -E)
 sudo warpgate build \
@@ -186,7 +191,8 @@ sudo warpgate build \
   --arch amd64 2>&1 | tee /tmp/warpgate.log
 ```
 
-**Option 2: Variable files**
+#### Option 2: Variable files
+
 ```bash
 # Create a vars.yaml file
 cat > vars.yaml <<EOF
@@ -198,7 +204,8 @@ EOF
 sudo warpgate build warpgate.yaml --var-file vars.yaml --arch amd64
 ```
 
-**Option 3: Environment variables (legacy)**
+#### Option 3: Environment variables (legacy)
+
 ```bash
 # Set environment variable and preserve with sudo -E
 export ARSENAL_REPO_PATH=/path/to/ansible-collection-arsenal
@@ -206,11 +213,14 @@ sudo -E warpgate build warpgate.yaml --arch amd64
 ```
 
 **Variable Precedence** (highest to lowest):
+
 1. CLI flags: `--var KEY=value`
 2. Variable files: `--var-file vars.yaml`
 3. Environment variables: `export KEY=value`
 
-**Important:** The `runc` runtime and `vfs` storage driver are critical for proper container builds on Linux. Without these settings, builds may fail with permission or storage errors.
+**Important:** The `runc` runtime and `vfs` storage driver are critical for
+proper container builds on Linux. Without these settings, builds may fail with
+permission or storage errors.
 
 ---
 
@@ -224,7 +234,9 @@ Warpgate uses two configuration systems:
 
 **Configuration File Locations:**
 
-Warpgate follows the XDG Base Directory Specification and searches for config files in this order:
+Warpgate follows the XDG Base Directory Specification and searches for config
+files in this order:
+
 1. `$XDG_CONFIG_HOME/warpgate/config.yaml` (typically `~/.config/warpgate/config.yaml`)
 2. `~/.warpgate/config.yaml` (legacy location, still supported for backward compatibility)
 3. `./config.yaml` (current directory)
@@ -263,9 +275,11 @@ build:
 
 #### **Container Registry Authentication**
 
-⚠️ **NEVER store registry tokens in config files!** Always use one of these secure methods:
+⚠️ **NEVER store registry tokens in config files!** Always use one of these
+secure methods:
 
 1. **Docker Login (Recommended)**
+
    ```bash
    # Uses Docker's credential store (encrypted)
    docker login ghcr.io
@@ -277,6 +291,7 @@ build:
    ```
 
 2. **GitHub CLI (for GHCR)**
+
    ```bash
    # Authenticate with GitHub
    gh auth login
@@ -286,6 +301,7 @@ build:
    ```
 
 3. **Environment Variables** (for CI/CD)
+
    ```bash
    export WARPGATE_REGISTRY_USERNAME=myusername
    export WARPGATE_REGISTRY_TOKEN=$GITHUB_TOKEN
@@ -294,9 +310,11 @@ build:
 
 #### **AWS Credentials - Security Best Practices:**
 
-⚠️ **NEVER store AWS credentials in config files!** Always use one of these secure methods:
+⚠️ **NEVER store AWS credentials in config files!** Always use one of these
+secure methods:
 
 1. **AWS SSO (Recommended for organizations)**
+
    ```bash
    # Configure SSO in ~/.aws/config
    aws configure sso
@@ -310,6 +328,7 @@ build:
    ```
 
 2. **Environment Variables (for ephemeral credentials)**
+
    ```bash
    # These are automatically picked up by the AWS SDK
    export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
@@ -319,12 +338,14 @@ build:
    ```
 
 3. **IAM Roles (for EC2/ECS/Lambda)**
+
    ```bash
    # No configuration needed - automatically detected
    warpgate build --template my-ami --target ami
    ```
 
 The AWS SDK's credential chain automatically checks (in order):
+
 1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`)
 2. AWS SSO configuration (`~/.aws/config` with `sso_*` settings)
 3. Shared credentials file (`~/.aws/credentials`)

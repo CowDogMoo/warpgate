@@ -64,23 +64,6 @@ func getCacheHome() string {
 	return ""
 }
 
-// getDataHome returns the base data directory following CLI tool conventions
-// On Unix-like systems (Linux, macOS, BSD), uses $XDG_DATA_HOME or ~/.local/share
-func getDataHome() string {
-	// Check XDG_DATA_HOME first (works on both Linux and macOS)
-	if dataHome := os.Getenv("XDG_DATA_HOME"); dataHome != "" {
-		return dataHome
-	}
-
-	// Default to ~/.local/share on all Unix-like systems for CLI tool consistency
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".local", "share")
-	}
-
-	// Fallback (should rarely happen)
-	return ""
-}
-
 // GetConfigDirs returns all config directories to search (in priority order)
 // Includes XDG-style directories and legacy warpgate locations for backward compatibility
 // Exported for use by cmd package

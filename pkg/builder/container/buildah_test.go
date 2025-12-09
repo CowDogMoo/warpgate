@@ -52,7 +52,11 @@ func TestNewBuildahBuilder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -69,7 +73,11 @@ func TestNewBuildahBuilder(t *testing.T) {
 		t.Logf("Expected error on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	if bldr.store == nil {
 		t.Error("Store should be initialized")
@@ -89,7 +97,11 @@ func TestBuildahBuilder_GetManifestManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -103,7 +115,11 @@ func TestBuildahBuilder_GetManifestManager(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	mm := bldr.GetManifestManager()
 	if mm == nil {
@@ -129,7 +145,11 @@ func TestBuildahBuilder_Build_Minimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -142,7 +162,11 @@ func TestBuildahBuilder_Build_Minimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	// Create a minimal build config
 	buildCfg := builder.Config{
@@ -223,7 +247,11 @@ func TestBuildahBuilder_Close(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -260,7 +288,11 @@ func TestBuildahBuilder_BuildWithMultipleProvisioners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -273,7 +305,11 @@ func TestBuildahBuilder_BuildWithMultipleProvisioners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	// Create a build config with multiple provisioners
 	buildCfg := builder.Config{
@@ -322,7 +358,11 @@ func TestBuildahBuilder_BuildWithInvalidImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -335,7 +375,11 @@ func TestBuildahBuilder_BuildWithInvalidImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	// Try to build with a non-existent base image
 	buildCfg := builder.Config{
@@ -366,7 +410,11 @@ func TestBuildahBuilder_Tag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -379,7 +427,11 @@ func TestBuildahBuilder_Tag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	// First build an image
 	buildCfg := builder.Config{
@@ -424,7 +476,11 @@ func TestBuildahBuilder_Remove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -437,7 +493,11 @@ func TestBuildahBuilder_Remove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	// First build an image
 	buildCfg := builder.Config{
@@ -486,7 +546,11 @@ func TestBuildahBuilder_WorkDirCreation(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	if bldr.workDir == "" {
 		t.Error("WorkDir should be automatically created")
@@ -513,7 +577,11 @@ func TestBuildahConfig_DefaultValues(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	if bldr.store == nil {
 		t.Error("Store should be initialized with default driver")
@@ -603,7 +671,11 @@ func TestBuildahBuilder_ParseCommandValue(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name     string
@@ -665,7 +737,11 @@ func TestBuildahBuilder_ApplyChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	// Create a builder container
 	ctx := context.Background()
@@ -764,7 +840,11 @@ func TestBuildahBuilder_ApplyChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	// Create a builder container
 	ctx := context.Background()

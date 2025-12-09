@@ -32,8 +32,14 @@ import (
 // TestGetConfigDirs_WithXDGConfigHome tests GetConfigDirs with XDG_CONFIG_HOME set
 func TestGetConfigDirs_WithXDGConfigHome(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CONFIG_HOME")
+	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set XDG_CONFIG_HOME: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+			t.Logf("Failed to unset XDG_CONFIG_HOME: %v", err)
+		}
+	}()
 
 	dirs := GetConfigDirs()
 
@@ -60,7 +66,9 @@ func TestGetConfigDirs_WithXDGConfigHome(t *testing.T) {
 
 // TestGetConfigDirs_WithoutXDGConfigHome tests GetConfigDirs defaults to ~/.config
 func TestGetConfigDirs_WithoutXDGConfigHome(t *testing.T) {
-	os.Unsetenv("XDG_CONFIG_HOME")
+	if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+		t.Logf("Failed to unset XDG_CONFIG_HOME: %v", err)
+	}
 
 	dirs := GetConfigDirs()
 
@@ -85,8 +93,12 @@ func TestGetConfigDirs_SystemPaths(t *testing.T) {
 		t.Skip("System paths only apply on Linux/BSD")
 	}
 
-	os.Unsetenv("XDG_CONFIG_HOME")
-	os.Unsetenv("XDG_CONFIG_DIRS")
+	if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+		t.Logf("Failed to unset XDG_CONFIG_HOME: %v", err)
+	}
+	if err := os.Unsetenv("XDG_CONFIG_DIRS"); err != nil {
+		t.Logf("Failed to unset XDG_CONFIG_DIRS: %v", err)
+	}
 
 	dirs := GetConfigDirs()
 
@@ -113,8 +125,14 @@ func TestGetConfigDirs_CustomXDGConfigDirs(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	customPath := filepath.Join(tmpDir, "custom")
-	os.Setenv("XDG_CONFIG_DIRS", customPath)
-	defer os.Unsetenv("XDG_CONFIG_DIRS")
+	if err := os.Setenv("XDG_CONFIG_DIRS", customPath); err != nil {
+		t.Fatalf("Failed to set XDG_CONFIG_DIRS: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("XDG_CONFIG_DIRS"); err != nil {
+			t.Logf("Failed to unset XDG_CONFIG_DIRS: %v", err)
+		}
+	}()
 
 	dirs := GetConfigDirs()
 
@@ -139,8 +157,12 @@ func TestGetConfigDirs_macOSNoSystemPaths(t *testing.T) {
 		t.Skip("This test only applies to macOS")
 	}
 
-	os.Unsetenv("XDG_CONFIG_HOME")
-	os.Unsetenv("XDG_CONFIG_DIRS")
+	if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+		t.Logf("Failed to unset XDG_CONFIG_HOME: %v", err)
+	}
+	if err := os.Unsetenv("XDG_CONFIG_DIRS"); err != nil {
+		t.Logf("Failed to unset XDG_CONFIG_DIRS: %v", err)
+	}
 
 	dirs := GetConfigDirs()
 
@@ -156,8 +178,14 @@ func TestGetConfigDirs_macOSNoSystemPaths(t *testing.T) {
 // TestConfigFile_WithXDGConfigHome tests ConfigFile with XDG_CONFIG_HOME set
 func TestConfigFile_WithXDGConfigHome(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CONFIG_HOME")
+	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set XDG_CONFIG_HOME: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+			t.Logf("Failed to unset XDG_CONFIG_HOME: %v", err)
+		}
+	}()
 
 	path, err := ConfigFile("config.yaml")
 	if err != nil {
@@ -181,7 +209,9 @@ func TestConfigFile_WithXDGConfigHome(t *testing.T) {
 
 // TestConfigFile_WithoutXDGConfigHome tests ConfigFile defaults to ~/.config
 func TestConfigFile_WithoutXDGConfigHome(t *testing.T) {
-	os.Unsetenv("XDG_CONFIG_HOME")
+	if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+		t.Logf("Failed to unset XDG_CONFIG_HOME: %v", err)
+	}
 
 	path, err := ConfigFile("config.yaml")
 	if err != nil {
@@ -198,8 +228,14 @@ func TestConfigFile_WithoutXDGConfigHome(t *testing.T) {
 // TestConfigFile_CreatesParentDirs tests that ConfigFile creates parent directories
 func TestConfigFile_CreatesParentDirs(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CONFIG_HOME")
+	if err := os.Setenv("XDG_CONFIG_HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set XDG_CONFIG_HOME: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+			t.Logf("Failed to unset XDG_CONFIG_HOME: %v", err)
+		}
+	}()
 
 	// Request a file with nested subdirectories
 	path, err := ConfigFile("subdir/config.yaml")
@@ -226,8 +262,14 @@ func TestConfigFile_CreatesParentDirs(t *testing.T) {
 // TestCacheFile_WithXDGCacheHome tests CacheFile with XDG_CACHE_HOME set
 func TestCacheFile_WithXDGCacheHome(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_CACHE_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	if err := os.Setenv("XDG_CACHE_HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set XDG_CACHE_HOME: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("XDG_CACHE_HOME"); err != nil {
+			t.Logf("Failed to unset XDG_CACHE_HOME: %v", err)
+		}
+	}()
 
 	path, err := CacheFile("templates.db")
 	if err != nil {
@@ -251,7 +293,9 @@ func TestCacheFile_WithXDGCacheHome(t *testing.T) {
 
 // TestCacheFile_WithoutXDGCacheHome tests CacheFile defaults to ~/.cache
 func TestCacheFile_WithoutXDGCacheHome(t *testing.T) {
-	os.Unsetenv("XDG_CACHE_HOME")
+	if err := os.Unsetenv("XDG_CACHE_HOME"); err != nil {
+		t.Logf("Failed to unset XDG_CACHE_HOME: %v", err)
+	}
 
 	path, err := CacheFile("templates.db")
 	if err != nil {
@@ -268,8 +312,14 @@ func TestCacheFile_WithoutXDGCacheHome(t *testing.T) {
 // TestCacheFile_CreatesParentDirs tests that CacheFile creates parent directories
 func TestCacheFile_CreatesParentDirs(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_CACHE_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	if err := os.Setenv("XDG_CACHE_HOME", tmpDir); err != nil {
+		t.Fatalf("Failed to set XDG_CACHE_HOME: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("XDG_CACHE_HOME"); err != nil {
+			t.Logf("Failed to unset XDG_CACHE_HOME: %v", err)
+		}
+	}()
 
 	// Request a file with nested subdirectories
 	path, err := CacheFile("templates/metadata.json")

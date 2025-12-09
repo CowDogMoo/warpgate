@@ -90,6 +90,8 @@ func TestNewBuildOrchestrator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel() // Enable parallel test execution
+
 			orchestrator := builder.NewBuildOrchestrator(tt.maxConcurrency)
 			assert.NotNil(t, orchestrator)
 			// Note: We can't directly test maxConcurrency as it's private,
@@ -185,12 +187,14 @@ func TestBuildMultiArch(t *testing.T) {
 				})).Return(nil, fmt.Errorf("build failed")).Once()
 			},
 			expectError:   true,
-			errorContains: "failed to build",
+			errorContains: "multi-arch build failed",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel() // Enable parallel test execution
+
 			ctx := context.Background()
 			mockBuilder := new(MockContainerBuilder)
 
@@ -198,7 +202,7 @@ func TestBuildMultiArch(t *testing.T) {
 				tt.mockBuildSetup(mockBuilder, tt.requests)
 			}
 
-			orchestrator := builder.NewBuildOrchestrator(2)
+			orchestrator := builder.NewBuildOrchestrator(builder.DefaultMaxConcurrency)
 			results, err := orchestrator.BuildMultiArch(ctx, tt.requests, mockBuilder)
 
 			if tt.expectError {
@@ -288,12 +292,14 @@ func TestPushMultiArch(t *testing.T) {
 				m.On("Push", mock.Anything, results[1].ImageRef, mock.Anything).Return(fmt.Errorf("push failed")).Once()
 			},
 			expectError:   true,
-			errorContains: "failed to push",
+			errorContains: "multi-arch push failed",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel() // Enable parallel test execution
+
 			ctx := context.Background()
 			mockBuilder := new(MockContainerBuilder)
 
@@ -301,7 +307,7 @@ func TestPushMultiArch(t *testing.T) {
 				tt.mockPushSetup(mockBuilder, tt.results)
 			}
 
-			orchestrator := builder.NewBuildOrchestrator(2)
+			orchestrator := builder.NewBuildOrchestrator(builder.DefaultMaxConcurrency)
 			err := orchestrator.PushMultiArch(ctx, tt.results, tt.registry, mockBuilder)
 
 			if tt.expectError {

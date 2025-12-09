@@ -307,8 +307,8 @@ func DetectOCIRuntime() string {
 		"/usr/local/sbin/runc",
 		"/sbin/runc",
 		"/bin/runc",
-		"/usr/lib/cri-o-runc/sbin/runc",    // CRI-O specific
-		"/run/current-system/sw/bin/runc",  // NixOS
+		"/usr/lib/cri-o-runc/sbin/runc",   // CRI-O specific
+		"/run/current-system/sw/bin/runc", // NixOS
 	}
 
 	for _, path := range fallbackPaths {

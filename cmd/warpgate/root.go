@@ -137,8 +137,10 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	cfg.Registry.Default = v.GetString("registry.default")
 	cfg.Build.DefaultArch = v.GetStringSlice("build.default_arch")
 
-	// 8. Store config in command context for access by subcommands
+	// 8. Create a context-aware logger and store it in context
+	logger := logging.FromContext(context.TODO()) // Get the initialized logger
 	ctx := context.WithValue(cmd.Context(), configKey, cfg)
+	ctx = logging.WithLogger(ctx, logger)
 	cmd.SetContext(ctx)
 
 	return nil

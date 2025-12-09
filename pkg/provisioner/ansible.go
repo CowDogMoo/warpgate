@@ -96,93 +96,147 @@ func (ap *AnsibleProvisioner) Provision(ctx context.Context, config builder.Prov
 	logging.Info("Running Ansible playbook: %s", config.PlaybookPath)
 
 	// Set up run options
-	runOpts, err := ap.getRunOptions()
+	runOpts, err := ap.setupRunOptions(config.WorkingDir)
 	if err != nil {
 		return err
 	}
 
-	// Set working directory if specified
-	if config.WorkingDir != "" {
-		runOpts.WorkingDir = config.WorkingDir
-	}
-
-	// Ensure Ansible is installed
-	if err := ap.ensureAnsible(); err != nil {
-		return fmt.Errorf("failed to ensure Ansible is installed: %w", err)
-	}
-
-	// Install collections and roles if galaxy_file is specified
-	if config.GalaxyFile != "" {
-		if err := ap.installCollections(config.GalaxyFile); err != nil {
-			return fmt.Errorf("failed to install Ansible collections: %w", err)
-		}
-		if err := ap.installRoles(config.GalaxyFile); err != nil {
-			return fmt.Errorf("failed to install Ansible roles: %w", err)
-		}
-		// Check if the directory containing galaxy_file also has a galaxy.yml
-		// If so, build and install that collection
-		if err := ap.installLocalCollection(config.GalaxyFile); err != nil {
-			return fmt.Errorf("failed to install local collection: %w", err)
-		}
+	// Ensure Ansible is installed and install galaxy dependencies
+	if err := ap.prepareAnsible(config.GalaxyFile); err != nil {
+		return err
 	}
 
 	// Copy playbook to container
 	playbookDest := "/tmp/playbook.yml"
-	logging.Debug("Copying playbook to container: %s -> %s", config.PlaybookPath, playbookDest)
+	if err := ap.copyPlaybook(config.PlaybookPath, playbookDest); err != nil {
+		return err
+	}
 
-	if err := ap.builder.Add(playbookDest, false, buildah.AddAndCopyOptions{}, config.PlaybookPath); err != nil {
+	// Set up inventory
+	inventoryArg, err := ap.setupInventory(config.Inventory)
+	if err != nil {
+		return err
+	}
+
+	// Build and execute ansible-playbook command
+	if err := ap.executePlaybook(playbookDest, inventoryArg, config.ExtraVars, runOpts); err != nil {
+		return err
+	}
+
+	// Clean up
+	ap.cleanupPlaybook(playbookDest, runOpts)
+
+	logging.Info("Ansible playbook completed successfully")
+	return nil
+}
+
+// setupRunOptions configures run options for command execution
+func (ap *AnsibleProvisioner) setupRunOptions(workingDir string) (buildah.RunOptions, error) {
+	runOpts, err := ap.getRunOptions()
+	if err != nil {
+		return buildah.RunOptions{}, err
+	}
+
+	if workingDir != "" {
+		runOpts.WorkingDir = workingDir
+	}
+
+	return runOpts, nil
+}
+
+// prepareAnsible ensures Ansible is installed and installs galaxy dependencies
+func (ap *AnsibleProvisioner) prepareAnsible(galaxyFile string) error {
+	if err := ap.ensureAnsible(); err != nil {
+		return fmt.Errorf("failed to ensure Ansible is installed: %w", err)
+	}
+
+	if galaxyFile == "" {
+		return nil
+	}
+
+	if err := ap.installCollections(galaxyFile); err != nil {
+		return fmt.Errorf("failed to install Ansible collections: %w", err)
+	}
+
+	if err := ap.installRoles(galaxyFile); err != nil {
+		return fmt.Errorf("failed to install Ansible roles: %w", err)
+	}
+
+	if err := ap.installLocalCollection(galaxyFile); err != nil {
+		return fmt.Errorf("failed to install local collection: %w", err)
+	}
+
+	return nil
+}
+
+// copyPlaybook copies the playbook file to the container
+func (ap *AnsibleProvisioner) copyPlaybook(playbookPath, playbookDest string) error {
+	logging.Debug("Copying playbook to container: %s -> %s", playbookPath, playbookDest)
+	if err := ap.builder.Add(playbookDest, false, buildah.AddAndCopyOptions{}, playbookPath); err != nil {
 		return fmt.Errorf("failed to copy playbook to container: %w", err)
 	}
+	return nil
+}
 
-	// Copy inventory if specified
-	inventoryArg := ""
-	if config.Inventory != "" {
-		inventoryDest := "/tmp/inventory"
-		logging.Debug("Copying inventory to container: %s -> %s", config.Inventory, inventoryDest)
-
-		if err := ap.builder.Add(inventoryDest, false, buildah.AddAndCopyOptions{}, config.Inventory); err != nil {
-			return fmt.Errorf("failed to copy inventory to container: %w", err)
-		}
-		inventoryArg = fmt.Sprintf("-i %s", inventoryDest)
+// setupInventory copies inventory file to container if specified and returns inventory argument
+func (ap *AnsibleProvisioner) setupInventory(inventory string) (string, error) {
+	if inventory == "" {
+		return "", nil
 	}
 
+	inventoryDest := "/tmp/inventory"
+	logging.Debug("Copying inventory to container: %s -> %s", inventory, inventoryDest)
+
+	if err := ap.builder.Add(inventoryDest, false, buildah.AddAndCopyOptions{}, inventory); err != nil {
+		return "", fmt.Errorf("failed to copy inventory to container: %w", err)
+	}
+
+	return fmt.Sprintf("-i %s", inventoryDest), nil
+}
+
+// buildExtraVarsArg builds the extra vars argument for ansible-playbook
+func buildExtraVarsArg(extraVars map[string]string) string {
+	if len(extraVars) == 0 {
+		return ""
+	}
+
+	vars := make([]string, 0, len(extraVars))
+	for key, value := range extraVars {
+		vars = append(vars, fmt.Sprintf("%s=%s", key, value))
+	}
+	return fmt.Sprintf("--extra-vars '%s'", strings.Join(vars, " "))
+}
+
+// executePlaybook builds and executes the ansible-playbook command
+func (ap *AnsibleProvisioner) executePlaybook(playbookDest, inventoryArg string, extraVars map[string]string, runOpts buildah.RunOptions) error {
 	// Build extra vars argument
-	extraVarsArg := ""
-	if len(config.ExtraVars) > 0 {
-		var vars []string
-		for key, value := range config.ExtraVars {
-			vars = append(vars, fmt.Sprintf("%s=%s", key, value))
-		}
-		extraVarsArg = fmt.Sprintf("--extra-vars '%s'", strings.Join(vars, " "))
-	}
+	extraVarsArg := buildExtraVarsArg(extraVars)
 
-	// Build ansible-playbook command
-	// If no inventory is specified, provide a default localhost inventory with local connection
+	// Set default inventory if none specified
 	connectionArg := ""
 	if inventoryArg == "" {
-		// Use inline inventory with localhost (trailing comma tells Ansible it's a list, not a file)
-		// This allows playbooks with "hosts: all" to match the implicit localhost
 		inventoryArg = "-i localhost,"
 		connectionArg = "-c local"
 	}
+
 	ansibleCmd := fmt.Sprintf("ansible-playbook %s %s %s %s", connectionArg, inventoryArg, extraVarsArg, playbookDest)
 	cmdArray := []string{"/bin/sh", "-c", ansibleCmd}
 
 	logging.Info("Executing: %s", ansibleCmd)
 
-	// Run ansible-playbook
 	if err := ap.builder.Run(cmdArray, runOpts); err != nil {
 		return fmt.Errorf("ansible-playbook execution failed: %w", err)
 	}
 
-	// Clean up
+	return nil
+}
+
+// cleanupPlaybook removes the playbook file from the container
+func (ap *AnsibleProvisioner) cleanupPlaybook(playbookDest string, runOpts buildah.RunOptions) {
 	cleanupCmd := []string{"/bin/sh", "-c", fmt.Sprintf("rm -f %s", playbookDest)}
 	if err := ap.builder.Run(cleanupCmd, runOpts); err != nil {
 		logging.Warn("Failed to clean up playbook: %v", err)
 	}
-
-	logging.Info("Ansible playbook completed successfully")
-	return nil
 }
 
 // ensureAnsible checks if Ansible is installed and installs it if needed

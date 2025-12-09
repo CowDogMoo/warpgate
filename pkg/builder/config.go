@@ -28,33 +28,32 @@ var Version = "dev"
 
 // Config represents a template configuration for building images
 type Config struct {
-	// Metadata about the template
+	// Metadata is the metadata about the template
 	Metadata Metadata `yaml:"metadata" json:"metadata"`
 
-	// Name of the image
+	// Name is the name of the image
 	Name string `yaml:"name" json:"name"`
 
-	// Version of the template
+	// Version is the version of the template
 	Version string `yaml:"version" json:"version"`
 
-	// Base image configuration
+	// Base is the base image configuration
 	Base BaseImage `yaml:"base" json:"base"`
 
-	// Provisioners to run during the build
+	// Provisioners is the list of provisioners to run during the build
 	Provisioners []Provisioner `yaml:"provisioners" json:"provisioners"`
 
 	// PostChanges applies Dockerfile-style instructions after provisioners complete
 	// Useful for setting USER/WORKDIR after creating users during provisioning
 	PostChanges []string `yaml:"post_changes,omitempty" json:"post_changes,omitempty"`
 
-	// Post-processors to run after the build
+	// PostProcessors is the list of post-processors to run after the build
 	PostProcessors []PostProcessor `yaml:"post_processors,omitempty" json:"post_processors,omitempty"`
 
-	// Build targets (container, AMI, etc.)
+	// Targets is the list of build targets (container, AMI, etc.)
 	Targets []Target `yaml:"targets" json:"targets"`
 
-	// Architecture-specific overrides (optional)
-	// Allows specifying different configurations per architecture
+	// ArchOverrides allows specifying different configurations per architecture
 	ArchOverrides map[string]ArchOverride `yaml:"arch_overrides,omitempty" json:"arch_overrides,omitempty"`
 
 	// Runtime overrides (not in YAML, set by CLI flags)
@@ -64,13 +63,13 @@ type Config struct {
 
 // ArchOverride allows architecture-specific configuration
 type ArchOverride struct {
-	// Override base image for this architecture
+	// Base is the override base image for this architecture
 	Base *BaseImage `yaml:"base,omitempty" json:"base,omitempty"`
 
-	// Additional or replacement provisioners for this architecture
+	// Provisioners is the list of additional or replacement provisioners for this architecture
 	Provisioners []Provisioner `yaml:"provisioners,omitempty" json:"provisioners,omitempty"`
 
-	// Whether to append provisioners or replace them entirely
+	// AppendProvisioners indicates whether to append provisioners or replace them entirely
 	AppendProvisioners bool `yaml:"append_provisioners,omitempty" json:"append_provisioners,omitempty"`
 }
 
@@ -156,27 +155,27 @@ type BaseImage struct {
 
 // ImageAuth contains authentication information for pulling images
 type ImageAuth struct {
-	// Username for registry authentication
+	// Username is the username for registry authentication
 	Username string `yaml:"username,omitempty" json:"username,omitempty"`
 
-	// Password or access token for registry authentication (use environment variables for security)
+	// Password is the password or access token for registry authentication (use environment variables for security)
 	Password string `yaml:"password,omitempty" json:"password,omitempty"`
 
-	// Registry URL (e.g., "ghcr.io", "docker.io", "quay.io")
+	// Registry is the registry URL (e.g., "ghcr.io", "docker.io", "quay.io")
 	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
 }
 
 // Provisioner represents a provisioning step
 type Provisioner struct {
-	// Type of provisioner: "shell", "ansible", "script", or "powershell"
+	// Type is the type of provisioner: "shell", "ansible", "script", or "powershell"
 	Type string `yaml:"type" json:"type"`
 
 	// Conditionals - restrict provisioner to specific sources
 
-	// Only restricts execution to specific build sources (e.g., ["docker.amd64", "docker.arm64"])
+	// Only is the list of build sources to restrict execution to (e.g., ["docker.amd64", "docker.arm64"])
 	Only []string `yaml:"only,omitempty" json:"only,omitempty"`
 
-	// Except skips execution for specific build sources
+	// Except is the list of build sources to skip execution for
 	Except []string `yaml:"except,omitempty" json:"except,omitempty"`
 
 	// Shell provisioner fields
@@ -184,7 +183,7 @@ type Provisioner struct {
 	// Inline contains shell commands to execute line by line
 	Inline []string `yaml:"inline,omitempty" json:"inline,omitempty"`
 
-	// Environment variables to set during shell command execution
+	// Environment is the map of environment variables to set during shell command execution
 	Environment map[string]string `yaml:"environment,omitempty" json:"environment,omitempty"`
 
 	// Ansible provisioner fields
@@ -234,7 +233,7 @@ type Provisioner struct {
 
 // PostProcessor represents a post-processing step after the build
 type PostProcessor struct {
-	// Type of post-processor: "manifest", "docker-tag", "docker-push", "compress", or "checksum"
+	// Type is the type of post-processor: "manifest", "docker-tag", "docker-push", "compress", or "checksum"
 	Type string `yaml:"type" json:"type"`
 
 	// Manifest post-processor fields
@@ -242,7 +241,7 @@ type PostProcessor struct {
 	// Output specifies the path where the manifest file should be written
 	Output string `yaml:"output,omitempty" json:"output,omitempty"`
 
-	// StripPath removes directory paths from artifact names in the manifest
+	// StripPath indicates whether to remove directory paths from artifact names in the manifest
 	StripPath bool `yaml:"strip_path,omitempty" json:"strip_path,omitempty"`
 
 	// Docker-tag post-processor fields
@@ -253,7 +252,7 @@ type PostProcessor struct {
 	// Tags is a list of tags to apply to the image (e.g., ["latest", "v1.0.0"])
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 
-	// Force overwrites existing tags if they already exist
+	// Force indicates whether to overwrite existing tags if they already exist
 	Force bool `yaml:"force,omitempty" json:"force,omitempty"`
 
 	// Docker-push post-processor fields
@@ -282,19 +281,19 @@ type PostProcessor struct {
 
 	// Common fields
 
-	// Only restricts execution to specific build sources
+	// Only is the list of build sources to restrict execution to
 	Only []string `yaml:"only,omitempty" json:"only,omitempty"`
 
-	// Except skips execution for specific build sources
+	// Except is the list of build sources to skip execution for
 	Except []string `yaml:"except,omitempty" json:"except,omitempty"`
 
-	// KeepInputArtifact preserves the original artifact after post-processing
+	// KeepInputArtifact indicates whether to preserve the original artifact after post-processing
 	KeepInputArtifact bool `yaml:"keep_input_artifact,omitempty" json:"keep_input_artifact,omitempty"`
 }
 
 // Target represents a build target
 type Target struct {
-	// Type of build target: "container" for Docker images or "ami" for AWS AMIs
+	// Type is the type of build target: "container" for Docker images or "ami" for AWS AMIs
 	Type string `yaml:"type" json:"type"`
 
 	// Container-specific fields
@@ -308,7 +307,7 @@ type Target struct {
 	// Tags is a list of image tags to apply (e.g., ["latest", "v1.0.0"])
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 
-	// Push automatically pushes the image to the registry after building
+	// Push indicates whether to automatically push the image to the registry after building
 	Push bool `yaml:"push,omitempty" json:"push,omitempty"`
 
 	// AMI-specific fields
@@ -334,13 +333,13 @@ type Target struct {
 
 // BuildResult represents the result of a build operation
 type BuildResult struct {
-	// Image reference for container builds
+	// ImageRef is the image reference for container builds
 	ImageRef string `json:"image_ref,omitempty"`
 
-	// Image digest for container builds (used for multi-arch manifests)
+	// Digest is the image digest for container builds (used for multi-arch manifests)
 	Digest string `json:"digest,omitempty"`
 
-	// Architecture of the built image (e.g., "amd64", "arm64")
+	// Architecture is the architecture of the built image (e.g., "amd64", "arm64")
 	Architecture string `json:"architecture,omitempty"`
 
 	// Platform of the built image (e.g., "linux/amd64", "linux/arm64")

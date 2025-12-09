@@ -23,6 +23,7 @@ THE SOFTWARE.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -235,27 +236,58 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	logging.Info("Creating multi-arch manifest for %s", manifestsOpts.name)
+	logging.InfoContext(ctx, "Creating multi-arch manifest for %s", manifestsOpts.name)
 
+	// Discover, validate, and filter digests
+	filteredDigests := discoverAndValidateDigests(ctx)
+
+	// Perform registry checks
+	performRegistryChecks(ctx, cmd, filteredDigests)
+
+	// Handle idempotency check
+	if !manifestsOpts.force {
+		exists, err := manifests.CheckManifestExists(ctx, filteredDigests)
+		if err != nil {
+			logging.WarnContext(ctx, "Failed to check existing manifest: %v", err)
+		} else if exists {
+			logging.InfoContext(ctx, "Manifest already exists and is up-to-date (use --force to recreate)")
+			return nil
+		}
+	}
+
+	// Handle dry-run mode
+	if manifestsOpts.dryRun {
+		return handleDryRun(ctx, filteredDigests)
+	}
+
+	// Parse metadata and create manifests
+	annotations, labels := parseMetadata(ctx)
+	createAndPushManifests(ctx, filteredDigests, annotations, labels)
+
+	return nil
+}
+
+// discoverAndValidateDigests discovers, validates, and filters digest files
+func discoverAndValidateDigests(ctx context.Context) []manifests.DigestFile {
 	// Discover digest files
 	digestFiles, err := manifests.DiscoverDigestFiles(manifests.DiscoveryOptions{
 		ImageName: manifestsOpts.name,
 		Directory: manifestsOpts.digestDir,
 	})
 	if err != nil {
-		logging.Error("Failed to discover digest files: %v", err)
+		logging.ErrorContext(ctx, "Failed to discover digest files: %v", err)
 		os.Exit(ExitValidationError)
 	}
 
 	if len(digestFiles) == 0 {
-		logging.Error("No digest files found in %s", manifestsOpts.digestDir)
-		logging.Error("Expected files matching pattern: digest-%s-*.txt", manifestsOpts.name)
+		logging.ErrorContext(ctx, "No digest files found in %s", manifestsOpts.digestDir)
+		logging.ErrorContext(ctx, "Expected files matching pattern: digest-%s-*.txt", manifestsOpts.name)
 		os.Exit(ExitValidationError)
 	}
 
-	logging.Info("Found %d digest file(s):", len(digestFiles))
+	logging.InfoContext(ctx, "Found %d digest file(s):", len(digestFiles))
 	for _, df := range digestFiles {
-		logging.Info("  - %s: %s", df.Architecture, df.Digest.String())
+		logging.InfoContext(ctx, "  - %s: %s", df.Architecture, df.Digest.String())
 	}
 
 	// Validate digest files
@@ -263,7 +295,7 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 		ImageName: manifestsOpts.name,
 		MaxAge:    manifestsOpts.maxAge,
 	}); err != nil {
-		logging.Error("Digest validation failed: %v", err)
+		logging.ErrorContext(ctx, "Digest validation failed: %v", err)
 		os.Exit(ExitValidationError)
 	}
 
@@ -273,15 +305,20 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 		BestEffort:            manifestsOpts.bestEffort,
 	})
 	if err != nil {
-		logging.Error("Architecture filtering failed: %v", err)
+		logging.ErrorContext(ctx, "Architecture filtering failed: %v", err)
 		os.Exit(ExitValidationError)
 	}
 
 	if len(filteredDigests) == 0 {
-		logging.Error("No valid architectures found after filtering")
+		logging.ErrorContext(ctx, "No valid architectures found after filtering")
 		os.Exit(ExitValidationError)
 	}
 
+	return filteredDigests
+}
+
+// performRegistryChecks performs health check and digest verification if requested
+func performRegistryChecks(ctx context.Context, cmd *cobra.Command, filteredDigests []manifests.DigestFile) {
 	// Perform registry health check if requested
 	if manifestsOpts.healthCheck {
 		if err := manifests.HealthCheckRegistry(ctx, manifests.VerificationOptions{
@@ -289,79 +326,74 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 			Namespace: manifestsOpts.namespace,
 			AuthFile:  manifestsOpts.authFile,
 		}); err != nil {
-			logging.Error("Registry health check failed: %v", err)
+			logging.ErrorContext(ctx, "Registry health check failed: %v", err)
 			os.Exit(ExitRegistryError)
 		}
 	}
 
 	// Verify digests exist in registry if requested
 	if manifestsOpts.verifyRegistry {
-		// Use first tag for verification
-		tag := "latest"
-		if len(manifestsOpts.tags) > 0 {
-			tag = manifestsOpts.tags[0]
-		}
+		verifyDigestsInRegistry(ctx, cmd, filteredDigests)
+	}
+}
 
-		// Get concurrency from config if not set via CLI
-		concurrency := manifestsOpts.verifyConcurrency
-		if concurrency == 0 {
-			// Try to load from config
-			if cfg := configFromContext(cmd); cfg != nil && cfg.Manifests.VerifyConcurrency > 0 {
-				concurrency = cfg.Manifests.VerifyConcurrency
-			} else {
-				concurrency = 5 // Built-in default
-			}
-		}
+// verifyDigestsInRegistry verifies that digests exist in the registry
+func verifyDigestsInRegistry(ctx context.Context, cmd *cobra.Command, filteredDigests []manifests.DigestFile) {
+	// Use first tag for verification
+	tag := "latest"
+	if len(manifestsOpts.tags) > 0 {
+		tag = manifestsOpts.tags[0]
+	}
 
-		if err := manifests.VerifyDigestsInRegistry(ctx, filteredDigests, manifests.VerificationOptions{
-			Registry:      manifestsOpts.registry,
-			Namespace:     manifestsOpts.namespace,
-			Tag:           tag,
-			AuthFile:      manifestsOpts.authFile,
-			MaxConcurrent: concurrency,
-		}); err != nil {
-			logging.Error("Registry verification failed: %v", err)
-			os.Exit(ExitDigestNotFound)
+	// Get concurrency from config if not set via CLI
+	concurrency := manifestsOpts.verifyConcurrency
+	if concurrency == 0 {
+		// Try to load from config
+		if cfg := configFromContext(cmd); cfg != nil && cfg.Manifests.VerifyConcurrency > 0 {
+			concurrency = cfg.Manifests.VerifyConcurrency
+		} else {
+			concurrency = 5 // Built-in default
 		}
 	}
 
-	// Handle idempotency check
-	if !manifestsOpts.force {
-		exists, err := manifests.CheckManifestExists(ctx, filteredDigests)
-		if err != nil {
-			logging.Warn("Failed to check existing manifest: %v", err)
-		} else if exists {
-			logging.Info("Manifest already exists and is up-to-date (use --force to recreate)")
-			return nil
-		}
+	if err := manifests.VerifyDigestsInRegistry(ctx, filteredDigests, manifests.VerificationOptions{
+		Registry:      manifestsOpts.registry,
+		Namespace:     manifestsOpts.namespace,
+		Tag:           tag,
+		AuthFile:      manifestsOpts.authFile,
+		MaxConcurrent: concurrency,
+	}); err != nil {
+		logging.ErrorContext(ctx, "Registry verification failed: %v", err)
+		os.Exit(ExitDigestNotFound)
 	}
+}
 
-	// Handle dry-run mode
-	if manifestsOpts.dryRun {
-		return handleDryRun(filteredDigests)
-	}
-
-	// Parse annotations and labels
+// parseMetadata parses annotations and labels from command line options
+func parseMetadata(ctx context.Context) (map[string]string, map[string]string) {
 	annotations, err := parseKeyValuePairs(manifestsOpts.annotations)
 	if err != nil {
-		logging.Error("Failed to parse annotations: %v", err)
+		logging.ErrorContext(ctx, "Failed to parse annotations: %v", err)
 		os.Exit(ExitValidationError)
 	}
 
 	labels, err := parseKeyValuePairs(manifestsOpts.labels)
 	if err != nil {
-		logging.Error("Failed to parse labels: %v", err)
+		logging.ErrorContext(ctx, "Failed to parse labels: %v", err)
 		os.Exit(ExitValidationError)
 	}
 
-	// Create and push manifests for all tags
+	return annotations, labels
+}
+
+// createAndPushManifests creates and pushes manifests for all tags
+func createAndPushManifests(ctx context.Context, filteredDigests []manifests.DigestFile, annotations, labels map[string]string) {
 	// Note: This is NOT atomic - if a later tag fails, earlier tags are already pushed
 	// This is intentional for idempotency and partial success scenarios
 	var failedTags []string
 	var successTags []string
 
 	for _, tag := range manifestsOpts.tags {
-		logging.Info("Creating manifest for tag: %s", tag)
+		logging.InfoContext(ctx, "Creating manifest for tag: %s", tag)
 
 		if err := manifests.CreateAndPushManifest(ctx, filteredDigests, manifests.CreationOptions{
 			Registry:    manifestsOpts.registry,
@@ -371,39 +403,38 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 			Annotations: annotations,
 			Labels:      labels,
 		}); err != nil {
-			logging.Error("Failed to create/push manifest for tag %s: %v", tag, err)
+			logging.ErrorContext(ctx, "Failed to create/push manifest for tag %s: %v", tag, err)
 			failedTags = append(failedTags, tag)
 			continue
 		}
 
 		manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
-		logging.Info("Successfully created and pushed manifest to %s", manifestRef)
+		logging.InfoContext(ctx, "Successfully created and pushed manifest to %s", manifestRef)
 		successTags = append(successTags, tag)
 	}
 
 	// Report results
 	if len(failedTags) > 0 {
-		logging.Error("Failed to push %d of %d tag(s): %v", len(failedTags), len(manifestsOpts.tags), failedTags)
-		logging.Info("Successfully pushed %d tag(s): %v", len(successTags), successTags)
+		logging.ErrorContext(ctx, "Failed to push %d of %d tag(s): %v", len(failedTags), len(manifestsOpts.tags), failedTags)
+		logging.InfoContext(ctx, "Successfully pushed %d tag(s): %v", len(successTags), successTags)
 		os.Exit(ExitRegistryError)
 	}
 
-	logging.Info("Successfully pushed all %d tag(s)", len(successTags))
-	return nil
+	logging.InfoContext(ctx, "Successfully pushed all %d tag(s)", len(successTags))
 }
 
 // handleDryRun handles dry-run mode by previewing what would be created
-func handleDryRun(filteredDigests []manifests.DigestFile) error {
-	logging.Info("Dry run: would create manifest with %d architecture(s):", len(filteredDigests))
+func handleDryRun(ctx context.Context, filteredDigests []manifests.DigestFile) error {
+	logging.InfoContext(ctx, "Dry run: would create manifest with %d architecture(s):", len(filteredDigests))
 	for _, df := range filteredDigests {
-		logging.Info("  - %s: %s", df.Architecture, df.Digest.String())
+		logging.InfoContext(ctx, "  - %s: %s", df.Architecture, df.Digest.String())
 	}
 
 	// Show all tags that would be created
-	logging.Info("Would push with %d tag(s):", len(manifestsOpts.tags))
+	logging.InfoContext(ctx, "Would push with %d tag(s):", len(manifestsOpts.tags))
 	for _, tag := range manifestsOpts.tags {
 		manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
-		logging.Info("  - %s", manifestRef)
+		logging.InfoContext(ctx, "  - %s", manifestRef)
 	}
 
 	return nil
@@ -440,7 +471,7 @@ func runManifestsInspect(cmd *cobra.Command, args []string) error {
 	}
 
 	manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
-	logging.Info("Inspecting manifest: %s", manifestRef)
+	logging.InfoContext(ctx, "Inspecting manifest: %s", manifestRef)
 
 	// Inspect the manifest
 	manifestInfo, err := manifests.InspectManifest(ctx, manifests.InspectOptions{
@@ -451,7 +482,7 @@ func runManifestsInspect(cmd *cobra.Command, args []string) error {
 		AuthFile:  manifestsOpts.authFile,
 	})
 	if err != nil {
-		logging.Error("Failed to inspect manifest: %v", err)
+		logging.ErrorContext(ctx, "Failed to inspect manifest: %v", err)
 		os.Exit(ExitRegistryError)
 	}
 
@@ -470,7 +501,7 @@ func runManifestsList(cmd *cobra.Command, args []string) error {
 	}
 
 	imageRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, "")
-	logging.Info("Listing tags for: %s", strings.TrimSuffix(imageRef, ":"))
+	logging.InfoContext(ctx, "Listing tags for: %s", strings.TrimSuffix(imageRef, ":"))
 
 	// List tags
 	tags, err := manifests.ListTags(ctx, manifests.ListOptions{
@@ -480,16 +511,16 @@ func runManifestsList(cmd *cobra.Command, args []string) error {
 		AuthFile:  manifestsOpts.authFile,
 	})
 	if err != nil {
-		logging.Error("Failed to list tags: %v", err)
+		logging.ErrorContext(ctx, "Failed to list tags: %v", err)
 		os.Exit(ExitRegistryError)
 	}
 
 	if len(tags) == 0 {
-		logging.Info("No tags found")
+		logging.InfoContext(ctx, "No tags found")
 		return nil
 	}
 
-	logging.Info("Found %d tag(s):", len(tags))
+	logging.InfoContext(ctx, "Found %d tag(s):", len(tags))
 	for _, tag := range tags {
 		fmt.Printf("  - %s\n", tag)
 	}

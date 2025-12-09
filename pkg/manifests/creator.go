@@ -57,7 +57,11 @@ func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts C
 	if err != nil {
 		return fmt.Errorf("failed to initialize container builder: %w", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			logging.Error("Failed to close builder: %v", err)
+		}
+	}()
 
 	// Get manifest manager
 	manifestMgr := bldr.GetManifestManager()

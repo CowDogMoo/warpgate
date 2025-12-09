@@ -6,18 +6,18 @@
       "properties": {
         "base": {
           "$ref": "#/$defs/BaseImage",
-          "description": "Override base image for this architecture"
+          "description": "Base is the override base image for this architecture"
         },
         "provisioners": {
           "items": {
             "$ref": "#/$defs/Provisioner"
           },
           "type": "array",
-          "description": "Additional or replacement provisioners for this architecture"
+          "description": "Provisioners is the list of additional or replacement provisioners for this architecture"
         },
         "append_provisioners": {
           "type": "boolean",
-          "description": "Whether to append provisioners or replace them entirely"
+          "description": "AppendProvisioners indicates whether to append provisioners or replace them entirely"
         }
       },
       "additionalProperties": false,
@@ -113,15 +113,15 @@
       "properties": {
         "username": {
           "type": "string",
-          "description": "Username for registry authentication"
+          "description": "Username is the username for registry authentication"
         },
         "password": {
           "type": "string",
-          "description": "Password or access token for registry authentication (use environment variables for security)"
+          "description": "Password is the password or access token for registry authentication (use environment variables for security)"
         },
         "registry": {
           "type": "string",
-          "description": "Registry URL (e.g., \"ghcr.io\", \"docker.io\", \"quay.io\")"
+          "description": "Registry is the registry URL (e.g., \"ghcr.io\", \"docker.io\", \"quay.io\")"
         }
       },
       "additionalProperties": false,
@@ -193,7 +193,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Type of post-processor: \"manifest\", \"docker-tag\", \"docker-push\", \"compress\", or \"checksum\""
+          "description": "Type is the type of post-processor: \"manifest\", \"docker-tag\", \"docker-push\", \"compress\", or \"checksum\""
         },
         "output": {
           "type": "string",
@@ -201,7 +201,7 @@
         },
         "strip_path": {
           "type": "boolean",
-          "description": "StripPath removes directory paths from artifact names in the manifest"
+          "description": "StripPath indicates whether to remove directory paths from artifact names in the manifest"
         },
         "repository": {
           "type": "string",
@@ -216,7 +216,7 @@
         },
         "force": {
           "type": "boolean",
-          "description": "Force overwrites existing tags if they already exist"
+          "description": "Force indicates whether to overwrite existing tags if they already exist"
         },
         "login_server": {
           "type": "string",
@@ -250,18 +250,18 @@
             "type": "string"
           },
           "type": "array",
-          "description": "Only restricts execution to specific build sources"
+          "description": "Only is the list of build sources to restrict execution to"
         },
         "except": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Except skips execution for specific build sources"
+          "description": "Except is the list of build sources to skip execution for"
         },
         "keep_input_artifact": {
           "type": "boolean",
-          "description": "KeepInputArtifact preserves the original artifact after post-processing"
+          "description": "KeepInputArtifact indicates whether to preserve the original artifact after post-processing"
         }
       },
       "additionalProperties": false,
@@ -275,21 +275,21 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Type of provisioner: \"shell\", \"ansible\", \"script\", or \"powershell\""
+          "description": "Type is the type of provisioner: \"shell\", \"ansible\", \"script\", or \"powershell\""
         },
         "only": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Only restricts execution to specific build sources (e.g., [\"docker.amd64\", \"docker.arm64\"])"
+          "description": "Only is the list of build sources to restrict execution to (e.g., [\"docker.amd64\", \"docker.arm64\"])"
         },
         "except": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Except skips execution for specific build sources"
+          "description": "Except is the list of build sources to skip execution for"
         },
         "inline": {
           "items": {
@@ -303,7 +303,7 @@
             "type": "string"
           },
           "type": "object",
-          "description": "Environment variables to set during shell command execution"
+          "description": "Environment is the map of environment variables to set during shell command execution"
         },
         "playbook_path": {
           "type": "string",
@@ -391,7 +391,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Type of build target: \"container\" for Docker images or \"ami\" for AWS AMIs"
+          "description": "Type is the type of build target: \"container\" for Docker images or \"ami\" for AWS AMIs"
         },
         "platforms": {
           "items": {
@@ -413,7 +413,7 @@
         },
         "push": {
           "type": "boolean",
-          "description": "Push automatically pushes the image to the registry after building"
+          "description": "Push indicates whether to automatically push the image to the registry after building"
         },
         "region": {
           "type": "string",
@@ -454,47 +454,54 @@
   "properties": {
     "metadata": {
       "$ref": "#/$defs/Metadata",
-      "description": "Metadata about the template"
+      "description": "Metadata is the metadata about the template"
     },
     "name": {
       "type": "string",
-      "description": "Name of the image"
+      "description": "Name is the name of the image"
     },
     "version": {
       "type": "string",
-      "description": "Version of the template"
+      "description": "Version is the version of the template"
     },
     "base": {
       "$ref": "#/$defs/BaseImage",
-      "description": "Base image configuration"
+      "description": "Base is the base image configuration"
     },
     "provisioners": {
       "items": {
         "$ref": "#/$defs/Provisioner"
       },
       "type": "array",
-      "description": "Provisioners to run during the build"
+      "description": "Provisioners is the list of provisioners to run during the build"
+    },
+    "post_changes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "PostChanges applies Dockerfile-style instructions after provisioners complete\nUseful for setting USER/WORKDIR after creating users during provisioning"
     },
     "post_processors": {
       "items": {
         "$ref": "#/$defs/PostProcessor"
       },
       "type": "array",
-      "description": "Post-processors to run after the build"
+      "description": "PostProcessors is the list of post-processors to run after the build"
     },
     "targets": {
       "items": {
         "$ref": "#/$defs/Target"
       },
       "type": "array",
-      "description": "Build targets (container, AMI, etc.)"
+      "description": "Targets is the list of build targets (container, AMI, etc.)"
     },
     "arch_overrides": {
       "additionalProperties": {
         "$ref": "#/$defs/ArchOverride"
       },
       "type": "object",
-      "description": "Architecture-specific overrides (optional)\nAllows specifying different configurations per architecture"
+      "description": "ArchOverrides allows specifying different configurations per architecture"
     }
   },
   "additionalProperties": false,
@@ -558,5 +565,5 @@
       "version": "1.0.0"
     }
   ],
-  "warpgateVersion": "1.0.0"
+  "warpgateVersion": "dev"
 }

@@ -23,6 +23,7 @@ THE SOFTWARE.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,8 +60,9 @@ func init() {
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	templateName := args[0]
-	logging.Info("Initializing template: %s", templateName)
+	logging.InfoContext(ctx, "Initializing template: %s", templateName)
 
 	// Create template directory
 	templateDir := filepath.Join(initOutputDir, templateName)
@@ -76,7 +78,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// If forking from existing template, load and modify it
 	if initFromTemplate != "" {
-		return forkTemplate(initFromTemplate, templateName, templateDir)
+		return forkTemplate(ctx, initFromTemplate, templateName, templateDir)
 	}
 
 	// Create default template configuration
@@ -89,12 +91,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create README: %w", err)
 	}
 
-	logging.Info("Template created successfully at: %s", templateDir)
-	logging.Info("Next steps:")
-	logging.Info("  1. Edit %s to configure your template", filepath.Join(templateDir, "warpgate.yaml"))
-	logging.Info("  2. Add provisioning scripts to %s", scriptsDir)
-	logging.Info("  3. Validate with: warpgate validate %s", filepath.Join(templateDir, "warpgate.yaml"))
-	logging.Info("  4. Build with: warpgate build -f %s", filepath.Join(templateDir, "warpgate.yaml"))
+	logging.InfoContext(ctx, "Template created successfully at: %s", templateDir)
+	logging.InfoContext(ctx, "Next steps:")
+	logging.InfoContext(ctx, "  1. Edit %s to configure your template", filepath.Join(templateDir, "warpgate.yaml"))
+	logging.InfoContext(ctx, "  2. Add provisioning scripts to %s", scriptsDir)
+	logging.InfoContext(ctx, "  3. Validate with: warpgate validate %s", filepath.Join(templateDir, "warpgate.yaml"))
+	logging.InfoContext(ctx, "  4. Build with: warpgate build -f %s", filepath.Join(templateDir, "warpgate.yaml"))
 
 	return nil
 }
@@ -215,8 +217,8 @@ MIT
 	return nil
 }
 
-func forkTemplate(fromTemplate, newName, outputDir string) error {
-	logging.Info("Forking template from: %s", fromTemplate)
+func forkTemplate(ctx context.Context, fromTemplate, newName, outputDir string) error {
+	logging.InfoContext(ctx, "Forking template from: %s", fromTemplate)
 
 	// Load the source template
 	loader, err := templates.NewTemplateLoader()
@@ -237,7 +239,7 @@ func forkTemplate(fromTemplate, newName, outputDir string) error {
 
 	// Save the forked template
 	configPath := filepath.Join(outputDir, "warpgate.yaml")
-	if err := saveTemplateConfig(cfg, configPath); err != nil {
+	if err := saveTemplateConfig(ctx, cfg, configPath); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -246,19 +248,19 @@ func forkTemplate(fromTemplate, newName, outputDir string) error {
 		return fmt.Errorf("failed to create README: %w", err)
 	}
 
-	logging.Info("Template forked successfully")
+	logging.InfoContext(ctx, "Template forked successfully")
 	return nil
 }
 
-func saveTemplateConfig(cfg interface{}, path string) error {
+func saveTemplateConfig(ctx context.Context, cfg interface{}, path string) error {
 	// This is a simplified version - in production you'd want to properly
 	// serialize the config to YAML with proper formatting
 
 	// For now, we'll use a basic YAML serialization
 	// You may want to add gopkg.in/yaml.v3 serialization here
 
-	logging.Warn("Template forking is a basic implementation - manual adjustment may be needed")
-	logging.Info("Config saved to: %s", path)
+	logging.WarnContext(ctx, "Template forking is a basic implementation - manual adjustment may be needed")
+	logging.InfoContext(ctx, "Config saved to: %s", path)
 
 	return fmt.Errorf("template forking requires YAML serialization - use --from with caution")
 }

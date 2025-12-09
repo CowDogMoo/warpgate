@@ -23,6 +23,7 @@ THE SOFTWARE.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -100,19 +101,20 @@ func init() {
 }
 
 func runConvertPacker(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	absTemplateDir, err := resolveTemplatePath(args[0])
 	if err != nil {
 		return err
 	}
 
-	logging.Info("Converting Packer template to Warpgate format: %s", absTemplateDir)
+	logging.InfoContext(ctx, "Converting Packer template to Warpgate format: %s", absTemplateDir)
 
 	// If author not provided, try to get from git config
 	author := convertOpts.author
 	if author == "" {
-		author = getGitAuthor()
+		author = getGitAuthor(ctx)
 		if author != "" {
-			logging.Info("Using git config for author: %s", author)
+			logging.InfoContext(ctx, "Using git config for author: %s", author)
 		}
 	}
 
@@ -143,7 +145,7 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 	postProcessorCount := len(buildConfig.PostProcessors)
 	targetCount := len(buildConfig.Targets)
 
-	logging.Info("Conversion complete: %d provisioners, %d post-processors, %d targets",
+	logging.InfoContext(ctx, "Conversion complete: %d provisioners, %d post-processors, %d targets",
 		provisionerCount, postProcessorCount, targetCount)
 
 	// Marshal to YAML
@@ -162,7 +164,7 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 	}
 
 	// Write output or print dry-run
-	if err := writeConvertedTemplate(yamlWithSchema, outputPath); err != nil {
+	if err := writeConvertedTemplate(ctx, yamlWithSchema, outputPath); err != nil {
 		return err
 	}
 
@@ -230,7 +232,7 @@ func determineOutputPath(absTemplateDir string) (string, error) {
 }
 
 // writeConvertedTemplate writes the converted template to file or prints it for dry-run
-func writeConvertedTemplate(yamlWithSchema []byte, outputPath string) error {
+func writeConvertedTemplate(ctx context.Context, yamlWithSchema []byte, outputPath string) error {
 	// Dry run: print to stdout
 	if convertOpts.dryRun {
 		fmt.Println("# Dry run - converted YAML:")
@@ -244,7 +246,7 @@ func writeConvertedTemplate(yamlWithSchema []byte, outputPath string) error {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
-	logging.Info("Successfully converted template to: %s", outputPath)
+	logging.InfoContext(ctx, "Successfully converted template to: %s", outputPath)
 	return nil
 }
 
@@ -269,67 +271,101 @@ func displayConversionSummary(buildConfig *builder.Config, outputPath string) {
 }
 
 // getGitAuthor retrieves author information from git config
-func getGitAuthor() string {
-	var name, email string
-
-	// Get home directory
+func getGitAuthor(ctx context.Context) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		logging.Debug("Failed to get home directory: %v", err)
+		logging.DebugContext(ctx, "Failed to get home directory: %v", err)
 		return ""
 	}
 
-	// Try to load global .gitconfig
+	// Load main git config
+	cfg := loadGitConfig(ctx, home)
+	if cfg == nil {
+		return ""
+	}
+
+	// Extract name and email
+	name, email := extractUserInfo(cfg)
+
+	// Try included configs if needed
+	if name == "" || email == "" {
+		name, email = tryIncludedConfig(ctx, cfg, home, name, email)
+	}
+
+	return formatGitAuthor(name, email)
+}
+
+// loadGitConfig loads the main .gitconfig file
+func loadGitConfig(ctx context.Context, home string) *ini.File {
 	gitconfigPath := filepath.Join(home, ".gitconfig")
 	cfg, err := ini.Load(gitconfigPath)
 	if err != nil {
-		logging.Debug("Failed to load .gitconfig: %v", err)
-		return ""
+		logging.DebugContext(ctx, "Failed to load .gitconfig: %v", err)
+		return nil
 	}
+	return cfg
+}
 
-	// Get user section from main config
+// extractUserInfo extracts name and email from a git config section
+func extractUserInfo(cfg *ini.File) (name, email string) {
 	userSection := cfg.Section("user")
 	if userSection != nil {
 		name = userSection.Key("name").String()
 		email = userSection.Key("email").String()
 	}
+	return name, email
+}
 
-	// If not found, check for include.path and load those files
-	if name == "" || email == "" {
-		includeSection := cfg.Section("include")
-		if includeSection != nil {
-			includePath := includeSection.Key("path").String()
-			if includePath != "" {
-				// Expand ~ to home directory
-				if strings.HasPrefix(includePath, "~/") {
-					includePath = filepath.Join(home, includePath[2:])
-				}
+// tryIncludedConfig tries to load user info from included config files
+func tryIncludedConfig(ctx context.Context, cfg *ini.File, home, currentName, currentEmail string) (name, email string) {
+	name, email = currentName, currentEmail
 
-				// Try to load the included file
-				includedCfg, err := ini.Load(includePath)
-				if err == nil {
-					includedUserSection := includedCfg.Section("user")
-					if includedUserSection != nil {
-						if name == "" {
-							name = includedUserSection.Key("name").String()
-						}
-						if email == "" {
-							email = includedUserSection.Key("email").String()
-						}
-					}
-				}
-			}
-		}
+	includeSection := cfg.Section("include")
+	if includeSection == nil {
+		return name, email
 	}
 
-	// Format as "Name <email>"
-	if name != "" && email != "" {
+	includePath := includeSection.Key("path").String()
+	if includePath == "" {
+		return name, email
+	}
+
+	// Expand ~ to home directory
+	if strings.HasPrefix(includePath, "~/") {
+		includePath = filepath.Join(home, includePath[2:])
+	}
+
+	// Try to load the included file
+	includedCfg, err := ini.Load(includePath)
+	if err != nil {
+		return name, email
+	}
+
+	includedUserSection := includedCfg.Section("user")
+	if includedUserSection == nil {
+		return name, email
+	}
+
+	if name == "" {
+		name = includedUserSection.Key("name").String()
+	}
+	if email == "" {
+		email = includedUserSection.Key("email").String()
+	}
+
+	return name, email
+}
+
+// formatGitAuthor formats name and email as a git author string
+func formatGitAuthor(name, email string) string {
+	switch {
+	case name != "" && email != "":
 		return fmt.Sprintf("%s <%s>", name, email)
-	} else if name != "" {
+	case name != "":
 		return name
-	} else if email != "" {
+	case email != "":
 		return email
+	default:
+		return ""
 	}
-
-	return ""
 }

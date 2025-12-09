@@ -304,7 +304,7 @@ func (b *BuildahBuilder) applyChange(change string) error {
 
 func (b *BuildahBuilder) applyUserChange(value string) error {
 	if value == "" {
-		return fmt.Errorf("USER directive requires a value")
+		return fmt.Errorf("dockerfile: USER directive requires a value")
 	}
 	b.builder.SetUser(value)
 	logging.Info("Set user to: %s", value)
@@ -313,7 +313,7 @@ func (b *BuildahBuilder) applyUserChange(value string) error {
 
 func (b *BuildahBuilder) applyWorkdirChange(value string) error {
 	if value == "" {
-		return fmt.Errorf("WORKDIR directive requires a value")
+		return fmt.Errorf("dockerfile: WORKDIR directive requires a value")
 	}
 	b.builder.SetWorkDir(value)
 	logging.Info("Set working directory to: %s", value)
@@ -322,7 +322,7 @@ func (b *BuildahBuilder) applyWorkdirChange(value string) error {
 
 func (b *BuildahBuilder) applyEnvChange(value string) error {
 	if value == "" {
-		return fmt.Errorf("ENV directive requires a value")
+		return fmt.Errorf("dockerfile: ENV directive requires a value")
 	}
 	// Parse ENV KEY=VALUE or ENV KEY VALUE
 	var key, val string
@@ -374,7 +374,7 @@ func (b *BuildahBuilder) applyCmdChange(value string) error {
 
 func (b *BuildahBuilder) applyLabelChange(value string) error {
 	if value == "" {
-		return fmt.Errorf("LABEL directive requires a value")
+		return fmt.Errorf("dockerfile: LABEL directive requires a value")
 	}
 	// Parse LABEL key=value
 	if strings.Contains(value, "=") {
@@ -394,7 +394,7 @@ func (b *BuildahBuilder) applyLabelChange(value string) error {
 
 func (b *BuildahBuilder) applyExposeChange(value string) error {
 	if value == "" {
-		return fmt.Errorf("EXPOSE directive requires a value")
+		return fmt.Errorf("dockerfile: EXPOSE directive requires a value")
 	}
 	b.builder.SetPort(value)
 	logging.Info("Exposed port: %s", value)
@@ -403,7 +403,7 @@ func (b *BuildahBuilder) applyExposeChange(value string) error {
 
 func (b *BuildahBuilder) applyVolumeChange(value string) error {
 	if value == "" {
-		return fmt.Errorf("VOLUME directive requires a value")
+		return fmt.Errorf("dockerfile: VOLUME directive requires a value")
 	}
 	// Parse as JSON array or single path
 	volumes := b.parseCommandValue(value)
@@ -498,12 +498,12 @@ func (b *BuildahBuilder) runAnsibleProvisioner(ctx context.Context, prov builder
 }
 
 // commit commits the container to an image and returns the image reference and digest
-func (b *BuildahBuilder) commit(ctx context.Context, name, version string) (string, string, error) {
+func (b *BuildahBuilder) commit(ctx context.Context, name, version string) (imageRef, digest string, err error) {
 	imageRefStr := fmt.Sprintf("%s/%s:%s", b.globalConfig.Container.DefaultRegistry, name, version)
 	logging.Info("Committing image: %s", imageRefStr)
 
 	// Parse image reference
-	imageRef, err := alltransports.ParseImageName("containers-storage:" + imageRefStr)
+	imageRefParsed, err := alltransports.ParseImageName("containers-storage:" + imageRefStr)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to parse image reference: %w", err)
 	}
@@ -512,12 +512,12 @@ func (b *BuildahBuilder) commit(ctx context.Context, name, version string) (stri
 		Squash: false,
 	}
 
-	imageID, _, digest, err := b.builder.Commit(ctx, imageRef, options)
+	imageID, _, digestParsed, err := b.builder.Commit(ctx, imageRefParsed, options)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to commit: %w", err)
 	}
 
-	digestStr := digest.String()
+	digestStr := digestParsed.String()
 
 	logging.Info("Image committed successfully: %s (ID: %s, Digest: %s)", imageRefStr, imageID, digestStr)
 	return imageRefStr, digestStr, nil

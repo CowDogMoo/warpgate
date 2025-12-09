@@ -23,6 +23,7 @@ THE SOFTWARE.
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/cowdogmoo/warpgate/pkg/config"
@@ -32,6 +33,7 @@ import (
 
 var (
 	syntaxOnly bool
+	_          context.Context // Force context import to be recognized
 )
 
 var validateCmd = &cobra.Command{
@@ -51,12 +53,13 @@ func init() {
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	configPath := args[0]
 
 	if syntaxOnly {
-		logging.Info("Validating configuration (syntax only): %s", configPath)
+		logging.InfoContext(ctx, "Validating configuration (syntax only): %s", configPath)
 	} else {
-		logging.Info("Validating configuration: %s", configPath)
+		logging.InfoContext(ctx, "Validating configuration: %s", configPath)
 	}
 
 	// Load configuration
@@ -71,10 +74,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	if err := validator.ValidateWithOptions(cfg, config.ValidationOptions{
 		SyntaxOnly: syntaxOnly,
 	}); err != nil {
-		logging.Error("Validation failed: %v", err)
+		logging.ErrorContext(ctx, "Validation failed: %v", err)
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	logging.Info("Configuration is valid!")
+	logging.InfoContext(ctx, "Configuration is valid!")
 	return nil
 }

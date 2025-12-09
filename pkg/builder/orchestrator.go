@@ -25,9 +25,15 @@ package builder
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"golang.org/x/sync/errgroup"
+)
+
+// Default build concurrency settings
+const (
+	// DefaultMaxConcurrency is the default number of parallel builds
+	DefaultMaxConcurrency = 2
 )
 
 // BuildOrchestrator coordinates multi-architecture builds
@@ -38,7 +44,7 @@ type BuildOrchestrator struct {
 // NewBuildOrchestrator creates a new build orchestrator
 func NewBuildOrchestrator(maxConcurrency int) *BuildOrchestrator {
 	if maxConcurrency <= 0 {
-		maxConcurrency = 2 // Default to 2 parallel builds
+		maxConcurrency = DefaultMaxConcurrency
 	}
 
 	return &BuildOrchestrator{
@@ -58,61 +64,45 @@ type BuildRequest struct {
 func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []BuildRequest, builder ContainerBuilder) ([]BuildResult, error) {
 	logging.Info("Starting multi-arch build for %d architectures", len(requests))
 
-	// Create a semaphore to limit concurrency
-	semaphore := make(chan struct{}, bo.maxConcurrency)
-	var wg sync.WaitGroup
+	// Use errgroup with concurrency limit
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(bo.maxConcurrency)
+
 	results := make([]BuildResult, len(requests))
-	errors := make([]error, len(requests))
 
 	for i, req := range requests {
-		wg.Add(1)
-		go func(index int, request BuildRequest) {
-			defer wg.Done()
-
-			// Acquire semaphore
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			logging.Info("Building %s for %s", request.Config.Name, request.Architecture)
+		i, req := i, req // Capture loop variables
+		g.Go(func() error {
+			logging.Info("Building %s for %s", req.Config.Name, req.Architecture)
 
 			// Modify config for specific architecture
-			configCopy := request.Config
-			configCopy.Base.Platform = request.Platform
+			configCopy := req.Config
+			configCopy.Base.Platform = req.Platform
 
 			// Build the image
 			result, err := builder.Build(ctx, configCopy)
 			if err != nil {
-				logging.Error("Failed to build %s for %s: %v", request.Config.Name, request.Architecture, err)
-				errors[index] = err
-				return
+				logging.Error("Failed to build %s for %s: %v", req.Config.Name, req.Architecture, err)
+				return fmt.Errorf("build %s (%s): %w", req.Config.Name, req.Architecture, err)
 			}
 
 			// Tag with architecture-specific tag
-			archTag := fmt.Sprintf("%s-%s", request.Tag, request.Architecture)
+			archTag := fmt.Sprintf("%s-%s", req.Tag, req.Architecture)
 			if err := builder.Tag(ctx, result.ImageRef, archTag); err != nil {
 				logging.Error("Failed to tag image: %v", err)
-				errors[index] = err
-				return
+				return fmt.Errorf("tag %s for %s: %w", archTag, req.Architecture, err)
 			}
 
 			result.ImageRef = archTag
-			results[index] = *result
-			logging.Info("Successfully built %s for %s: %s", request.Config.Name, request.Architecture, archTag)
-		}(i, req)
+			results[i] = *result
+			logging.Info("Successfully built %s for %s: %s", req.Config.Name, req.Architecture, archTag)
+			return nil
+		})
 	}
 
-	wg.Wait()
-
-	// Check for errors
-	buildErrors := make([]error, 0, len(errors))
-	for i, err := range errors {
-		if err != nil {
-			buildErrors = append(buildErrors, fmt.Errorf("build %d (%s): %w", i, requests[i].Architecture, err))
-		}
-	}
-
-	if len(buildErrors) > 0 {
-		return results, fmt.Errorf("failed to build %d/%d architectures: %v", len(buildErrors), len(requests), buildErrors)
+	// Wait for all builds to complete
+	if err := g.Wait(); err != nil {
+		return results, fmt.Errorf("multi-arch build failed: %w", err)
 	}
 
 	logging.Info("Successfully completed all %d architecture builds", len(requests))
@@ -123,39 +113,28 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildResult, registry string, builder ContainerBuilder) error {
 	logging.Info("Pushing %d architecture images to %s", len(results), registry)
 
-	var wg sync.WaitGroup
-	errors := make([]error, len(results))
+	// Use errgroup for concurrent pushes (no concurrency limit needed for push operations)
+	g, ctx := errgroup.WithContext(ctx)
 
-	for i, result := range results {
-		wg.Add(1)
-		go func(index int, res BuildResult) {
-			defer wg.Done()
-
-			registryRef := fmt.Sprintf("%s/%s", registry, res.ImageRef)
+	for _, result := range results {
+		result := result // Capture loop variable
+		g.Go(func() error {
+			registryRef := fmt.Sprintf("%s/%s", registry, result.ImageRef)
 			logging.Info("Pushing %s", registryRef)
 
-			if err := builder.Push(ctx, res.ImageRef, registryRef); err != nil {
+			if err := builder.Push(ctx, result.ImageRef, registryRef); err != nil {
 				logging.Error("Failed to push %s: %v", registryRef, err)
-				errors[index] = err
-				return
+				return fmt.Errorf("push %s: %w", registryRef, err)
 			}
 
 			logging.Info("Successfully pushed %s", registryRef)
-		}(i, result)
+			return nil
+		})
 	}
 
-	wg.Wait()
-
-	// Check for errors
-	var pushErrors []error
-	for _, err := range errors {
-		if err != nil {
-			pushErrors = append(pushErrors, err)
-		}
-	}
-
-	if len(pushErrors) > 0 {
-		return fmt.Errorf("failed to push %d/%d images: %v", len(pushErrors), len(results), pushErrors)
+	// Wait for all pushes to complete
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("multi-arch push failed: %w", err)
 	}
 
 	return nil

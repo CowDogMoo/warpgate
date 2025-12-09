@@ -140,28 +140,29 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check if config already exists
+	ctx := cmd.Context()
 	if _, err := os.Stat(configPath); err == nil {
 		if !configForce {
 			return fmt.Errorf("config file already exists at %s (use --force to overwrite)", configPath)
 		}
-		logging.Warn("Overwriting existing config file at %s", configPath)
-		logging.Warn("This will reset all custom settings to defaults!")
+		logging.WarnContext(ctx, "Overwriting existing config file at %s", configPath)
+		logging.WarnContext(ctx, "This will reset all custom settings to defaults!")
 	}
 
 	// Check for legacy config and suggest migration
 	if home, err := os.UserHomeDir(); err == nil {
 		legacyPath := filepath.Join(home, ".warpgate", "config.yaml")
 		if _, err := os.Stat(legacyPath); err == nil {
-			logging.Warn("Legacy config found at %s", legacyPath)
-			logging.Info("Creating config at %s", configPath)
-			logging.Info("Consider migrating: mv \"%s\" \"%s\"", legacyPath, configPath)
+			logging.WarnContext(ctx, "Legacy config found at %s", legacyPath)
+			logging.InfoContext(ctx, "Creating config at %s", configPath)
+			logging.InfoContext(ctx, "Consider migrating: mv \"%s\" \"%s\"", legacyPath, configPath)
 		}
 	}
 
-	// Load default config
-	config, err := globalconfig.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load default config: %w", err)
+	// Load config from context
+	config := configFromContext(cmd)
+	if config == nil {
+		return fmt.Errorf("config not available in context")
 	}
 
 	// Marshal to YAML
@@ -175,16 +176,16 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	logging.Info("Configuration file created at: %s", configPath)
-	logging.Info("Edit this file to customize your warpgate settings")
+	logging.InfoContext(ctx, "Configuration file created at: %s", configPath)
+	logging.InfoContext(ctx, "Edit this file to customize your warpgate settings")
 
 	return nil
 }
 
 func runConfigShow(cmd *cobra.Command, args []string) error {
-	config, err := globalconfig.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+	config := configFromContext(cmd)
+	if config == nil {
+		return fmt.Errorf("config not available in context")
 	}
 
 	// Marshal to YAML for display
@@ -241,7 +242,7 @@ func runConfigPath(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to get default config path: %w", err)
 		}
 		fmt.Printf("%s (not created yet)\n", defaultPath)
-		logging.Info("Run 'warpgate config init' to create the config file")
+		logging.InfoContext(cmd.Context(), "Run 'warpgate config init' to create the config file")
 	}
 
 	return nil
@@ -264,11 +265,12 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	v.AddConfigPath(".")
 
 	// Try to read existing config
+	ctx := cmd.Context()
 	configPath := ""
 	if err := v.ReadInConfig(); err != nil {
 		// Config doesn't exist, create it
 		if os.IsNotExist(err) || v.ConfigFileUsed() == "" {
-			logging.Warn("Config file doesn't exist. Creating it now...")
+			logging.WarnContext(ctx, "Config file doesn't exist. Creating it now...")
 			if err := runConfigInit(cmd, []string{}); err != nil {
 				return err
 			}
@@ -297,8 +299,8 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
-	logging.Info("Set %s = %s", key, value)
-	logging.Info("Config file updated: %s", configPath)
+	logging.InfoContext(ctx, "Set %s = %s", key, value)
+	logging.InfoContext(ctx, "Config file updated: %s", configPath)
 
 	return nil
 }
@@ -306,9 +308,9 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 func runConfigGet(cmd *cobra.Command, args []string) error {
 	key := args[0]
 
-	config, err := globalconfig.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+	config := configFromContext(cmd)
+	if config == nil {
+		return fmt.Errorf("config not available in context")
 	}
 
 	// Use viper to navigate the nested structure

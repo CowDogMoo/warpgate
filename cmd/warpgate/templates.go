@@ -23,6 +23,7 @@ THE SOFTWARE.
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -139,92 +140,84 @@ func init() {
 }
 
 func runTemplatesAdd(cmd *cobra.Command, args []string) error {
-	var name string
-	var urlOrPath string
+	ctx := cmd.Context()
+	name, urlOrPath, err := parseTemplatesAddArgs(args)
+	if err != nil {
+		return err
+	}
 
-	// Handle different argument patterns
+	cfg := configFromContext(cmd)
+	if cfg == nil {
+		return fmt.Errorf("config not available in context")
+	}
+
+	if isGitURL(urlOrPath) {
+		return addGitRepository(ctx, cfg, name, urlOrPath)
+	}
+
+	return addLocalPath(ctx, cfg, urlOrPath)
+}
+
+// parseTemplatesAddArgs parses and validates the arguments for templates add command
+func parseTemplatesAddArgs(args []string) (name string, urlOrPath string, err error) {
 	if len(args) == 2 {
 		// Two args: [name] [url]
 		name = args[0]
 		urlOrPath = args[1]
 
-		// Validate that second arg is a git URL
-		isGitURL := strings.HasPrefix(urlOrPath, "http://") ||
-			strings.HasPrefix(urlOrPath, "https://") ||
-			strings.HasPrefix(urlOrPath, "git@")
-
-		if !isGitURL {
-			return fmt.Errorf("when providing a name, the second argument must be a git URL (not a local path)")
+		if !isGitURL(urlOrPath) {
+			return "", "", fmt.Errorf("when providing a name, the second argument must be a git URL (not a local path)")
 		}
 	} else {
 		// One arg: [url-or-path]
 		urlOrPath = args[0]
 	}
+	return name, urlOrPath, nil
+}
 
-	// Detect if this is a git URL
-	isGitURL := strings.HasPrefix(urlOrPath, "http://") ||
-		strings.HasPrefix(urlOrPath, "https://") ||
-		strings.HasPrefix(urlOrPath, "git@")
+// isGitURL checks if a string is a git URL
+func isGitURL(s string) bool {
+	return strings.HasPrefix(s, "http://") ||
+		strings.HasPrefix(s, "https://") ||
+		strings.HasPrefix(s, "git@")
+}
 
-	// Load current config
-	cfg, err := globalconfig.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
+// addGitRepository adds a git repository to the configuration
+func addGitRepository(ctx context.Context, cfg *globalconfig.Config, name, url string) error {
 	// Initialize repositories map if nil
 	if cfg.Templates.Repositories == nil {
 		cfg.Templates.Repositories = make(map[string]string)
 	}
 
-	if isGitURL {
-		// Handle git URL - add to repositories
-		if name == "" {
-			// Auto-generate name if not provided
-			name = extractRepoName(urlOrPath)
-		}
-
-		// Check if already exists
-		if existing, ok := cfg.Templates.Repositories[name]; ok {
-			if existing == urlOrPath {
-				logging.Warn("Repository '%s' already exists", name)
-				return nil
-			}
-			// Name collision with different URL
-			return fmt.Errorf("repository name '%s' already exists with different URL: %s", name, existing)
-		}
-
-		logging.Info("Adding git repository: %s -> %s", name, urlOrPath)
-		cfg.Templates.Repositories[name] = urlOrPath
-
-		// Save to config file
-		configPath, err := globalconfig.ConfigFile("config.yaml")
-		if err != nil {
-			return fmt.Errorf("failed to get config path: %w", err)
-		}
-
-		v := viper.New()
-		v.SetConfigFile(configPath)
-		v.SetConfigType("yaml")
-
-		if err := v.ReadInConfig(); err != nil {
-			return fmt.Errorf("failed to read config: %w", err)
-		}
-
-		v.Set("templates.repositories", cfg.Templates.Repositories)
-
-		if err := v.WriteConfig(); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
-		}
-
-		logging.Info("Repository added successfully as '%s' to %s", name, configPath)
-		logging.Info("Run 'warpgate templates update' to fetch templates")
-		return nil
+	// Auto-generate name if not provided
+	if name == "" {
+		name = extractRepoName(url)
 	}
 
-	// Handle local path
-	path := urlOrPath
+	// Check if already exists
+	if existing, ok := cfg.Templates.Repositories[name]; ok {
+		if existing == url {
+			logging.WarnContext(ctx, "Repository '%s' already exists", name)
+			return nil
+		}
+		return fmt.Errorf("repository name '%s' already exists with different URL: %s", name, existing)
+	}
 
+	logging.InfoContext(ctx, "Adding git repository: %s -> %s", name, url)
+	cfg.Templates.Repositories[name] = url
+
+	if err := saveConfigValue("templates.repositories", cfg.Templates.Repositories); err != nil {
+		return err
+	}
+
+	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	logging.InfoContext(ctx, "Repository added successfully as '%s' to %s", name, configPath)
+	logging.InfoContext(ctx, "Run 'warpgate templates update' to fetch templates")
+	return nil
+}
+
+// addLocalPath adds a local template directory to the configuration
+func addLocalPath(ctx context.Context, cfg *globalconfig.Config, path string) error {
 	// Expand home directory if needed
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
@@ -243,21 +236,17 @@ func runTemplatesAdd(cmd *cobra.Command, args []string) error {
 		path = absPath
 	}
 
-	// Check if path exists and is a directory
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("path does not exist: %w", err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("path is not a directory: %s", path)
+	// Validate path
+	if err := validateLocalPath(path); err != nil {
+		return err
 	}
 
-	logging.Info("Adding local template directory: %s", path)
+	logging.InfoContext(ctx, "Adding local template directory: %s", path)
 
 	// Check if already exists
 	for _, existingPath := range cfg.Templates.LocalPaths {
 		if existingPath == path {
-			logging.Warn("Path already exists in local_paths")
+			logging.WarnContext(ctx, "Path already exists in local_paths")
 			return nil
 		}
 	}
@@ -265,7 +254,29 @@ func runTemplatesAdd(cmd *cobra.Command, args []string) error {
 	// Add to local_paths
 	cfg.Templates.LocalPaths = append(cfg.Templates.LocalPaths, path)
 
-	// Save to config file
+	if err := saveConfigValue("templates.local_paths", cfg.Templates.LocalPaths); err != nil {
+		return err
+	}
+
+	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	logging.InfoContext(ctx, "Template directory added successfully to %s", configPath)
+	return nil
+}
+
+// validateLocalPath checks if a path exists and is a directory
+func validateLocalPath(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("path does not exist: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path is not a directory: %s", path)
+	}
+	return nil
+}
+
+// saveConfigValue saves a configuration value to the config file
+func saveConfigValue(key string, value interface{}) error {
 	configPath, err := globalconfig.ConfigFile("config.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
@@ -279,13 +290,12 @@ func runTemplatesAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	v.Set("templates.local_paths", cfg.Templates.LocalPaths)
+	v.Set(key, value)
 
 	if err := v.WriteConfig(); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	logging.Info("Template directory added successfully to %s", configPath)
 	return nil
 }
 
@@ -321,40 +331,69 @@ func extractRepoName(gitURL string) string {
 }
 
 func runTemplatesRemove(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	pathOrName := args[0]
 
-	// Expand home directory if needed
+	logging.InfoContext(ctx, "Removing template source: %s", pathOrName)
+
+	cfg := configFromContext(cmd)
+	if cfg == nil {
+		return fmt.Errorf("config not available in context")
+	}
+
+	// Normalize path for comparison
+	normalizedPath := normalizePathForComparison(pathOrName)
+
+	// Remove from local paths and repositories
+	removedFromPaths, removedFromRepos := removeTemplateSource(cfg, pathOrName, normalizedPath)
+
+	if !removedFromPaths && !removedFromRepos {
+		return fmt.Errorf("template source not found: %s", pathOrName)
+	}
+
+	// Save both updated values
+	if err := saveTemplatesConfig(cfg); err != nil {
+		return err
+	}
+
+	// Log results
+	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	if removedFromPaths {
+		logging.InfoContext(ctx, "Removed from local_paths in %s", configPath)
+	}
+	if removedFromRepos {
+		logging.InfoContext(ctx, "Removed from repositories in %s", configPath)
+	}
+	return nil
+}
+
+// normalizePathForComparison normalizes a path for comparison
+func normalizePathForComparison(pathOrName string) string {
 	path := pathOrName
+
+	// Expand home directory if needed
 	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
+		if home, err := os.UserHomeDir(); err == nil {
 			path = filepath.Join(home, path[2:])
 		}
 	}
 
 	// Make path absolute if relative (and it looks like a path)
 	if !filepath.IsAbs(path) && (strings.Contains(path, "/") || strings.HasPrefix(path, ".")) {
-		absPath, err := filepath.Abs(path)
-		if err == nil {
+		if absPath, err := filepath.Abs(path); err == nil {
 			path = absPath
 		}
 	}
 
-	logging.Info("Removing template source: %s", pathOrName)
+	return path
+}
 
-	// Load current config
-	cfg, err := globalconfig.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	removedFromPaths := false
-	removedFromRepos := false
-
+// removeTemplateSource removes a template source from configuration
+func removeTemplateSource(cfg *globalconfig.Config, pathOrName, normalizedPath string) (removedFromPaths, removedFromRepos bool) {
 	// Try to remove from local_paths
 	newLocalPaths := []string{}
 	for _, existingPath := range cfg.Templates.LocalPaths {
-		if existingPath != path && existingPath != pathOrName {
+		if existingPath != normalizedPath && existingPath != pathOrName {
 			newLocalPaths = append(newLocalPaths, existingPath)
 		} else {
 			removedFromPaths = true
@@ -368,46 +407,37 @@ func runTemplatesRemove(cmd *cobra.Command, args []string) error {
 		removedFromRepos = true
 	}
 
-	if !removedFromPaths && !removedFromRepos {
-		return fmt.Errorf("template source not found: %s", pathOrName)
-	}
+	return removedFromPaths, removedFromRepos
+}
 
-	// Save to config file
+// saveTemplatesConfig saves template configuration to the config file
+func saveTemplatesConfig(cfg *globalconfig.Config) error {
 	configPath, err := globalconfig.ConfigFile("config.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}
 
-	// Use viper to update config
 	v := viper.New()
 	v.SetConfigFile(configPath)
 	v.SetConfigType("yaml")
 
-	// Read existing config
 	if err := v.ReadInConfig(); err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	// Update both sections
 	v.Set("templates.local_paths", cfg.Templates.LocalPaths)
 	v.Set("templates.repositories", cfg.Templates.Repositories)
 
-	// Write back
 	if err := v.WriteConfig(); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	if removedFromPaths {
-		logging.Info("Removed from local_paths in %s", configPath)
-	}
-	if removedFromRepos {
-		logging.Info("Removed from repositories in %s", configPath)
-	}
 	return nil
 }
 
 func runTemplatesList(cmd *cobra.Command, args []string) error {
-	logging.Info("Fetching available templates...")
+	ctx := cmd.Context()
+	logging.InfoContext(ctx, "Fetching available templates...")
 
 	// Create template registry
 	registry, err := templates.NewTemplateRegistry()
@@ -427,7 +457,7 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(templateList) == 0 {
-		logging.Info("No templates found. Configure template repositories or local paths in ~/.warpgate/config.yaml")
+		logging.InfoContext(ctx, "No templates found. Configure template repositories or local paths in ~/.warpgate/config.yaml")
 		return nil
 	}
 
@@ -476,8 +506,12 @@ func filterTemplatesBySource(templateList []templates.TemplateInfo, source strin
 // outputTemplatesTable outputs templates in a formatted table
 func outputTemplatesTable(templateList []templates.TemplateInfo) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tSOURCE\tDESCRIPTION\tAUTHOR")
-	fmt.Fprintln(w, "----\t-------\t------\t-----------\t------")
+	if _, err := fmt.Fprintln(w, "NAME\tVERSION\tSOURCE\tDESCRIPTION\tAUTHOR"); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+	if _, err := fmt.Fprintln(w, "----\t-------\t------\t-----------\t------"); err != nil {
+		return fmt.Errorf("failed to write separator: %w", err)
+	}
 
 	for _, tmpl := range templateList {
 		version := tmpl.Version
@@ -497,10 +531,14 @@ func outputTemplatesTable(templateList []templates.TemplateInfo) error {
 			description = description[:47] + "..."
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", tmpl.Name, version, source, description, author)
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", tmpl.Name, version, source, description, author); err != nil {
+			return fmt.Errorf("failed to write template row: %w", err)
+		}
 	}
 
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("failed to flush output: %w", err)
+	}
 	fmt.Printf("\nTotal templates: %d\n", len(templateList))
 	return nil
 }
@@ -584,8 +622,9 @@ func needsProvisionRepo(templateName string) bool {
 }
 
 func runTemplatesSearch(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	query := args[0]
-	logging.Info("Searching for templates matching: %s", query)
+	logging.InfoContext(ctx, "Searching for templates matching: %s", query)
 
 	// Create template registry
 	registry, err := templates.NewTemplateRegistry()
@@ -600,14 +639,18 @@ func runTemplatesSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(results) == 0 {
-		logging.Info("No templates found matching query: %s", query)
+		logging.InfoContext(ctx, "No templates found matching query: %s", query)
 		return nil
 	}
 
 	// Display search results
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tREPOSITORY\tDESCRIPTION")
-	fmt.Fprintln(w, "----\t-------\t----------\t-----------")
+	if _, err := fmt.Fprintln(w, "NAME\tVERSION\tREPOSITORY\tDESCRIPTION"); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
+	}
+	if _, err := fmt.Fprintln(w, "----\t-------\t----------\t-----------"); err != nil {
+		return fmt.Errorf("failed to write separator: %w", err)
+	}
 
 	for _, tmpl := range results {
 		version := tmpl.Version
@@ -623,17 +666,22 @@ func runTemplatesSearch(cmd *cobra.Command, args []string) error {
 			description = description[:47] + "..."
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", tmpl.Name, version, repo, description)
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", tmpl.Name, version, repo, description); err != nil {
+			return fmt.Errorf("failed to write template row: %w", err)
+		}
 	}
 
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("failed to flush output: %w", err)
+	}
 	fmt.Printf("\nFound %d template(s) matching query: %s\n", len(results), query)
 	return nil
 }
 
 func runTemplatesInfo(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
 	templateName := args[0]
-	logging.Info("Fetching information for template: %s", templateName)
+	logging.InfoContext(ctx, "Fetching information for template: %s", templateName)
 
 	// Create template loader
 	loader, err := templates.NewTemplateLoader()
@@ -748,7 +796,8 @@ func displayEnvironmentVars(cfg *builder.Config) {
 }
 
 func runTemplatesUpdate(cmd *cobra.Command, args []string) error {
-	logging.Info("Updating template cache...")
+	ctx := cmd.Context()
+	logging.InfoContext(ctx, "Updating template cache...")
 
 	// Create template registry
 	registry, err := templates.NewTemplateRegistry()
@@ -761,6 +810,6 @@ func runTemplatesUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to update template cache: %w", err)
 	}
 
-	logging.Info("Template cache updated successfully")
+	logging.InfoContext(ctx, "Template cache updated successfully")
 	return nil
 }

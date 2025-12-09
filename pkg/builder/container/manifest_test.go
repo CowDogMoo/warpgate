@@ -39,7 +39,11 @@ func TestNewManifestManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -52,7 +56,11 @@ func TestNewManifestManager(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	mm := bldr.GetManifestManager()
 	if mm == nil {
@@ -96,7 +104,11 @@ func TestManifestManager_CreateManifest_EmptyEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -109,7 +121,11 @@ func TestManifestManager_CreateManifest_EmptyEntries(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	mm := bldr.GetManifestManager()
 	ctx := context.Background()
@@ -131,7 +147,11 @@ func TestManifestManager_CreateManifest_MultiArch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -143,7 +163,11 @@ func TestManifestManager_CreateManifest_MultiArch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	mm := bldr.GetManifestManager()
 	ctx := context.Background()
@@ -186,7 +210,11 @@ func TestManifestManager_PushManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -198,7 +226,11 @@ func TestManifestManager_PushManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create builder: %v", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	mm := bldr.GetManifestManager()
 	ctx := context.Background()
@@ -220,7 +252,11 @@ func TestManifestManager_CreateManifest_NilEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -233,7 +269,11 @@ func TestManifestManager_CreateManifest_NilEntries(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	mm := bldr.GetManifestManager()
 	ctx := context.Background()
@@ -375,7 +415,11 @@ func TestManifestManager_StoreAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -388,7 +432,11 @@ func TestManifestManager_StoreAccess(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	mm := bldr.GetManifestManager()
 
@@ -409,7 +457,11 @@ func TestNewManifestManager_Direct(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	cfg := BuildahConfig{
 		StorageDriver: "vfs",
@@ -422,7 +474,11 @@ func TestNewManifestManager_Direct(t *testing.T) {
 		t.Skipf("Skipping on non-Linux or without buildah: %v", err)
 		return
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			t.Logf("Failed to close builder: %v", err)
+		}
+	}()
 
 	// Create a manifest manager directly
 	mm := NewManifestManager(bldr.store, bldr.systemContext)

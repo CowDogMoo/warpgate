@@ -22,7 +22,7 @@ TARGET="container"
 VERBOSE="--verbose"
 
 usage() {
-    cat <<EOF
+    cat << EOF
 Usage: $0 <template> [options]
 
 Build a Warpgate template using Docker.
@@ -64,23 +64,23 @@ shift
 # Parse optional arguments
 while [ $# -gt 0 ]; do
     case "$1" in
-        -a|--arch)
+        -a | --arch)
             ARCH="$2"
             shift 2
             ;;
-        -t|--target)
+        -t | --target)
             TARGET="$2"
             shift 2
             ;;
-        -v|--verbose)
+        -v | --verbose)
             VERBOSE="--verbose"
             shift
             ;;
-        -q|--quiet)
+        -q | --quiet)
             VERBOSE=""
             shift
             ;;
-        -h|--help)
+        -h | --help)
             usage
             ;;
         *)

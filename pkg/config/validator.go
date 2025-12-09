@@ -88,94 +88,89 @@ func (v *Validator) ValidateWithOptions(config *builder.Config, options Validati
 func (v *Validator) validateProvisioner(prov *builder.Provisioner, index int) error {
 	switch prov.Type {
 	case "shell":
-		if len(prov.Inline) == 0 {
-			return fmt.Errorf("provisioner[%d]: shell provisioner requires 'inline' commands", index)
-		}
-
+		return v.validateShellProvisioner(prov, index)
 	case "ansible":
-		if prov.PlaybookPath == "" {
-			return fmt.Errorf("provisioner[%d]: ansible provisioner requires 'playbook_path'", index)
-		}
-
-		// Only check file existence if not in syntax-only mode
-		if !v.options.SyntaxOnly {
-			if _, err := os.Stat(prov.PlaybookPath); err != nil {
-				// If file doesn't exist, check if it might be due to unresolved variables
-				if v.hasUnresolvedVariable(prov.PlaybookPath) {
-					logging.Warn("provisioner[%d]: playbook_path may contain unresolved environment variables: %s", index, prov.PlaybookPath)
-				}
-				return fmt.Errorf("provisioner[%d]: playbook file not found: %s", index, prov.PlaybookPath)
-			}
-		} else {
-			// In syntax-only mode, warn about potential unresolved variables
-			if v.hasUnresolvedVariable(prov.PlaybookPath) {
-				logging.Warn("provisioner[%d]: playbook_path may contain unresolved environment variables: %s", index, prov.PlaybookPath)
-			}
-		}
-
-		// Check galaxy file if specified
-		if prov.GalaxyFile != "" {
-			if !v.options.SyntaxOnly {
-				if _, err := os.Stat(prov.GalaxyFile); err != nil {
-					if v.hasUnresolvedVariable(prov.GalaxyFile) {
-						logging.Warn("provisioner[%d]: galaxy_file may contain unresolved environment variables: %s", index, prov.GalaxyFile)
-					}
-					return fmt.Errorf("provisioner[%d]: galaxy file not found: %s", index, prov.GalaxyFile)
-				}
-			} else {
-				if v.hasUnresolvedVariable(prov.GalaxyFile) {
-					logging.Warn("provisioner[%d]: galaxy_file may contain unresolved environment variables: %s", index, prov.GalaxyFile)
-				}
-			}
-		}
-
+		return v.validateAnsibleProvisioner(prov, index)
 	case "script":
-		if len(prov.Scripts) == 0 {
-			return fmt.Errorf("provisioner[%d]: script provisioner requires 'scripts'", index)
-		}
-
-		for _, script := range prov.Scripts {
-			if !v.options.SyntaxOnly {
-				if _, err := os.Stat(script); err != nil {
-					if v.hasUnresolvedVariable(script) {
-						logging.Warn("provisioner[%d]: script may contain unresolved environment variables: %s", index, script)
-					}
-					return fmt.Errorf("provisioner[%d]: script file not found: %s", index, script)
-				}
-			} else {
-				if v.hasUnresolvedVariable(script) {
-					logging.Warn("provisioner[%d]: script may contain unresolved environment variables: %s", index, script)
-				}
-			}
-		}
-
+		return v.validateScriptProvisioner(prov, index)
 	case "powershell":
-		if len(prov.PSScripts) == 0 {
-			return fmt.Errorf("provisioner[%d]: powershell provisioner requires 'ps_scripts'", index)
-		}
-
-		for _, script := range prov.PSScripts {
-			if !v.options.SyntaxOnly {
-				if _, err := os.Stat(script); err != nil {
-					if v.hasUnresolvedVariable(script) {
-						logging.Warn("provisioner[%d]: PowerShell script may contain unresolved environment variables: %s", index, script)
-					}
-					return fmt.Errorf("provisioner[%d]: PowerShell script file not found: %s", index, script)
-				}
-			} else {
-				if v.hasUnresolvedVariable(script) {
-					logging.Warn("provisioner[%d]: PowerShell script may contain unresolved environment variables: %s", index, script)
-				}
-			}
-		}
-
+		return v.validatePowerShellProvisioner(prov, index)
 	case "":
 		return fmt.Errorf("provisioner[%d]: type is required", index)
-
 	default:
 		return fmt.Errorf("provisioner[%d]: unknown provisioner type: %s", index, prov.Type)
 	}
+}
 
+// validateShellProvisioner validates a shell provisioner
+func (v *Validator) validateShellProvisioner(prov *builder.Provisioner, index int) error {
+	if len(prov.Inline) == 0 {
+		return fmt.Errorf("provisioner[%d]: shell provisioner requires 'inline' commands", index)
+	}
+	return nil
+}
+
+// validateAnsibleProvisioner validates an ansible provisioner
+func (v *Validator) validateAnsibleProvisioner(prov *builder.Provisioner, index int) error {
+	if prov.PlaybookPath == "" {
+		return fmt.Errorf("provisioner[%d]: ansible provisioner requires 'playbook_path'", index)
+	}
+
+	if err := v.validateFilePath(prov.PlaybookPath, index, "playbook"); err != nil {
+		return err
+	}
+
+	if prov.GalaxyFile != "" {
+		if err := v.validateFilePath(prov.GalaxyFile, index, "galaxy"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateScriptProvisioner validates a script provisioner
+func (v *Validator) validateScriptProvisioner(prov *builder.Provisioner, index int) error {
+	if len(prov.Scripts) == 0 {
+		return fmt.Errorf("provisioner[%d]: script provisioner requires 'scripts'", index)
+	}
+
+	for _, script := range prov.Scripts {
+		if err := v.validateFilePath(script, index, "script"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validatePowerShellProvisioner validates a powershell provisioner
+func (v *Validator) validatePowerShellProvisioner(prov *builder.Provisioner, index int) error {
+	if len(prov.PSScripts) == 0 {
+		return fmt.Errorf("provisioner[%d]: powershell provisioner requires 'ps_scripts'", index)
+	}
+
+	for _, script := range prov.PSScripts {
+		if err := v.validateFilePath(script, index, "PowerShell script"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateFilePath checks if a file exists and warns about unresolved variables
+func (v *Validator) validateFilePath(path string, index int, fileType string) error {
+	if !v.options.SyntaxOnly {
+		if _, err := os.Stat(path); err != nil {
+			if v.hasUnresolvedVariable(path) {
+				logging.Warn("provisioner[%d]: %s may contain unresolved environment variables: %s", index, fileType, path)
+			}
+			return fmt.Errorf("provisioner[%d]: %s file not found: %s", index, fileType, path)
+		}
+	} else if v.hasUnresolvedVariable(path) {
+		logging.Warn("provisioner[%d]: %s may contain unresolved environment variables: %s", index, fileType, path)
+	}
 	return nil
 }
 

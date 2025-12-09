@@ -23,6 +23,7 @@ THE SOFTWARE.
 package logging
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -434,4 +435,115 @@ func SetVerbose(verbose bool) {
 		return
 	}
 	logger.SetVerbose(verbose)
+}
+
+// Context-based logging support
+// This provides an alternative to global logging for better testability
+
+// loggerKeyType is the type for the logger context key
+type loggerKeyType struct{}
+
+// loggerKey is the context key for storing the logger
+var loggerKey = loggerKeyType{}
+
+// WithLogger returns a new context with the provided logger.
+// This allows different parts of the application to use different logger configurations.
+//
+// **Parameters:**
+//
+// ctx: The parent context.
+// l: The CustomLogger instance to store in the context.
+//
+// **Returns:**
+//
+// context.Context: A new context with the logger attached.
+func WithLogger(ctx context.Context, l *CustomLogger) context.Context {
+	return context.WithValue(ctx, loggerKey, l)
+}
+
+// FromContext retrieves the logger from the context.
+// If no logger is found in context, returns the global logger.
+//
+// **Parameters:**
+//
+// ctx: The context to retrieve the logger from.
+//
+// **Returns:**
+//
+// *CustomLogger: The logger from context, or the global logger as fallback.
+func FromContext(ctx context.Context) *CustomLogger {
+	if ctx == nil {
+		if err := ensureLogger(); err != nil {
+			return NewCustomLogger(slog.LevelInfo)
+		}
+		return logger
+	}
+
+	if l, ok := ctx.Value(loggerKey).(*CustomLogger); ok && l != nil {
+		return l
+	}
+
+	// Fallback to global logger
+	if err := ensureLogger(); err != nil {
+		return NewCustomLogger(slog.LevelInfo)
+	}
+	return logger
+}
+
+// Context-aware logging functions
+// These functions retrieve the logger from context and use it,
+// falling back to the global logger if no context logger is available.
+
+// InfoContext logs an informational message using the logger from context.
+//
+// **Parameters:**
+//
+// ctx: The context containing the logger.
+// message: The format string for the log message.
+// args: The arguments to be formatted into the log message.
+func InfoContext(ctx context.Context, message string, args ...interface{}) {
+	FromContext(ctx).Info(message, args...)
+}
+
+// WarnContext logs a warning message using the logger from context.
+//
+// **Parameters:**
+//
+// ctx: The context containing the logger.
+// message: The format string for the log message.
+// args: The arguments to be formatted into the log message.
+func WarnContext(ctx context.Context, message string, args ...interface{}) {
+	FromContext(ctx).Warn(message, args...)
+}
+
+// DebugContext logs a debug message using the logger from context.
+//
+// **Parameters:**
+//
+// ctx: The context containing the logger.
+// message: The format string for the log message.
+// args: The arguments to be formatted into the log message.
+func DebugContext(ctx context.Context, message string, args ...interface{}) {
+	FromContext(ctx).Debug(message, args...)
+}
+
+// ErrorContext logs an error message using the logger from context.
+//
+// **Parameters:**
+//
+// ctx: The context containing the logger.
+// firstArg: The first argument, which can be a string, an error, or any other type.
+// args: Additional arguments to be formatted into the log message.
+func ErrorContext(ctx context.Context, firstArg interface{}, args ...interface{}) {
+	FromContext(ctx).Error(firstArg, args...)
+}
+
+// OutputContext sends data to stdout using the logger from context.
+//
+// **Parameters:**
+//
+// ctx: The context containing the logger.
+// data: The data to be output.
+func OutputContext(ctx context.Context, data interface{}) {
+	FromContext(ctx).Output(data)
 }

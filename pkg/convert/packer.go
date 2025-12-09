@@ -178,7 +178,11 @@ func (c *PackerConverter) extractDescription() string {
 		logging.Debug("No README.md found, using default description")
 		return fmt.Sprintf("%s security tooling image", filepath.Base(c.options.TemplateDir))
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			logging.Debug("Failed to close README.md: %v", err)
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	var description string

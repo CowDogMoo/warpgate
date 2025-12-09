@@ -111,58 +111,87 @@ templates:
 	}
 
 	// Set credentials via environment variables (secure!)
-	os.Setenv("WARPGATE_REGISTRY_USERNAME", "testuser")
-	os.Setenv("WARPGATE_REGISTRY_TOKEN", "testtoken")
-	defer os.Unsetenv("WARPGATE_REGISTRY_USERNAME")
-	defer os.Unsetenv("WARPGATE_REGISTRY_TOKEN")
+	cleanup := setupRegistryEnvVars(t)
+	defer cleanup()
 
 	config, err := LoadFromPath(configPath)
 	if err != nil {
 		t.Fatalf("Failed to load config from path: %v", err)
 	}
 
-	// Verify loaded values
+	// Verify all config sections
+	verifyRegistryConfig(t, config)
+	verifyLogConfig(t, config)
+	verifyBuildConfig(t, config)
+	verifyStorageConfig(t, config)
+	verifyTemplatesConfig(t, config)
+}
+
+// setupRegistryEnvVars sets up test registry credentials and returns a cleanup function
+func setupRegistryEnvVars(t *testing.T) func() {
+	t.Helper()
+	setEnvOrFatal(t, "WARPGATE_REGISTRY_USERNAME", "testuser")
+	setEnvOrFatal(t, "WARPGATE_REGISTRY_TOKEN", "testtoken")
+
+	return func() {
+		unsetEnvSafe(t, "WARPGATE_REGISTRY_USERNAME")
+		unsetEnvSafe(t, "WARPGATE_REGISTRY_TOKEN")
+	}
+}
+
+// verifyRegistryConfig verifies registry configuration values
+func verifyRegistryConfig(t *testing.T, config *Config) {
+	t.Helper()
 	if config.Registry.Default != "docker.io/myorg" {
 		t.Errorf("Expected registry 'docker.io/myorg', got '%s'", config.Registry.Default)
 	}
-
-	// Credentials should come from environment variables
 	if config.Registry.Username != "testuser" {
 		t.Errorf("Expected username 'testuser' from env var, got '%s'", config.Registry.Username)
 	}
-
 	if config.Registry.Token != "testtoken" {
 		t.Errorf("Expected token 'testtoken' from env var, got '%s'", config.Registry.Token)
 	}
+}
 
+// verifyLogConfig verifies log configuration values
+func verifyLogConfig(t *testing.T, config *Config) {
+	t.Helper()
 	if config.Log.Level != "debug" {
 		t.Errorf("Expected log level 'debug', got '%s'", config.Log.Level)
 	}
-
 	if config.Log.Format != "json" {
 		t.Errorf("Expected log format 'json', got '%s'", config.Log.Format)
 	}
+}
 
+// verifyBuildConfig verifies build configuration values
+func verifyBuildConfig(t *testing.T, config *Config) {
+	t.Helper()
 	if config.Build.ParallelBuilds {
 		t.Error("Expected parallel builds to be disabled")
 	}
-
 	if len(config.Build.DefaultArch) != 2 {
 		t.Errorf("Expected 2 architectures, got %d", len(config.Build.DefaultArch))
 	}
-
 	if config.Build.Timeout != "4h" {
 		t.Errorf("Expected timeout '4h', got '%s'", config.Build.Timeout)
 	}
+}
 
+// verifyStorageConfig verifies storage configuration values
+func verifyStorageConfig(t *testing.T, config *Config) {
+	t.Helper()
 	if config.Storage.Driver != "overlay" {
 		t.Errorf("Expected storage driver 'overlay', got '%s'", config.Storage.Driver)
 	}
+}
 
+// verifyTemplatesConfig verifies templates configuration values
+func verifyTemplatesConfig(t *testing.T, config *Config) {
+	t.Helper()
 	if config.Templates.CacheDir != "/custom/cache" {
 		t.Errorf("Expected cache dir '/custom/cache', got '%s'", config.Templates.CacheDir)
 	}
-
 	if config.Templates.Repositories["custom"] != "github.com/custom/templates" {
 		t.Errorf("Expected custom repo 'github.com/custom/templates', got '%s'", config.Templates.Repositories["custom"])
 	}
@@ -185,11 +214,19 @@ log:
 	}
 
 	// Set environment variables
-	os.Setenv("WARPGATE_REGISTRY_DEFAULT", "docker.io")
-	os.Setenv("WARPGATE_LOG_LEVEL", "debug")
+	if err := os.Setenv("WARPGATE_REGISTRY_DEFAULT", "docker.io"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_REGISTRY_DEFAULT: %v", err)
+	}
+	if err := os.Setenv("WARPGATE_LOG_LEVEL", "debug"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_LOG_LEVEL: %v", err)
+	}
 	defer func() {
-		os.Unsetenv("WARPGATE_REGISTRY_DEFAULT")
-		os.Unsetenv("WARPGATE_LOG_LEVEL")
+		if err := os.Unsetenv("WARPGATE_REGISTRY_DEFAULT"); err != nil {
+			t.Logf("Failed to unset WARPGATE_REGISTRY_DEFAULT: %v", err)
+		}
+		if err := os.Unsetenv("WARPGATE_LOG_LEVEL"); err != nil {
+			t.Logf("Failed to unset WARPGATE_LOG_LEVEL: %v", err)
+		}
 	}()
 
 	config, err := LoadFromPath(configPath)
@@ -311,11 +348,19 @@ func TestLoad_RegistryCredentialsFallback(t *testing.T) {
 	}
 
 	// Set credentials using generic REGISTRY_* env vars (without WARPGATE_ prefix)
-	os.Setenv("REGISTRY_USERNAME", "genericuser")
-	os.Setenv("REGISTRY_TOKEN", "generictoken")
+	if err := os.Setenv("REGISTRY_USERNAME", "genericuser"); err != nil {
+		t.Fatalf("Failed to set REGISTRY_USERNAME: %v", err)
+	}
+	if err := os.Setenv("REGISTRY_TOKEN", "generictoken"); err != nil {
+		t.Fatalf("Failed to set REGISTRY_TOKEN: %v", err)
+	}
 	defer func() {
-		os.Unsetenv("REGISTRY_USERNAME")
-		os.Unsetenv("REGISTRY_TOKEN")
+		if err := os.Unsetenv("REGISTRY_USERNAME"); err != nil {
+			t.Logf("Failed to unset REGISTRY_USERNAME: %v", err)
+		}
+		if err := os.Unsetenv("REGISTRY_TOKEN"); err != nil {
+			t.Logf("Failed to unset REGISTRY_TOKEN: %v", err)
+		}
 	}()
 
 	config, err := LoadFromPath(configPath)
@@ -347,15 +392,31 @@ func TestLoad_RegistryCredentialsPrecedence(t *testing.T) {
 	}
 
 	// Set both WARPGATE_* and REGISTRY_* env vars
-	os.Setenv("WARPGATE_REGISTRY_USERNAME", "warpgateuser")
-	os.Setenv("REGISTRY_USERNAME", "genericuser")
-	os.Setenv("WARPGATE_REGISTRY_TOKEN", "warpgatetoken")
-	os.Setenv("REGISTRY_TOKEN", "generictoken")
+	if err := os.Setenv("WARPGATE_REGISTRY_USERNAME", "warpgateuser"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_REGISTRY_USERNAME: %v", err)
+	}
+	if err := os.Setenv("REGISTRY_USERNAME", "genericuser"); err != nil {
+		t.Fatalf("Failed to set REGISTRY_USERNAME: %v", err)
+	}
+	if err := os.Setenv("WARPGATE_REGISTRY_TOKEN", "warpgatetoken"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_REGISTRY_TOKEN: %v", err)
+	}
+	if err := os.Setenv("REGISTRY_TOKEN", "generictoken"); err != nil {
+		t.Fatalf("Failed to set REGISTRY_TOKEN: %v", err)
+	}
 	defer func() {
-		os.Unsetenv("WARPGATE_REGISTRY_USERNAME")
-		os.Unsetenv("REGISTRY_USERNAME")
-		os.Unsetenv("WARPGATE_REGISTRY_TOKEN")
-		os.Unsetenv("REGISTRY_TOKEN")
+		if err := os.Unsetenv("WARPGATE_REGISTRY_USERNAME"); err != nil {
+			t.Logf("Failed to unset WARPGATE_REGISTRY_USERNAME: %v", err)
+		}
+		if err := os.Unsetenv("REGISTRY_USERNAME"); err != nil {
+			t.Logf("Failed to unset REGISTRY_USERNAME: %v", err)
+		}
+		if err := os.Unsetenv("WARPGATE_REGISTRY_TOKEN"); err != nil {
+			t.Logf("Failed to unset WARPGATE_REGISTRY_TOKEN: %v", err)
+		}
+		if err := os.Unsetenv("REGISTRY_TOKEN"); err != nil {
+			t.Logf("Failed to unset REGISTRY_TOKEN: %v", err)
+		}
 	}()
 
 	config, err := LoadFromPath(configPath)
@@ -387,53 +448,94 @@ func TestLoad_AWSCredentialsFromEnv(t *testing.T) {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 
-	// Save existing env vars
-	originalProfile := os.Getenv("AWS_PROFILE")
-	originalRegion := os.Getenv("AWS_REGION")
-
-	// Set AWS credentials via environment variables
-	os.Setenv("AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE")
-	os.Setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
-	os.Setenv("AWS_SESSION_TOKEN", "FwoGZXIvYXdzEBYaDEXAMPLE")
-	// Unset AWS_PROFILE and AWS_REGION to let config file values take precedence
-	os.Unsetenv("AWS_PROFILE")
-	os.Unsetenv("AWS_REGION")
-	defer func() {
-		os.Unsetenv("AWS_ACCESS_KEY_ID")
-		os.Unsetenv("AWS_SECRET_ACCESS_KEY")
-		os.Unsetenv("AWS_SESSION_TOKEN")
-		// Restore original env vars
-		if originalProfile != "" {
-			os.Setenv("AWS_PROFILE", originalProfile)
-		}
-		if originalRegion != "" {
-			os.Setenv("AWS_REGION", originalRegion)
-		}
-	}()
+	// Setup test environment with AWS credentials
+	cleanup := setupAWSEnvVars(t)
+	defer cleanup()
 
 	config, err := LoadFromPath(configPath)
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Verify region and profile from config file
+	// Verify config values
+	verifyAWSConfigValues(t, config)
+	verifyAWSCredentialsFromEnv(t, config)
+}
+
+// setupAWSEnvVars sets up test AWS environment variables and returns a cleanup function
+func setupAWSEnvVars(t *testing.T) func() {
+	t.Helper()
+
+	// Save existing env vars
+	originalProfile := os.Getenv("AWS_PROFILE")
+	originalRegion := os.Getenv("AWS_REGION")
+
+	// Set AWS credentials via environment variables
+	setEnvOrFatal(t, "AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE")
+	setEnvOrFatal(t, "AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+	setEnvOrFatal(t, "AWS_SESSION_TOKEN", "FwoGZXIvYXdzEBYaDEXAMPLE")
+
+	// Unset AWS_PROFILE and AWS_REGION to let config file values take precedence
+	unsetEnvSafe(t, "AWS_PROFILE")
+	unsetEnvSafe(t, "AWS_REGION")
+
+	return func() {
+		unsetEnvSafe(t, "AWS_ACCESS_KEY_ID")
+		unsetEnvSafe(t, "AWS_SECRET_ACCESS_KEY")
+		unsetEnvSafe(t, "AWS_SESSION_TOKEN")
+
+		// Restore original env vars
+		restoreEnvVar(t, "AWS_PROFILE", originalProfile)
+		restoreEnvVar(t, "AWS_REGION", originalRegion)
+	}
+}
+
+// setEnvOrFatal sets an environment variable or fails the test
+func setEnvOrFatal(t *testing.T, key, value string) {
+	t.Helper()
+	if err := os.Setenv(key, value); err != nil {
+		t.Fatalf("Failed to set %s: %v", key, err)
+	}
+}
+
+// unsetEnvSafe unsets an environment variable, logging any errors
+func unsetEnvSafe(t *testing.T, key string) {
+	t.Helper()
+	if err := os.Unsetenv(key); err != nil {
+		t.Logf("Failed to unset %s: %v", key, err)
+	}
+}
+
+// restoreEnvVar restores an environment variable if it was previously set
+func restoreEnvVar(t *testing.T, key, value string) {
+	t.Helper()
+	if value != "" {
+		if err := os.Setenv(key, value); err != nil {
+			t.Logf("Failed to restore %s: %v", key, err)
+		}
+	}
+}
+
+// verifyAWSConfigValues verifies AWS configuration values from config file
+func verifyAWSConfigValues(t *testing.T, config *Config) {
+	t.Helper()
 	if config.AWS.Region != "us-west-2" {
 		t.Errorf("Expected region 'us-west-2', got '%s'", config.AWS.Region)
 	}
-
 	if config.AWS.Profile != "dev" {
 		t.Errorf("Expected profile 'dev', got '%s'", config.AWS.Profile)
 	}
+}
 
-	// Verify credentials from environment variables
+// verifyAWSCredentialsFromEnv verifies AWS credentials from environment variables
+func verifyAWSCredentialsFromEnv(t *testing.T, config *Config) {
+	t.Helper()
 	if config.AWS.AccessKeyID != "AKIAIOSFODNN7EXAMPLE" {
 		t.Errorf("Expected AWS access key from env var, got '%s'", config.AWS.AccessKeyID)
 	}
-
 	if config.AWS.SecretAccessKey != "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" {
 		t.Errorf("Expected AWS secret key from env var, got '%s'", config.AWS.SecretAccessKey)
 	}
-
 	if config.AWS.SessionToken != "FwoGZXIvYXdzEBYaDEXAMPLE" {
 		t.Errorf("Expected AWS session token from env var, got '%s'", config.AWS.SessionToken)
 	}
@@ -461,13 +563,7 @@ aws:
 	}
 
 	// Don't set any environment variables - credentials should be empty
-	os.Unsetenv("WARPGATE_REGISTRY_USERNAME")
-	os.Unsetenv("WARPGATE_REGISTRY_TOKEN")
-	os.Unsetenv("REGISTRY_USERNAME")
-	os.Unsetenv("REGISTRY_TOKEN")
-	os.Unsetenv("AWS_ACCESS_KEY_ID")
-	os.Unsetenv("AWS_SECRET_ACCESS_KEY")
-	os.Unsetenv("AWS_SESSION_TOKEN")
+	clearAllCredentialEnvVars(t)
 
 	config, err := LoadFromPath(configPath)
 	if err != nil {
@@ -475,27 +571,53 @@ aws:
 	}
 
 	// CRITICAL: Credentials should be empty, NOT from the config file
+	verifyCredentialsNotFromFile(t, config)
+
+	// Non-credential fields should still be loaded normally
+	verifyNonCredentialFieldsLoaded(t, config)
+}
+
+// clearAllCredentialEnvVars unsets all credential-related environment variables
+func clearAllCredentialEnvVars(t *testing.T) {
+	t.Helper()
+	credentialEnvVars := []string{
+		"WARPGATE_REGISTRY_USERNAME",
+		"WARPGATE_REGISTRY_TOKEN",
+		"REGISTRY_USERNAME",
+		"REGISTRY_TOKEN",
+		"AWS_ACCESS_KEY_ID",
+		"AWS_SECRET_ACCESS_KEY",
+		"AWS_SESSION_TOKEN",
+	}
+
+	for _, envVar := range credentialEnvVars {
+		unsetEnvSafe(t, envVar)
+	}
+}
+
+// verifyCredentialsNotFromFile ensures credentials are empty and not loaded from config file
+func verifyCredentialsNotFromFile(t *testing.T, config *Config) {
+	t.Helper()
 	if config.Registry.Username != "" {
 		t.Errorf("SECURITY ISSUE: Registry username loaded from config file! Got '%s'", config.Registry.Username)
 	}
-
 	if config.Registry.Token != "" {
 		t.Errorf("SECURITY ISSUE: Registry token loaded from config file! Got '%s'", config.Registry.Token)
 	}
-
 	if config.AWS.AccessKeyID != "" {
 		t.Errorf("SECURITY ISSUE: AWS access key loaded from config file! Got '%s'", config.AWS.AccessKeyID)
 	}
-
 	if config.AWS.SecretAccessKey != "" {
 		t.Errorf("SECURITY ISSUE: AWS secret key loaded from config file! Got '%s'", config.AWS.SecretAccessKey)
 	}
+}
 
-	// Non-credential fields should still be loaded normally
+// verifyNonCredentialFieldsLoaded ensures non-credential fields are loaded correctly
+func verifyNonCredentialFieldsLoaded(t *testing.T, config *Config) {
+	t.Helper()
 	if config.Registry.Default != "docker.io" {
 		t.Errorf("Expected registry 'docker.io', got '%s'", config.Registry.Default)
 	}
-
 	if config.AWS.Region != "us-west-2" {
 		t.Errorf("Expected region 'us-west-2', got '%s'", config.AWS.Region)
 	}

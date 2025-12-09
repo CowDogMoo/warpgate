@@ -96,7 +96,11 @@ func InspectManifest(ctx context.Context, opts InspectOptions) (*ManifestInfo, e
 	if err != nil {
 		return nil, fmt.Errorf("failed to create image source: %w", err)
 	}
-	defer src.Close()
+	defer func() {
+		if err := src.Close(); err != nil {
+			logging.Debug("Failed to close image source: %v", err)
+		}
+	}()
 
 	// Get manifest
 	manifestBytes, manifestType, err := src.GetManifest(ctx, nil)

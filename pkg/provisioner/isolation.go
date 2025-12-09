@@ -46,8 +46,7 @@ func isNestedContainer() bool {
 	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 		content := string(data)
 		// Look for docker, lxc, or other container indicators
-		if len(content) > 0 && (
-			len(content) < 50 || // Very short cgroup file often indicates container
+		if len(content) > 0 && (len(content) < 50 || // Very short cgroup file often indicates container
 			contains(content, "docker") ||
 			contains(content, "lxc") ||
 			contains(content, "kubepods")) {

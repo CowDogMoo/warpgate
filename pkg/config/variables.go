@@ -75,7 +75,7 @@ func LoadVariablesFromFile(path string) (map[string]string, error) {
 }
 
 // ParseKeyValue parses a key=value string
-func ParseKeyValue(s string) (string, string, error) {
+func ParseKeyValue(s string) (key, value string, err error) {
 	parts := strings.SplitN(s, "=", 2)
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("expected format: key=value")

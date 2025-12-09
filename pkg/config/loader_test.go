@@ -79,8 +79,14 @@ func TestExpandVariables(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				if err := os.Setenv(k, v); err != nil {
+					t.Fatalf("Failed to set env var %s: %v", k, err)
+				}
+				defer func(key string) {
+					if err := os.Unsetenv(key); err != nil {
+						t.Logf("Failed to unset env var %s: %v", key, err)
+					}
+				}(k)
 			}
 
 			result := loader.expandVariables(tt.input, tt.vars)
@@ -152,8 +158,14 @@ targets:
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment variables
 			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				if err := os.Setenv(k, v); err != nil {
+					t.Fatalf("Failed to set env var %s: %v", k, err)
+				}
+				defer func(key string) {
+					if err := os.Unsetenv(key); err != nil {
+						t.Logf("Failed to unset env var %s: %v", key, err)
+					}
+				}(k)
 			}
 
 			config, err := loader.LoadFromFileWithVars(testFile, tt.vars)
@@ -206,8 +218,14 @@ targets:
 	}
 
 	// Set environment variable
-	os.Setenv("UBUNTU_VERSION", "22.04")
-	defer os.Unsetenv("UBUNTU_VERSION")
+	if err := os.Setenv("UBUNTU_VERSION", "22.04"); err != nil {
+		t.Fatalf("Failed to set UBUNTU_VERSION: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("UBUNTU_VERSION"); err != nil {
+			t.Logf("Failed to unset UBUNTU_VERSION: %v", err)
+		}
+	}()
 
 	loader := NewLoader()
 

@@ -31,6 +31,7 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/builder/ami"
 	"github.com/cowdogmoo/warpgate/pkg/builder/container"
 	"github.com/cowdogmoo/warpgate/pkg/config"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
@@ -116,10 +117,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("configuration not initialized")
 	}
 
-	logging.Info("Starting build process")
+	logging.InfoContext(ctx, "Starting build process")
 
 	// Load and configure build
-	buildConfig, err := loadBuildConfig(args)
+	buildConfig, err := loadBuildConfig(ctx, args)
 	if err != nil {
 		return err
 	}
@@ -136,17 +137,17 @@ func runBuild(cmd *cobra.Command, args []string) error {
 }
 
 // loadBuildConfig loads configuration from template, git, or file
-func loadBuildConfig(args []string) (*builder.Config, error) {
+func loadBuildConfig(ctx context.Context, args []string) (*builder.Config, error) {
 	if buildOpts.template != "" {
-		logging.Info("Building from template: %s", buildOpts.template)
+		logging.InfoContext(ctx, "Building from template: %s", buildOpts.template)
 		return loadFromTemplate(buildOpts.template)
 	}
 	if buildOpts.fromGit != "" {
-		logging.Info("Building from git: %s", buildOpts.fromGit)
+		logging.InfoContext(ctx, "Building from git: %s", buildOpts.fromGit)
 		return loadFromGit(buildOpts.fromGit)
 	}
 	if len(args) > 0 {
-		logging.Info("Building from config file: %s", args[0])
+		logging.InfoContext(ctx, "Building from config file: %s", args[0])
 		return loadFromFile(args[0])
 	}
 	return nil, fmt.Errorf("specify config file, --template, or --from-git")
@@ -154,53 +155,80 @@ func loadBuildConfig(args []string) (*builder.Config, error) {
 
 // applyConfigOverrides applies CLI flag overrides to build config
 func applyConfigOverrides(cmd *cobra.Command, buildConfig *builder.Config) {
+	ctx := cmd.Context()
 	cfg := configFromContext(cmd)
 	if cfg == nil {
-		logging.Warn("configuration not available, skipping defaults")
+		logging.WarnContext(ctx, "configuration not available, skipping defaults")
 		return
 	}
 
-	// Filter targets if target type override is specified
-	if buildOpts.targetType != "" {
-		filteredTargets := []builder.Target{}
-		for _, target := range buildConfig.Targets {
-			if target.Type == buildOpts.targetType {
-				filteredTargets = append(filteredTargets, target)
-			}
-		}
-		buildConfig.Targets = filteredTargets
+	// Apply various overrides
+	applyTargetTypeFilter(buildConfig)
+	applyArchitectureOverrides(buildConfig, cfg)
+	applyRegistryOverride(buildConfig, cfg)
+	applyAMITargetOverrides(buildConfig)
+}
+
+// applyTargetTypeFilter filters targets based on the target type override
+func applyTargetTypeFilter(buildConfig *builder.Config) {
+	if buildOpts.targetType == "" {
+		return
 	}
 
-	// Override architectures if specified
+	filteredTargets := []builder.Target{}
+	for _, target := range buildConfig.Targets {
+		if target.Type == buildOpts.targetType {
+			filteredTargets = append(filteredTargets, target)
+		}
+	}
+	buildConfig.Targets = filteredTargets
+}
+
+// applyArchitectureOverrides applies architecture overrides to the build config
+func applyArchitectureOverrides(buildConfig *builder.Config, cfg *globalconfig.Config) {
 	if len(buildOpts.arch) > 0 {
 		buildConfig.Architectures = buildOpts.arch
-	} else if len(buildConfig.Architectures) == 0 {
-		// Extract architectures from target platforms
-		buildConfig.Architectures = builder.ExtractArchitecturesFromTargets(buildConfig)
-		// Fallback to default architectures if none found
-		if len(buildConfig.Architectures) == 0 {
-			buildConfig.Architectures = cfg.Build.DefaultArch
-		}
+		return
 	}
 
-	// Override registry if specified
+	if len(buildConfig.Architectures) > 0 {
+		return
+	}
+
+	// Extract architectures from target platforms
+	buildConfig.Architectures = builder.ExtractArchitecturesFromTargets(buildConfig)
+
+	// Fallback to default architectures if none found
+	if len(buildConfig.Architectures) == 0 {
+		buildConfig.Architectures = cfg.Build.DefaultArch
+	}
+}
+
+// applyRegistryOverride applies registry override to the build config
+func applyRegistryOverride(buildConfig *builder.Config, cfg *globalconfig.Config) {
 	if buildOpts.registry != "" {
 		buildConfig.Registry = buildOpts.registry
 	} else if buildConfig.Registry == "" {
 		buildConfig.Registry = cfg.Registry.Default
 	}
+}
 
-	// Override region and instance type for AMI targets
-	if buildOpts.region != "" || buildOpts.instanceType != "" {
-		for i := range buildConfig.Targets {
-			if buildConfig.Targets[i].Type == "ami" {
-				if buildOpts.region != "" {
-					buildConfig.Targets[i].Region = buildOpts.region
-				}
-				if buildOpts.instanceType != "" {
-					buildConfig.Targets[i].InstanceType = buildOpts.instanceType
-				}
-			}
+// applyAMITargetOverrides applies AMI-specific overrides to the build config
+func applyAMITargetOverrides(buildConfig *builder.Config) {
+	if buildOpts.region == "" && buildOpts.instanceType == "" {
+		return
+	}
+
+	for i := range buildConfig.Targets {
+		if buildConfig.Targets[i].Type != "ami" {
+			continue
+		}
+
+		if buildOpts.region != "" {
+			buildConfig.Targets[i].Region = buildOpts.region
+		}
+		if buildOpts.instanceType != "" {
+			buildConfig.Targets[i].InstanceType = buildOpts.instanceType
 		}
 	}
 }
@@ -219,9 +247,12 @@ func executeBuild(cmd *cobra.Command, ctx context.Context, buildConfig *builder.
 	// Determine target type
 	targetType := determineTargetType(buildConfig)
 
+	// Get global config for build settings
+	cfg := configFromContext(cmd)
+
 	switch targetType {
 	case "container":
-		return executeContainerBuild(ctx, buildConfig)
+		return executeContainerBuild(ctx, buildConfig, cfg)
 	case "ami":
 		return executeAMIBuild(cmd, ctx, buildConfig)
 	default:
@@ -246,19 +277,23 @@ func determineTargetType(buildConfig *builder.Config) string {
 }
 
 // executeContainerBuild executes a container build
-func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) error {
-	logging.Info("Executing container build")
+func executeContainerBuild(ctx context.Context, buildConfig *builder.Config, cfg *globalconfig.Config) error {
+	logging.InfoContext(ctx, "Executing container build")
 
 	builderCfg := container.GetDefaultConfig()
 	bldr, err := container.NewBuildahBuilder(builderCfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize container builder: %w", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			logging.ErrorContext(ctx, "Failed to close builder", "error", err)
+		}
+	}()
 
 	// Check if multi-arch build is required
 	if len(buildConfig.Architectures) > 1 {
-		return executeMultiArchBuild(ctx, buildConfig, bldr)
+		return executeMultiArchBuild(ctx, buildConfig, bldr, cfg)
 	}
 
 	// Single architecture build - set platform if not already set
@@ -271,11 +306,11 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) err
 		return fmt.Errorf("container build failed: %w", err)
 	}
 
-	displayBuildResults(result)
+	displayBuildResults(ctx, result)
 
 	// Push if requested
 	if buildOpts.push && buildOpts.registry != "" {
-		logging.Info("Pushing to registry: %s", buildOpts.registry)
+		logging.InfoContext(ctx, "Pushing to registry: %s", buildOpts.registry)
 		if err := bldr.Push(ctx, result.ImageRef, buildOpts.registry); err != nil {
 			return fmt.Errorf("failed to push image: %w", err)
 		}
@@ -287,22 +322,28 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config) err
 				arch = buildConfig.Architectures[0]
 			}
 			if err := manifests.SaveDigestToFile(buildConfig.Name, arch, result.Digest, buildOpts.digestDir); err != nil {
-				logging.Warn("Failed to save digest: %v", err)
+				logging.WarnContext(ctx, "Failed to save digest: %v", err)
 			}
 		}
 
-		logging.Info("Successfully pushed to %s", buildOpts.registry)
+		logging.InfoContext(ctx, "Successfully pushed to %s", buildOpts.registry)
 	}
 
 	return nil
 }
 
 // executeMultiArchBuild executes a multi-architecture container build
-func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bldr *container.BuildahBuilder) error {
-	logging.Info("Executing multi-arch build for %d architectures: %v", len(buildConfig.Architectures), buildConfig.Architectures)
+func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bldr *container.BuildahBuilder, cfg *globalconfig.Config) error {
+	logging.InfoContext(ctx, "Executing multi-arch build for %d architectures: %v", len(buildConfig.Architectures), buildConfig.Architectures)
+
+	// Use configured concurrency, or default if not set
+	concurrency := builder.DefaultMaxConcurrency
+	if cfg != nil && cfg.Build.Concurrency > 0 {
+		concurrency = cfg.Build.Concurrency
+	}
 
 	// Create build orchestrator
-	orchestrator := builder.NewBuildOrchestrator(2) // Allow 2 concurrent builds
+	orchestrator := builder.NewBuildOrchestrator(concurrency)
 
 	// Create build requests for each architecture
 	requests := builder.CreateBuildRequests(buildConfig)
@@ -315,7 +356,7 @@ func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bld
 
 	// Display results for each architecture
 	for _, result := range results {
-		displayBuildResults(&result)
+		displayBuildResults(ctx, &result)
 	}
 
 	// Push if requested
@@ -328,7 +369,7 @@ func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bld
 
 // pushMultiArchImages pushes multi-arch images and creates manifest
 func pushMultiArchImages(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr *container.BuildahBuilder, orchestrator *builder.BuildOrchestrator) error {
-	logging.Info("Pushing multi-arch images to registry: %s", buildOpts.registry)
+	logging.InfoContext(ctx, "Pushing multi-arch images to registry: %s", buildOpts.registry)
 
 	// Push individual architecture images
 	if err := orchestrator.PushMultiArch(ctx, results, buildOpts.registry, bldr); err != nil {
@@ -337,7 +378,7 @@ func pushMultiArchImages(ctx context.Context, buildConfig *builder.Config, resul
 
 	// Save digests if requested
 	if buildOpts.saveDigests {
-		saveDigests(buildConfig.Name, results)
+		saveDigests(ctx, buildConfig.Name, results)
 	}
 
 	// Create and push multi-arch manifest
@@ -345,17 +386,17 @@ func pushMultiArchImages(ctx context.Context, buildConfig *builder.Config, resul
 		return fmt.Errorf("failed to create multi-arch manifest: %w", err)
 	}
 
-	logging.Info("Successfully pushed multi-arch build to %s", buildOpts.registry)
+	logging.InfoContext(ctx, "Successfully pushed multi-arch build to %s", buildOpts.registry)
 	return nil
 }
 
 // saveDigests saves digests for all architectures
-func saveDigests(imageName string, results []builder.BuildResult) {
-	logging.Info("Saving image digests to %s", buildOpts.digestDir)
+func saveDigests(ctx context.Context, imageName string, results []builder.BuildResult) {
+	logging.InfoContext(ctx, "Saving image digests to %s", buildOpts.digestDir)
 	for _, result := range results {
 		if result.Digest != "" {
 			if err := manifests.SaveDigestToFile(imageName, result.Architecture, result.Digest, buildOpts.digestDir); err != nil {
-				logging.Warn("Failed to save digest for %s: %v", result.Architecture, err)
+				logging.WarnContext(ctx, "Failed to save digest for %s: %v", result.Architecture, err)
 			}
 		}
 	}
@@ -364,7 +405,7 @@ func saveDigests(imageName string, results []builder.BuildResult) {
 // createAndPushManifest creates and pushes a multi-arch manifest
 func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr *container.BuildahBuilder) error {
 	manifestName := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
-	logging.Info("Creating multi-arch manifest: %s", manifestName)
+	logging.InfoContext(ctx, "Creating multi-arch manifest: %s", manifestName)
 
 	// Get manifest manager
 	manifestMgr := bldr.GetManifestManager()
@@ -378,7 +419,7 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 			var err error
 			imageDigest, err = digest.Parse(result.Digest)
 			if err != nil {
-				logging.Warn("Failed to parse digest for %s: %v", result.Architecture, err)
+				logging.WarnContext(ctx, "Failed to parse digest for %s: %v", result.Architecture, err)
 				continue
 			}
 		}
@@ -417,13 +458,13 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 		return fmt.Errorf("failed to push manifest: %w", err)
 	}
 
-	logging.Info("Successfully created and pushed multi-arch manifest to %s", destination)
+	logging.InfoContext(ctx, "Successfully created and pushed multi-arch manifest to %s", destination)
 	return nil
 }
 
 // executeAMIBuild executes an AMI build
 func executeAMIBuild(cmd *cobra.Command, ctx context.Context, buildConfig *builder.Config) error {
-	logging.Info("Executing AMI build")
+	logging.InfoContext(ctx, "Executing AMI build")
 
 	cfg := configFromContext(cmd)
 	if cfg == nil {
@@ -444,35 +485,39 @@ func executeAMIBuild(cmd *cobra.Command, ctx context.Context, buildConfig *build
 	if err != nil {
 		return fmt.Errorf("failed to initialize AMI builder: %w", err)
 	}
-	defer bldr.Close()
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			logging.ErrorContext(ctx, "Failed to close AMI builder", "error", err)
+		}
+	}()
 
 	result, err := bldr.Build(ctx, *buildConfig)
 	if err != nil {
 		return fmt.Errorf("AMI build failed: %w", err)
 	}
 
-	displayBuildResults(result)
+	displayBuildResults(ctx, result)
 
 	return nil
 }
 
 // displayBuildResults logs the build results
-func displayBuildResults(result *builder.BuildResult) {
-	logging.Info("Build completed successfully!")
+func displayBuildResults(ctx context.Context, result *builder.BuildResult) {
+	logging.InfoContext(ctx, "Build completed successfully!")
 
 	if result.ImageRef != "" {
-		logging.Info("Image: %s", result.ImageRef)
+		logging.InfoContext(ctx, "Image: %s", result.ImageRef)
 	}
 
 	if result.AMIID != "" {
-		logging.Info("AMI ID: %s", result.AMIID)
-		logging.Info("Region: %s", result.Region)
+		logging.InfoContext(ctx, "AMI ID: %s", result.AMIID)
+		logging.InfoContext(ctx, "Region: %s", result.Region)
 	}
 
-	logging.Info("Duration: %s", result.Duration)
+	logging.InfoContext(ctx, "Duration: %s", result.Duration)
 
 	for _, note := range result.Notes {
-		logging.Info("Note: %s", note)
+		logging.InfoContext(ctx, "Note: %s", note)
 	}
 }
 

@@ -45,11 +45,19 @@ log:
 	}
 
 	// Set environment variable to override registry
-	os.Setenv("WARPGATE_REGISTRY_DEFAULT", "docker.io/fromenv")
-	os.Setenv("WARPGATE_LOG_LEVEL", "debug")
+	if err := os.Setenv("WARPGATE_REGISTRY_DEFAULT", "docker.io/fromenv"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_REGISTRY_DEFAULT: %v", err)
+	}
+	if err := os.Setenv("WARPGATE_LOG_LEVEL", "debug"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_LOG_LEVEL: %v", err)
+	}
 	defer func() {
-		os.Unsetenv("WARPGATE_REGISTRY_DEFAULT")
-		os.Unsetenv("WARPGATE_LOG_LEVEL")
+		if err := os.Unsetenv("WARPGATE_REGISTRY_DEFAULT"); err != nil {
+			t.Logf("Failed to unset WARPGATE_REGISTRY_DEFAULT: %v", err)
+		}
+		if err := os.Unsetenv("WARPGATE_LOG_LEVEL"); err != nil {
+			t.Logf("Failed to unset WARPGATE_LOG_LEVEL: %v", err)
+		}
 	}()
 
 	config, err := LoadFromPath(configPath)
@@ -97,10 +105,22 @@ log:
 	}
 
 	// Simulate CI environment with credentials from environment variables (secure!)
-	os.Setenv("WARPGATE_REGISTRY_USERNAME", "testuser")
-	os.Setenv("WARPGATE_REGISTRY_TOKEN", "ghp_secrettoken")
-	defer os.Unsetenv("WARPGATE_REGISTRY_USERNAME")
-	defer os.Unsetenv("WARPGATE_REGISTRY_TOKEN")
+	if err := os.Setenv("WARPGATE_REGISTRY_USERNAME", "testuser"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_REGISTRY_USERNAME: %v", err)
+	}
+	if err := os.Setenv("WARPGATE_REGISTRY_TOKEN", "ghp_secrettoken"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_REGISTRY_TOKEN: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("WARPGATE_REGISTRY_USERNAME"); err != nil {
+			t.Logf("Failed to unset WARPGATE_REGISTRY_USERNAME: %v", err)
+		}
+	}()
+	defer func() {
+		if err := os.Unsetenv("WARPGATE_REGISTRY_TOKEN"); err != nil {
+			t.Logf("Failed to unset WARPGATE_REGISTRY_TOKEN: %v", err)
+		}
+	}()
 
 	config, err := LoadFromPath(configPath)
 	if err != nil {
