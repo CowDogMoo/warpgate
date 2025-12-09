@@ -79,6 +79,11 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, fmt.Errorf("failed to write Dockerfile: %w", err)
 	}
 
+	// Copy Ansible files to build context
+	if err := b.copyAnsibleFiles(cfg, tmpDir); err != nil {
+		return nil, fmt.Errorf("failed to copy Ansible files: %w", err)
+	}
+
 	logging.Debug("Generated Dockerfile:\n%s", dockerfile)
 
 	// Build the image
@@ -153,10 +158,39 @@ func (b *BuildKitBuilder) generateDockerfile(cfg builder.Config) (string, error)
 			}
 
 		case "ansible":
-			// For ansible, we need to copy the playbook and run it
-			dockerfile.WriteString("# Ansible provisioner skipped - not yet implemented in BuildKit backend\n")
-			dockerfile.WriteString(fmt.Sprintf("# Playbook: %s\n\n", prov.PlaybookPath))
-			logging.Warn("Ansible provisioner not yet implemented in BuildKit backend")
+			// Copy playbook and run ansible
+			if prov.PlaybookPath != "" {
+				// Resolve the playbook path (handle env vars)
+				playbookPath := os.ExpandEnv(prov.PlaybookPath)
+				playbookFilename := filepath.Base(playbookPath)
+
+				dockerfile.WriteString("# Ansible provisioner\n")
+				dockerfile.WriteString(fmt.Sprintf("COPY %s /tmp/playbook.yml\n", playbookFilename))
+
+				// Copy galaxy file if specified
+				if prov.GalaxyFile != "" {
+					galaxyPath := os.ExpandEnv(prov.GalaxyFile)
+					galaxyFilename := filepath.Base(galaxyPath)
+					dockerfile.WriteString(fmt.Sprintf("COPY %s /tmp/requirements.yml\n", galaxyFilename))
+					dockerfile.WriteString("RUN ansible-galaxy install -r /tmp/requirements.yml\n")
+				}
+
+				// Build ansible-playbook command
+				var ansibleCmd strings.Builder
+				ansibleCmd.WriteString("ansible-playbook /tmp/playbook.yml")
+
+				// Add connection settings
+				ansibleCmd.WriteString(" -c local")
+
+				// Add extra vars
+				if len(prov.ExtraVars) > 0 {
+					for key, value := range prov.ExtraVars {
+						ansibleCmd.WriteString(fmt.Sprintf(" -e %s=%s", key, value))
+					}
+				}
+
+				dockerfile.WriteString(fmt.Sprintf("RUN %s\n\n", ansibleCmd.String()))
+			}
 
 		default:
 			logging.Warn("Unsupported provisioner type in BuildKit backend: %s", prov.Type)
@@ -172,6 +206,68 @@ func (b *BuildKitBuilder) generateDockerfile(cfg builder.Config) (string, error)
 	}
 
 	return dockerfile.String(), nil
+}
+
+// copyAnsibleFiles copies Ansible playbooks and related files to the build context
+func (b *BuildKitBuilder) copyAnsibleFiles(cfg builder.Config, destDir string) error {
+	for _, prov := range cfg.Provisioners {
+		if prov.Type != "ansible" {
+			continue
+		}
+
+		// Copy playbook
+		if prov.PlaybookPath != "" {
+			playbookPath := os.ExpandEnv(prov.PlaybookPath)
+			destPath := filepath.Join(destDir, filepath.Base(playbookPath))
+
+			if err := copyFile(playbookPath, destPath); err != nil {
+				return fmt.Errorf("failed to copy playbook %s: %w", playbookPath, err)
+			}
+			logging.Debug("Copied playbook: %s -> %s", playbookPath, destPath)
+		}
+
+		// Copy galaxy requirements file
+		if prov.GalaxyFile != "" {
+			galaxyPath := os.ExpandEnv(prov.GalaxyFile)
+			destPath := filepath.Join(destDir, filepath.Base(galaxyPath))
+
+			if err := copyFile(galaxyPath, destPath); err != nil {
+				return fmt.Errorf("failed to copy galaxy file %s: %w", galaxyPath, err)
+			}
+			logging.Debug("Copied galaxy file: %s -> %s", galaxyPath, destPath)
+		}
+	}
+
+	return nil
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := sourceFile.Close(); err != nil {
+			logging.Warn("Failed to close source file: %v", err)
+		}
+	}()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := destFile.Close(); err != nil {
+			logging.Warn("Failed to close destination file: %v", err)
+		}
+	}()
+
+	if _, err := destFile.ReadFrom(sourceFile); err != nil {
+		return err
+	}
+
+	return destFile.Sync()
 }
 
 // Push pushes the image to a registry
