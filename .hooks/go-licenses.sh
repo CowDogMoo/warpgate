@@ -10,7 +10,10 @@ run_vendor() {
 check_licenses() {
     action=$1
 
-    go install github.com/google/go-licenses@latest
+    # Only install if not available
+    if ! command -v go-licenses &> /dev/null; then
+        go install github.com/google/go-licenses@latest
+    fi
 
     # Decide action based on input
     if [[ $action == "check_forbidden" ]]; then

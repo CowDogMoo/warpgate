@@ -87,6 +87,8 @@ repos:
         name: Run go-licenses
         language: script
         entry: .hooks/go-licenses.sh check_forbidden
+        files: '(go\.mod|go\.sum)$'
+        pass_filenames: false
 
       - id: prettier
         name: Run prettier
