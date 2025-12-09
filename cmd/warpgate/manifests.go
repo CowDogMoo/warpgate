@@ -28,7 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/spf13/cobra"
@@ -306,9 +305,8 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 		// Get concurrency from config if not set via CLI
 		concurrency := manifestsOpts.verifyConcurrency
 		if concurrency == 0 {
-			// Load from config
-			cfg, err := globalconfig.Load()
-			if err == nil && cfg.Manifests.VerifyConcurrency > 0 {
+			// Try to load from config
+			if cfg := configFromContext(cmd); cfg != nil && cfg.Manifests.VerifyConcurrency > 0 {
 				concurrency = cfg.Manifests.VerifyConcurrency
 			} else {
 				concurrency = 5 // Built-in default

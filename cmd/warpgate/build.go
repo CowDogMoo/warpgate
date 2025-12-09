@@ -111,6 +111,11 @@ func init() {
 
 func runBuild(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	cfg := configFromContext(cmd)
+	if cfg == nil {
+		return fmt.Errorf("configuration not initialized")
+	}
+
 	logging.Info("Starting build process")
 
 	// Load and configure build
@@ -119,7 +124,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	applyConfigOverrides(buildConfig)
+	applyConfigOverrides(cmd, buildConfig)
 
 	// Validate configuration
 	if err := validateConfig(buildConfig); err != nil {
@@ -127,7 +132,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	// Execute build based on target type
-	return executeBuild(ctx, buildConfig)
+	return executeBuild(cmd, ctx, buildConfig)
 }
 
 // loadBuildConfig loads configuration from template, git, or file
@@ -148,7 +153,13 @@ func loadBuildConfig(args []string) (*builder.Config, error) {
 }
 
 // applyConfigOverrides applies CLI flag overrides to build config
-func applyConfigOverrides(buildConfig *builder.Config) {
+func applyConfigOverrides(cmd *cobra.Command, buildConfig *builder.Config) {
+	cfg := configFromContext(cmd)
+	if cfg == nil {
+		logging.Warn("configuration not available, skipping defaults")
+		return
+	}
+
 	// Filter targets if target type override is specified
 	if buildOpts.targetType != "" {
 		filteredTargets := []builder.Target{}
@@ -204,7 +215,7 @@ func validateConfig(buildConfig *builder.Config) error {
 }
 
 // executeBuild executes the build based on target type
-func executeBuild(ctx context.Context, buildConfig *builder.Config) error {
+func executeBuild(cmd *cobra.Command, ctx context.Context, buildConfig *builder.Config) error {
 	// Determine target type
 	targetType := determineTargetType(buildConfig)
 
@@ -212,7 +223,7 @@ func executeBuild(ctx context.Context, buildConfig *builder.Config) error {
 	case "container":
 		return executeContainerBuild(ctx, buildConfig)
 	case "ami":
-		return executeAMIBuild(ctx, buildConfig)
+		return executeAMIBuild(cmd, ctx, buildConfig)
 	default:
 		return fmt.Errorf("unsupported target type: %s", targetType)
 	}
@@ -411,8 +422,13 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 }
 
 // executeAMIBuild executes an AMI build
-func executeAMIBuild(ctx context.Context, buildConfig *builder.Config) error {
+func executeAMIBuild(cmd *cobra.Command, ctx context.Context, buildConfig *builder.Config) error {
 	logging.Info("Executing AMI build")
+
+	cfg := configFromContext(cmd)
+	if cfg == nil {
+		return fmt.Errorf("configuration not initialized")
+	}
 
 	// Get AWS configuration from environment or config
 	clientConfig := ami.ClientConfig{

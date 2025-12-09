@@ -104,7 +104,7 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 	wg.Wait()
 
 	// Check for errors
-	var buildErrors []error
+	buildErrors := make([]error, 0, len(errors))
 	for i, err := range errors {
 		if err != nil {
 			buildErrors = append(buildErrors, fmt.Errorf("build %d (%s): %w", i, requests[i].Architecture, err))

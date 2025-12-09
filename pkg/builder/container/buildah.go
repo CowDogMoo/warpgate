@@ -178,7 +178,7 @@ func (b *BuildahBuilder) Build(ctx context.Context, cfg builder.Config) (*builde
 
 // fromImage creates a builder from a base image
 func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) error {
-	fmt.Fprintf(os.Stderr, "DEBUG: Entered fromImage - base.Image='%s', base.Platform='%s'\n", base.Image, base.Platform)
+	logging.Debug("entered fromImage - base.Image='%s', base.Platform='%s'", base.Image, base.Platform)
 	logging.Info("Pulling base image: %s", base.Image)
 
 	// Configure system context for the platform
@@ -201,7 +201,7 @@ func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) 
 	}
 
 	// Log the platform settings being used (before buildah.NewBuilder)
-	fmt.Fprintf(os.Stderr, "DEBUG: SystemContext settings - OS: '%s', Arch: '%s', Variant: '%s', Platform: '%s'\n",
+	logging.Debug("SystemContext settings - OS: '%s', Arch: '%s', Variant: '%s', Platform: '%s'",
 		systemContext.OSChoice, systemContext.ArchitectureChoice, systemContext.VariantChoice, base.Platform)
 
 	// Build options with OCI isolation for full container capabilities
@@ -642,7 +642,7 @@ func ensureContainerConfig() error {
 	configDir := filepath.Join(homeDir, ".config", "containers")
 
 	// Create the config directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, globalconfig.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -661,7 +661,7 @@ registries = []
 [registries.block]
 registries = []
 `
-		if err := os.WriteFile(registriesPath, []byte(defaultRegistries), 0644); err != nil {
+		if err := os.WriteFile(registriesPath, []byte(defaultRegistries), globalconfig.FilePermReadWrite); err != nil {
 			return fmt.Errorf("failed to write registries config: %w", err)
 		}
 		logging.Info("Created default registries config at: %s", registriesPath)
@@ -689,7 +689,7 @@ registries = []
   }
 }
 `
-		if err := os.WriteFile(policyPath, []byte(defaultPolicy), 0644); err != nil {
+		if err := os.WriteFile(policyPath, []byte(defaultPolicy), globalconfig.FilePermReadWrite); err != nil {
 			return fmt.Errorf("failed to write policy config: %w", err)
 		}
 		logging.Info("Created default policy config at: %s", policyPath)

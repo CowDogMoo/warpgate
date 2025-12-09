@@ -134,7 +134,7 @@ func ConfigFile(filename string) (string, error) {
 	configDir := filepath.Dir(configPath)
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, DirPermReadWriteExec); err != nil {
 		return "", err
 	}
 
@@ -152,7 +152,7 @@ func CacheFile(filename string) (string, error) {
 	cacheDir := filepath.Dir(cachePath)
 
 	// Create directory if it doesn't exist
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, DirPermReadWriteExec); err != nil {
 		return "", err
 	}
 

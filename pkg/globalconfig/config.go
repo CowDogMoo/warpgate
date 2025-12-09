@@ -23,11 +23,20 @@ THE SOFTWARE.
 package globalconfig
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/viper"
+)
+
+// Standard file and directory permissions
+const (
+	// FilePermReadWrite is the standard permission for readable/writable files (rw-r--r--)
+	FilePermReadWrite = 0o644
+	// DirPermReadWriteExec is the standard permission for directories (rwxr-xr-x)
+	DirPermReadWriteExec = 0o755
 )
 
 // Config represents the global Warpgate configuration
@@ -380,66 +389,78 @@ func setDefaults(v *viper.Viper) {
 
 // bindEnvVars explicitly binds environment variables to config keys
 func bindEnvVars(v *viper.Viper) {
+	// Helper to bind with error logging
+	bind := func(input ...string) {
+		if len(input) == 0 {
+			return
+		}
+		if err := v.BindEnv(input...); err != nil {
+			// Log as debug since BindEnv errors are rare and non-critical
+			// They typically only occur with invalid keys
+			fmt.Fprintf(os.Stderr, "debug: failed to bind env var for %s: %v\n", input[0], err)
+		}
+	}
+
 	// Registry
-	_ = v.BindEnv("registry.default", "WARPGATE_REGISTRY_DEFAULT")
+	bind("registry.default", "WARPGATE_REGISTRY_DEFAULT")
 	// Note: Registry credentials are NOT bound here - they're read directly from env vars
 	// after unmarshaling to prevent them from being stored in config files
 
 	// Storage
-	_ = v.BindEnv("storage.driver", "WARPGATE_STORAGE_DRIVER")
-	_ = v.BindEnv("storage.root", "WARPGATE_STORAGE_ROOT")
+	bind("storage.driver", "WARPGATE_STORAGE_DRIVER")
+	bind("storage.root", "WARPGATE_STORAGE_ROOT")
 
 	// Templates
-	_ = v.BindEnv("templates.cache_dir", "WARPGATE_TEMPLATES_CACHE_DIR")
-	_ = v.BindEnv("templates.repositories", "WARPGATE_TEMPLATES_REPOSITORIES")
-	_ = v.BindEnv("templates.local_paths", "WARPGATE_TEMPLATES_LOCAL_PATHS")
+	bind("templates.cache_dir", "WARPGATE_TEMPLATES_CACHE_DIR")
+	bind("templates.repositories", "WARPGATE_TEMPLATES_REPOSITORIES")
+	bind("templates.local_paths", "WARPGATE_TEMPLATES_LOCAL_PATHS")
 
 	// Build
-	_ = v.BindEnv("build.default_arch", "WARPGATE_BUILD_DEFAULT_ARCH")
+	bind("build.default_arch", "WARPGATE_BUILD_DEFAULT_ARCH")
 
 	// Manifests
-	_ = v.BindEnv("manifests.verify_concurrency", "WARPGATE_MANIFESTS_VERIFY_CONCURRENCY")
-	_ = v.BindEnv("build.parallel_builds", "WARPGATE_BUILD_PARALLEL_BUILDS")
-	_ = v.BindEnv("build.timeout", "WARPGATE_BUILD_TIMEOUT")
-	_ = v.BindEnv("build.concurrency", "WARPGATE_BUILD_CONCURRENCY")
-	_ = v.BindEnv("build.qemu_slowdown_factor", "WARPGATE_BUILD_QEMU_SLOWDOWN_FACTOR")
-	_ = v.BindEnv("build.parallelism_limit", "WARPGATE_BUILD_PARALLELISM_LIMIT")
-	_ = v.BindEnv("build.cpu_fraction", "WARPGATE_BUILD_CPU_FRACTION")
-	_ = v.BindEnv("build.baseline_build_time_min", "WARPGATE_BUILD_BASELINE_BUILD_TIME_MIN")
+	bind("manifests.verify_concurrency", "WARPGATE_MANIFESTS_VERIFY_CONCURRENCY")
+	bind("build.parallel_builds", "WARPGATE_BUILD_PARALLEL_BUILDS")
+	bind("build.timeout", "WARPGATE_BUILD_TIMEOUT")
+	bind("build.concurrency", "WARPGATE_BUILD_CONCURRENCY")
+	bind("build.qemu_slowdown_factor", "WARPGATE_BUILD_QEMU_SLOWDOWN_FACTOR")
+	bind("build.parallelism_limit", "WARPGATE_BUILD_PARALLELISM_LIMIT")
+	bind("build.cpu_fraction", "WARPGATE_BUILD_CPU_FRACTION")
+	bind("build.baseline_build_time_min", "WARPGATE_BUILD_BASELINE_BUILD_TIME_MIN")
 
 	// Log
-	_ = v.BindEnv("log.level", "WARPGATE_LOG_LEVEL")
-	_ = v.BindEnv("log.format", "WARPGATE_LOG_FORMAT")
+	bind("log.level", "WARPGATE_LOG_LEVEL")
+	bind("log.format", "WARPGATE_LOG_FORMAT")
 
 	// AWS (also supports standard AWS_ env vars through AWS SDK)
-	_ = v.BindEnv("aws.region", "AWS_REGION", "AWS_DEFAULT_REGION")
-	_ = v.BindEnv("aws.profile", "AWS_PROFILE")
+	bind("aws.region", "AWS_REGION", "AWS_DEFAULT_REGION")
+	bind("aws.profile", "AWS_PROFILE")
 	// Note: AWS credentials are NOT bound here - they're read directly from env vars
 	// after unmarshaling to prevent them from being stored in config files
 
 	// AWS AMI
-	_ = v.BindEnv("aws.ami.instance_type", "WARPGATE_AWS_AMI_INSTANCE_TYPE")
-	_ = v.BindEnv("aws.ami.volume_size", "WARPGATE_AWS_AMI_VOLUME_SIZE")
-	_ = v.BindEnv("aws.ami.device_name", "WARPGATE_AWS_AMI_DEVICE_NAME")
-	_ = v.BindEnv("aws.ami.volume_type", "WARPGATE_AWS_AMI_VOLUME_TYPE")
-	_ = v.BindEnv("aws.ami.polling_interval_sec", "WARPGATE_AWS_AMI_POLLING_INTERVAL_SEC")
-	_ = v.BindEnv("aws.ami.build_timeout_min", "WARPGATE_AWS_AMI_BUILD_TIMEOUT_MIN")
-	_ = v.BindEnv("aws.ami.default_parent_image", "WARPGATE_AWS_AMI_DEFAULT_PARENT_IMAGE")
+	bind("aws.ami.instance_type", "WARPGATE_AWS_AMI_INSTANCE_TYPE")
+	bind("aws.ami.volume_size", "WARPGATE_AWS_AMI_VOLUME_SIZE")
+	bind("aws.ami.device_name", "WARPGATE_AWS_AMI_DEVICE_NAME")
+	bind("aws.ami.volume_type", "WARPGATE_AWS_AMI_VOLUME_TYPE")
+	bind("aws.ami.polling_interval_sec", "WARPGATE_AWS_AMI_POLLING_INTERVAL_SEC")
+	bind("aws.ami.build_timeout_min", "WARPGATE_AWS_AMI_BUILD_TIMEOUT_MIN")
+	bind("aws.ami.default_parent_image", "WARPGATE_AWS_AMI_DEFAULT_PARENT_IMAGE")
 
 	// Container
-	_ = v.BindEnv("container.default_platform", "WARPGATE_CONTAINER_DEFAULT_PLATFORM")
-	_ = v.BindEnv("container.default_platforms", "WARPGATE_CONTAINER_DEFAULT_PLATFORMS")
-	_ = v.BindEnv("container.default_registry", "WARPGATE_CONTAINER_DEFAULT_REGISTRY")
-	_ = v.BindEnv("container.default_base_image", "WARPGATE_CONTAINER_DEFAULT_BASE_IMAGE")
-	_ = v.BindEnv("container.default_base_version", "WARPGATE_CONTAINER_DEFAULT_BASE_VERSION")
-	_ = v.BindEnv("container.runtime", "WARPGATE_CONTAINER_RUNTIME")
+	bind("container.default_platform", "WARPGATE_CONTAINER_DEFAULT_PLATFORM")
+	bind("container.default_platforms", "WARPGATE_CONTAINER_DEFAULT_PLATFORMS")
+	bind("container.default_registry", "WARPGATE_CONTAINER_DEFAULT_REGISTRY")
+	bind("container.default_base_image", "WARPGATE_CONTAINER_DEFAULT_BASE_IMAGE")
+	bind("container.default_base_version", "WARPGATE_CONTAINER_DEFAULT_BASE_VERSION")
+	bind("container.runtime", "WARPGATE_CONTAINER_RUNTIME")
 
 	// Convert
-	_ = v.BindEnv("convert.default_version", "WARPGATE_CONVERT_DEFAULT_VERSION")
-	_ = v.BindEnv("convert.default_license", "WARPGATE_CONVERT_DEFAULT_LICENSE")
-	_ = v.BindEnv("convert.warpgate_version", "WARPGATE_CONVERT_WARPGATE_VERSION")
-	_ = v.BindEnv("convert.ami_instance_type", "WARPGATE_CONVERT_AMI_INSTANCE_TYPE")
-	_ = v.BindEnv("convert.ami_volume_size", "WARPGATE_CONVERT_AMI_VOLUME_SIZE")
+	bind("convert.default_version", "WARPGATE_CONVERT_DEFAULT_VERSION")
+	bind("convert.default_license", "WARPGATE_CONVERT_DEFAULT_LICENSE")
+	bind("convert.warpgate_version", "WARPGATE_CONVERT_WARPGATE_VERSION")
+	bind("convert.ami_instance_type", "WARPGATE_CONVERT_AMI_INSTANCE_TYPE")
+	bind("convert.ami_volume_size", "WARPGATE_CONVERT_AMI_VOLUME_SIZE")
 }
 
 // Get returns the global config instance

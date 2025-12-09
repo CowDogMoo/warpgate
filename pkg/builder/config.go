@@ -22,8 +22,9 @@ THE SOFTWARE.
 
 package builder
 
-// Version is the current version of warpgate
-var Version = "1.0.0"
+// Version is the current version of warpgate, set at build time via ldflags.
+// Build with: go build -ldflags "-X 'github.com/cowdogmoo/warpgate/pkg/builder.Version=v1.2.3'"
+var Version = "dev"
 
 // Config represents a template configuration for building images
 type Config struct {
