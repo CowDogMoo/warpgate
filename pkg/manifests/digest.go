@@ -48,6 +48,16 @@ type DiscoveryOptions struct {
 	Directory string
 }
 
+// CreationOptions contains options for creating manifests
+type CreationOptions struct {
+	Registry    string
+	Namespace   string
+	ImageName   string
+	Tag         string
+	Annotations map[string]string // OCI annotations
+	Labels      map[string]string // OCI labels
+}
+
 // DiscoverDigestFiles discovers and parses digest files in the specified directory
 func DiscoverDigestFiles(opts DiscoveryOptions) ([]DigestFile, error) {
 	logging.Info("Discovering digest files in %s", opts.Directory)

@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
 Copyright © 2025 Jayson Grace <jayson.e.grace@gmail.com>
 
@@ -27,20 +29,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder/container"
+	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/builder/buildah"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"go.podman.io/storage/pkg/unshare"
 )
-
-// CreationOptions contains options for creating manifests
-type CreationOptions struct {
-	Registry    string
-	Namespace   string
-	ImageName   string
-	Tag         string
-	Annotations map[string]string // OCI annotations
-	Labels      map[string]string // OCI labels
-}
 
 // CreateAndPushManifest creates and pushes a multi-arch manifest from digest files
 func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts CreationOptions) error {
@@ -50,10 +43,10 @@ func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts C
 	unshare.MaybeReexecUsingUserNamespace(false)
 
 	// Get container builder configuration
-	builderCfg := container.GetDefaultConfig()
+	builderCfg := buildah.GetDefaultConfig()
 
 	// Create a container builder to access manifest manager
-	bldr, err := container.NewBuildahBuilder(builderCfg)
+	bldr, err := buildah.NewBuildahBuilder(builderCfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize container builder: %w", err)
 	}
@@ -67,7 +60,7 @@ func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts C
 	manifestMgr := bldr.GetManifestManager()
 
 	// Create manifest entries
-	entries := make([]container.ManifestEntry, 0, len(digestFiles))
+	entries := make([]builder.ManifestEntry, 0, len(digestFiles))
 	for _, df := range digestFiles {
 		// Build the full image reference for this architecture
 		imageRef := BuildImageReference(ReferenceOptions{
@@ -94,7 +87,7 @@ func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts C
 
 		platform := fmt.Sprintf("%s/%s", os, df.Architecture)
 
-		entry := container.ManifestEntry{
+		entry := builder.ManifestEntry{
 			ImageRef:     imageRef,
 			Digest:       df.Digest,
 			Platform:     platform,

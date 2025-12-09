@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
 Copyright © 2025 Jayson Grace <jayson.e.grace@gmail.com>
 
@@ -20,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-package container
+package buildah
 
 import (
 	"context"
@@ -29,8 +31,8 @@ import (
 
 	"github.com/containers/buildah"
 	"github.com/containers/common/pkg/manifests"
+	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
-	"github.com/opencontainers/go-digest"
 	"go.podman.io/image/v5/transports/alltransports"
 	imagetypes "go.podman.io/image/v5/types"
 	"go.podman.io/storage"
@@ -51,18 +53,8 @@ func NewManifestManager(store storage.Store, systemContext *imagetypes.SystemCon
 	}
 }
 
-// ManifestEntry represents a single architecture in a manifest
-type ManifestEntry struct {
-	ImageRef     string
-	Digest       digest.Digest
-	Platform     string
-	Architecture string
-	OS           string
-	Variant      string
-}
-
 // CreateManifest creates a multi-arch manifest from individual architecture images
-func (mm *ManifestManager) CreateManifest(ctx context.Context, manifestName string, entries []ManifestEntry) (manifests.List, error) {
+func (mm *ManifestManager) CreateManifest(ctx context.Context, manifestName string, entries []builder.ManifestEntry) (manifests.List, error) {
 	logging.Info("Creating multi-arch manifest: %s", manifestName)
 
 	if len(entries) == 0 {

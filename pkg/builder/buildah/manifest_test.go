@@ -1,3 +1,5 @@
+//go:build linux
+
 /*
 Copyright © 2025 Jayson Grace <jayson.e.grace@gmail.com>
 
@@ -20,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-package container
+package buildah
 
 import (
 	"context"

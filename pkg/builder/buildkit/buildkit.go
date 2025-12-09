@@ -20,7 +20,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-package container
+package buildkit
 
 import (
 	"context"
@@ -48,6 +48,7 @@ type BuildKitBuilder struct {
 	client        *client.Client
 	builderName   string
 	containerName string
+	contextDir    string   // Build context directory (calculated intelligently)
 	cacheFrom     []string // External cache sources
 	cacheTo       []string // External cache destinations
 }
@@ -344,7 +345,11 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 		return state, nil
 	}
 
-	sourcePath := os.ExpandEnv(prov.Source)
+	// Convert source path to be relative to build context
+	sourcePath, err := b.makeRelativePath(prov.Source)
+	if err != nil {
+		return state, fmt.Errorf("failed to resolve source path: %w", err)
+	}
 
 	// Copy file from local context
 	state = state.File(
@@ -371,7 +376,11 @@ func (b *BuildKitBuilder) applyAnsibleProvisioner(state llb.State, prov builder.
 		return state, nil
 	}
 
-	playbookPath := os.ExpandEnv(prov.PlaybookPath)
+	// Convert playbook path to be relative to build context
+	playbookPath, err := b.makeRelativePath(prov.PlaybookPath)
+	if err != nil {
+		return state, fmt.Errorf("failed to resolve playbook path: %w", err)
+	}
 
 	// Copy playbook
 	state = state.File(
@@ -382,26 +391,36 @@ func (b *BuildKitBuilder) applyAnsibleProvisioner(state llb.State, prov builder.
 		),
 	)
 
-	// Check for collection
-	collectionRoot := detectCollectionRoot(playbookPath)
+	// Check for collection (use absolute path for detection)
+	absPlaybookPath := filepath.Join(b.contextDir, playbookPath)
+	collectionRoot := detectCollectionRoot(absPlaybookPath)
 	if collectionRoot != "" {
-		// Copy entire collection
-		state = state.File(
-			llb.Copy(
-				llb.Local("context"),
-				collectionRoot,
-				"/tmp/ansible-collection",
-			),
-		)
-		// Install collection
-		state = state.Run(
-			llb.Shlex("ansible-galaxy collection install /tmp/ansible-collection/ -p /usr/share/ansible/collections"),
-		).Root()
+		// Make collection root relative to context
+		relCollectionRoot, err := b.makeRelativePath(collectionRoot)
+		if err != nil {
+			logging.Warn("Failed to resolve collection root, skipping: %v", err)
+		} else {
+			// Copy entire collection
+			state = state.File(
+				llb.Copy(
+					llb.Local("context"),
+					relCollectionRoot,
+					"/tmp/ansible-collection",
+				),
+			)
+			// Install collection
+			state = state.Run(
+				llb.Shlex("ansible-galaxy collection install /tmp/ansible-collection/ -p /usr/share/ansible/collections"),
+			).Root()
+		}
 	}
 
 	// Copy galaxy requirements if specified
 	if prov.GalaxyFile != "" {
-		galaxyPath := os.ExpandEnv(prov.GalaxyFile)
+		galaxyPath, err := b.makeRelativePath(prov.GalaxyFile)
+		if err != nil {
+			return state, fmt.Errorf("failed to resolve galaxy file path: %w", err)
+		}
 		state = state.File(
 			llb.Copy(
 				llb.Local("context"),
@@ -595,18 +614,143 @@ func getPlatformString(cfg builder.Config) string {
 	}
 }
 
+// calculateBuildContext finds the common parent directory of all files referenced in the config
+// This allows builds to work from any directory by automatically determining the appropriate context
+func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, error) {
+	var paths []string
+
+	// Collect all file paths from provisioners
+	for _, prov := range cfg.Provisioners {
+		switch prov.Type {
+		case "ansible":
+			if prov.PlaybookPath != "" {
+				paths = append(paths, os.ExpandEnv(prov.PlaybookPath))
+			}
+			if prov.GalaxyFile != "" {
+				paths = append(paths, os.ExpandEnv(prov.GalaxyFile))
+			}
+		case "file":
+			if prov.Source != "" {
+				paths = append(paths, os.ExpandEnv(prov.Source))
+			}
+		case "script":
+			for _, script := range prov.Scripts {
+				paths = append(paths, os.ExpandEnv(script))
+			}
+		}
+	}
+
+	// If no files referenced, use current directory
+	if len(paths) == 0 {
+		return ".", nil
+	}
+
+	// Convert all paths to absolute
+	absPaths := make([]string, 0, len(paths))
+	for _, p := range paths {
+		absPath, err := filepath.Abs(p)
+		if err != nil {
+			logging.Warn("Failed to get absolute path for %s: %v", p, err)
+			continue
+		}
+		absPaths = append(absPaths, absPath)
+	}
+
+	if len(absPaths) == 0 {
+		return ".", nil
+	}
+
+	// Find common parent directory
+	commonParent := filepath.Dir(absPaths[0])
+	for _, p := range absPaths[1:] {
+		commonParent = findCommonParent(commonParent, p)
+	}
+
+	logging.Info("Calculated build context from %d file(s): %s", len(absPaths), commonParent)
+	return commonParent, nil
+}
+
+// findCommonParent finds the common parent directory of two paths
+func findCommonParent(path1, path2 string) string {
+	// Ensure both are absolute
+	abs1, err1 := filepath.Abs(path1)
+	abs2, err2 := filepath.Abs(path2)
+	if err1 != nil || err2 != nil {
+		return "/"
+	}
+
+	// Split into components
+	parts1 := strings.Split(filepath.Clean(abs1), string(filepath.Separator))
+	parts2 := strings.Split(filepath.Clean(abs2), string(filepath.Separator))
+
+	// Find common prefix
+	var common []string
+	for i := 0; i < len(parts1) && i < len(parts2); i++ {
+		if parts1[i] == parts2[i] {
+			common = append(common, parts1[i])
+		} else {
+			break
+		}
+	}
+
+	if len(common) == 0 {
+		return "/"
+	}
+
+	// On Unix systems, the first element after split is empty (from leading /)
+	// filepath.Join will handle this correctly and produce an absolute path
+	result := filepath.Join(common...)
+
+	// If result doesn't start with separator, it means we lost the root
+	if !strings.HasPrefix(result, string(filepath.Separator)) {
+		result = string(filepath.Separator) + result
+	}
+
+	return result
+}
+
+// makeRelativePath converts an absolute path to be relative to the build context
+func (b *BuildKitBuilder) makeRelativePath(path string) (string, error) {
+	absPath, err := filepath.Abs(os.ExpandEnv(path))
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	absContext, err := filepath.Abs(b.contextDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute context: %w", err)
+	}
+
+	relPath, err := filepath.Rel(absContext, absPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to make relative path: %w", err)
+	}
+
+	return relPath, nil
+}
+
 // Build creates a container image using BuildKit LLB
 func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
 	startTime := time.Now()
 	logging.Info("Building image: %s (native LLB)", cfg.Name)
 
-	// Step 1: Convert to LLB
+	// Step 1: Calculate intelligent build context
+	contextDir, err := b.calculateBuildContext(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate build context: %w", err)
+	}
+	logging.Debug("Using build context: %s", contextDir)
+
+	// Step 2: Store context for use in provisioners
+	b.contextDir = contextDir
+
+	// Step 3: Convert to LLB
 	state, err := b.convertToLLB(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("LLB conversion failed: %w", err)
 	}
 
-	// Step 2: Marshal LLB definition
+	// Step 4: Marshal LLB definition
 	def, err := state.Marshal(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("LLB marshal failed: %w", err)
@@ -614,14 +758,11 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 
 	logging.Debug("LLB definition: %d bytes", len(def.Def))
 
-	// Step 3: Prepare image name
+	// Step 5: Prepare image name
 	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
 	if cfg.Registry != "" {
 		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
 	}
-
-	// Step 4: Determine context directory (use current directory)
-	contextDir := "."
 
 	// Step 5: Export to OCI tar file and load into Docker
 	ociTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
@@ -743,7 +884,7 @@ func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 }
 
 // CreateAndPushManifest creates and pushes a multi-arch manifest using docker buildx imagetools
-func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestName string, entries []ManifestEntry) error {
+func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestName string, entries []builder.ManifestEntry) error {
 	if len(entries) == 0 {
 		return fmt.Errorf("no manifest entries provided")
 	}
@@ -777,7 +918,7 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 }
 
 // InspectManifest inspects a manifest using docker buildx imagetools inspect
-func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName string) ([]ManifestEntry, error) {
+func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName string) ([]builder.ManifestEntry, error) {
 	logging.Debug("Inspecting manifest: %s", manifestName)
 
 	cmd := exec.CommandContext(ctx, "docker", "buildx", "imagetools", "inspect", manifestName, "--raw")

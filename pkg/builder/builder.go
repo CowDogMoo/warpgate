@@ -25,6 +25,8 @@ package builder
 
 import (
 	"context"
+
+	"github.com/opencontainers/go-digest"
 )
 
 // Builder is the main interface for image builders
@@ -62,4 +64,14 @@ type AMIBuilder interface {
 
 	// Deregister deregisters an AMI
 	Deregister(ctx context.Context, amiID, region string) error
+}
+
+// ManifestEntry represents a single architecture in a multi-arch manifest
+type ManifestEntry struct {
+	ImageRef     string
+	Digest       digest.Digest
+	Platform     string
+	Architecture string
+	OS           string
+	Variant      string
 }

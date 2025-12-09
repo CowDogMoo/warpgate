@@ -25,12 +25,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/builder/ami"
-	"github.com/cowdogmoo/warpgate/pkg/builder/container"
+	"github.com/cowdogmoo/warpgate/pkg/builder/buildkit"
 	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
@@ -359,58 +358,52 @@ func determineTargetType(buildConfig *builder.Config) string {
 // selectContainerBuilder chooses the appropriate builder based on config and platform
 func selectContainerBuilder(ctx context.Context, cfg *globalconfig.Config) (builder.ContainerBuilder, error) {
 	// Determine which builder to use
-	builderType := cfg.Build.BuilderType
+	builderTypeStr := cfg.Build.BuilderType
 	if buildOpts.builderType != "" {
-		builderType = buildOpts.builderType
+		builderTypeStr = buildOpts.builderType
 	}
 
 	// Normalize builder type
-	builderType = strings.ToLower(builderType)
-
-	// Auto-detect if needed
-	if builderType == "" || builderType == "auto" {
-		if runtime.GOOS == "darwin" {
-			builderType = "buildkit"
-		} else {
-			builderType = "buildah"
-		}
-		logging.Info("Auto-detected builder: %s", builderType)
-	}
+	builderTypeStr = strings.ToLower(builderTypeStr)
 
 	// Create the appropriate builder
-	switch builderType {
+	switch builderTypeStr {
 	case "buildkit":
-		logging.Info("Using BuildKit builder")
-		bldr, err := container.NewBuildKitBuilder(ctx)
-		if err != nil {
-			return nil, enhanceBuildKitError(err)
-		}
-
-		// Set cache options if provided via flags
-		if buildOpts.noCache {
-			// Disable caching by not setting any cache options
-			logging.Info("Caching disabled via --no-cache flag")
-		} else if len(buildOpts.cacheFrom) > 0 || len(buildOpts.cacheTo) > 0 {
-			bldr.SetCacheOptions(buildOpts.cacheFrom, buildOpts.cacheTo)
-		}
-
-		return bldr, nil
-
+		return newBuildKitBuilder(ctx)
 	case "buildah":
-		logging.Info("Using Buildah builder")
-		builderCfg := container.GetDefaultConfig()
-		return container.NewBuildahBuilder(builderCfg)
-
+		return newBuildahBuilder()
+	case "auto", "":
+		// Auto-detect based on platform
+		return autoSelectBuilder(ctx)
 	default:
-		return nil, fmt.Errorf("unsupported builder type: %s (supported: auto, buildkit, buildah)", builderType)
+		return nil, fmt.Errorf("unsupported builder type: %s (supported: auto, buildkit, buildah)", builderTypeStr)
 	}
+}
+
+// autoSelectBuilder and newBuildahBuilder are defined in build_linux.go and build_nonlinux.go
+
+// newBuildKitBuilder creates a new BuildKit builder
+func newBuildKitBuilder(ctx context.Context) (builder.ContainerBuilder, error) {
+	logging.Info("Using BuildKit builder")
+	bldr, err := buildkit.NewBuildKitBuilder(ctx)
+	if err != nil {
+		return nil, enhanceBuildKitError(err)
+	}
+
+	// Set cache options if provided via flags
+	if buildOpts.noCache {
+		logging.Info("Caching disabled via --no-cache flag")
+	} else if len(buildOpts.cacheFrom) > 0 || len(buildOpts.cacheTo) > 0 {
+		bldr.SetCacheOptions(buildOpts.cacheFrom, buildOpts.cacheTo)
+	}
+
+	return bldr, nil
 }
 
 // enhanceBuildKitError provides better error messages for BuildKit-related errors
 func enhanceBuildKitError(err error) error {
 	errMsg := err.Error()
 
-	// Check for common error patterns
 	if strings.Contains(errMsg, "no active buildx builder") {
 		return fmt.Errorf("BuildKit builder not available: %w\n\nTo fix this, create a buildx builder:\n  docker buildx create --name warpgate --driver docker-container --bootstrap", err)
 	}
@@ -560,7 +553,7 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 	logging.InfoContext(ctx, "Creating multi-arch manifest: %s", manifestName)
 
 	// Create manifest entries from build results
-	entries := make([]container.ManifestEntry, 0, len(results))
+	entries := make([]builder.ManifestEntry, 0, len(results))
 	for _, result := range results {
 		// Parse digest
 		var imageDigest digest.Digest
@@ -585,7 +578,7 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 			}
 		}
 
-		entries = append(entries, container.ManifestEntry{
+		entries = append(entries, builder.ManifestEntry{
 			ImageRef:     result.ImageRef,
 			Digest:       imageDigest,
 			Platform:     result.Platform,
@@ -598,36 +591,17 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 	// Push manifest to registry
 	destination := fmt.Sprintf("%s/%s", buildOpts.registry, manifestName)
 
-	// Handle different builder types
-	switch b := bldr.(type) {
-	case *container.BuildKitBuilder:
+	// Try to create manifest using BuildKit (which supports multi-arch manifests)
+	if bk, ok := bldr.(*buildkit.BuildKitBuilder); ok {
 		// BuildKit uses docker buildx imagetools create
-		if err := b.CreateAndPushManifest(ctx, destination, entries); err != nil {
+		if err := bk.CreateAndPushManifest(ctx, destination, entries); err != nil {
 			return fmt.Errorf("failed to create/push manifest with BuildKit: %w", err)
 		}
-
-	case *container.BuildahBuilder:
-		// Buildah uses ManifestManager
-		manifestMgr := b.GetManifestManager()
-
-		// Create the manifest
-		manifestList, err := manifestMgr.CreateManifest(ctx, manifestName, entries)
-		if err != nil {
-			return fmt.Errorf("failed to create manifest: %w", err)
-		}
-
-		// Push the manifest to the registry
-		if err := manifestMgr.PushManifest(ctx, manifestList, destination); err != nil {
-			return fmt.Errorf("failed to push manifest: %w", err)
-		}
-
-	default:
-		logging.WarnContext(ctx, "Multi-arch manifest creation not supported for this builder type - skipping")
 		return nil
 	}
 
-	logging.InfoContext(ctx, "Successfully created and pushed multi-arch manifest to %s", destination)
-	return nil
+	// For other builder types (Buildah on Linux), use platform-specific implementation
+	return createAndPushManifestPlatformSpecific(ctx, manifestName, destination, entries, bldr)
 }
 
 // executeAMIBuild executes an AMI build
