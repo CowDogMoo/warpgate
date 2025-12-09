@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+// Package main implements the warpgate CLI tool for building container images and AWS AMIs.
+// It provides commands for building, validating, converting templates, and managing manifests.
 package main
 
 import (

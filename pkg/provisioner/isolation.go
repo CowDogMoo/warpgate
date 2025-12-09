@@ -24,8 +24,7 @@ package provisioner
 
 import "os"
 
-// IsNested checks if we're running inside a container
-// Exported for use by other packages
+// IsNested reports whether the current process is running inside a container.
 func IsNested() bool {
 	return isNestedContainer()
 }

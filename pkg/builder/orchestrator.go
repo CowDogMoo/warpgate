@@ -30,11 +30,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Default build concurrency settings
-const (
-	// DefaultMaxConcurrency is the default number of parallel builds
-	DefaultMaxConcurrency = 2
-)
+// DefaultMaxConcurrency is the default number of parallel builds.
+const DefaultMaxConcurrency = 2
 
 // BuildOrchestrator coordinates multi-architecture builds
 type BuildOrchestrator struct {

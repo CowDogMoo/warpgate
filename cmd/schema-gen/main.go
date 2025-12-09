@@ -20,6 +20,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+// Package main generates a JSON schema from the warpgate template configuration structure.
+// The generated schema enables IDE autocompletion and validation for template YAML files.
 package main
 
 import (

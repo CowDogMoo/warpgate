@@ -30,7 +30,7 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
-// BuildStrategy represents the strategy to use for building images
+// A BuildStrategy represents the strategy to use for building images.
 type BuildStrategy int
 
 const (
@@ -181,7 +181,7 @@ func (sd *StrategyDetector) GetBuildMatrix(architectures []string) []BuildMatrix
 	return matrix
 }
 
-// BuildMatrixEntry represents a single entry in the build matrix
+// A BuildMatrixEntry represents a single entry in the build matrix.
 type BuildMatrixEntry struct {
 	Architecture     string
 	Runner           string
