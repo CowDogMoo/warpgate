@@ -258,6 +258,19 @@ local_paths:
   - /mnt/nfs/company-templates # Network share
 ```
 
+**How it works:**
+
+Local paths are searched **after** repositories when building by template name.
+This allows you to use `--template` flag with templates in local directories:
+
+```bash
+# Searches repositories first, then local_paths
+warpgate build --template sliver
+```
+
+If `sliver` exists in both a repository and a local_path, the repository version
+is used (repositories have higher priority).
+
 #### `cache_dir`
 
 Override the default cache directory for git repositories.
@@ -492,7 +505,8 @@ warpgate build --from-git https://github.com/user/repo.git//templates/tool?ref=v
 
 ### Template Discovery Order
 
-When building by template name, warpgate searches in this order:
+When building by template name with `--template` flag, warpgate searches in
+this order:
 
 1. **Repositories** (in configuration order)
 
@@ -503,22 +517,46 @@ When building by template name, warpgate searches in this order:
      local: ... # Searched third
    ```
 
-2. **Local Paths** (in configuration order)
+2. **Local Paths** (in configuration order, searched after all repositories)
 
    ```yaml
    local_paths:
-     - ~/dev/templates # Searched first
-     - /opt/templates # Searched second
+     - ~/dev/templates # Searched after repositories
+     - /opt/templates # Searched last
    ```
 
 **First match wins!**
 
-**Example:**
+**Examples:**
 
-If `attack-box` exists in both `official` and `private` repositories, the
-one from `official` is used (since it's listed first).
+**Example 1:** Template in repository takes precedence
 
-**Tip:** Order repositories by priority in your config.
+```yaml
+repositories:
+  official: https://github.com/cowdogmoo/warpgate-templates.git
+local_paths:
+  - ~/dev/templates
+```
+
+If `sliver` exists in both `official` and `~/dev/templates`, the `official`
+version is used (repositories are searched first).
+
+**Example 2:** Template only in local_paths
+
+```yaml
+repositories:
+  official: https://github.com/cowdogmoo/warpgate-templates.git
+local_paths:
+  - ~/dev/templates # Contains 'custom-tool'
+```
+
+```bash
+# This now works! Searches repositories, then local_paths
+warpgate build --template custom-tool
+```
+
+**Tip:** Order repositories by priority in your config. Templates in repositories
+always have higher priority than templates in local_paths.
 
 ## Template Directory Structure
 
@@ -792,7 +830,30 @@ warpgate templates info attack-box
    warpgate templates add https://github.com/cowdogmoo/warpgate-templates.git
    ```
 
-3. **Check repository accessibility:**
+3. **Check if template is in local_paths:**
+
+   If your template is in a local directory, ensure it's configured:
+
+   ```yaml
+   templates:
+     local_paths:
+       - /path/to/your/templates
+   ```
+
+   Then verify the structure:
+
+   ```bash
+   # Template should be at:
+   ls /path/to/your/templates/templates/attack-box/warpgate.yaml
+   ```
+
+   Now you can use:
+
+   ```bash
+   warpgate build --template attack-box
+   ```
+
+4. **Check repository accessibility:**
 
    ```bash
    # For git repositories
@@ -802,7 +863,7 @@ warpgate templates info attack-box
    ls -la /path/to/templates/templates/
    ```
 
-4. **Verify directory structure:**
+5. **Verify directory structure:**
 
    ```bash
    # Templates must be in templates/ subdirectory

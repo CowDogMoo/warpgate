@@ -184,10 +184,28 @@ Configure multiple template sources:
 
 ```yaml
 templates:
+  # Named repositories (git URLs or local paths)
   repositories:
     official: https://github.com/cowdogmoo/warpgate-templates.git
     private: git@github.com:myorg/private-templates.git
     local: /Users/username/my-templates
+
+  # Additional local paths to scan for templates
+  local_paths:
+    - /opt/shared/templates
+    - ~/dev/templates
+```
+
+**Key differences:**
+
+- **`repositories`**: Named sources (git or local) searched first when using `--template`
+- **`local_paths`**: Additional local directories searched after repositories
+
+Both are used when building by template name:
+
+```bash
+# Searches repositories first, then local_paths
+warpgate build --template sliver
 ```
 
 See [Template Configuration Guide](template-configuration.md) for detailed
