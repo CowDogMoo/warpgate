@@ -55,6 +55,8 @@ type buildOptions struct {
 	instanceType string
 	vars         []string // Variable overrides in key=value format
 	varFiles     []string // Files containing variable definitions
+	cacheFrom    []string // Cache sources for BuildKit (e.g., "type=registry,ref=...")
+	cacheTo      []string // Cache destinations for BuildKit (e.g., "type=registry,ref=...")
 }
 
 var buildOpts = &buildOptions{}
@@ -109,6 +111,8 @@ func init() {
 	buildCmd.Flags().StringVar(&buildOpts.instanceType, "instance-type", "", "EC2 instance type for AMI builds (overrides config)")
 	buildCmd.Flags().StringArrayVar(&buildOpts.vars, "var", []string{}, "Set template variables (key=value)")
 	buildCmd.Flags().StringArrayVar(&buildOpts.varFiles, "var-file", []string{}, "Load variables from YAML file")
+	buildCmd.Flags().StringArrayVar(&buildOpts.cacheFrom, "cache-from", []string{}, "External cache sources for BuildKit (e.g., type=registry,ref=user/app:cache)")
+	buildCmd.Flags().StringArrayVar(&buildOpts.cacheTo, "cache-to", []string{}, "External cache destinations for BuildKit (e.g., type=registry,ref=user/app:cache,mode=max)")
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
@@ -282,7 +286,17 @@ func selectContainerBuilder(ctx context.Context) (builder.ContainerBuilder, erro
 	// On macOS, use BuildKit via docker buildx
 	if runtime.GOOS == "darwin" {
 		logging.Info("Detected macOS - using BuildKit builder")
-		return container.NewBuildKitBuilder(ctx)
+		bldr, err := container.NewBuildKitBuilder(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Set cache options if provided via flags
+		if len(buildOpts.cacheFrom) > 0 || len(buildOpts.cacheTo) > 0 {
+			bldr.SetCacheOptions(buildOpts.cacheFrom, buildOpts.cacheTo)
+		}
+
+		return bldr, nil
 	}
 
 	// On Linux, use Buildah
@@ -422,14 +436,6 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 	manifestName := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
 	logging.InfoContext(ctx, "Creating multi-arch manifest: %s", manifestName)
 
-	// Get manifest manager (only available for Buildah builder)
-	buildahBldr, ok := bldr.(*container.BuildahBuilder)
-	if !ok {
-		logging.WarnContext(ctx, "Multi-arch manifest creation only supported with Buildah builder - skipping")
-		return nil
-	}
-	manifestMgr := buildahBldr.GetManifestManager()
-
 	// Create manifest entries from build results
 	entries := make([]container.ManifestEntry, 0, len(results))
 	for _, result := range results {
@@ -466,16 +472,35 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 		})
 	}
 
-	// Create the manifest
-	manifestList, err := manifestMgr.CreateManifest(ctx, manifestName, entries)
-	if err != nil {
-		return fmt.Errorf("failed to create manifest: %w", err)
-	}
-
-	// Push the manifest to the registry
+	// Push manifest to registry
 	destination := fmt.Sprintf("%s/%s", buildOpts.registry, manifestName)
-	if err := manifestMgr.PushManifest(ctx, manifestList, destination); err != nil {
-		return fmt.Errorf("failed to push manifest: %w", err)
+
+	// Handle different builder types
+	switch b := bldr.(type) {
+	case *container.BuildKitBuilder:
+		// BuildKit uses docker buildx imagetools create
+		if err := b.CreateAndPushManifest(ctx, destination, entries); err != nil {
+			return fmt.Errorf("failed to create/push manifest with BuildKit: %w", err)
+		}
+
+	case *container.BuildahBuilder:
+		// Buildah uses ManifestManager
+		manifestMgr := b.GetManifestManager()
+
+		// Create the manifest
+		manifestList, err := manifestMgr.CreateManifest(ctx, manifestName, entries)
+		if err != nil {
+			return fmt.Errorf("failed to create manifest: %w", err)
+		}
+
+		// Push the manifest to the registry
+		if err := manifestMgr.PushManifest(ctx, manifestList, destination); err != nil {
+			return fmt.Errorf("failed to push manifest: %w", err)
+		}
+
+	default:
+		logging.WarnContext(ctx, "Multi-arch manifest creation not supported for this builder type - skipping")
+		return nil
 	}
 
 	logging.InfoContext(ctx, "Successfully created and pushed multi-arch manifest to %s", destination)

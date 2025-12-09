@@ -48,6 +48,8 @@ type BuildKitBuilder struct {
 	client        *client.Client
 	builderName   string
 	containerName string
+	cacheFrom     []string // External cache sources
+	cacheTo       []string // External cache destinations
 }
 
 // NewBuildKitBuilder creates a new BuildKit builder instance
@@ -79,7 +81,40 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		client:        c,
 		builderName:   builderName,
 		containerName: containerName,
+		cacheFrom:     []string{},
+		cacheTo:       []string{},
 	}, nil
+}
+
+// SetCacheOptions sets external cache sources and destinations
+func (b *BuildKitBuilder) SetCacheOptions(cacheFrom, cacheTo []string) {
+	b.cacheFrom = cacheFrom
+	b.cacheTo = cacheTo
+	if len(cacheFrom) > 0 {
+		logging.Info("BuildKit cache sources: %v", cacheFrom)
+	}
+	if len(cacheTo) > 0 {
+		logging.Info("BuildKit cache destinations: %v", cacheTo)
+	}
+}
+
+// parseCacheAttrs parses cache attribute strings like "type=registry,ref=user/app:cache,mode=max"
+// and returns a map of attributes suitable for BuildKit
+func parseCacheAttrs(cacheSpec string) map[string]string {
+	attrs := make(map[string]string)
+
+	// Split by comma to get key=value pairs
+	pairs := strings.Split(cacheSpec, ",")
+	for _, pair := range pairs {
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) == 2 {
+			key := strings.TrimSpace(kv[0])
+			value := strings.TrimSpace(kv[1])
+			attrs[key] = value
+		}
+	}
+
+	return attrs
 }
 
 // detectBuildxBuilder detects the active buildx builder
@@ -131,12 +166,38 @@ func detectBuildxBuilder(ctx context.Context) (string, string, error) {
 	return "", "", fmt.Errorf("no running buildx builder found")
 }
 
+// parsePlatform parses a platform string like "linux/amd64" into OS and Architecture
+func parsePlatform(platformStr string) (os string, arch string, err error) {
+	if platformStr == "" {
+		return "", "", fmt.Errorf("platform string is empty")
+	}
+
+	parts := strings.Split(platformStr, "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid platform format: %s (expected 'os/arch')", platformStr)
+	}
+
+	return parts[0], parts[1], nil
+}
+
 // convertToLLB converts a Warpgate config to BuildKit LLB
 func (b *BuildKitBuilder) convertToLLB(cfg builder.Config) (llb.State, error) {
+	// Parse platform from cfg.Base.Platform
+	platformOS, platformArch, err := parsePlatform(cfg.Base.Platform)
+	if err != nil {
+		// Fallback to cfg.Architectures[0] if Platform is not set
+		if len(cfg.Architectures) > 0 {
+			platformOS = "linux"
+			platformArch = cfg.Architectures[0]
+		} else {
+			return llb.State{}, fmt.Errorf("no platform specified in config: %w", err)
+		}
+	}
+
 	// Start with base image
 	platform := specs.Platform{
-		OS:           "linux",
-		Architecture: cfg.Architectures[0], // TODO: handle multiple
+		OS:           platformOS,
+		Architecture: platformArch,
 	}
 
 	state := llb.Image(cfg.Base.Image, llb.Platform(platform))
@@ -190,10 +251,71 @@ func (b *BuildKitBuilder) applyShellProvisioner(state llb.State, prov builder.Pr
 	// Combine commands into single RUN (like Dockerfile does)
 	combinedCmd := strings.Join(prov.Inline, " && ")
 
-	// Execute as shell command
-	state = state.Run(
+	// Build run options with cache mounts
+	runOpts := []llb.RunOption{
 		llb.Shlex(fmt.Sprintf("sh -c '%s'", combinedCmd)),
-	).Root()
+	}
+
+	// Add common cache mounts for package managers to improve build speed
+	// These are shared across builds and help avoid re-downloading packages
+	if strings.Contains(combinedCmd, "apt-get") {
+		// APT cache for Debian/Ubuntu
+		runOpts = append(runOpts,
+			llb.AddMount("/var/cache/apt", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-apt-cache", llb.CacheMountShared)),
+			llb.AddMount("/var/lib/apt/lists", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-apt-lists", llb.CacheMountShared)),
+		)
+	}
+
+	if strings.Contains(combinedCmd, "yum") || strings.Contains(combinedCmd, "dnf") {
+		// YUM/DNF cache for RHEL/Fedora/CentOS
+		runOpts = append(runOpts,
+			llb.AddMount("/var/cache/yum", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-yum-cache", llb.CacheMountShared)),
+			llb.AddMount("/var/cache/dnf", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-dnf-cache", llb.CacheMountShared)),
+		)
+	}
+
+	if strings.Contains(combinedCmd, "apk") {
+		// APK cache for Alpine
+		runOpts = append(runOpts,
+			llb.AddMount("/var/cache/apk", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-apk-cache", llb.CacheMountShared)),
+		)
+	}
+
+	if strings.Contains(combinedCmd, "pip") {
+		// Pip cache for Python packages
+		runOpts = append(runOpts,
+			llb.AddMount("/root/.cache/pip", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-pip-cache", llb.CacheMountShared)),
+		)
+	}
+
+	if strings.Contains(combinedCmd, "npm") || strings.Contains(combinedCmd, "yarn") {
+		// NPM/Yarn cache for Node.js packages
+		runOpts = append(runOpts,
+			llb.AddMount("/root/.npm", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-npm-cache", llb.CacheMountShared)),
+			llb.AddMount("/root/.yarn", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-yarn-cache", llb.CacheMountShared)),
+		)
+	}
+
+	if strings.Contains(combinedCmd, "go ") || strings.Contains(combinedCmd, "go get") || strings.Contains(combinedCmd, "go build") {
+		// Go module cache
+		runOpts = append(runOpts,
+			llb.AddMount("/go/pkg/mod", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-go-mod-cache", llb.CacheMountShared)),
+			llb.AddMount("/root/.cache/go-build", llb.Scratch(),
+				llb.AsPersistentCacheDir("warpgate-go-build-cache", llb.CacheMountShared)),
+		)
+	}
+
+	// Execute as shell command with cache mounts
+	state = state.Run(runOpts...).Root()
 
 	return state, nil
 }
@@ -280,8 +402,18 @@ func (b *BuildKitBuilder) applyAnsibleProvisioner(state llb.State, prov builder.
 		cmd += fmt.Sprintf(" -e %s=%s", key, value)
 	}
 
-	// Run playbook
-	state = state.Run(llb.Shlex(cmd)).Root()
+	// Run playbook with cache mounts for package managers
+	// This helps when the playbook installs packages
+	runOpts := []llb.RunOption{
+		llb.Shlex(cmd),
+		// Add cache for APT (common in Ansible playbooks)
+		llb.AddMount("/var/cache/apt", llb.Scratch(),
+			llb.AsPersistentCacheDir("warpgate-apt-cache", llb.CacheMountShared)),
+		llb.AddMount("/var/lib/apt/lists", llb.Scratch(),
+			llb.AsPersistentCacheDir("warpgate-apt-lists", llb.CacheMountShared)),
+	}
+
+	state = state.Run(runOpts...).Root()
 
 	return state, nil
 }
@@ -415,6 +547,28 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		},
 	}
 
+	// Add cache import sources if specified
+	if len(b.cacheFrom) > 0 {
+		logging.Info("Configuring cache import from %d source(s)", len(b.cacheFrom))
+		for _, cacheSource := range b.cacheFrom {
+			solveOpt.CacheImports = append(solveOpt.CacheImports, client.CacheOptionsEntry{
+				Type:  "registry",
+				Attrs: parseCacheAttrs(cacheSource),
+			})
+		}
+	}
+
+	// Add cache export destinations if specified
+	if len(b.cacheTo) > 0 {
+		logging.Info("Configuring cache export to %d destination(s)", len(b.cacheTo))
+		for _, cacheDest := range b.cacheTo {
+			solveOpt.CacheExports = append(solveOpt.CacheExports, client.CacheOptionsEntry{
+				Type:  "registry",
+				Attrs: parseCacheAttrs(cacheDest),
+			})
+		}
+	}
+
 	// Step 6: Execute with progress streaming
 	ch := make(chan *client.SolveStatus)
 	done := make(chan struct{})
@@ -446,9 +600,20 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 
 	duration := time.Since(startTime)
 
+	// Get platform string for result
+	var platformStr string
+	switch {
+	case cfg.Base.Platform != "":
+		platformStr = cfg.Base.Platform
+	case len(cfg.Architectures) > 0:
+		platformStr = fmt.Sprintf("linux/%s", cfg.Architectures[0])
+	default:
+		platformStr = "unknown"
+	}
+
 	return &builder.BuildResult{
 		ImageRef: imageName,
-		Platform: fmt.Sprintf("linux/%s", cfg.Architectures[0]),
+		Platform: platformStr,
 		Duration: duration.String(),
 		Notes:    []string{"Built with native BuildKit LLB", "Image loaded to Docker"},
 	}, nil
@@ -516,6 +681,56 @@ func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 
 	logging.Debug("Removed image: %s", imageRef)
 	return nil
+}
+
+// CreateAndPushManifest creates and pushes a multi-arch manifest using docker buildx imagetools
+func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestName string, entries []ManifestEntry) error {
+	if len(entries) == 0 {
+		return fmt.Errorf("no manifest entries provided")
+	}
+
+	logging.Info("Creating multi-arch manifest: %s", manifestName)
+	logging.Info("Manifest %s will include %d architectures:", manifestName, len(entries))
+
+	// Build the list of image references for the manifest
+	imageRefs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		logging.Info("  - %s/%s (ref: %s)", entry.OS, entry.Architecture, entry.ImageRef)
+		imageRefs = append(imageRefs, entry.ImageRef)
+	}
+
+	// Build the docker buildx imagetools create command
+	// Format: docker buildx imagetools create --tag <manifest> <image1> <image2> ...
+	args := []string{"buildx", "imagetools", "create", "--tag", manifestName}
+	args = append(args, imageRefs...)
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	logging.Info("Creating manifest with: docker %s", strings.Join(args, " "))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create manifest: %w", err)
+	}
+
+	logging.Info("Successfully created and pushed multi-arch manifest: %s", manifestName)
+	return nil
+}
+
+// InspectManifest inspects a manifest using docker buildx imagetools inspect
+func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName string) ([]ManifestEntry, error) {
+	logging.Debug("Inspecting manifest: %s", manifestName)
+
+	cmd := exec.CommandContext(ctx, "docker", "buildx", "imagetools", "inspect", manifestName, "--raw")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect manifest: %w", err)
+	}
+
+	logging.Debug("Manifest inspection output: %s", string(output))
+	// Note: This is a simplified version. Full implementation would parse the JSON output.
+	// For now, we just verify the manifest exists.
+	return nil, nil
 }
 
 // Close cleans up any resources
