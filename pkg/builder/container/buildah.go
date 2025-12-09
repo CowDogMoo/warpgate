@@ -116,8 +116,16 @@ func NewBuildahBuilder(cfg BuildahConfig) (*BuildahBuilder, error) {
 		return nil, fmt.Errorf("failed to ensure container config: %w", err)
 	}
 
-	// Set up system context
-	systemContext := &imagetypes.SystemContext{}
+	// Set up system context with Docker authentication
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	systemContext := &imagetypes.SystemContext{
+		// Point to Docker's config.json for registry authentication
+		AuthFilePath: filepath.Join(homeDir, ".docker", "config.json"),
+	}
 
 	logging.Info("Buildah builder initialized successfully")
 	return &BuildahBuilder{
@@ -548,7 +556,7 @@ func (b *BuildahBuilder) Push(ctx context.Context, imageRef, destination string)
 	}
 
 	// Configure push options
-	// SystemContext with nil uses defaults which auto-loads ~/.docker/config.json
+	// SystemContext is configured with AuthFilePath to use Docker credentials
 	pushOpts := buildah.PushOptions{
 		Store:         b.store,
 		SystemContext: b.systemContext,
