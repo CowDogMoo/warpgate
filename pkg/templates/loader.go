@@ -128,6 +128,20 @@ func (tl *TemplateLoader) loadTemplateByName(name string) (*builder.Config, erro
 		logging.Debug("Template not found in %s: %v", repoName, err)
 	}
 
+	// Also check local paths from config
+	localPaths := tl.registry.GetLocalPaths()
+	for _, localPath := range localPaths {
+		if !tl.isLocalPath(localPath) {
+			continue
+		}
+		configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
+		if fileExists(configPath) {
+			logging.Debug("Found template %s in local path: %s", templateName, localPath)
+			return tl.loadFromFile(configPath)
+		}
+		logging.Debug("Template not found in local path: %s", localPath)
+	}
+
 	return nil, fmt.Errorf("template not found in any configured repository: %s", name)
 }
 

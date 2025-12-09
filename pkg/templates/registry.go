@@ -467,6 +467,13 @@ func (tr *TemplateRegistry) GetRepositories() map[string]string {
 	return repos
 }
 
+// GetLocalPaths returns all configured local template paths
+func (tr *TemplateRegistry) GetLocalPaths() []string {
+	paths := make([]string, len(tr.localPaths))
+	copy(paths, tr.localPaths)
+	return paths
+}
+
 // LoadRepositories loads repository configuration from file
 func (tr *TemplateRegistry) LoadRepositories() error {
 	configPath := filepath.Join(tr.cacheDir, "repositories.json")
