@@ -379,9 +379,9 @@ func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done ch
 	defer close(done)
 
 	for status := range ch {
-		for _, vertex := range status.Vertices {
+		for _, vertex := range status.Vertexes {
 			if vertex.Name != "" {
-				logging.Info("[%s] %s", vertex.Digest.String()[:12], vertex.Name)
+				logging.Debug("[%s] %s", vertex.Digest.String()[:12], vertex.Name)
 			}
 		}
 		for _, log := range status.Logs {
