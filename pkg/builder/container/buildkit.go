@@ -79,9 +79,9 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, fmt.Errorf("failed to write Dockerfile: %w", err)
 	}
 
-	// Copy Ansible files to build context
-	if err := b.copyAnsibleFiles(cfg, tmpDir); err != nil {
-		return nil, fmt.Errorf("failed to copy Ansible files: %w", err)
+	// Copy provisioner files to build context
+	if err := b.copyProvisionerFiles(cfg, tmpDir); err != nil {
+		return nil, fmt.Errorf("failed to copy provisioner files: %w", err)
 	}
 
 	logging.Debug("Generated Dockerfile:\n%s", dockerfile)
@@ -143,6 +143,8 @@ func (b *BuildKitBuilder) generateDockerfile(cfg builder.Config) (string, error)
 			b.addShellProvisioner(&dockerfile, prov)
 		case "ansible":
 			b.addAnsibleProvisioner(&dockerfile, prov)
+		case "file":
+			b.addFileProvisioner(&dockerfile, prov)
 		default:
 			logging.Warn("Unsupported provisioner type in BuildKit backend: %s", prov.Type)
 		}
@@ -212,6 +214,24 @@ func (b *BuildKitBuilder) addAnsibleProvisioner(dockerfile *strings.Builder, pro
 	fmt.Fprintf(dockerfile, "RUN %s\n\n", ansibleCmd)
 }
 
+// addFileProvisioner adds file provisioner commands to the Dockerfile
+func (b *BuildKitBuilder) addFileProvisioner(dockerfile *strings.Builder, prov builder.Provisioner) {
+	// Copy files from source to destination
+	if prov.Source != "" && prov.Destination != "" {
+		sourcePath := os.ExpandEnv(prov.Source)
+		sourceFilename := filepath.Base(sourcePath)
+
+		dockerfile.WriteString("# File provisioner\n")
+		fmt.Fprintf(dockerfile, "COPY %s %s\n", sourceFilename, prov.Destination)
+
+		// Handle permissions if specified
+		if prov.Mode != "" {
+			fmt.Fprintf(dockerfile, "RUN chmod %s %s\n", prov.Mode, prov.Destination)
+		}
+		dockerfile.WriteString("\n")
+	}
+}
+
 // buildAnsibleCommand builds the ansible-playbook command string
 func (b *BuildKitBuilder) buildAnsibleCommand(prov builder.Provisioner) string {
 	var cmd strings.Builder
@@ -261,43 +281,53 @@ func detectCollectionRoot(playbookPath string) string {
 	return ""
 }
 
-// copyAnsibleFiles copies Ansible playbooks and related files to the build context
-func (b *BuildKitBuilder) copyAnsibleFiles(cfg builder.Config, destDir string) error {
+// copyProvisionerFiles copies provisioner files (Ansible, file, etc.) to the build context
+func (b *BuildKitBuilder) copyProvisionerFiles(cfg builder.Config, destDir string) error {
 	for _, prov := range cfg.Provisioners {
-		if prov.Type != "ansible" {
-			continue
-		}
+		switch prov.Type {
+		case "ansible":
+			// Copy playbook
+			if prov.PlaybookPath != "" {
+				playbookPath := os.ExpandEnv(prov.PlaybookPath)
+				destPath := filepath.Join(destDir, filepath.Base(playbookPath))
 
-		// Copy playbook
-		if prov.PlaybookPath != "" {
-			playbookPath := os.ExpandEnv(prov.PlaybookPath)
-			destPath := filepath.Join(destDir, filepath.Base(playbookPath))
-
-			if err := copyFile(playbookPath, destPath); err != nil {
-				return fmt.Errorf("failed to copy playbook %s: %w", playbookPath, err)
-			}
-			logging.Debug("Copied playbook: %s -> %s", playbookPath, destPath)
-
-			// Check if we need to copy the collection source
-			collectionRoot := detectCollectionRoot(playbookPath)
-			if collectionRoot != "" {
-				collectionDestDir := filepath.Join(destDir, "collection")
-				if err := copyDirectory(collectionRoot, collectionDestDir); err != nil {
-					return fmt.Errorf("failed to copy collection from %s: %w", collectionRoot, err)
+				if err := copyFile(playbookPath, destPath); err != nil {
+					return fmt.Errorf("failed to copy playbook %s: %w", playbookPath, err)
 				}
-				logging.Debug("Copied collection: %s -> %s", collectionRoot, collectionDestDir)
-			}
-		}
+				logging.Debug("Copied playbook: %s -> %s", playbookPath, destPath)
 
-		// Copy galaxy requirements file
-		if prov.GalaxyFile != "" {
-			galaxyPath := os.ExpandEnv(prov.GalaxyFile)
-			destPath := filepath.Join(destDir, filepath.Base(galaxyPath))
-
-			if err := copyFile(galaxyPath, destPath); err != nil {
-				return fmt.Errorf("failed to copy galaxy file %s: %w", galaxyPath, err)
+				// Check if we need to copy the collection source
+				collectionRoot := detectCollectionRoot(playbookPath)
+				if collectionRoot != "" {
+					collectionDestDir := filepath.Join(destDir, "collection")
+					if err := copyDirectory(collectionRoot, collectionDestDir); err != nil {
+						return fmt.Errorf("failed to copy collection from %s: %w", collectionRoot, err)
+					}
+					logging.Debug("Copied collection: %s -> %s", collectionRoot, collectionDestDir)
+				}
 			}
-			logging.Debug("Copied galaxy file: %s -> %s", galaxyPath, destPath)
+
+			// Copy galaxy requirements file
+			if prov.GalaxyFile != "" {
+				galaxyPath := os.ExpandEnv(prov.GalaxyFile)
+				destPath := filepath.Join(destDir, filepath.Base(galaxyPath))
+
+				if err := copyFile(galaxyPath, destPath); err != nil {
+					return fmt.Errorf("failed to copy galaxy file %s: %w", galaxyPath, err)
+				}
+				logging.Debug("Copied galaxy file: %s -> %s", galaxyPath, destPath)
+			}
+
+		case "file":
+			if prov.Source != "" {
+				sourcePath := os.ExpandEnv(prov.Source)
+				destPath := filepath.Join(destDir, filepath.Base(sourcePath))
+
+				if err := copyFile(sourcePath, destPath); err != nil {
+					return fmt.Errorf("failed to copy file %s: %w", sourcePath, err)
+				}
+				logging.Debug("Copied file: %s -> %s", sourcePath, destPath)
+			}
 		}
 	}
 

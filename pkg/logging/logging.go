@@ -30,12 +30,17 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/fatih/color"
 )
 
 // logger is the global variable to access the custom logger.
-var logger *CustomLogger
+var (
+	logger     *CustomLogger
+	loggerOnce sync.Once
+	loggerMu   sync.RWMutex
+)
 
 // LogLevel represents the severity level of a log message
 type LogLevel int
@@ -313,6 +318,7 @@ func Initialize(logLevelStr, outputFormat string, quiet, verbose bool) error {
 		}
 	}
 
+	loggerMu.Lock()
 	logger = &CustomLogger{
 		LogLevel:      logLevel,
 		OutputType:    outputType,
@@ -320,24 +326,22 @@ func Initialize(logLevelStr, outputFormat string, quiet, verbose bool) error {
 		ConsoleWriter: os.Stderr,
 		Verbose:       verbose,
 	}
+	loggerMu.Unlock()
 
 	return nil
 }
 
 // ensureLogger initializes the logger if it hasn't been initialized yet
 func ensureLogger() error {
-	if logger != nil {
-		return nil
-	}
-
-	logger = &CustomLogger{
-		LogLevel:      slog.LevelInfo,
-		OutputType:    PlainOutput,
-		Quiet:         false,
-		ConsoleWriter: os.Stderr,
-		Verbose:       false,
-	}
-
+	loggerOnce.Do(func() {
+		logger = &CustomLogger{
+			LogLevel:      slog.LevelInfo,
+			OutputType:    PlainOutput,
+			Quiet:         false,
+			ConsoleWriter: os.Stderr,
+			Verbose:       false,
+		}
+	})
 	return nil
 }
 
@@ -347,6 +351,8 @@ func logGlobal(level LogLevel, message string, args ...interface{}) {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		return
 	}
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
 	logger.log(level, message, args...)
 }
 
@@ -372,6 +378,8 @@ func Output(data interface{}) {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		return
 	}
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
 	logger.Output(data)
 }
 
@@ -397,6 +405,8 @@ func Error(firstArg interface{}, args ...interface{}) {
 		return
 	}
 
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
 	logger.Error(firstArg, args...)
 }
 
@@ -421,6 +431,8 @@ func SetQuiet(quiet bool) {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		return
 	}
+	loggerMu.Lock()
+	defer loggerMu.Unlock()
 	logger.SetQuiet(quiet)
 }
 
@@ -435,6 +447,8 @@ func SetVerbose(verbose bool) {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		return
 	}
+	loggerMu.Lock()
+	defer loggerMu.Unlock()
 	logger.SetVerbose(verbose)
 }
 
@@ -477,6 +491,8 @@ func FromContext(ctx context.Context) *CustomLogger {
 		if err := ensureLogger(); err != nil {
 			return NewCustomLogger(slog.LevelInfo)
 		}
+		loggerMu.RLock()
+		defer loggerMu.RUnlock()
 		return logger
 	}
 
@@ -488,6 +504,8 @@ func FromContext(ctx context.Context) *CustomLogger {
 	if err := ensureLogger(); err != nil {
 		return NewCustomLogger(slog.LevelInfo)
 	}
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
 	return logger
 }
 

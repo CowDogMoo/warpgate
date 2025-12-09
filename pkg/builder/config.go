@@ -217,6 +217,17 @@ type Provisioner struct {
 	// Scripts is a list of script file paths to execute
 	Scripts []string `yaml:"scripts,omitempty" json:"scripts,omitempty"`
 
+	// File provisioner fields
+
+	// Source is the path to the source file to copy
+	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+
+	// Destination is the path where the file should be copied to in the container
+	Destination string `yaml:"destination,omitempty" json:"destination,omitempty"`
+
+	// Mode is the file permissions (e.g., "0644", "0755")
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
 	// PowerShell provisioner fields
 
 	// PSScripts is a list of PowerShell script file paths to execute
