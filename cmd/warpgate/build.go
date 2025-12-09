@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
@@ -276,12 +277,26 @@ func determineTargetType(buildConfig *builder.Config) string {
 	return "container"
 }
 
+// selectContainerBuilder chooses the appropriate builder for the current platform
+func selectContainerBuilder(ctx context.Context) (builder.ContainerBuilder, error) {
+	// On macOS, use BuildKit via docker buildx
+	if runtime.GOOS == "darwin" {
+		logging.Info("Detected macOS - using BuildKit builder")
+		return container.NewBuildKitBuilder(ctx)
+	}
+
+	// On Linux, use Buildah
+	logging.Info("Detected Linux - using Buildah builder")
+	builderCfg := container.GetDefaultConfig()
+	return container.NewBuildahBuilder(builderCfg)
+}
+
 // executeContainerBuild executes a container build
 func executeContainerBuild(ctx context.Context, buildConfig *builder.Config, cfg *globalconfig.Config) error {
 	logging.InfoContext(ctx, "Executing container build")
 
-	builderCfg := container.GetDefaultConfig()
-	bldr, err := container.NewBuildahBuilder(builderCfg)
+	// Select builder based on platform
+	bldr, err := selectContainerBuilder(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialize container builder: %w", err)
 	}
@@ -333,7 +348,7 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config, cfg
 }
 
 // executeMultiArchBuild executes a multi-architecture container build
-func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bldr *container.BuildahBuilder, cfg *globalconfig.Config) error {
+func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bldr builder.ContainerBuilder, cfg *globalconfig.Config) error {
 	logging.InfoContext(ctx, "Executing multi-arch build for %d architectures: %v", len(buildConfig.Architectures), buildConfig.Architectures)
 
 	// Use configured concurrency, or default if not set
@@ -368,7 +383,7 @@ func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bld
 }
 
 // pushMultiArchImages pushes multi-arch images and creates manifest
-func pushMultiArchImages(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr *container.BuildahBuilder, orchestrator *builder.BuildOrchestrator) error {
+func pushMultiArchImages(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr builder.ContainerBuilder, orchestrator *builder.BuildOrchestrator) error {
 	logging.InfoContext(ctx, "Pushing multi-arch images to registry: %s", buildOpts.registry)
 
 	// Push individual architecture images
@@ -403,12 +418,17 @@ func saveDigests(ctx context.Context, imageName string, results []builder.BuildR
 }
 
 // createAndPushManifest creates and pushes a multi-arch manifest
-func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr *container.BuildahBuilder) error {
+func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr builder.ContainerBuilder) error {
 	manifestName := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
 	logging.InfoContext(ctx, "Creating multi-arch manifest: %s", manifestName)
 
-	// Get manifest manager
-	manifestMgr := bldr.GetManifestManager()
+	// Get manifest manager (only available for Buildah builder)
+	buildahBldr, ok := bldr.(*container.BuildahBuilder)
+	if !ok {
+		logging.WarnContext(ctx, "Multi-arch manifest creation only supported with Buildah builder - skipping")
+		return nil
+	}
+	manifestMgr := buildahBldr.GetManifestManager()
 
 	// Create manifest entries from build results
 	entries := make([]container.ManifestEntry, 0, len(results))
