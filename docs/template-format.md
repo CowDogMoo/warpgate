@@ -599,4 +599,3 @@ Common validation errors:
 
 - [Template Configuration Guide](template-configuration.md) - Repository management
 - [Main README](../README.md) - Getting started
-- [Sliver Guide](sliver.md) - Example: Building Sliver C2

@@ -86,8 +86,6 @@ and [Usage Guide](docs/usage-guide.md).
 
 ### Examples & Guides
 
-- **[Sliver C2 Guide](docs/sliver.md)** - Building Sliver C2 framework
-  (complete walkthrough)
 - **[Official Templates](https://github.com/CowDogMoo/warpgate-templates)**
   - Ready-to-use templates
 

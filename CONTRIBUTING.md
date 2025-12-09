@@ -683,7 +683,6 @@ Update CHANGELOG.md before each release with:
 
 - [README](README.md) - Project overview and usage
 - [Template Configuration Guide](docs/template-configuration.md) - Template management
-- [Sliver Build Guide](docs/sliver.md) - Example: Building Sliver C2
 - [Go Documentation](https://pkg.go.dev/github.com/cowdogmoo/warpgate) -
   Code documentation
 

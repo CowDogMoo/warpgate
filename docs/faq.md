@@ -205,7 +205,6 @@ warpgate discover
 
 **Template guides:**
 
-- [Sliver C2 Build Guide](sliver.md) - Complete walkthrough
 - [Template Format Reference](template-format.md) - Syntax documentation
 
 ### How do I create a private template repository?
@@ -433,10 +432,6 @@ warpgate build mytemplate --var-file secrets.yaml
 - Deploying C2 frameworks (Sliver, etc.)
 - Atomic Red Team testing platforms
 - Vulnerability scanning tools
-
-#### Example: Sliver C2
-
-See complete guide: [Building Sliver with Warpgate](sliver.md)
 
 **Security scanning:**
 
