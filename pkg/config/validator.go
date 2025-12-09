@@ -95,6 +95,8 @@ func (v *Validator) validateProvisioner(prov *builder.Provisioner, index int) er
 		return v.validateScriptProvisioner(prov, index)
 	case "powershell":
 		return v.validatePowerShellProvisioner(prov, index)
+	case "file":
+		return v.validateFileProvisioner(prov, index)
 	case "":
 		return fmt.Errorf("provisioner[%d]: type is required", index)
 	default:
@@ -154,6 +156,24 @@ func (v *Validator) validatePowerShellProvisioner(prov *builder.Provisioner, ind
 		if err := v.validateFilePath(script, index, "PowerShell script"); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// validateFileProvisioner validates a file provisioner
+func (v *Validator) validateFileProvisioner(prov *builder.Provisioner, index int) error {
+	if prov.Source == "" {
+		return fmt.Errorf("provisioner[%d]: file provisioner requires 'source'", index)
+	}
+
+	if prov.Destination == "" {
+		return fmt.Errorf("provisioner[%d]: file provisioner requires 'destination'", index)
+	}
+
+	// Validate source file exists
+	if err := v.validateFilePath(prov.Source, index, "source file"); err != nil {
+		return err
 	}
 
 	return nil
