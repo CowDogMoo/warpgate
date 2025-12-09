@@ -33,15 +33,16 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
-// autoSelectBuilder automatically selects the best builder for non-Linux (BuildKit)
-func autoSelectBuilder(ctx context.Context) (builder.ContainerBuilder, error) {
-	logging.Info("Auto-detected builder: buildkit")
-	return newBuildKitBuilder(ctx)
+// autoSelectBuilderFunc automatically selects the best builder for non-Linux platforms
+func autoSelectBuilderFunc(ctx context.Context) (builder.ContainerBuilder, error) {
+	logging.Info("Auto-selecting builder for %s platform", runtime.GOOS)
+	logging.Info("Auto-selected: BuildKit (only option for non-Linux)")
+	return newBuildKitBuilderFunc(ctx)
 }
 
-// newBuildahBuilder returns an error on non-Linux platforms
-func newBuildahBuilder() (builder.ContainerBuilder, error) {
-	return nil, fmt.Errorf("buildah builder is only supported on Linux (current platform: %s). Use --builder buildkit or set builder_type: buildkit in config", runtime.GOOS)
+// newBuildahBuilderFunc returns an error on non-Linux platforms
+func newBuildahBuilderFunc(_ context.Context) (builder.ContainerBuilder, error) {
+	return nil, fmt.Errorf("buildah builder is only supported on Linux (current platform: %s)", runtime.GOOS)
 }
 
 // createAndPushManifestPlatformSpecific handles platform-specific manifest creation (not supported on non-Linux)

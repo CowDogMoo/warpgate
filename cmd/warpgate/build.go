@@ -298,9 +298,8 @@ func validateConfig(buildConfig *builder.Config) error {
 
 	// Validate builder type if specified
 	if buildOpts.builderType != "" {
-		builderType := strings.ToLower(buildOpts.builderType)
-		if builderType != "auto" && builderType != "buildkit" && builderType != "buildah" {
-			return fmt.Errorf("invalid builder type: %s (supported: auto, buildkit, buildah)", buildOpts.builderType)
+		if err := builder.ValidateBuilderType(buildOpts.builderType); err != nil {
+			return err
 		}
 	}
 
@@ -363,40 +362,44 @@ func selectContainerBuilder(ctx context.Context, cfg *globalconfig.Config) (buil
 		builderTypeStr = buildOpts.builderType
 	}
 
-	// Normalize builder type
-	builderTypeStr = strings.ToLower(builderTypeStr)
-
-	// Create the appropriate builder
-	switch builderTypeStr {
-	case "buildkit":
-		return newBuildKitBuilder(ctx)
-	case "buildah":
-		return newBuildahBuilder()
-	case "auto", "":
-		// Auto-detect based on platform
-		return autoSelectBuilder(ctx)
-	default:
-		return nil, fmt.Errorf("unsupported builder type: %s (supported: auto, buildkit, buildah)", builderTypeStr)
+	// Validate builder type
+	if err := builder.ValidateBuilderType(builderTypeStr); err != nil {
+		return nil, err
 	}
+
+	// Create factory with platform-specific creator functions
+	factory := builder.NewBuilderFactory(
+		builderTypeStr,
+		newBuildKitBuilderFunc,
+		newBuildahBuilderFunc,
+		autoSelectBuilderFunc,
+	)
+
+	// Create the builder
+	bldr, err := factory.CreateContainerBuilder(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create builder: %w", err)
+	}
+
+	// Set BuildKit-specific cache options if this is a BuildKit builder
+	if bk, ok := bldr.(*buildkit.BuildKitBuilder); ok {
+		if buildOpts.noCache {
+			logging.Info("Caching disabled via --no-cache flag")
+		} else if len(buildOpts.cacheFrom) > 0 || len(buildOpts.cacheTo) > 0 {
+			bk.SetCacheOptions(buildOpts.cacheFrom, buildOpts.cacheTo)
+		}
+	}
+
+	return bldr, nil
 }
 
-// autoSelectBuilder and newBuildahBuilder are defined in build_linux.go and build_nonlinux.go
-
-// newBuildKitBuilder creates a new BuildKit builder
-func newBuildKitBuilder(ctx context.Context) (builder.ContainerBuilder, error) {
-	logging.Info("Using BuildKit builder")
+// newBuildKitBuilderFunc creates a new BuildKit builder
+func newBuildKitBuilderFunc(ctx context.Context) (builder.ContainerBuilder, error) {
+	logging.Info("Creating BuildKit builder")
 	bldr, err := buildkit.NewBuildKitBuilder(ctx)
 	if err != nil {
 		return nil, enhanceBuildKitError(err)
 	}
-
-	// Set cache options if provided via flags
-	if buildOpts.noCache {
-		logging.Info("Caching disabled via --no-cache flag")
-	} else if len(buildOpts.cacheFrom) > 0 || len(buildOpts.cacheTo) > 0 {
-		bldr.SetCacheOptions(buildOpts.cacheFrom, buildOpts.cacheTo)
-	}
-
 	return bldr, nil
 }
 

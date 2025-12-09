@@ -33,15 +33,32 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
-// autoSelectBuilder automatically selects the best builder for Linux (Buildah)
-func autoSelectBuilder(ctx context.Context) (builder.ContainerBuilder, error) {
-	logging.Info("Auto-detected builder: buildah")
-	return newBuildahBuilder()
+// autoSelectBuilderFunc automatically selects the best builder for Linux
+func autoSelectBuilderFunc(ctx context.Context) (builder.ContainerBuilder, error) {
+	logging.Info("Auto-selecting builder for Linux platform")
+
+	// Try Buildah first (native Linux solution)
+	bldr, err := newBuildahBuilderFunc(ctx)
+	if err == nil {
+		logging.Info("Auto-selected: Buildah")
+		return bldr, nil
+	}
+
+	logging.Warn("Buildah not available (%v), falling back to BuildKit", err)
+
+	// Fall back to BuildKit
+	bldr, err = newBuildKitBuilderFunc(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("no available builders: buildah failed, buildkit failed: %w", err)
+	}
+
+	logging.Info("Auto-selected: BuildKit")
+	return bldr, nil
 }
 
-// newBuildahBuilder creates a new Buildah builder (Linux only)
-func newBuildahBuilder() (builder.ContainerBuilder, error) {
-	logging.Info("Using Buildah builder")
+// newBuildahBuilderFunc creates a new Buildah builder (Linux only)
+func newBuildahBuilderFunc(_ context.Context) (builder.ContainerBuilder, error) {
+	logging.Info("Creating Buildah builder")
 	builderCfg := buildah.GetDefaultConfig()
 	return buildah.NewBuildahBuilder(builderCfg)
 }
