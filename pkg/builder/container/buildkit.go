@@ -29,6 +29,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/client/llb"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
+
+	// CRITICAL: This enables docker-container:// protocol
+	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
@@ -36,227 +44,245 @@ import (
 
 // BuildKitBuilder implements container image building using Docker BuildKit
 type BuildKitBuilder struct {
-	buildxAvailable bool
+	client        *client.Client
+	builderName   string
+	containerName string
 }
 
 // NewBuildKitBuilder creates a new BuildKit builder instance
 func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
-	// Check if docker buildx is available
-	cmd := exec.CommandContext(ctx, "docker", "buildx", "version")
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("docker buildx not available: %w", err)
+	// Detect active buildx builder
+	builderName, containerName, err := detectBuildxBuilder(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("no active buildx builder found: %w", err)
 	}
 
-	logging.Info("BuildKit builder initialized (using docker buildx)")
+	// Connect using docker-container:// protocol
+	addr := fmt.Sprintf("docker-container://%s", containerName)
+	c, err := client.New(ctx, addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to BuildKit: %w", err)
+	}
+
+	// Verify connection
+	info, err := c.Info(ctx)
+	if err != nil {
+		_ = c.Close()
+		return nil, fmt.Errorf("BuildKit connection failed: %w", err)
+	}
+
+	logging.Info("BuildKit client connected: %s (version %s)",
+		containerName, info.BuildkitVersion.Version)
+
 	return &BuildKitBuilder{
-		buildxAvailable: true,
+		client:        c,
+		builderName:   builderName,
+		containerName: containerName,
 	}, nil
 }
 
-// Build creates a container image using BuildKit
-func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
-	logging.Info("Building image: %s", cfg.Name)
-
-	// Generate Dockerfile from config
-	dockerfile, err := b.generateDockerfile(cfg)
+// detectBuildxBuilder detects the active buildx builder
+func detectBuildxBuilder(ctx context.Context) (string, string, error) {
+	// Parse `docker buildx ls` output
+	cmd := exec.CommandContext(ctx, "docker", "buildx", "ls")
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate Dockerfile: %w", err)
+		return "", "", err
 	}
 
-	// Write Dockerfile to temp location
-	tmpDir, err := os.MkdirTemp("", "warpgate-buildkit-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer func() {
-		if err := os.RemoveAll(tmpDir); err != nil {
-			logging.Warn("Failed to remove temp directory: %v", err)
-		}
-	}()
-
-	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
-	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
-		return nil, fmt.Errorf("failed to write Dockerfile: %w", err)
-	}
-
-	// Copy provisioner files to build context
-	if err := b.copyProvisionerFiles(cfg, tmpDir); err != nil {
-		return nil, fmt.Errorf("failed to copy provisioner files: %w", err)
-	}
-
-	logging.Debug("Generated Dockerfile:\n%s", dockerfile)
-
-	// Build the image
-	platform := "linux/amd64"
-	if len(cfg.Architectures) > 0 {
-		platform = fmt.Sprintf("linux/%s", cfg.Architectures[0])
-	}
-
-	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
-	if cfg.Registry != "" {
-		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
-	}
-
-	args := []string{
-		"buildx", "build",
-		"--platform", platform,
-		"--load",
-		"-t", imageName,
-		"-f", dockerfilePath,
-		tmpDir,
-	}
-
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	logging.Info("Executing: docker %s", strings.Join(args, " "))
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("docker buildx build failed: %w", err)
-	}
-
-	return &builder.BuildResult{
-		ImageRef: imageName,
-		Platform: platform,
-		Duration: "unknown",
-		Notes:    []string{"Built with BuildKit via docker buildx"},
-	}, nil
-}
-
-// generateDockerfile converts a Warpgate config to a Dockerfile
-func (b *BuildKitBuilder) generateDockerfile(cfg builder.Config) (string, error) {
-	var dockerfile strings.Builder
-
-	// FROM statement
-	dockerfile.WriteString(fmt.Sprintf("FROM %s\n\n", cfg.Base.Image))
-
-	// Base environment variables
-	b.addBaseEnvVars(&dockerfile, cfg.Base.Env)
-
-	// Provisioners
-	for i, prov := range cfg.Provisioners {
-		logging.Debug("Processing provisioner %d: type=%s", i+1, prov.Type)
-
-		switch prov.Type {
-		case "shell":
-			b.addShellProvisioner(&dockerfile, prov)
-		case "ansible":
-			b.addAnsibleProvisioner(&dockerfile, prov)
-		case "file":
-			b.addFileProvisioner(&dockerfile, prov)
-		default:
-			logging.Warn("Unsupported provisioner type in BuildKit backend: %s", prov.Type)
-		}
-	}
-
-	// Post-changes (ENV, WORKDIR, USER, ENTRYPOINT, CMD)
-	b.addPostChanges(&dockerfile, cfg.PostChanges)
-
-	return dockerfile.String(), nil
-}
-
-// addBaseEnvVars adds base environment variables to the Dockerfile
-func (b *BuildKitBuilder) addBaseEnvVars(dockerfile *strings.Builder, env map[string]string) {
-	if env != nil {
-		for key, value := range env {
-			fmt.Fprintf(dockerfile, "ENV %s=%s\n", key, value)
-		}
-		dockerfile.WriteString("\n")
-	}
-}
-
-// addShellProvisioner adds shell provisioner commands to the Dockerfile
-func (b *BuildKitBuilder) addShellProvisioner(dockerfile *strings.Builder, prov builder.Provisioner) {
-	if len(prov.Inline) > 0 {
-		// Combine inline commands into a single RUN statement
-		dockerfile.WriteString("RUN ")
-		for idx, cmd := range prov.Inline {
-			if idx > 0 {
-				dockerfile.WriteString(" && \\\n    ")
+	// Find running builder
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "running") {
+			// Parse builder name (first field)
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				builderName := strings.TrimSuffix(fields[0], "*")
+				// Container name format: buildx_buildkit_<builder>0
+				containerName := fmt.Sprintf("buildx_buildkit_%s0", builderName)
+				return builderName, containerName, nil
 			}
-			dockerfile.WriteString(cmd)
 		}
-		dockerfile.WriteString("\n\n")
+	}
+
+	return "", "", fmt.Errorf("no running buildx builder found")
+}
+
+// convertToLLB converts a Warpgate config to BuildKit LLB
+func (b *BuildKitBuilder) convertToLLB(cfg builder.Config) (llb.State, error) {
+	// Start with base image
+	platform := specs.Platform{
+		OS:           "linux",
+		Architecture: cfg.Architectures[0], // TODO: handle multiple
+	}
+
+	state := llb.Image(cfg.Base.Image, llb.Platform(platform))
+
+	// Apply base environment variables
+	for key, value := range cfg.Base.Env {
+		state = state.AddEnv(key, value)
+	}
+
+	// Apply provisioners
+	for i, prov := range cfg.Provisioners {
+		var err error
+		state, err = b.applyProvisioner(state, prov, cfg)
+		if err != nil {
+			return llb.State{}, fmt.Errorf("provisioner %d failed: %w", i, err)
+		}
+	}
+
+	// Apply post-changes
+	state = b.applyPostChanges(state, cfg.PostChanges)
+
+	return state, nil
+}
+
+// applyProvisioner applies a provisioner to the LLB state
+func (b *BuildKitBuilder) applyProvisioner(state llb.State, prov builder.Provisioner, cfg builder.Config) (llb.State, error) {
+	switch prov.Type {
+	case "shell":
+		return b.applyShellProvisioner(state, prov)
+	case "file":
+		return b.applyFileProvisioner(state, prov)
+	case "ansible":
+		return b.applyAnsibleProvisioner(state, prov)
+	default:
+		logging.Warn("Unsupported provisioner type: %s", prov.Type)
+		return state, nil
 	}
 }
 
-// addAnsibleProvisioner adds Ansible provisioner commands to the Dockerfile
-func (b *BuildKitBuilder) addAnsibleProvisioner(dockerfile *strings.Builder, prov builder.Provisioner) {
-	if prov.PlaybookPath == "" {
-		return
+// applyShellProvisioner applies shell commands to LLB state
+func (b *BuildKitBuilder) applyShellProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	if len(prov.Inline) == 0 {
+		return state, nil
 	}
 
-	// Resolve the playbook path (handle env vars)
+	// Combine commands into single RUN (like Dockerfile does)
+	combinedCmd := strings.Join(prov.Inline, " && ")
+
+	// Execute as shell command
+	state = state.Run(
+		llb.Shlex(fmt.Sprintf("sh -c '%s'", combinedCmd)),
+	).Root()
+
+	return state, nil
+}
+
+// applyFileProvisioner applies file copy operations to LLB state
+func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	if prov.Source == "" || prov.Destination == "" {
+		return state, nil
+	}
+
+	sourcePath := os.ExpandEnv(prov.Source)
+
+	// Copy file from local context
+	state = state.File(
+		llb.Copy(
+			llb.Local("context"),
+			sourcePath,
+			prov.Destination,
+		),
+	)
+
+	// Apply permissions if specified
+	if prov.Mode != "" {
+		state = state.Run(
+			llb.Shlexf("chmod %s %s", prov.Mode, prov.Destination),
+		).Root()
+	}
+
+	return state, nil
+}
+
+// applyAnsibleProvisioner applies Ansible playbook to LLB state
+func (b *BuildKitBuilder) applyAnsibleProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	if prov.PlaybookPath == "" {
+		return state, nil
+	}
+
 	playbookPath := os.ExpandEnv(prov.PlaybookPath)
-	playbookFilename := filepath.Base(playbookPath)
 
-	dockerfile.WriteString("# Ansible provisioner\n")
-	fmt.Fprintf(dockerfile, "COPY %s /tmp/playbook.yml\n", playbookFilename)
+	// Copy playbook
+	state = state.File(
+		llb.Copy(
+			llb.Local("context"),
+			playbookPath,
+			"/tmp/playbook.yml",
+		),
+	)
 
-	// Check if playbook is from a collection source directory
+	// Check for collection
 	collectionRoot := detectCollectionRoot(playbookPath)
 	if collectionRoot != "" {
-		dockerfile.WriteString("COPY collection/ /tmp/ansible-collection/\n")
-		dockerfile.WriteString("RUN ansible-galaxy collection install /tmp/ansible-collection/ -p /usr/share/ansible/collections\n")
+		// Copy entire collection
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				collectionRoot,
+				"/tmp/ansible-collection",
+			),
+		)
+		// Install collection
+		state = state.Run(
+			llb.Shlex("ansible-galaxy collection install /tmp/ansible-collection/ -p /usr/share/ansible/collections"),
+		).Root()
 	}
 
-	// Copy galaxy file if specified
+	// Copy galaxy requirements if specified
 	if prov.GalaxyFile != "" {
 		galaxyPath := os.ExpandEnv(prov.GalaxyFile)
-		galaxyFilename := filepath.Base(galaxyPath)
-		fmt.Fprintf(dockerfile, "COPY %s /tmp/requirements.yml\n", galaxyFilename)
-		dockerfile.WriteString("RUN ansible-galaxy install -r /tmp/requirements.yml\n")
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				galaxyPath,
+				"/tmp/requirements.yml",
+			),
+		)
+		state = state.Run(
+			llb.Shlex("ansible-galaxy install -r /tmp/requirements.yml"),
+		).Root()
 	}
 
-	// Build and add ansible-playbook command
-	ansibleCmd := b.buildAnsibleCommand(prov)
-	fmt.Fprintf(dockerfile, "RUN %s\n\n", ansibleCmd)
+	// Build ansible-playbook command
+	cmd := "ansible-playbook /tmp/playbook.yml -i localhost, -c local"
+	for key, value := range prov.ExtraVars {
+		cmd += fmt.Sprintf(" -e %s=%s", key, value)
+	}
+
+	// Run playbook
+	state = state.Run(llb.Shlex(cmd)).Root()
+
+	return state, nil
 }
 
-// addFileProvisioner adds file provisioner commands to the Dockerfile
-func (b *BuildKitBuilder) addFileProvisioner(dockerfile *strings.Builder, prov builder.Provisioner) {
-	// Copy files from source to destination
-	if prov.Source != "" && prov.Destination != "" {
-		sourcePath := os.ExpandEnv(prov.Source)
-		sourceFilename := filepath.Base(sourcePath)
-
-		dockerfile.WriteString("# File provisioner\n")
-		fmt.Fprintf(dockerfile, "COPY %s %s\n", sourceFilename, prov.Destination)
-
-		// Handle permissions if specified
-		if prov.Mode != "" {
-			fmt.Fprintf(dockerfile, "RUN chmod %s %s\n", prov.Mode, prov.Destination)
+// applyPostChanges applies post-build changes to LLB state
+func (b *BuildKitBuilder) applyPostChanges(state llb.State, postChanges []string) llb.State {
+	for _, change := range postChanges {
+		parts := strings.Fields(change)
+		if len(parts) < 2 {
+			continue
 		}
-		dockerfile.WriteString("\n")
-	}
-}
 
-// buildAnsibleCommand builds the ansible-playbook command string
-func (b *BuildKitBuilder) buildAnsibleCommand(prov builder.Provisioner) string {
-	var cmd strings.Builder
-	cmd.WriteString("ansible-playbook /tmp/playbook.yml")
-	cmd.WriteString(" -i localhost,")
-	cmd.WriteString(" -c local")
-
-	// Add extra vars
-	if len(prov.ExtraVars) > 0 {
-		for key, value := range prov.ExtraVars {
-			cmd.WriteString(fmt.Sprintf(" -e %s=%s", key, value))
+		switch parts[0] {
+		case "ENV":
+			// ENV KEY=value or ENV KEY value
+			if strings.Contains(parts[1], "=") {
+				kv := strings.SplitN(parts[1], "=", 2)
+				state = state.AddEnv(kv[0], kv[1])
+			} else if len(parts) >= 3 {
+				state = state.AddEnv(parts[1], parts[2])
+			}
+		case "WORKDIR":
+			state = state.Dir(parts[1])
+		case "USER":
+			state = state.User(parts[1])
+			// ENTRYPOINT and CMD handled via image metadata
 		}
 	}
-
-	return cmd.String()
-}
-
-// addPostChanges adds post-build changes to the Dockerfile
-func (b *BuildKitBuilder) addPostChanges(dockerfile *strings.Builder, postChanges []string) {
-	if len(postChanges) > 0 {
-		dockerfile.WriteString("# Post-build changes\n")
-		for _, change := range postChanges {
-			fmt.Fprintf(dockerfile, "%s\n", change)
-		}
-	}
+	return state
 }
 
 // detectCollectionRoot detects if a playbook is from an Ansible collection source directory
@@ -281,130 +307,87 @@ func detectCollectionRoot(playbookPath string) string {
 	return ""
 }
 
-// copyProvisionerFiles copies provisioner files (Ansible, file, etc.) to the build context
-func (b *BuildKitBuilder) copyProvisionerFiles(cfg builder.Config, destDir string) error {
-	for _, prov := range cfg.Provisioners {
-		switch prov.Type {
-		case "ansible":
-			// Copy playbook
-			if prov.PlaybookPath != "" {
-				playbookPath := os.ExpandEnv(prov.PlaybookPath)
-				destPath := filepath.Join(destDir, filepath.Base(playbookPath))
+// Build creates a container image using BuildKit LLB
+func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
+	startTime := time.Now()
+	logging.Info("Building image: %s (native LLB)", cfg.Name)
 
-				if err := copyFile(playbookPath, destPath); err != nil {
-					return fmt.Errorf("failed to copy playbook %s: %w", playbookPath, err)
-				}
-				logging.Debug("Copied playbook: %s -> %s", playbookPath, destPath)
-
-				// Check if we need to copy the collection source
-				collectionRoot := detectCollectionRoot(playbookPath)
-				if collectionRoot != "" {
-					collectionDestDir := filepath.Join(destDir, "collection")
-					if err := copyDirectory(collectionRoot, collectionDestDir); err != nil {
-						return fmt.Errorf("failed to copy collection from %s: %w", collectionRoot, err)
-					}
-					logging.Debug("Copied collection: %s -> %s", collectionRoot, collectionDestDir)
-				}
-			}
-
-			// Copy galaxy requirements file
-			if prov.GalaxyFile != "" {
-				galaxyPath := os.ExpandEnv(prov.GalaxyFile)
-				destPath := filepath.Join(destDir, filepath.Base(galaxyPath))
-
-				if err := copyFile(galaxyPath, destPath); err != nil {
-					return fmt.Errorf("failed to copy galaxy file %s: %w", galaxyPath, err)
-				}
-				logging.Debug("Copied galaxy file: %s -> %s", galaxyPath, destPath)
-			}
-
-		case "file":
-			if prov.Source != "" {
-				sourcePath := os.ExpandEnv(prov.Source)
-				destPath := filepath.Join(destDir, filepath.Base(sourcePath))
-
-				if err := copyFile(sourcePath, destPath); err != nil {
-					return fmt.Errorf("failed to copy file %s: %w", sourcePath, err)
-				}
-				logging.Debug("Copied file: %s -> %s", sourcePath, destPath)
-			}
-		}
+	// Step 1: Convert to LLB
+	state, err := b.convertToLLB(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("LLB conversion failed: %w", err)
 	}
 
-	return nil
+	// Step 2: Marshal LLB definition
+	def, err := state.Marshal(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("LLB marshal failed: %w", err)
+	}
+
+	logging.Debug("LLB definition: %d bytes", len(def.Def))
+
+	// Step 3: Prepare image name
+	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
+	if cfg.Registry != "" {
+		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
+	}
+
+	// Step 4: Determine context directory (use current directory)
+	contextDir := "."
+
+	// Step 5: Build solve options
+	solveOpt := client.SolveOpt{
+		Exports: []client.ExportEntry{
+			{
+				Type: client.ExporterImage,
+				Attrs: map[string]string{
+					"name": imageName,
+					"push": "false",
+				},
+			},
+		},
+		LocalDirs: map[string]string{
+			"context": contextDir,
+		},
+	}
+
+	// Step 6: Execute with progress streaming
+	ch := make(chan *client.SolveStatus)
+	done := make(chan struct{})
+
+	go b.displayProgress(ch, done)
+
+	_, err = b.client.Solve(ctx, def, solveOpt, ch)
+	<-done
+
+	if err != nil {
+		return nil, fmt.Errorf("build failed: %w", err)
+	}
+
+	duration := time.Since(startTime)
+
+	return &builder.BuildResult{
+		ImageRef: imageName,
+		Platform: fmt.Sprintf("linux/%s", cfg.Architectures[0]),
+		Duration: duration.String(),
+		Notes:    []string{"Built with native BuildKit LLB"},
+	}, nil
 }
 
-// copyFile copies a file from src to dst
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := sourceFile.Close(); err != nil {
-			logging.Warn("Failed to close source file: %v", err)
-		}
-	}()
+// displayProgress displays build progress
+func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done chan<- struct{}) {
+	defer close(done)
 
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := destFile.Close(); err != nil {
-			logging.Warn("Failed to close destination file: %v", err)
-		}
-	}()
-
-	if _, err := destFile.ReadFrom(sourceFile); err != nil {
-		return err
-	}
-
-	return destFile.Sync()
-}
-
-// copyDirectory recursively copies a directory from src to dst
-func copyDirectory(src, dst string) error {
-	// Get properties of source dir
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-
-	// Create destination directory
-	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
-		return err
-	}
-
-	// Read directory contents
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-
-		// Skip .git directories and other common ignore patterns
-		if entry.Name() == ".git" || entry.Name() == ".github" || entry.Name() == "__pycache__" {
-			continue
-		}
-
-		if entry.IsDir() {
-			// Recursively copy subdirectories
-			if err := copyDirectory(srcPath, dstPath); err != nil {
-				return err
-			}
-		} else {
-			// Copy file
-			if err := copyFile(srcPath, dstPath); err != nil {
-				return err
+	for status := range ch {
+		for _, vertex := range status.Vertices {
+			if vertex.Name != "" {
+				logging.Info("[%s] %s", vertex.Digest.String()[:12], vertex.Name)
 			}
 		}
+		for _, log := range status.Logs {
+			fmt.Print(string(log.Data))
+		}
 	}
-
-	return nil
 }
 
 // Push pushes the image to a registry
@@ -445,6 +428,8 @@ func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 
 // Close cleans up any resources
 func (b *BuildKitBuilder) Close() error {
-	// No persistent resources to clean up
+	if b.client != nil {
+		return b.client.Close()
+	}
 	return nil
 }

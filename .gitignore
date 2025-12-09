@@ -44,3 +44,4 @@ TODO
 *.test
 test-results/
 testdata/tmp/
+warpgate-test
