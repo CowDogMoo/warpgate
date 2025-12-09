@@ -57,6 +57,10 @@ type buildOptions struct {
 	varFiles     []string // Files containing variable definitions
 	cacheFrom    []string // Cache sources for BuildKit (e.g., "type=registry,ref=...")
 	cacheTo      []string // Cache destinations for BuildKit (e.g., "type=registry,ref=...")
+	builderType  string   // Builder type override: auto, buildkit, or buildah
+	labels       []string // Image labels in key=value format
+	buildArgs    []string // Build arguments in key=value format
+	noCache      bool     // Disable all caching
 }
 
 var buildOpts = &buildOptions{}
@@ -113,6 +117,10 @@ func init() {
 	buildCmd.Flags().StringArrayVar(&buildOpts.varFiles, "var-file", []string{}, "Load variables from YAML file")
 	buildCmd.Flags().StringArrayVar(&buildOpts.cacheFrom, "cache-from", []string{}, "External cache sources for BuildKit (e.g., type=registry,ref=user/app:cache)")
 	buildCmd.Flags().StringArrayVar(&buildOpts.cacheTo, "cache-to", []string{}, "External cache destinations for BuildKit (e.g., type=registry,ref=user/app:cache,mode=max)")
+	buildCmd.Flags().StringVar(&buildOpts.builderType, "builder", "", "Builder to use: auto, buildkit, or buildah (overrides config)")
+	buildCmd.Flags().StringArrayVar(&buildOpts.labels, "label", []string{}, "Set image labels (key=value)")
+	buildCmd.Flags().StringArrayVar(&buildOpts.buildArgs, "build-arg", []string{}, "Set build arguments (key=value)")
+	buildCmd.Flags().BoolVar(&buildOpts.noCache, "no-cache", false, "Disable all caching")
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
@@ -172,6 +180,50 @@ func applyConfigOverrides(cmd *cobra.Command, buildConfig *builder.Config) {
 	applyArchitectureOverrides(buildConfig, cfg)
 	applyRegistryOverride(buildConfig, cfg)
 	applyAMITargetOverrides(buildConfig)
+	applyLabelsAndBuildArgs(ctx, buildConfig)
+	applyCacheOptions(buildConfig)
+}
+
+// applyLabelsAndBuildArgs parses and applies labels and build arguments from CLI flags
+func applyLabelsAndBuildArgs(ctx context.Context, buildConfig *builder.Config) {
+	// Parse labels
+	if len(buildOpts.labels) > 0 {
+		if buildConfig.Labels == nil {
+			buildConfig.Labels = make(map[string]string)
+		}
+		for _, label := range buildOpts.labels {
+			parts := strings.SplitN(label, "=", 2)
+			if len(parts) == 2 {
+				buildConfig.Labels[parts[0]] = parts[1]
+				logging.DebugContext(ctx, "Added label: %s=%s", parts[0], parts[1])
+			} else {
+				logging.WarnContext(ctx, "Invalid label format (expected key=value): %s", label)
+			}
+		}
+	}
+
+	// Parse build arguments
+	if len(buildOpts.buildArgs) > 0 {
+		if buildConfig.BuildArgs == nil {
+			buildConfig.BuildArgs = make(map[string]string)
+		}
+		for _, arg := range buildOpts.buildArgs {
+			parts := strings.SplitN(arg, "=", 2)
+			if len(parts) == 2 {
+				buildConfig.BuildArgs[parts[0]] = parts[1]
+				logging.DebugContext(ctx, "Added build arg: %s=%s", parts[0], parts[1])
+			} else {
+				logging.WarnContext(ctx, "Invalid build-arg format (expected key=value): %s", arg)
+			}
+		}
+	}
+}
+
+// applyCacheOptions applies cache-related options from CLI flags
+func applyCacheOptions(buildConfig *builder.Config) {
+	if buildOpts.noCache {
+		buildConfig.NoCache = true
+	}
 }
 
 // applyTargetTypeFilter filters targets based on the target type override
@@ -244,6 +296,29 @@ func validateConfig(buildConfig *builder.Config) error {
 	if err := validator.Validate(buildConfig); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
+
+	// Validate builder type if specified
+	if buildOpts.builderType != "" {
+		builderType := strings.ToLower(buildOpts.builderType)
+		if builderType != "auto" && builderType != "buildkit" && builderType != "buildah" {
+			return fmt.Errorf("invalid builder type: %s (supported: auto, buildkit, buildah)", buildOpts.builderType)
+		}
+	}
+
+	// Validate labels format
+	for _, label := range buildOpts.labels {
+		if !strings.Contains(label, "=") {
+			return fmt.Errorf("invalid label format: %s (expected key=value)", label)
+		}
+	}
+
+	// Validate build-args format
+	for _, arg := range buildOpts.buildArgs {
+		if !strings.Contains(arg, "=") {
+			return fmt.Errorf("invalid build-arg format: %s (expected key=value)", arg)
+		}
+	}
+
 	return nil
 }
 
@@ -281,36 +356,84 @@ func determineTargetType(buildConfig *builder.Config) string {
 	return "container"
 }
 
-// selectContainerBuilder chooses the appropriate builder for the current platform
-func selectContainerBuilder(ctx context.Context) (builder.ContainerBuilder, error) {
-	// On macOS, use BuildKit via docker buildx
-	if runtime.GOOS == "darwin" {
-		logging.Info("Detected macOS - using BuildKit builder")
+// selectContainerBuilder chooses the appropriate builder based on config and platform
+func selectContainerBuilder(ctx context.Context, cfg *globalconfig.Config) (builder.ContainerBuilder, error) {
+	// Determine which builder to use
+	builderType := cfg.Build.BuilderType
+	if buildOpts.builderType != "" {
+		builderType = buildOpts.builderType
+	}
+
+	// Normalize builder type
+	builderType = strings.ToLower(builderType)
+
+	// Auto-detect if needed
+	if builderType == "" || builderType == "auto" {
+		if runtime.GOOS == "darwin" {
+			builderType = "buildkit"
+		} else {
+			builderType = "buildah"
+		}
+		logging.Info("Auto-detected builder: %s", builderType)
+	}
+
+	// Create the appropriate builder
+	switch builderType {
+	case "buildkit":
+		logging.Info("Using BuildKit builder")
 		bldr, err := container.NewBuildKitBuilder(ctx)
 		if err != nil {
-			return nil, err
+			return nil, enhanceBuildKitError(err)
 		}
 
 		// Set cache options if provided via flags
-		if len(buildOpts.cacheFrom) > 0 || len(buildOpts.cacheTo) > 0 {
+		if buildOpts.noCache {
+			// Disable caching by not setting any cache options
+			logging.Info("Caching disabled via --no-cache flag")
+		} else if len(buildOpts.cacheFrom) > 0 || len(buildOpts.cacheTo) > 0 {
 			bldr.SetCacheOptions(buildOpts.cacheFrom, buildOpts.cacheTo)
 		}
 
 		return bldr, nil
+
+	case "buildah":
+		logging.Info("Using Buildah builder")
+		builderCfg := container.GetDefaultConfig()
+		return container.NewBuildahBuilder(builderCfg)
+
+	default:
+		return nil, fmt.Errorf("unsupported builder type: %s (supported: auto, buildkit, buildah)", builderType)
+	}
+}
+
+// enhanceBuildKitError provides better error messages for BuildKit-related errors
+func enhanceBuildKitError(err error) error {
+	errMsg := err.Error()
+
+	// Check for common error patterns
+	if strings.Contains(errMsg, "no active buildx builder") {
+		return fmt.Errorf("BuildKit builder not available: %w\n\nTo fix this, create a buildx builder:\n  docker buildx create --name warpgate --driver docker-container --bootstrap", err)
 	}
 
-	// On Linux, use Buildah
-	logging.Info("Detected Linux - using Buildah builder")
-	builderCfg := container.GetDefaultConfig()
-	return container.NewBuildahBuilder(builderCfg)
+	if strings.Contains(errMsg, "Cannot connect to the Docker daemon") ||
+		strings.Contains(errMsg, "docker daemon") ||
+		strings.Contains(errMsg, "connection refused") {
+		return fmt.Errorf("docker is not running: %w\n\nPlease start Docker Desktop or the Docker daemon before building", err)
+	}
+
+	if strings.Contains(errMsg, "docker buildx") {
+		return fmt.Errorf("docker buildx not available: %w\n\nBuildKit requires docker buildx. Please ensure Docker Desktop is installed and up to date", err)
+	}
+
+	return err
 }
 
 // executeContainerBuild executes a container build
 func executeContainerBuild(ctx context.Context, buildConfig *builder.Config, cfg *globalconfig.Config) error {
 	logging.InfoContext(ctx, "Executing container build")
 
-	// Select builder based on platform
-	bldr, err := selectContainerBuilder(ctx)
+	// Select builder based on config and platform
+	bldr, err := selectContainerBuilder(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize container builder: %w", err)
 	}

@@ -57,8 +57,11 @@ type Config struct {
 	ArchOverrides map[string]ArchOverride `yaml:"arch_overrides,omitempty" json:"arch_overrides,omitempty"`
 
 	// Runtime overrides (not in YAML, set by CLI flags)
-	Architectures []string `yaml:"-" json:"-"` // Architectures to build for
-	Registry      string   `yaml:"-" json:"-"` // Registry to push to (overrides target registry)
+	Architectures []string          `yaml:"-" json:"-"` // Architectures to build for
+	Registry      string            `yaml:"-" json:"-"` // Registry to push to (overrides target registry)
+	Labels        map[string]string `yaml:"-" json:"-"` // Image labels (set by CLI --label flags)
+	BuildArgs     map[string]string `yaml:"-" json:"-"` // Build arguments (set by CLI --build-arg flags)
+	NoCache       bool              `yaml:"-" json:"-"` // Disable all caching (set by CLI --no-cache flag)
 }
 
 // ArchOverride allows architecture-specific configuration

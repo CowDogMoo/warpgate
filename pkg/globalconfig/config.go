@@ -103,6 +103,9 @@ type BuildConfig struct {
 	ParallelismLimit     int      `mapstructure:"parallelism_limit"`
 	CPUFraction          float64  `mapstructure:"cpu_fraction"`
 	BaselineBuildTimeMin int      `mapstructure:"baseline_build_time_min"`
+	// BuilderType specifies which builder to use: "auto", "buildkit", or "buildah"
+	// "auto" automatically detects the best builder for the platform
+	BuilderType string `mapstructure:"builder_type" yaml:"builder_type"`
 }
 
 // ManifestsConfig holds manifest-related configuration
@@ -353,6 +356,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("build.parallelism_limit", 2)
 	v.SetDefault("build.cpu_fraction", 0.5)
 	v.SetDefault("build.baseline_build_time_min", 10)
+	v.SetDefault("build.builder_type", "auto")
 
 	// Manifests defaults
 	v.SetDefault("manifests.verify_concurrency", 5)
@@ -428,6 +432,7 @@ func bindEnvVars(v *viper.Viper) {
 
 	// Build
 	bind("build.default_arch", "WARPGATE_BUILD_DEFAULT_ARCH")
+	bind("build.builder_type", "WARPGATE_BUILD_BUILDER_TYPE")
 
 	// Manifests
 	bind("manifests.verify_concurrency", "WARPGATE_MANIFESTS_VERIFY_CONCURRENCY")

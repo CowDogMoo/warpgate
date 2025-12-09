@@ -119,11 +119,24 @@ func parseCacheAttrs(cacheSpec string) map[string]string {
 
 // detectBuildxBuilder detects the active buildx builder
 func detectBuildxBuilder(ctx context.Context) (string, string, error) {
+	// Check if docker command exists
+	if _, err := exec.LookPath("docker"); err != nil {
+		return "", "", fmt.Errorf("docker command not found: %w\n\nPlease install Docker Desktop or Docker Engine", err)
+	}
+
 	// Parse `docker buildx ls` output
 	cmd := exec.CommandContext(ctx, "docker", "buildx", "ls")
 	output, err := cmd.Output()
 	if err != nil {
-		return "", "", err
+		// Check if it's an exit error to provide better context
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := string(exitErr.Stderr)
+			if strings.Contains(stderr, "Cannot connect") || strings.Contains(stderr, "connection refused") {
+				return "", "", fmt.Errorf("cannot connect to Docker daemon: %w\n\nPlease ensure Docker is running", err)
+			}
+			return "", "", fmt.Errorf("docker buildx command failed: %w\nOutput: %s", err, stderr)
+		}
+		return "", "", fmt.Errorf("failed to execute docker buildx ls: %w", err)
 	}
 
 	// Find active builder (marked with *) and extract the running node's container name
@@ -204,6 +217,11 @@ func (b *BuildKitBuilder) convertToLLB(cfg builder.Config) (llb.State, error) {
 
 	// Apply base environment variables
 	for key, value := range cfg.Base.Env {
+		state = state.AddEnv(key, value)
+	}
+
+	// Apply build arguments as environment variables (standard Docker behavior)
+	for key, value := range cfg.BuildArgs {
 		state = state.AddEnv(key, value)
 	}
 
@@ -496,6 +514,87 @@ func detectCollectionRoot(playbookPath string) string {
 	return ""
 }
 
+// buildExportAttributes creates export attributes for BuildKit including labels
+func buildExportAttributes(imageName string, labels map[string]string) map[string]string {
+	exportAttrs := map[string]string{
+		"name": imageName,
+	}
+
+	// Add labels to image metadata
+	if len(labels) > 0 {
+		for key, value := range labels {
+			// BuildKit expects labels in the format "label:key=value"
+			labelKey := fmt.Sprintf("label:%s", key)
+			exportAttrs[labelKey] = value
+			logging.Debug("Adding label to image: %s=%s", key, value)
+		}
+	}
+
+	return exportAttrs
+}
+
+// configureCacheOptions configures cache import/export for BuildKit
+func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, noCache bool) {
+	// Add cache import sources if specified (only if caching is enabled)
+	if !noCache {
+		if len(b.cacheFrom) > 0 {
+			logging.Info("Configuring cache import from %d source(s)", len(b.cacheFrom))
+			for _, cacheSource := range b.cacheFrom {
+				solveOpt.CacheImports = append(solveOpt.CacheImports, client.CacheOptionsEntry{
+					Type:  "registry",
+					Attrs: parseCacheAttrs(cacheSource),
+				})
+			}
+		}
+
+		// Add cache export destinations if specified
+		if len(b.cacheTo) > 0 {
+			logging.Info("Configuring cache export to %d destination(s)", len(b.cacheTo))
+			for _, cacheDest := range b.cacheTo {
+				solveOpt.CacheExports = append(solveOpt.CacheExports, client.CacheOptionsEntry{
+					Type:  "registry",
+					Attrs: parseCacheAttrs(cacheDest),
+				})
+			}
+		}
+	} else {
+		logging.Info("Caching disabled - building from scratch")
+	}
+}
+
+// loadAndTagImage loads the built OCI tar into Docker and tags it
+func loadAndTagImage(ctx context.Context, ociTarPath, imageName string) error {
+	// Load OCI tar into Docker
+	logging.Info("Loading image into Docker...")
+	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", ociTarPath)
+	loadCmd.Stdout = os.Stdout
+	loadCmd.Stderr = os.Stderr
+	if err := loadCmd.Run(); err != nil {
+		return fmt.Errorf("failed to load image into Docker: %w", err)
+	}
+
+	// Tag the image with proper name
+	logging.Info("Tagging image as %s", imageName)
+	tagCmd := exec.CommandContext(ctx, "docker", "tag", imageName, imageName)
+	if err := tagCmd.Run(); err != nil {
+		logging.Warn("Failed to tag image (may already be tagged): %v", err)
+	}
+
+	return nil
+}
+
+// getPlatformString extracts platform string from config
+func getPlatformString(cfg builder.Config) string {
+	switch {
+	case cfg.Base.Platform != "":
+		return cfg.Base.Platform
+	case len(cfg.Architectures) > 0:
+		return fmt.Sprintf("linux/%s", cfg.Architectures[0])
+	default:
+		return "unknown"
+	}
+}
+
 // Build creates a container image using BuildKit LLB
 func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
 	startTime := time.Now()
@@ -532,14 +631,15 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		}
 	}()
 
+	// Build export attributes
+	exportAttrs := buildExportAttributes(imageName, cfg.Labels)
+
 	solveOpt := client.SolveOpt{
 		Exports: []client.ExportEntry{
 			{
 				Type:   client.ExporterOCI,
 				Output: fixedWriteCloser(ociTarPath),
-				Attrs: map[string]string{
-					"name": imageName,
-				},
+				Attrs:  exportAttrs,
 			},
 		},
 		LocalDirs: map[string]string{
@@ -547,27 +647,8 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		},
 	}
 
-	// Add cache import sources if specified
-	if len(b.cacheFrom) > 0 {
-		logging.Info("Configuring cache import from %d source(s)", len(b.cacheFrom))
-		for _, cacheSource := range b.cacheFrom {
-			solveOpt.CacheImports = append(solveOpt.CacheImports, client.CacheOptionsEntry{
-				Type:  "registry",
-				Attrs: parseCacheAttrs(cacheSource),
-			})
-		}
-	}
-
-	// Add cache export destinations if specified
-	if len(b.cacheTo) > 0 {
-		logging.Info("Configuring cache export to %d destination(s)", len(b.cacheTo))
-		for _, cacheDest := range b.cacheTo {
-			solveOpt.CacheExports = append(solveOpt.CacheExports, client.CacheOptionsEntry{
-				Type:  "registry",
-				Attrs: parseCacheAttrs(cacheDest),
-			})
-		}
-	}
+	// Configure cache options
+	b.configureCacheOptions(&solveOpt, cfg.NoCache)
 
 	// Step 6: Execute with progress streaming
 	ch := make(chan *client.SolveStatus)
@@ -582,38 +663,16 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, fmt.Errorf("build failed: %w", err)
 	}
 
-	// Step 7: Load OCI tar into Docker
-	logging.Info("Loading image into Docker...")
-	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", ociTarPath)
-	loadCmd.Stdout = os.Stdout
-	loadCmd.Stderr = os.Stderr
-	if err := loadCmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to load image into Docker: %w", err)
-	}
-
-	// Step 8: Tag the image with proper name
-	logging.Info("Tagging image as %s", imageName)
-	tagCmd := exec.CommandContext(ctx, "docker", "tag", imageName, imageName)
-	if err := tagCmd.Run(); err != nil {
-		logging.Warn("Failed to tag image (may already be tagged): %v", err)
+	// Step 7: Load and tag image
+	if err := loadAndTagImage(ctx, ociTarPath, imageName); err != nil {
+		return nil, err
 	}
 
 	duration := time.Since(startTime)
 
-	// Get platform string for result
-	var platformStr string
-	switch {
-	case cfg.Base.Platform != "":
-		platformStr = cfg.Base.Platform
-	case len(cfg.Architectures) > 0:
-		platformStr = fmt.Sprintf("linux/%s", cfg.Architectures[0])
-	default:
-		platformStr = "unknown"
-	}
-
 	return &builder.BuildResult{
 		ImageRef: imageName,
-		Platform: platformStr,
+		Platform: getPlatformString(cfg),
 		Duration: duration.String(),
 		Notes:    []string{"Built with native BuildKit LLB", "Image loaded to Docker"},
 	}, nil
