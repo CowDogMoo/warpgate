@@ -69,6 +69,10 @@ type RegistryConfig struct {
 // StorageConfig holds storage backend configuration overrides
 // These are optional overrides for containers/storage defaults
 // If empty, warpgate delegates to system configuration (/etc/containers/storage.conf)
+//
+// Common use cases:
+//   - CI/GitHub Actions: Set driver to "vfs" for compatibility with unprivileged containers
+//   - Development: Use system defaults (empty) for better performance with overlay2/overlay
 type StorageConfig struct {
 	Driver string `mapstructure:"driver"` // Optional: override storage driver (overlay, vfs, etc.)
 	Root   string `mapstructure:"root"`   // Optional: override storage root directory
@@ -145,11 +149,14 @@ type AMIConfig struct {
 
 // ContainerConfig holds container build configuration
 type ContainerConfig struct {
-	DefaultPlatform    string   `mapstructure:"default_platform"`
-	DefaultPlatforms   []string `mapstructure:"default_platforms"`
-	DefaultRegistry    string   `mapstructure:"default_registry"`
-	DefaultBaseImage   string   `mapstructure:"default_base_image"`
-	DefaultBaseVersion string   `mapstructure:"default_base_version"`
+	DefaultPlatform  string   `mapstructure:"default_platform"`
+	DefaultPlatforms []string `mapstructure:"default_platforms"`
+	// DefaultRegistry sets the default registry for image commits
+	// Leave empty (recommended) to use the --registry flag value
+	// Set explicitly only if you want all builds to default to a specific registry
+	DefaultRegistry    string `mapstructure:"default_registry"`
+	DefaultBaseImage   string `mapstructure:"default_base_image"`
+	DefaultBaseVersion string `mapstructure:"default_base_version"`
 	// Runtime is the OCI runtime path (auto-detected: crun preferred, runc fallback)
 	// Can be overridden via config or WARPGATE_CONTAINER_RUNTIME env var
 	Runtime string `mapstructure:"runtime"`
@@ -329,7 +336,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.format", "color")
 
 	// Storage defaults - empty values delegate to containers/storage system defaults
-	// Users can override these in config if needed for custom storage locations
+	// For CI/GitHub Actions environments, explicitly set storage.driver to "vfs" in config
+	// For local development, empty (system default) provides better performance
 	v.SetDefault("storage.driver", "") // Empty = use system default from /etc/containers/storage.conf
 	v.SetDefault("storage.root", "")   // Empty = use system default
 
@@ -374,7 +382,9 @@ func setDefaults(v *viper.Viper) {
 	// Container defaults
 	v.SetDefault("container.default_platform", "linux/amd64")
 	v.SetDefault("container.default_platforms", []string{"linux/amd64", "linux/arm64"})
-	v.SetDefault("container.default_registry", "localhost")
+	// Empty default_registry allows --registry flag to take precedence during builds
+	// Set explicitly in config if you want a default registry for all builds
+	v.SetDefault("container.default_registry", "")
 	v.SetDefault("container.default_base_image", "ubuntu")
 	v.SetDefault("container.default_base_version", "latest")
 	// Auto-detect available OCI runtime (crun preferred, runc fallback)
