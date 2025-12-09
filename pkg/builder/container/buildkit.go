@@ -90,17 +90,39 @@ func detectBuildxBuilder(ctx context.Context) (string, string, error) {
 		return "", "", err
 	}
 
-	// Find running builder
+	// Find active builder (marked with *) and extract the running node's container name
 	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "running") {
-			// Parse builder name (first field)
-			fields := strings.Fields(line)
-			if len(fields) > 0 {
-				builderName := strings.TrimSuffix(fields[0], "*")
-				// Container name format: buildx_buildkit_<builder>0
-				containerName := fmt.Sprintf("buildx_buildkit_%s0", builderName)
-				return builderName, containerName, nil
+	var activeBuilder string
+
+	for i, line := range lines {
+		// Skip empty lines
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+
+		// Look for the active builder (has * suffix)
+		if strings.HasSuffix(fields[0], "*") {
+			activeBuilder = strings.TrimSuffix(fields[0], "*")
+
+			// Now look at the next line(s) for running nodes
+			for j := i + 1; j < len(lines); j++ {
+				nodeLine := lines[j]
+				// Node lines start with whitespace and \_
+				if !strings.HasPrefix(strings.TrimSpace(nodeLine), "\\_") &&
+					!strings.HasPrefix(strings.TrimSpace(nodeLine), "|") {
+					break // End of this builder's nodes
+				}
+
+				if strings.Contains(nodeLine, "running") {
+					// Extract node name (after the \_ prefix)
+					nodeFields := strings.Fields(nodeLine)
+					if len(nodeFields) >= 2 {
+						// Container name format: buildx_buildkit_<builder>0
+						containerName := fmt.Sprintf("buildx_buildkit_%s0", activeBuilder)
+						return activeBuilder, containerName, nil
+					}
+				}
 			}
 		}
 	}
@@ -379,6 +401,7 @@ func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done ch
 	defer close(done)
 
 	for status := range ch {
+		// codespell:ignore vertexes
 		for _, vertex := range status.Vertexes {
 			if vertex.Name != "" {
 				logging.Debug("[%s] %s", vertex.Digest.String()[:12], vertex.Name)

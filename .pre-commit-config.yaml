@@ -22,7 +22,7 @@ repos:
     rev: v2.4.1
     hooks:
       - id: codespell
-        entry: codespell -q 3 -f --skip=".git,.github,go.*" README.md
+        entry: codespell -q 3 -f -L vertexes --skip=".git,.github,go.*" README.md
 
   - repo: https://github.com/dnephin/pre-commit-golang
     rev: v0.5.1

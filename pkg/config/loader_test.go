@@ -67,11 +67,18 @@ func TestExpandVariables(t *testing.T) {
 			expected: "path: cli/env",
 		},
 		{
-			name:     "Short form variable expansion",
-			input:    "path: $TEST_PATH",
-			vars:     map[string]string{"TEST_PATH": "/test"},
-			envVars:  nil,
-			expected: "path: /test",
+			name:     "Short form variable NOT expanded (left for container)",
+			input:    "ENV PATH=/opt/bin:$PATH",
+			vars:     map[string]string{"PATH": "/host/path"},
+			envVars:  map[string]string{"PATH": "/host/env/path"},
+			expected: "ENV PATH=/opt/bin:$PATH",
+		},
+		{
+			name:     "Braced variables expanded, unbraced left alone",
+			input:    "ENV PATH=${CUSTOM_PATH}:$PATH",
+			vars:     map[string]string{"CUSTOM_PATH": "/opt/myapp"},
+			envVars:  map[string]string{"PATH": "/host/path"},
+			expected: "ENV PATH=/opt/myapp:$PATH",
 		},
 	}
 

@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"gopkg.in/yaml.v3"
@@ -71,19 +72,38 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 	return &config, nil
 }
 
-// expandVariables expands ${VAR} and $VAR style variables
+// expandVariables expands ${VAR} style variables only
 // Variables from the vars map take precedence over environment variables
+// $VAR syntax (without braces) is left untouched for container-level expansion
 func (l *Loader) expandVariables(s string, vars map[string]string) string {
-	return os.Expand(s, func(key string) string {
-		// First check CLI/var-file variables (highest precedence)
-		if vars != nil {
-			if value, ok := vars[key]; ok {
-				return value
+	result := strings.Builder{}
+	result.Grow(len(s))
+
+	for i := 0; i < len(s); i++ {
+		if s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
+			// Found ${VAR} syntax - expand it
+			end := strings.IndexByte(s[i+2:], '}')
+			if end >= 0 {
+				varName := s[i+2 : i+2+end]
+				// First check CLI/var-file variables (highest precedence)
+				if vars != nil {
+					if value, ok := vars[varName]; ok {
+						result.WriteString(value)
+						i += end + 2 // skip past ${varName}
+						continue
+					}
+				}
+				// Fall back to environment variables
+				result.WriteString(os.Getenv(varName))
+				i += end + 2 // skip past ${varName}
+				continue
 			}
 		}
-		// Fall back to environment variables
-		return os.Getenv(key)
-	})
+		// Not a ${VAR} pattern, keep the character as-is
+		result.WriteByte(s[i])
+	}
+
+	return result.String()
 }
 
 // resolveRelativePaths converts relative paths in the config to absolute paths
