@@ -58,6 +58,16 @@ type CreationOptions struct {
 	Labels      map[string]string // OCI labels
 }
 
+// ManifestEntry represents a single architecture image in a multi-arch manifest
+type ManifestEntry struct {
+	ImageRef     string
+	Digest       digest.Digest
+	Platform     string
+	Architecture string
+	OS           string
+	Variant      string
+}
+
 // DiscoverDigestFiles discovers and parses digest files in the specified directory
 func DiscoverDigestFiles(opts DiscoveryOptions) ([]DigestFile, error) {
 	logging.Info("Discovering digest files in %s", opts.Directory)

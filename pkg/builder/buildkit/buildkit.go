@@ -41,6 +41,7 @@ import (
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/pkg/manifests"
 )
 
 // BuildKitBuilder implements container image building using Docker BuildKit
@@ -904,7 +905,7 @@ func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 // It uses docker buildx imagetools to combine multiple architecture-specific images into a single
 // manifest that allows Docker to automatically select the correct architecture when pulling.
 // The manifestName should include the registry path (e.g., "registry.io/org/image:tag").
-func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestName string, entries []builder.ManifestEntry) error {
+func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestName string, entries []manifests.ManifestEntry) error {
 	if len(entries) == 0 {
 		return fmt.Errorf("no manifest entries provided")
 	}
@@ -941,7 +942,7 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 // It uses docker buildx imagetools inspect to fetch the raw manifest data.
 // This can be used to verify that a multi-arch manifest was created correctly.
 // Note: Current implementation is simplified and primarily verifies manifest existence.
-func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName string) ([]builder.ManifestEntry, error) {
+func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName string) ([]manifests.ManifestEntry, error) {
 	logging.Debug("Inspecting manifest: %s", manifestName)
 
 	cmd := exec.CommandContext(ctx, "docker", "buildx", "imagetools", "inspect", manifestName, "--raw")

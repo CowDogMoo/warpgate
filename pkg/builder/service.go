@@ -277,8 +277,8 @@ func (s *BuildService) saveDigests(ctx context.Context, imageName string, result
 // CreateManifestEntries creates manifest entries from build results.
 // The actual manifest creation and push should be done in the command layer
 // since it requires platform-specific handling.
-func CreateManifestEntries(results []BuildResult) ([]ManifestEntry, error) {
-	entries := make([]ManifestEntry, 0, len(results))
+func CreateManifestEntries(results []BuildResult) ([]manifests.ManifestEntry, error) {
+	entries := make([]manifests.ManifestEntry, 0, len(results))
 	for _, result := range results {
 		// Parse digest
 		var imageDigest digest.Digest
@@ -303,7 +303,7 @@ func CreateManifestEntries(results []BuildResult) ([]ManifestEntry, error) {
 			}
 		}
 
-		entries = append(entries, ManifestEntry{
+		entries = append(entries, manifests.ManifestEntry{
 			ImageRef:     result.ImageRef,
 			Digest:       imageDigest,
 			Platform:     result.Platform,

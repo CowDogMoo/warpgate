@@ -31,8 +31,8 @@ import (
 
 	"github.com/containers/buildah"
 	"github.com/containers/common/pkg/manifests"
-	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	warpgatemanifests "github.com/cowdogmoo/warpgate/pkg/manifests"
 	"go.podman.io/image/v5/transports/alltransports"
 	imagetypes "go.podman.io/image/v5/types"
 	"go.podman.io/storage"
@@ -54,7 +54,7 @@ func NewManifestManager(store storage.Store, systemContext *imagetypes.SystemCon
 }
 
 // CreateManifest creates a multi-arch manifest from individual architecture images
-func (mm *ManifestManager) CreateManifest(ctx context.Context, manifestName string, entries []builder.ManifestEntry) (manifests.List, error) {
+func (mm *ManifestManager) CreateManifest(ctx context.Context, manifestName string, entries []warpgatemanifests.ManifestEntry) (manifests.List, error) {
 	logging.Info("Creating multi-arch manifest: %s", manifestName)
 
 	if len(entries) == 0 {

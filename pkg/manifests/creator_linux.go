@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/builder/buildah"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"go.podman.io/storage/pkg/unshare"
@@ -60,7 +59,7 @@ func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts C
 	manifestMgr := bldr.GetManifestManager()
 
 	// Create manifest entries
-	entries := make([]builder.ManifestEntry, 0, len(digestFiles))
+	entries := make([]ManifestEntry, 0, len(digestFiles))
 	for _, df := range digestFiles {
 		// Build the full image reference for this architecture
 		imageRef := BuildImageReference(ReferenceOptions{
@@ -87,7 +86,7 @@ func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts C
 
 		platform := fmt.Sprintf("%s/%s", os, df.Architecture)
 
-		entry := builder.ManifestEntry{
+		entry := ManifestEntry{
 			ImageRef:     imageRef,
 			Digest:       df.Digest,
 			Platform:     platform,
