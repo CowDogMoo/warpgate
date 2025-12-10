@@ -45,7 +45,6 @@ const (
 // NOT for template definitions (which use plain YAML)
 type Config struct {
 	Registry  RegistryConfig  `mapstructure:"registry"`
-	Storage   StorageConfig   `mapstructure:"storage"`
 	Templates TemplatesConfig `mapstructure:"templates"`
 	Build     BuildConfig     `mapstructure:"build"`
 	Manifests ManifestsConfig `mapstructure:"manifests"`
@@ -65,18 +64,6 @@ type RegistryConfig struct {
 	// Hidden from YAML output to prevent accidental storage in config files
 	Username string `mapstructure:"-" yaml:"-"` // From WARPGATE_REGISTRY_USERNAME or REGISTRY_USERNAME
 	Token    string `mapstructure:"-" yaml:"-"` // From WARPGATE_REGISTRY_TOKEN or REGISTRY_TOKEN
-}
-
-// StorageConfig holds storage backend configuration overrides
-// These are optional overrides for containers/storage defaults
-// If empty, warpgate delegates to system configuration (/etc/containers/storage.conf)
-//
-// Common use cases:
-//   - CI/GitHub Actions: Set driver to "vfs" for compatibility with unprivileged containers
-//   - Development: Use system defaults (empty) for better performance with overlay2/overlay
-type StorageConfig struct {
-	Driver string `mapstructure:"driver"` // Optional: override storage driver (overlay, vfs, etc.)
-	Root   string `mapstructure:"root"`   // Optional: override storage root directory
 }
 
 // TemplatesConfig holds template-related configuration
@@ -201,27 +188,14 @@ type BuildKitConfig struct {
 	TLSKey string `mapstructure:"tls_key" yaml:"tls_key,omitempty"`
 }
 
-// Load reads and parses the global configuration file
-// Returns a Config with defaults if no config file exists
-func Load() (*Config, error) {
+// loadConfigWithViper is a helper function that encapsulates the common Viper configuration loading pattern.
+// It takes a setup function that allows callers to inject config-source-specific logic (e.g., file paths vs. config name).
+// This consolidates the duplicated logic between Load() and LoadFromPath().
+func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 	v := viper.New()
 
-	// Set config name and type
-	v.SetConfigName("config")
+	// Set config type
 	v.SetConfigType("yaml")
-
-	// Look in these locations (in order of precedence):
-	// 1. XDG config directories (modern, preferred: ~/.config on all Unix-like systems)
-	// 2. Legacy ~/.warpgate directory (backward compatibility)
-	// 3. Current directory
-
-	// Add config paths using our CLI-specific XDG implementation
-	for _, dir := range getConfigDirs() {
-		v.AddConfigPath(dir)
-	}
-
-	// Current directory (lowest priority)
-	v.AddConfigPath(".")
 
 	// Set sensible defaults
 	setDefaults(v)
@@ -232,13 +206,15 @@ func Load() (*Config, error) {
 	v.AutomaticEnv()
 	bindEnvVars(v)
 
-	// Read config file (optional - doesn't error if missing)
-	_ = v.ReadInConfig()
+	// Call the setup function to configure the Viper instance
+	if err := setupFunc(v); err != nil {
+		return nil, err
+	}
 
 	// Unmarshal into Config struct
 	var config Config
 	if err := v.Unmarshal(&config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	// Populate credentials directly from environment variables
@@ -249,38 +225,46 @@ func Load() (*Config, error) {
 	return &config, nil
 }
 
+// Load reads and parses the global configuration file
+// Returns a Config with defaults if no config file exists
+func Load() (*Config, error) {
+	return loadConfigWithViper(func(v *viper.Viper) error {
+		// Set config name (without extension)
+		v.SetConfigName("config")
+
+		// Look in these locations (in order of precedence):
+		// 1. XDG config directories (modern, preferred: ~/.config on all Unix-like systems)
+		// 2. Legacy ~/.warpgate directory (backward compatibility)
+		// 3. Current directory
+
+		// Add config paths using our CLI-specific XDG implementation
+		for _, dir := range getConfigDirs() {
+			v.AddConfigPath(dir)
+		}
+
+		// Current directory (lowest priority)
+		v.AddConfigPath(".")
+
+		// Read config file (optional - doesn't error if missing)
+		_ = v.ReadInConfig()
+
+		return nil
+	})
+}
+
 // LoadFromPath loads configuration from a specific file path
 func LoadFromPath(path string) (*Config, error) {
-	v := viper.New()
+	return loadConfigWithViper(func(v *viper.Viper) error {
+		// Set specific config file path
+		v.SetConfigFile(path)
 
-	v.SetConfigFile(path)
-	v.SetConfigType("yaml")
+		// Read the config file (required when loading from a specific path)
+		if err := v.ReadInConfig(); err != nil {
+			return fmt.Errorf("failed to read config file %s: %w", path, err)
+		}
 
-	// Set sensible defaults
-	setDefaults(v)
-
-	// Environment variable support
-	v.SetEnvPrefix("WARPGATE")
-	v.AutomaticEnv()
-	bindEnvVars(v)
-
-	// Read the config file
-	if err := v.ReadInConfig(); err != nil {
-		return nil, err
-	}
-
-	// Unmarshal into Config struct
-	var config Config
-	if err := v.Unmarshal(&config); err != nil {
-		return nil, err
-	}
-
-	// Populate credentials directly from environment variables
-	// This ensures they can NEVER come from config files
-	populateAWSCredentials(&config)
-	populateRegistryCredentials(&config)
-
-	return &config, nil
+		return nil
+	})
 }
 
 // populateAWSCredentials reads AWS credentials directly from environment variables
@@ -360,12 +344,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "color")
 
-	// Storage defaults - empty values delegate to containers/storage system defaults
-	// For CI/GitHub Actions environments, explicitly set storage.driver to "vfs" in config
-	// For local development, empty (system default) provides better performance
-	v.SetDefault("storage.driver", "") // Empty = use system default from /etc/containers/storage.conf
-	v.SetDefault("storage.root", "")   // Empty = use system default
-
 	// Templates defaults - use CLI-specific cache directory (~/.cache on Unix-like systems)
 	v.SetDefault("templates.cache_dir", filepath.Join(getCacheHome(), "warpgate", "templates"))
 
@@ -378,7 +356,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("build.parallelism_limit", 2)
 	v.SetDefault("build.cpu_fraction", 0.5)
 	v.SetDefault("build.baseline_build_time_min", 10)
-	v.SetDefault("build.builder_type", "auto")
 
 	// Manifests defaults
 	v.SetDefault("manifests.verify_concurrency", 5)
@@ -450,10 +427,6 @@ func bindEnvVars(v *viper.Viper) {
 	// Note: Registry credentials are NOT bound here - they're read directly from env vars
 	// after unmarshaling to prevent them from being stored in config files
 
-	// Storage
-	bind("storage.driver", "WARPGATE_STORAGE_DRIVER")
-	bind("storage.root", "WARPGATE_STORAGE_ROOT")
-
 	// Templates
 	bind("templates.cache_dir", "WARPGATE_TEMPLATES_CACHE_DIR")
 	bind("templates.repositories", "WARPGATE_TEMPLATES_REPOSITORIES")
@@ -461,7 +434,6 @@ func bindEnvVars(v *viper.Viper) {
 
 	// Build
 	bind("build.default_arch", "WARPGATE_BUILD_DEFAULT_ARCH")
-	bind("build.builder_type", "WARPGATE_BUILD_BUILDER_TYPE")
 
 	// Manifests
 	bind("manifests.verify_concurrency", "WARPGATE_MANIFESTS_VERIFY_CONCURRENCY")

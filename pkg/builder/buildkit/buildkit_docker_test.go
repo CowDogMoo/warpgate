@@ -2,21 +2,15 @@ package buildkit
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"testing"
 
-	dockerconfigtypes "github.com/docker/cli/cli/config/types"
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerregistry "github.com/docker/docker/api/types/registry"
-	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-
-	"github.com/cowdogmoo/warpgate/pkg/manifests"
 )
 
 func TestPush(t *testing.T) {
@@ -413,159 +407,6 @@ func TestInspectManifest(t *testing.T) {
 					if entries[0].Digest.String() != tt.expectedDigest {
 						t.Errorf("Expected digest %q, got %q", tt.expectedDigest, entries[0].Digest.String())
 					}
-				}
-			}
-		})
-	}
-}
-
-func TestCreateAndPushManifest(t *testing.T) {
-	tests := []struct {
-		name         string
-		manifestName string
-		entries      []manifests.ManifestEntry
-		setupMock    func(*MockDockerClient)
-		expectError  bool
-	}{
-		{
-			name:         "successful manifest creation",
-			manifestName: "myregistry.io/myapp:latest",
-			entries: []manifests.ManifestEntry{
-				{
-					ImageRef:     "myregistry.io/myapp:amd64",
-					OS:           "linux",
-					Architecture: "amd64",
-					Digest:       digest.Digest("sha256:abc123"),
-				},
-				{
-					ImageRef:     "myregistry.io/myapp:arm64",
-					OS:           "linux",
-					Architecture: "arm64",
-					Digest:       digest.Digest("sha256:def456"),
-				},
-			},
-			setupMock: func(m *MockDockerClient) {
-				m.ImageInspectFunc = func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
-					return dockerimage.InspectResponse{
-						ID:   "sha256:test",
-						Size: 1024,
-					}, nil
-				}
-			},
-			expectError: false,
-		},
-		{
-			name:         "manifest creation with no entries",
-			manifestName: "myregistry.io/myapp:latest",
-			entries:      []manifests.ManifestEntry{},
-			setupMock:    func(m *MockDockerClient) {},
-			expectError:  true,
-		},
-		{
-			name:         "manifest creation with empty digest",
-			manifestName: "myregistry.io/myapp:latest",
-			entries: []manifests.ManifestEntry{
-				{
-					ImageRef:     "myregistry.io/myapp:amd64",
-					OS:           "linux",
-					Architecture: "amd64",
-					Digest:       digest.Digest(""),
-				},
-			},
-			setupMock:   func(m *MockDockerClient) {},
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockClient := &MockDockerClient{}
-			if tt.setupMock != nil {
-				tt.setupMock(mockClient)
-			}
-
-			builder := &BuildKitBuilder{
-				dockerClient: mockClient,
-			}
-
-			err := builder.CreateAndPushManifest(context.Background(), tt.manifestName, tt.entries)
-
-			if tt.expectError && err == nil {
-				t.Error("Expected error but got none")
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("Unexpected error: %v", err)
-			}
-		})
-	}
-}
-
-func TestEncodeAuthConfig(t *testing.T) {
-	tests := []struct {
-		name       string
-		authConfig dockerconfigtypes.AuthConfig
-		wantErr    bool
-	}{
-		{
-			name: "basic auth with username and password",
-			authConfig: dockerconfigtypes.AuthConfig{
-				Username:      "testuser",
-				Password:      "testpass",
-				ServerAddress: "ghcr.io",
-			},
-			wantErr: false,
-		},
-		{
-			name: "auth with identity token",
-			authConfig: dockerconfigtypes.AuthConfig{
-				IdentityToken: "sometoken",
-				ServerAddress: "ghcr.io",
-			},
-			wantErr: false,
-		},
-		{
-			name: "auth with registry token",
-			authConfig: dockerconfigtypes.AuthConfig{
-				RegistryToken: "registrytoken",
-				ServerAddress: "docker.io",
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			encoded, err := encodeAuthConfig(tt.authConfig)
-
-			if tt.wantErr && err == nil {
-				t.Error("Expected error but got none")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("Unexpected error: %v", err)
-			}
-
-			if !tt.wantErr {
-				// Verify the encoded string is valid base64
-				decoded, err := base64.URLEncoding.DecodeString(encoded)
-				if err != nil {
-					t.Errorf("Failed to decode base64: %v", err)
-				}
-
-				// Verify it's valid JSON
-				var authConfig dockerregistry.AuthConfig
-				if err := json.Unmarshal(decoded, &authConfig); err != nil {
-					t.Errorf("Failed to unmarshal JSON: %v", err)
-				}
-
-				// Verify the fields match
-				if authConfig.Username != tt.authConfig.Username {
-					t.Errorf("Username mismatch: got %q, want %q", authConfig.Username, tt.authConfig.Username)
-				}
-				if authConfig.Password != tt.authConfig.Password {
-					t.Errorf("Password mismatch: got %q, want %q", authConfig.Password, tt.authConfig.Password)
-				}
-				if authConfig.IdentityToken != tt.authConfig.IdentityToken {
-					t.Errorf("IdentityToken mismatch: got %q, want %q", authConfig.IdentityToken, tt.authConfig.IdentityToken)
 				}
 			}
 		})

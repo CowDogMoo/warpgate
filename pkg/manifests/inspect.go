@@ -24,14 +24,15 @@ package manifests
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/opencontainers/go-digest"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.podman.io/image/v5/docker"
-	"go.podman.io/image/v5/manifest"
+
+	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
 // InspectOptions contains options for inspecting manifests
@@ -72,63 +73,46 @@ type ArchitectureInfo struct {
 	MediaType    string
 }
 
-// InspectManifest inspects a manifest from the registry
+// InspectManifest inspects a manifest from the registry using go-containerregistry
 func InspectManifest(ctx context.Context, opts InspectOptions) (*ManifestInfo, error) {
 	logging.Debug("Inspecting manifest: %s/%s:%s", opts.Registry, opts.ImageName, opts.Tag)
 
 	// Build image reference
 	imageRef := BuildManifestReference(opts.Registry, opts.Namespace, opts.ImageName, opts.Tag)
 
-	// Create system context
-	systemContext, err := createSystemContext(opts.AuthFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create system context: %w", err)
-	}
-
-	// Parse reference
-	ref, err := docker.ParseReference("//" + imageRef)
+	// Parse reference using go-containerregistry
+	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse reference: %w", err)
 	}
 
-	// Get image source
-	src, err := ref.NewImageSource(ctx, systemContext)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create image source: %w", err)
-	}
-	defer func() {
-		if err := src.Close(); err != nil {
-			logging.Debug("Failed to close image source: %v", err)
-		}
-	}()
-
-	// Get manifest
-	manifestBytes, manifestType, err := src.GetManifest(ctx, nil)
+	// Get descriptor (manifest metadata)
+	descriptor, err := remote.Get(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get manifest: %w", err)
 	}
 
 	// Calculate digest
-	manifestDigest := digest.FromBytes(manifestBytes)
+	manifestDigest := digest.Digest(descriptor.Digest.String())
 
 	info := &ManifestInfo{
 		Name:        opts.ImageName,
 		Tag:         opts.Tag,
 		Digest:      manifestDigest.String(),
-		MediaType:   manifestType,
-		Size:        int64(len(manifestBytes)),
+		MediaType:   string(descriptor.MediaType),
+		Size:        descriptor.Size,
 		Annotations: make(map[string]string),
 	}
 
-	// Parse manifest based on type
-	if manifest.MIMETypeIsMultiImage(manifestType) {
+	// Parse manifest based on media type
+	if isMultiArchMediaType(descriptor.MediaType) {
 		// Multi-arch manifest (OCI Index or Docker Manifest List)
-		if err := parseMultiArchManifest(manifestBytes, manifestType, info); err != nil {
+		if err := parseMultiArchManifestFromDescriptor(descriptor, info); err != nil {
 			return nil, fmt.Errorf("failed to parse multi-arch manifest: %w", err)
 		}
 	} else {
 		// Single-arch manifest
-		if err := parseSingleArchManifest(manifestBytes, manifestType, info); err != nil {
+		if err := parseSingleArchManifestFromDescriptor(descriptor, info); err != nil {
 			return nil, fmt.Errorf("failed to parse single-arch manifest: %w", err)
 		}
 	}
@@ -136,91 +120,119 @@ func InspectManifest(ctx context.Context, opts InspectOptions) (*ManifestInfo, e
 	return info, nil
 }
 
-// parseMultiArchManifest parses a multi-architecture manifest (OCI Index or Docker Manifest List)
-func parseMultiArchManifest(manifestBytes []byte, manifestType string, info *ManifestInfo) error {
-	// Try parsing as OCI Index first
-	var ociIndex v1.Index
-	if err := json.Unmarshal(manifestBytes, &ociIndex); err == nil {
-		// Extract annotations
-		if ociIndex.Annotations != nil {
-			info.Annotations = ociIndex.Annotations
-		}
-
-		// Extract architectures
-		for _, desc := range ociIndex.Manifests {
-			archInfo := ArchitectureInfo{
-				Digest:    desc.Digest.String(),
-				Size:      desc.Size,
-				MediaType: desc.MediaType,
-			}
-
-			if desc.Platform != nil {
-				archInfo.OS = desc.Platform.OS
-				archInfo.Architecture = desc.Platform.Architecture
-				archInfo.Variant = desc.Platform.Variant
-			}
-
-			info.Architectures = append(info.Architectures, archInfo)
-		}
-
-		return nil
-	}
-
-	// Try parsing as Docker Manifest List
-	var dockerList manifest.Schema2List
-	if err := json.Unmarshal(manifestBytes, &dockerList); err == nil {
-		// Extract architectures from Docker manifest list
-		for _, mfst := range dockerList.Manifests {
-			archInfo := ArchitectureInfo{
-				Digest:       mfst.Digest.String(),
-				Size:         mfst.Size,
-				MediaType:    mfst.MediaType,
-				OS:           mfst.Platform.OS,
-				Architecture: mfst.Platform.Architecture,
-				Variant:      mfst.Platform.Variant,
-			}
-			info.Architectures = append(info.Architectures, archInfo)
-		}
-
-		return nil
-	}
-
-	return fmt.Errorf("failed to parse manifest as OCI Index or Docker Manifest List")
+// isMultiArchMediaType checks if the media type represents a multi-arch manifest
+func isMultiArchMediaType(mediaType types.MediaType) bool {
+	return mediaType == types.OCIManifestSchema1 ||
+		mediaType == types.DockerManifestList
 }
 
-// parseSingleArchManifest parses a single-architecture manifest
-func parseSingleArchManifest(manifestBytes []byte, manifestType string, info *ManifestInfo) error {
-	// For single-arch, we can try to extract platform info from the config
-	var ociManifest v1.Manifest
-	if err := json.Unmarshal(manifestBytes, &ociManifest); err == nil {
-		// Single architecture manifest
+// parseMultiArchManifestFromDescriptor parses a multi-architecture manifest from a descriptor
+func parseMultiArchManifestFromDescriptor(descriptor *remote.Descriptor, info *ManifestInfo) error {
+	// Try to get as index (multi-arch)
+	index, err := descriptor.ImageIndex()
+	if err != nil {
+		return fmt.Errorf("failed to get image index: %w", err)
+	}
+
+	// Get index manifest
+	indexManifest, err := index.IndexManifest()
+	if err != nil {
+		return fmt.Errorf("failed to get index manifest: %w", err)
+	}
+
+	// Extract annotations
+	if indexManifest.Annotations != nil {
+		info.Annotations = indexManifest.Annotations
+	}
+
+	// Extract architectures from the v1.IndexManifest
+	for _, desc := range indexManifest.Manifests {
 		archInfo := ArchitectureInfo{
-			Digest:    ociManifest.Config.Digest.String(),
-			Size:      ociManifest.Config.Size,
-			MediaType: ociManifest.Config.MediaType,
-			// Platform info would need to be fetched from config blob
-			OS:           "unknown",
-			Architecture: "unknown",
-		}
-		info.Architectures = []ArchitectureInfo{archInfo}
-
-		if ociManifest.Annotations != nil {
-			info.Annotations = ociManifest.Annotations
+			Digest:    desc.Digest.String(),
+			Size:      desc.Size,
+			MediaType: string(desc.MediaType),
 		}
 
-		return nil
+		// Extract platform information from the v1.Descriptor
+		if desc.Platform != nil {
+			archInfo.OS = desc.Platform.OS
+			archInfo.Architecture = desc.Platform.Architecture
+			archInfo.Variant = desc.Platform.Variant
+		}
+
+		info.Architectures = append(info.Architectures, archInfo)
 	}
 
-	return fmt.Errorf("failed to parse single-arch manifest")
+	return nil
 }
 
-// ListTags lists available tags for an image in the registry
+// parseSingleArchManifestFromDescriptor parses a single-architecture manifest from a descriptor
+func parseSingleArchManifestFromDescriptor(descriptor *remote.Descriptor, info *ManifestInfo) error {
+	// Try to get as image (single-arch)
+	img, err := descriptor.Image()
+	if err != nil {
+		return fmt.Errorf("failed to get image: %w", err)
+	}
+
+	// Get manifest
+	manifest, err := img.Manifest()
+	if err != nil {
+		return fmt.Errorf("failed to get manifest: %w", err)
+	}
+
+	// Get config file for platform info
+	configFile, err := img.ConfigFile()
+	if err != nil {
+		logging.Debug("Failed to get config file for platform info: %v", err)
+		// Continue without platform info
+		configFile = nil
+	}
+
+	// Single architecture manifest
+	archInfo := ArchitectureInfo{
+		Digest:       manifest.Config.Digest.String(),
+		Size:         manifest.Config.Size,
+		MediaType:    string(manifest.Config.MediaType),
+		OS:           "unknown",
+		Architecture: "unknown",
+	}
+
+	// Extract platform info from config if available
+	if configFile != nil {
+		archInfo.OS = configFile.OS
+		archInfo.Architecture = configFile.Architecture
+		archInfo.Variant = configFile.Variant
+	}
+
+	info.Architectures = []ArchitectureInfo{archInfo}
+
+	if manifest.Annotations != nil {
+		info.Annotations = manifest.Annotations
+	}
+
+	return nil
+}
+
+// ListTags lists available tags for an image in the registry using go-containerregistry
 func ListTags(ctx context.Context, opts ListOptions) ([]string, error) {
 	logging.Debug("Listing tags for: %s/%s", opts.Registry, opts.ImageName)
 
-	// For now, return a simplified implementation
-	// Full implementation would require registry API v2 calls
-	// This is a placeholder that can be enhanced later
+	// Build repository reference
+	imageRef := BuildManifestReference(opts.Registry, opts.Namespace, opts.ImageName, "")
+	// Remove trailing colon if no tag was specified
+	imageRef = fmt.Sprintf("%s:%s", imageRef[:len(imageRef)-1], "latest")
 
-	return nil, fmt.Errorf("tag listing not yet fully implemented - requires registry API v2 support")
+	// Parse as repository
+	repo, err := name.NewRepository(imageRef[:len(imageRef)-7]) // Remove ":latest"
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse repository: %w", err)
+	}
+
+	// List tags using go-containerregistry
+	tags, err := remote.List(repo, remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tags: %w", err)
+	}
+
+	return tags, nil
 }

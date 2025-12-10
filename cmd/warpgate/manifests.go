@@ -599,32 +599,20 @@ func convertDigestFilesToManifestEntries(digestFiles []manifests.DigestFile, reg
 		// Add digest
 		imageRef = fmt.Sprintf("%s@%s", imageRef, df.Digest.String())
 
-		// Parse platform info
-		os := "linux"
-		arch := df.Architecture
-		variant := ""
+		// Parse platform information using the consolidated utility
+		// The architecture field in DigestFile may contain variants (e.g., "arm/v7")
+		platformInfo := manifests.ParsePlatform(df.Architecture)
 
-		// Handle arm/v7, arm/v6, etc.
-		if strings.Contains(arch, "/") {
-			parts := strings.Split(arch, "/")
-			if len(parts) >= 2 {
-				arch = parts[0]
-				variant = parts[1]
-			}
-		}
-
-		platform := fmt.Sprintf("%s/%s", os, df.Architecture)
-		if variant != "" {
-			platform = fmt.Sprintf("%s/%s/%s", os, arch, variant)
-		}
+		// Format the platform string properly
+		platform := manifests.FormatPlatform(platformInfo)
 
 		entry := manifests.ManifestEntry{
 			ImageRef:     imageRef,
 			Digest:       df.Digest,
 			Platform:     platform,
-			Architecture: arch,
-			OS:           os,
-			Variant:      variant,
+			Architecture: platformInfo.Architecture,
+			OS:           platformInfo.OS,
+			Variant:      platformInfo.Variant,
 		}
 
 		entries = append(entries, entry)

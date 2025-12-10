@@ -54,11 +54,6 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Errorf("Expected log format 'color', got '%s'", config.Log.Format)
 	}
 
-	// Storage driver defaults to empty (delegates to system defaults)
-	// NOTE: If user has ~/.warpgate/config.yaml with storage.driver set,
-	// it will be used instead. Both empty and user-configured values are valid.
-	t.Logf("Storage driver: '%s' (empty means system default, non-empty means user override)", config.Storage.Driver)
-
 	if config.Registry.Default != "ghcr.io" {
 		t.Errorf("Expected registry 'ghcr.io', got '%s'", config.Registry.Default)
 	}
@@ -96,10 +91,6 @@ build:
   parallel_builds: false
   timeout: 4h
 
-storage:
-  driver: overlay
-  root: /custom/storage
-
 templates:
   cache_dir: /custom/cache
   repositories:
@@ -123,7 +114,6 @@ templates:
 	verifyRegistryConfig(t, config)
 	verifyLogConfig(t, config)
 	verifyBuildConfig(t, config)
-	verifyStorageConfig(t, config)
 	verifyTemplatesConfig(t, config)
 }
 
@@ -175,14 +165,6 @@ func verifyBuildConfig(t *testing.T, config *Config) {
 	}
 	if config.Build.Timeout != "4h" {
 		t.Errorf("Expected timeout '4h', got '%s'", config.Build.Timeout)
-	}
-}
-
-// verifyStorageConfig verifies storage configuration values
-func verifyStorageConfig(t *testing.T, config *Config) {
-	t.Helper()
-	if config.Storage.Driver != "overlay" {
-		t.Errorf("Expected storage driver 'overlay', got '%s'", config.Storage.Driver)
 	}
 }
 
@@ -271,11 +253,6 @@ func TestLoad_PartialConfig(t *testing.T) {
 	// Should have defaults for everything else
 	if config.Log.Level != "info" {
 		t.Errorf("Expected default log level 'info', got '%s'", config.Log.Level)
-	}
-
-	// Storage driver defaults to empty (delegates to system defaults)
-	if config.Storage.Driver != "" {
-		t.Errorf("Expected empty storage driver (system default), got '%s'", config.Storage.Driver)
 	}
 }
 

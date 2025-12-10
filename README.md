@@ -17,10 +17,9 @@
 ## Overview
 
 Warp Gate is a modern, Go-based CLI tool that simplifies building container
-images and AWS AMIs using declarative YAML templates. Built on
-[BuildKit](https://github.com/moby/buildkit) and the [AWS SDK](https://aws.amazon.com/sdk-for-go/),
-it provides a faster, more maintainable alternative to Packer for
-infrastructure image creation.
+images and AWS AMIs using declarative YAML templates. Built exclusively on
+[Docker BuildKit](https://github.com/moby/buildkit), [go-containerregistry](https://github.com/google/go-containerregistry),
+and the [AWS SDK](https://aws.amazon.com/sdk-for-go/).
 
 **Why Warp Gate?**
 
@@ -28,11 +27,15 @@ infrastructure image creation.
   (Ansible/shell) with the same tool
 - **Flexible provisioning** - Use native Dockerfiles for simple images,
   provisioners for complex ones
-- **Faster builds** - Native Go performance with BuildKit integration
+- **Pure Go implementation** - Single binary with no external dependencies
+  beyond Docker
+- **Native BuildKit & go-containerregistry** - Modern container tooling
+  without legacy SDKs
 - **Simpler syntax** - Clean YAML templates instead of HCL/JSON
-- **Better portability** - Run natively on Linux or containerized anywhere
+- **Credential-aware** - Uses Docker's native authentication
+  (docker login) automatically
 - **Template discovery** - Built-in template repository management
-- **Multi-arch support** - Build for amd64 and arm64 simultaneously
+- **Multi-arch support** - Build and push multi-architecture manifests natively
 
 **Perfect for:**
 
@@ -49,8 +52,8 @@ Get started in under 60 seconds:
 # Install warpgate
 go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
 
-# Discover available templates
-warpgate discover
+# List available templates
+warpgate templates list
 
 # Build a container image from template
 warpgate build attack-box --arch amd64
@@ -100,32 +103,32 @@ and [Usage Guide](docs/usage-guide.md).
 
 ### Core Capabilities
 
-| Feature | Description | Status |
-| --- | --- | --- |
-| **Container Images** | Build OCI images with BuildKit | ✅ Stable |
-| **Dockerfile Support** | Native Dockerfile builds | ✅ Stable |
-| **AWS AMIs** | Create EC2 AMIs | ✅  Stable |
-| **Multi-arch Builds** | Build amd64/arm64 simultaneously | ✅  Stable |
-| **Template Discovery** | Git/local template repo mgmt | ✅  Stable |
-| **Ansible Provisioner** | Run Ansible playbooks | ✅  Stable |
-| **Shell Provisioner** | Execute shell scripts | ✅  Stable |
-| **PowerShell Provisioner** | Run PowerShell (Windows) | ✅  Stable |
-| **Variable Substitution** | CLI flags/files/env vars | ✅  Stable |
-| **Packer Conversion** | Convert Packer to Warpgate | ⚠️  Beta |
-| **Registry Push** | Push images to registries | ✅  Stable |
-| **Multi-arch Manifests** | Create/push multi-arch images | ✅  Stable |
+| Feature                    | Description                      | Status    |
+| -------------------------- | -------------------------------- | --------- |
+| **Container Images**       | Build OCI images with BuildKit   | ✅ Stable  |
+| **Dockerfile Support**     | Native Dockerfile builds         | ✅ Stable  |
+| **AWS AMIs**               | Create EC2 AMIs                  | ✅ Stable  |
+| **Multi-arch Builds**      | Build amd64/arm64 simultaneously | ✅ Stable  |
+| **Template Discovery**     | Git/local template repo mgmt     | ✅ Stable  |
+| **Ansible Provisioner**    | Run Ansible playbooks            | ✅ Stable  |
+| **Shell Provisioner**      | Execute shell scripts            | ✅ Stable  |
+| **PowerShell Provisioner** | Run PowerShell (Windows)         | ✅ Stable  |
+| **Variable Substitution**  | CLI flags/files/env vars         | ✅ Stable  |
+| **Packer Conversion**      | Convert Packer to Warpgate       | ⚠️ Beta   |
+| **Registry Push**          | Push images to registries        | ✅ Stable  |
+| **Multi-arch Manifests**   | Create/push multi-arch images    | ✅ Stable  |
 
 ### Why Warpgate vs Packer?
 
-| Aspect                 | Warpgate                  | Packer                  |
-| ---------------------- | ------------------------- | ----------------------- |
-| **Performance**        | Fast (Go native)          | Slower (plugins)        |
-| **Syntax**             | Simple YAML               | Complex HCL/JSON        |
-| **Container Focus**    | Native BuildKit           | Docker plugin only      |
-| **Template Discovery** | Built-in repo mgmt        | Manual                  |
-| **Learning Curve**     | Gentle                    | Steep                   |
-| **Maintenance**        | Single binary             | Multiple plugins        |
-| **Multi-arch**         | First-class support       | Manual configuration    |
+| Aspect                 | Warpgate            | Packer               |
+| ---------------------- | ------------------- | -------------------- |
+| **Performance**        | Fast (Go native)    | Slower (plugins)     |
+| **Syntax**             | Simple YAML         | Complex HCL/JSON     |
+| **Container Focus**    | Native BuildKit     | Docker plugin only   |
+| **Template Discovery** | Built-in repo mgmt  | Manual               |
+| **Learning Curve**     | Gentle              | Steep                |
+| **Maintenance**        | Single binary       | Multiple plugins     |
+| **Multi-arch**         | First-class support | Manual configuration |
 
 ### Security Features
 
@@ -153,8 +156,8 @@ alias warpgate='docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:
 
 **Prerequisites:**
 
-- Go 1.21+ (for building from source)
-- Docker or Podman (for container builds via BuildKit)
+- Go 1.25+ (for building from source)
+- Docker with BuildKit support (for container builds)
 
 **See [Installation Guide](docs/installation.md) for detailed
 platform-specific instructions.**
@@ -171,12 +174,6 @@ Warpgate uses a two-tier configuration system:
 Create `~/.config/warpgate/config.yaml`:
 
 ```yaml
-# Storage and Runtime
-storage:
-  driver: vfs
-container:
-  runtime: runc
-
 # Registry Configuration
 registry:
   default: ghcr.io
@@ -188,8 +185,14 @@ aws:
 
 # Build Defaults
 build:
-  default_arch: amd64
+  default_arch: [amd64]
   parallel_builds: true
+  concurrency: 2
+
+# BuildKit Configuration (optional)
+buildkit:
+  endpoint: "" # Empty = auto-detect local buildx builder
+  tls_enabled: false
 ```
 
 **See [Configuration Guide](docs/configuration.md) for complete configuration reference.**
@@ -223,14 +226,20 @@ warpgate build my-ami-template --target ami
 ### Manage Templates
 
 ```bash
-# Discover available templates
-warpgate discover
+# List available templates
+warpgate templates list
+
+# Search for templates
+warpgate templates search security
 
 # Add template repository
 warpgate templates add https://github.com/myorg/templates.git
 
 # Get template info
 warpgate templates info attack-box
+
+# Update template cache
+warpgate templates update
 ```
 
 **See [Usage Guide](docs/usage-guide.md) for comprehensive examples and workflows.**
@@ -244,11 +253,23 @@ metadata:
   name: my-image
   version: 1.0.0
   description: "My custom security image"
+  author: "Your Name"
+  license: MIT
 
 name: my-image
+version: latest
 
+# Option 1: Dockerfile-based build
+dockerfile:
+  path: Dockerfile
+  context: .
+  args:
+    VERSION: "1.0.0"
+
+# Option 2: Provisioner-based build
 base:
   image: ubuntu:22.04
+  platform: linux/amd64
 
 provisioners:
   - type: shell
@@ -261,6 +282,10 @@ targets:
     platforms:
       - linux/amd64
       - linux/arm64
+    registry: ghcr.io/myorg
+    tags:
+      - latest
+      - v1.0.0
 ```
 
 **See [Template Format Reference](docs/template-format.md) for complete
@@ -295,26 +320,29 @@ task go:test
 task pre-commit:run
 ```
 
-**See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.**
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## Troubleshooting
 
 **Common Issues:**
 
-- **"Permission denied" on Linux** - Use `sudo warpgate build` or
-  configure rootless containers
-- **"Storage driver" errors** - Use `vfs` driver in config
-- **Templates not found** - Run `warpgate templates update`
-- **Registry push fails** - Authenticate with `docker login ghcr.io`
+- **"Cannot connect to BuildKit daemon"** - Ensure Docker is running with
+  an active buildx builder (`docker buildx ls`)
+- **"No active buildx builder found"** - Create one with
+  `docker buildx create --use`
+- **Templates not found** - Run `warpgate templates update` to refresh cache
+- **Registry push fails** - Authenticate with `docker login <registry>`
+  before building
 
-**See [Troubleshooting Guide](docs/troubleshooting.md) for detailed solutions.**
+See [Troubleshooting Guide](docs/troubleshooting.md) for detailed solutions.
 
 ## FAQ
 
 **Q: What's the difference between Warpgate and Packer?**
 
-A: Warpgate offers simpler YAML syntax, sane licensing, faster builds,
-built-in template discovery, and a stronger focus on containerization support.
+A: Warpgate offers simpler YAML syntax, faster Go-native builds, native
+BuildKit integration, built-in template discovery, first-class
+multi-architecture support, and unified workflows for both containers and AMIs.
 
 **Q: Can I use my existing Packer templates?**
 
@@ -335,7 +363,10 @@ This project is licensed under the **MIT License** - see the
 
 Warpgate uses open-source libraries:
 
-- [BuildKit](https://github.com/moby/buildkit) - Apache 2.0
-- [AWS SDK for Go](https://github.com/aws/aws-sdk-go-v2) - Apache 2.0
-- [Cobra](https://github.com/spf13/cobra) - Apache 2.0
-- [Viper](https://github.com/spf13/viper) - MIT
+- [BuildKit](https://github.com/moby/buildkit) v0.26.2 - Apache 2.0
+- [Docker SDK](https://github.com/docker/docker) v28.5.2 - Apache 2.0
+- [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2) - Apache 2.0
+- [go-containerregistry](https://github.com/google/go-containerregistry)
+  v0.20.6 - Apache 2.0
+- [Cobra](https://github.com/spf13/cobra) v1.10.2 - Apache 2.0
+- [Viper](https://github.com/spf13/viper) v1.21.0 - MIT

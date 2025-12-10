@@ -25,7 +25,6 @@ package builder
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
@@ -265,25 +264,16 @@ func CreateManifestEntries(results []BuildResult) ([]manifests.ManifestEntry, er
 			}
 		}
 
-		os := "linux"
-		variant := ""
-		if strings.Contains(result.Platform, "/") {
-			parts := strings.Split(result.Platform, "/")
-			if len(parts) >= 2 {
-				os = parts[0]
-			}
-			if len(parts) >= 3 {
-				variant = parts[2]
-			}
-		}
+		// Parse platform information using the consolidated utility
+		platformInfo := manifests.ParsePlatform(result.Platform)
 
 		entries = append(entries, manifests.ManifestEntry{
 			ImageRef:     result.ImageRef,
 			Digest:       imageDigest,
 			Platform:     result.Platform,
-			Architecture: result.Architecture,
-			OS:           os,
-			Variant:      variant,
+			Architecture: platformInfo.Architecture,
+			OS:           platformInfo.OS,
+			Variant:      platformInfo.Variant,
 		})
 	}
 

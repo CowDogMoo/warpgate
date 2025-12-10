@@ -75,9 +75,9 @@ log:
 	}
 
 	// Values not set anywhere should have defaults
-	// Storage driver defaults to empty (delegates to system defaults)
-	if config.Storage.Driver != "" {
-		t.Errorf("Expected empty storage driver (system default), got '%s'", config.Storage.Driver)
+	// Template cache dir should have default value
+	if config.Templates.CacheDir == "" {
+		t.Error("Expected templates cache dir to have a default value")
 	}
 }
 

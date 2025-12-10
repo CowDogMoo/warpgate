@@ -26,7 +26,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,11 +34,8 @@ import (
 	"strings"
 	"time"
 
-	dockerconfigfile "github.com/docker/cli/cli/config"
-	dockerconfigtypes "github.com/docker/cli/cli/config/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
-	dockerregistry "github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -48,6 +44,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/cowdogmoo/warpgate/pkg/registryauth"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	digest "github.com/opencontainers/go-digest"
@@ -1026,62 +1024,6 @@ func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done ch
 	}
 }
 
-// getRegistryAuthFromDockerConfig reads Docker's config.json and retrieves
-// credentials for the specified registry. It returns an encoded auth string
-// suitable for use in Docker API calls.
-func getRegistryAuthFromDockerConfig(registry string) (string, error) {
-	// Load Docker config from default location
-	cfg, err := dockerconfigfile.Load("")
-	if err != nil {
-		return "", fmt.Errorf("failed to load Docker config: %w", err)
-	}
-
-	// Get auth config for the registry
-	authConfig, err := cfg.GetAuthConfig(registry)
-	if err != nil {
-		return "", fmt.Errorf("failed to get auth config for %s: %w", registry, err)
-	}
-
-	// If no credentials found, return empty string (anonymous access)
-	if authConfig.Username == "" && authConfig.Password == "" && authConfig.IdentityToken == "" && authConfig.RegistryToken == "" {
-		logging.Debug("No credentials found for registry %s, using anonymous access", registry)
-		return "", nil
-	}
-
-	logging.Debug("Found credentials for registry %s (username: %s)", registry, authConfig.Username)
-
-	// Encode the auth config as base64-encoded JSON
-	encodedAuth, err := encodeAuthConfig(authConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode auth config: %w", err)
-	}
-
-	return encodedAuth, nil
-}
-
-// encodeAuthConfig encodes an AuthConfig struct as a base64-encoded JSON string
-// for use in Docker API's X-Registry-Auth header.
-func encodeAuthConfig(authConfig dockerconfigtypes.AuthConfig) (string, error) {
-	// Convert to registry.AuthConfig format expected by Docker API
-	registryAuth := dockerregistry.AuthConfig{
-		Username:      authConfig.Username,
-		Password:      authConfig.Password,
-		Auth:          authConfig.Auth,
-		ServerAddress: authConfig.ServerAddress,
-		IdentityToken: authConfig.IdentityToken,
-		RegistryToken: authConfig.RegistryToken,
-	}
-
-	// Marshal to JSON
-	authJSON, err := json.Marshal(registryAuth)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal auth config: %w", err)
-	}
-
-	// Encode as base64
-	return base64.URLEncoding.EncodeToString(authJSON), nil
-}
-
 // extractRegistryFromImageRef extracts the registry hostname from an image reference.
 // For example, "ghcr.io/owner/repo:tag" returns "ghcr.io".
 // If no registry is specified (e.g., "ubuntu:latest"), returns "docker.io".
@@ -1115,8 +1057,9 @@ func extractRegistryFromImageRef(imageRef string) string {
 
 // Push pushes the built image to a container registry using the Docker SDK.
 // The imageRef should include the full registry path (e.g., "registry.io/org/image:tag").
-// This method automatically reads credentials from Docker's config.json and uses them
-// for authentication. It streams output for progress visibility and returns the image digest.
+// This method automatically reads credentials using go-containerregistry's DefaultKeychain
+// which supports Docker config, credential helpers, and environment variables.
+// It streams output for progress visibility and returns the image digest.
 func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
 	logging.Info("Pushing image: %s", imageRef)
 
@@ -1126,8 +1069,14 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		logging.Debug("Extracted registry from image ref: %s", registry)
 	}
 
-	// Get authentication credentials from Docker config
-	registryAuth, err := getRegistryAuthFromDockerConfig(registry)
+	// Extract just the registry hostname for auth lookup
+	// The registry parameter may include namespace (e.g., "ghcr.io/l50")
+	// but auth lookup needs just the hostname (e.g., "ghcr.io")
+	registryHostname := extractRegistryFromImageRef(registry)
+	logging.Debug("Using registry hostname for auth: %s", registryHostname)
+
+	// Get authentication credentials using unified adapter
+	registryAuth, err := registryauth.ToDockerSDKAuth(ctx, registryHostname)
 	if err != nil {
 		logging.Warn("Failed to get registry credentials: %v (attempting push anyway)", err)
 		registryAuth = ""

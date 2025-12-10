@@ -134,7 +134,7 @@ func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildR
 			registryRef := fmt.Sprintf("%s/%s", registry, result.ImageRef)
 			logging.Info("Pushing %s", registryRef)
 
-			digest, err := builder.Push(ctx, result.ImageRef, registryRef)
+			digest, err := builder.Push(ctx, result.ImageRef, registry)
 			if err != nil {
 				logging.Error("Failed to push %s: %v", registryRef, err)
 				return fmt.Errorf("push %s: %w", registryRef, err)
