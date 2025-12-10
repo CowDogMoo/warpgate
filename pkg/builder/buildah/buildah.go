@@ -53,6 +53,9 @@ type BuildahBuilder struct {
 	globalConfig  *globalconfig.Config
 }
 
+// Verify that BuildahBuilder implements builder.ContainerBuilder at compile time
+var _ builder.ContainerBuilder = (*BuildahBuilder)(nil)
+
 // BuildahConfig holds configuration for BuildahBuilder
 type BuildahConfig struct {
 	StorageDriver string

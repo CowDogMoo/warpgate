@@ -45,6 +45,9 @@ type ImageBuilder struct {
 	globalConfig    *globalconfig.Config
 }
 
+// Verify that ImageBuilder implements builder.AMIBuilder at compile time
+var _ builder.AMIBuilder = (*ImageBuilder)(nil)
+
 // NewImageBuilder creates a new AMI builder
 func NewImageBuilder(ctx context.Context, config ClientConfig) (*ImageBuilder, error) {
 	// Load global config

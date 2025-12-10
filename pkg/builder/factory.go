@@ -40,10 +40,15 @@ const (
 	BuilderTypeBuildah BuilderType = "buildah"
 )
 
-// BuilderCreatorFunc is a function that creates a builder instance
+// BuilderCreatorFunc creates a ContainerBuilder instance for a specific backend.
+// It is called by the BuilderFactory to instantiate builders based on configuration.
+// The context can be used for initialization and resource cleanup.
 type BuilderCreatorFunc func(ctx context.Context) (ContainerBuilder, error)
 
-// BuilderFactory creates builder instances based on configuration
+// BuilderFactory creates builder instances based on configuration.
+// It supports multiple builder backends (BuildKit, Buildah) and can automatically
+// select the best builder for the current platform. The factory pattern allows
+// platform-specific builder creation while maintaining a consistent interface.
 type BuilderFactory struct {
 	builderType       BuilderType
 	buildKitCreator   BuilderCreatorFunc
@@ -51,7 +56,9 @@ type BuilderFactory struct {
 	autoSelectCreator BuilderCreatorFunc
 }
 
-// NewBuilderFactory creates a new builder factory with the specified type and creator functions
+// NewBuilderFactory creates a new builder factory with the specified type and creator functions.
+// The builderType parameter accepts "auto", "buildkit", or "buildah" (case-insensitive).
+// Creator functions are provided for each backend and should return nil if unavailable on the platform.
 func NewBuilderFactory(builderType string, buildKitCreator, buildahCreator, autoSelectCreator BuilderCreatorFunc) *BuilderFactory {
 	// Normalize builder type
 	normalizedType := strings.ToLower(strings.TrimSpace(builderType))
@@ -99,8 +106,8 @@ func (f *BuilderFactory) CreateContainerBuilder(ctx context.Context) (ContainerB
 	}
 }
 
-// GetBuilderType returns the configured builder type
-func (f *BuilderFactory) GetBuilderType() BuilderType {
+// BuilderType returns the configured builder type
+func (f *BuilderFactory) BuilderType() BuilderType {
 	return f.builderType
 }
 

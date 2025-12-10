@@ -33,12 +33,17 @@ import (
 // DefaultMaxConcurrency is the default number of parallel builds.
 const DefaultMaxConcurrency = 2
 
-// BuildOrchestrator coordinates multi-architecture builds
+// BuildOrchestrator coordinates multi-architecture builds with controlled concurrency.
+// It uses errgroup to manage parallel builds and ensures proper error propagation
+// and cancellation across all goroutines. The orchestrator limits concurrent builds
+// to prevent resource exhaustion while maximizing throughput.
 type BuildOrchestrator struct {
 	maxConcurrency int
 }
 
-// NewBuildOrchestrator creates a new build orchestrator
+// NewBuildOrchestrator creates a new build orchestrator with the specified concurrency limit.
+// If maxConcurrency is less than or equal to zero, DefaultMaxConcurrency is used.
+// The concurrency limit prevents resource exhaustion during multi-architecture builds.
 func NewBuildOrchestrator(maxConcurrency int) *BuildOrchestrator {
 	if maxConcurrency <= 0 {
 		maxConcurrency = DefaultMaxConcurrency
@@ -49,15 +54,20 @@ func NewBuildOrchestrator(maxConcurrency int) *BuildOrchestrator {
 	}
 }
 
-// BuildRequest represents a single architecture build request
+// BuildRequest represents a single-architecture build operation within a multi-arch build.
+// It contains all configuration needed to build an image for a specific platform.
+// Multiple BuildRequests are typically processed in parallel by BuildOrchestrator.
 type BuildRequest struct {
 	Config       Config
-	Architecture string
-	Platform     string // e.g., "linux/amd64"
-	Tag          string
+	Architecture string // Target CPU architecture (e.g., "amd64", "arm64")
+	Platform     string // Full platform specification (e.g., "linux/amd64", "linux/arm64/v8")
+	Tag          string // Image tag for this specific build
 }
 
-// BuildMultiArch builds images for multiple architectures in parallel
+// BuildMultiArch builds images for multiple architectures in parallel with controlled concurrency.
+// It uses errgroup to coordinate goroutines and propagate errors. If any build fails, the context
+// is canceled and all remaining builds are stopped. Results are returned in the same order as requests.
+// Each image is automatically tagged with an architecture-specific suffix (e.g., "myimage:v1-amd64").
 func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []BuildRequest, builder ContainerBuilder) ([]BuildResult, error) {
 	logging.Info("Starting multi-arch build for %d architectures", len(requests))
 
@@ -106,7 +116,10 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 	return results, nil
 }
 
-// PushMultiArch pushes all architecture-specific images to a registry
+// PushMultiArch pushes all architecture-specific images to a registry in parallel.
+// Unlike BuildMultiArch, this method does not limit concurrency as push operations are
+// typically I/O-bound and benefit from maximum parallelism. If any push fails, the context
+// is canceled and remaining pushes are stopped, returning the first error encountered.
 func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildResult, registry string, builder ContainerBuilder) error {
 	logging.Info("Pushing %d architecture images to %s", len(results), registry)
 

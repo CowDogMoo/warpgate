@@ -30,8 +30,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ParseVariables parses variables from CLI flags and var files
-// CLI flags take precedence over var files
+// ParseVariables parses and merges variables from CLI flags and YAML variable files.
+// Variables are applied with the following precedence (highest to lowest):
+//  1. CLI flags (--var key=value)
+//  2. Var files loaded in order (later files override earlier files)
+//
+// This precedence model allows command-line overrides of file-based configuration.
 func ParseVariables(vars, varFiles []string) (map[string]string, error) {
 	variables := make(map[string]string)
 
@@ -59,7 +63,9 @@ func ParseVariables(vars, varFiles []string) (map[string]string, error) {
 	return variables, nil
 }
 
-// LoadVariablesFromFile loads variables from a YAML file
+// LoadVariablesFromFile loads variables from a YAML file containing key-value pairs.
+// The YAML file should be a flat map of strings (e.g., `KEY: value`).
+// Returns an error if the file cannot be read or contains invalid YAML syntax.
 func LoadVariablesFromFile(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -74,7 +80,9 @@ func LoadVariablesFromFile(path string) (map[string]string, error) {
 	return variables, nil
 }
 
-// ParseKeyValue parses a key=value string
+// ParseKeyValue parses a key=value string into separate key and value components.
+// The string must contain exactly one '=' character with a non-empty key.
+// Values can be empty. Returns an error if the format is invalid or the key is empty.
 func ParseKeyValue(s string) (key, value string, err error) {
 	parts := strings.SplitN(s, "=", 2)
 	if len(parts) != 2 {

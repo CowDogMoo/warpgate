@@ -53,7 +53,12 @@ type BuildKitBuilder struct {
 	cacheTo       []string // External cache destinations
 }
 
-// NewBuildKitBuilder creates a new BuildKit builder instance
+// Verify that BuildKitBuilder implements builder.ContainerBuilder at compile time
+var _ builder.ContainerBuilder = (*BuildKitBuilder)(nil)
+
+// NewBuildKitBuilder creates a new BuildKit builder instance by connecting to the active buildx builder.
+// It automatically detects the running docker buildx builder and establishes a connection using
+// the docker-container:// protocol. Returns an error if Docker is not running or no builder is active.
 func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	// Detect active buildx builder
 	builderName, containerName, err := detectBuildxBuilder(ctx)
@@ -87,7 +92,10 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	}, nil
 }
 
-// SetCacheOptions sets external cache sources and destinations
+// SetCacheOptions configures external cache sources and destinations for BuildKit.
+// Cache sources (cacheFrom) are used to import cache from external registries.
+// Cache destinations (cacheTo) specify where to export cache after the build.
+// Format example: "type=registry,ref=user/app:cache,mode=max"
 func (b *BuildKitBuilder) SetCacheOptions(cacheFrom, cacheTo []string) {
 	b.cacheFrom = cacheFrom
 	b.cacheTo = cacheTo
@@ -729,7 +737,10 @@ func (b *BuildKitBuilder) makeRelativePath(path string) (string, error) {
 	return relPath, nil
 }
 
-// Build creates a container image using BuildKit LLB
+// Build creates a container image using BuildKit's Low-Level Build (LLB) primitives.
+// It converts the Warpgate configuration to LLB, executes the build with BuildKit, and loads
+// the resulting image into Docker's image store. The build process includes intelligent caching
+// for package managers and proper handling of file copies and provisioners.
 func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
 	startTime := time.Now()
 	logging.Info("Building image: %s (native LLB)", cfg.Name)
@@ -847,7 +858,9 @@ func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done ch
 	}
 }
 
-// Push pushes the image to a registry
+// Push pushes the built image to a container registry using docker push.
+// The imageRef should include the full registry path (e.g., "registry.io/org/image:tag").
+// This method streams output to stdout/stderr for progress visibility.
 func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) error {
 	cmd := exec.CommandContext(ctx, "docker", "push", imageRef)
 	cmd.Stdout = os.Stdout
@@ -861,7 +874,9 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) e
 	return nil
 }
 
-// Tag adds additional tags to an image
+// Tag creates an additional tag for an existing image using docker tag.
+// The newTag should be the complete tag reference including registry if needed.
+// This is useful for creating architecture-specific tags or version aliases.
 func (b *BuildKitBuilder) Tag(ctx context.Context, imageRef, newTag string) error {
 	cmd := exec.CommandContext(ctx, "docker", "tag", imageRef, newTag)
 	if err := cmd.Run(); err != nil {
@@ -872,7 +887,9 @@ func (b *BuildKitBuilder) Tag(ctx context.Context, imageRef, newTag string) erro
 	return nil
 }
 
-// Remove removes an image from local storage
+// Remove deletes an image from the local Docker image store using docker rmi.
+// This frees up disk space but does not affect images already pushed to registries.
+// Returns an error if the image is in use by a running container.
 func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 	cmd := exec.CommandContext(ctx, "docker", "rmi", imageRef)
 	if err := cmd.Run(); err != nil {
@@ -883,7 +900,10 @@ func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 	return nil
 }
 
-// CreateAndPushManifest creates and pushes a multi-arch manifest using docker buildx imagetools
+// CreateAndPushManifest creates and pushes a multi-architecture manifest list to a registry.
+// It uses docker buildx imagetools to combine multiple architecture-specific images into a single
+// manifest that allows Docker to automatically select the correct architecture when pulling.
+// The manifestName should include the registry path (e.g., "registry.io/org/image:tag").
 func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestName string, entries []builder.ManifestEntry) error {
 	if len(entries) == 0 {
 		return fmt.Errorf("no manifest entries provided")
@@ -917,7 +937,10 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 	return nil
 }
 
-// InspectManifest inspects a manifest using docker buildx imagetools inspect
+// InspectManifest retrieves information about a manifest list from a registry.
+// It uses docker buildx imagetools inspect to fetch the raw manifest data.
+// This can be used to verify that a multi-arch manifest was created correctly.
+// Note: Current implementation is simplified and primarily verifies manifest existence.
 func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName string) ([]builder.ManifestEntry, error) {
 	logging.Debug("Inspecting manifest: %s", manifestName)
 
@@ -933,7 +956,9 @@ func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName stri
 	return nil, nil
 }
 
-// Close cleans up any resources
+// Close releases resources and closes the connection to the BuildKit daemon.
+// This should be called when the builder is no longer needed, typically via defer.
+// Calling Close multiple times is safe and will not cause errors.
 func (b *BuildKitBuilder) Close() error {
 	if b.client != nil {
 		return b.client.Close()
