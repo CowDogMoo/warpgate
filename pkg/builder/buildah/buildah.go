@@ -116,12 +116,11 @@ func NewBuildahBuilder(cfg BuildahConfig) (*BuildahBuilder, error) {
 		logging.Debug("Using custom storage driver: %s", cfg.StorageDriver)
 	}
 
-	// Enable ignore_chown_errors for rootless VFS builds
-	// This allows rootless containers to work with VFS driver despite permission limitations
+	// Note: ignore_chown_errors is configured in storage.conf via ensureStorageConfigPreInit()
+	// We don't set it via GraphDriverOptions here because the VFS driver reads it from the config file
+	// Passing it via GraphDriverOptions causes "vfs driver does not support ignore_chown_errors options" error
 	if storeOpts.GraphDriverName == "vfs" {
-		// Set the option in GraphDriverOptions (runtime setting)
-		storeOpts.GraphDriverOptions = append(storeOpts.GraphDriverOptions, "vfs.ignore_chown_errors=true")
-		logging.Debug("Enabled ignore_chown_errors for VFS driver")
+		logging.Debug("Using VFS driver with ignore_chown_errors from storage.conf")
 	}
 
 	logging.Info("Storage configuration: driver=%s, root=%s, runroot=%s",
@@ -234,12 +233,20 @@ func (b *BuildahBuilder) fromImage(ctx context.Context, base builder.BaseImage) 
 	logging.Debug("SystemContext settings - OS: '%s', Arch: '%s', Variant: '%s', Platform: '%s'",
 		systemContext.OSChoice, systemContext.ArchitectureChoice, systemContext.VariantChoice, base.Platform)
 
-	// Build options with OCI isolation for full container capabilities
+	// Build options - use chroot isolation for VFS rootless builds to avoid chown issues
+	// For other scenarios, use OCI isolation for full container capabilities
+	isolation := define.IsolationOCI
+	if b.store.GraphDriverName() == "vfs" && os.Geteuid() != 0 {
+		// Rootless VFS builds should use chroot isolation to avoid permission issues
+		isolation = define.IsolationChroot
+		logging.Debug("Using chroot isolation for rootless VFS build")
+	}
+
 	options := buildah.BuilderOptions{
 		FromImage:     base.Image,
 		PullPolicy:    define.PullIfMissing,
 		SystemContext: systemContext,
-		Isolation:     define.IsolationOCI,
+		Isolation:     isolation,
 	}
 
 	if base.Pull {

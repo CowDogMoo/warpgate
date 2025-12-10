@@ -27,15 +27,31 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/builder/buildah"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
 // autoSelectBuilderFunc automatically selects the best builder for Linux
 func autoSelectBuilderFunc(ctx context.Context) (builder.ContainerBuilder, error) {
 	logging.Info("Auto-selecting builder for Linux platform")
+
+	// Check if we're in a rootless VFS environment - prefer BuildKit in this case
+	// Buildah has known issues with VFS driver in rootless mode due to chown errors
+	// See: https://github.com/containers/buildah/issues/5744
+	cfg, err := globalconfig.Load()
+	if err == nil && cfg.Storage.Driver == "vfs" && os.Geteuid() != 0 {
+		logging.Info("Detected rootless VFS environment, preferring BuildKit over Buildah")
+		bldr, err := newBuildKitBuilderFunc(ctx)
+		if err == nil {
+			logging.Info("Auto-selected: BuildKit (rootless VFS)")
+			return bldr, nil
+		}
+		logging.Warn("BuildKit not available (%v), trying Buildah despite rootless VFS", err)
+	}
 
 	// Try Buildah first (native Linux solution)
 	bldr, err := newBuildahBuilderFunc(ctx)
