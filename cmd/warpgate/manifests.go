@@ -591,14 +591,13 @@ func convertDigestFilesToManifestEntries(digestFiles []manifests.DigestFile, reg
 	entries := make([]manifests.ManifestEntry, 0, len(digestFiles))
 
 	for _, df := range digestFiles {
-		// Build the full image reference for this architecture
-		imageRef := manifests.BuildImageReference(manifests.ReferenceOptions{
-			Registry:     registry,
-			Namespace:    namespace,
-			ImageName:    df.ImageName,
-			Architecture: df.Architecture,
-			Tag:          tag,
-		})
+		// Build the digest-based image reference (registry/namespace/image@sha256:...)
+		// instead of tag-based reference with architecture suffix
+		imageRef := manifests.BuildManifestReference(registry, namespace, df.ImageName, "")
+		// Remove trailing colon if tag was empty
+		imageRef = strings.TrimSuffix(imageRef, ":")
+		// Add digest
+		imageRef = fmt.Sprintf("%s@%s", imageRef, df.Digest.String())
 
 		// Parse platform info
 		os := "linux"

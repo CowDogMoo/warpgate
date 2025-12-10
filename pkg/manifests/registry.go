@@ -26,6 +26,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/cowdogmoo/warpgate/pkg/logging"
@@ -85,13 +86,13 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			imageRef := BuildImageReference(ReferenceOptions{
-				Registry:     opts.Registry,
-				Namespace:    opts.Namespace,
-				ImageName:    digestFile.ImageName,
-				Architecture: digestFile.Architecture,
-				Tag:          opts.Tag,
-			})
+			// Build digest-based reference instead of tag-based reference
+			// Format: registry/namespace/image@sha256:digest
+			imageRef := BuildManifestReference(opts.Registry, opts.Namespace, digestFile.ImageName, "")
+			// Remove trailing colon if tag was empty
+			imageRef = strings.TrimSuffix(imageRef, ":")
+			// Add digest
+			imageRef = fmt.Sprintf("%s@%s", imageRef, digestFile.Digest.String())
 
 			logging.Debug("Verifying %s exists in registry...", imageRef)
 
