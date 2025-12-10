@@ -282,6 +282,11 @@ func parsePlatform(platformStr string) (os string, arch string, err error) {
 
 // convertToLLB converts a Warpgate config to BuildKit LLB
 func (b *BuildKitBuilder) convertToLLB(cfg builder.Config) (llb.State, error) {
+	// Check if this is a Dockerfile-based build
+	if cfg.IsDockerfileBased() {
+		return llb.State{}, fmt.Errorf("dockerfile-based builds should use BuildDockerfile, not convertToLLB")
+	}
+
 	// Parse platform from cfg.Base.Platform
 	platformOS, platformArch, err := parsePlatform(cfg.Base.Platform)
 	if err != nil {
@@ -667,6 +672,41 @@ func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, noCac
 	}
 }
 
+// getLocalImageDigest retrieves the digest of a local Docker image
+func getLocalImageDigest(ctx context.Context, imageName string) string {
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format={{index .RepoDigests 0}}", imageName)
+	output, err := cmd.Output()
+	if err != nil {
+		// If there's no RepoDigest (image not pushed yet), try to get the Id digest
+		cmd = exec.CommandContext(ctx, "docker", "inspect", "--format={{.Id}}", imageName)
+		output, err = cmd.Output()
+		if err != nil {
+			logging.Warn("Failed to get digest for local image %s: %v", imageName, err)
+			return ""
+		}
+	}
+
+	digest := strings.TrimSpace(string(output))
+	if digest == "" || digest == "<no value>" {
+		return ""
+	}
+
+	// If it's a RepoDigest (registry/image@sha256:...), extract just the digest part
+	if strings.Contains(digest, "@") {
+		parts := strings.Split(digest, "@")
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+
+	// If it's an image ID (sha256:...), return as-is
+	if strings.HasPrefix(digest, "sha256:") {
+		return digest
+	}
+
+	return digest
+}
+
 // loadAndTagImage loads the built Docker image tar into Docker and tags it
 func loadAndTagImage(ctx context.Context, imageTarPath, imageName string) error {
 	// Load Docker image tar into Docker
@@ -820,6 +860,11 @@ func (b *BuildKitBuilder) makeRelativePath(path string) (string, error) {
 // the resulting image into Docker's image store. The build process includes intelligent caching
 // for package managers and proper handling of file copies and provisioners.
 func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
+	// Check if this is a Dockerfile-based build
+	if cfg.IsDockerfileBased() {
+		return b.BuildDockerfile(ctx, cfg)
+	}
+
 	startTime := time.Now()
 	logging.Info("Building image: %s (native LLB)", cfg.Name)
 
@@ -898,10 +943,14 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, err
 	}
 
+	// Step 8: Get digest from local image
+	digest := getLocalImageDigest(ctx, imageName)
+
 	duration := time.Since(startTime)
 
 	return &builder.BuildResult{
 		ImageRef: imageName,
+		Digest:   digest,
 		Platform: getPlatformString(cfg),
 		Duration: duration.String(),
 		Notes:    []string{"Built with native BuildKit LLB", "Image loaded to Docker"},
@@ -938,18 +987,42 @@ func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done ch
 
 // Push pushes the built image to a container registry using docker push.
 // The imageRef should include the full registry path (e.g., "registry.io/org/image:tag").
-// This method streams output to stdout/stderr for progress visibility.
-func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) error {
+// This method streams output to stdout/stderr for progress visibility and returns the image digest.
+func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
 	cmd := exec.CommandContext(ctx, "docker", "push", imageRef)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	logging.Info("Pushing image: %s", imageRef)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker push failed: %w", err)
+		return "", fmt.Errorf("docker push failed: %w", err)
 	}
 
-	return nil
+	// Capture the digest from docker inspect after successful push
+	inspectCmd := exec.CommandContext(ctx, "docker", "inspect", "--format={{index .RepoDigests 0}}", imageRef)
+	output, err := inspectCmd.Output()
+	if err != nil {
+		logging.Warn("Failed to get digest for %s: %v", imageRef, err)
+		return "", nil // Return empty digest, not an error - push was successful
+	}
+
+	// Parse digest from output (format: registry/image@sha256:...)
+	repoDigest := strings.TrimSpace(string(output))
+	if repoDigest == "" || repoDigest == "<no value>" {
+		logging.Warn("No digest found for %s", imageRef)
+		return "", nil
+	}
+
+	// Extract just the digest part (sha256:...)
+	digestParts := strings.Split(repoDigest, "@")
+	if len(digestParts) != 2 {
+		logging.Warn("Unexpected digest format: %s", repoDigest)
+		return "", nil
+	}
+
+	digest := digestParts[1]
+	logging.Info("Image digest: %s", digest)
+	return digest, nil
 }
 
 // Tag creates an additional tag for an existing image using docker tag.
@@ -1032,6 +1105,102 @@ func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName stri
 	// Note: This is a simplified version. Full implementation would parse the JSON output.
 	// For now, we just verify the manifest exists.
 	return nil, nil
+}
+
+// BuildDockerfile builds a container image using a Dockerfile with docker buildx.
+// This method is used when the config specifies a dockerfile section instead of provisioners.
+// It uses docker buildx to leverage BuildKit for the build process.
+func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
+	startTime := time.Now()
+	logging.Info("Building image from Dockerfile: %s", cfg.Name)
+
+	// Prepare image name
+	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
+	if cfg.Registry != "" {
+		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
+	}
+
+	// Get Dockerfile configuration (paths are already absolute from config loader)
+	dockerfileCfg := cfg.Dockerfile
+	dockerfilePath := dockerfileCfg.GetDockerfilePath()
+	buildContext := dockerfileCfg.GetBuildContext()
+
+	logging.Debug("Dockerfile: %s, Context: %s", dockerfilePath, buildContext)
+
+	// Build docker buildx command
+	args := []string{"buildx", "build"}
+
+	// Add builder if we have one
+	if b.builderName != "" {
+		args = append(args, "--builder", b.builderName)
+	}
+
+	// Add dockerfile path (must be absolute for docker buildx)
+	args = append(args, "-f", dockerfilePath)
+
+	// Add target if specified
+	if dockerfileCfg.Target != "" {
+		args = append(args, "--target", dockerfileCfg.Target)
+	}
+
+	// Add build arguments from dockerfile config
+	for key, value := range dockerfileCfg.Args {
+		args = append(args, "--build-arg", fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// Add build arguments from CLI flags
+	for key, value := range cfg.BuildArgs {
+		args = append(args, "--build-arg", fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// Add labels
+	for key, value := range cfg.Labels {
+		args = append(args, "--label", fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// Add no-cache if specified
+	if cfg.NoCache {
+		args = append(args, "--no-cache")
+	}
+
+	// Add platform for single-arch builds
+	if len(cfg.Architectures) == 1 {
+		args = append(args, "--platform", fmt.Sprintf("linux/%s", cfg.Architectures[0]))
+	}
+
+	// Add tag
+	args = append(args, "-t", imageName)
+
+	// Load image into docker (don't push yet)
+	args = append(args, "--load")
+
+	// Add build context
+	args = append(args, buildContext)
+
+	// Execute docker buildx build
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+
+	logging.Info("Executing: docker %s", strings.Join(args, " "))
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker buildx build failed: %w", err)
+	}
+
+	// Get digest from local image
+	digest := getLocalImageDigest(ctx, imageName)
+
+	duration := time.Since(startTime)
+
+	return &builder.BuildResult{
+		ImageRef: imageName,
+		Digest:   digest,
+		Platform: fmt.Sprintf("linux/%s", cfg.Architectures[0]),
+		Duration: duration.String(),
+		Notes:    []string{"Built from Dockerfile with docker buildx", "Image loaded to Docker"},
+	}, nil
 }
 
 // Close releases resources and closes the connection to the BuildKit daemon.

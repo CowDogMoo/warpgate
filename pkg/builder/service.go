@@ -175,18 +175,26 @@ func (s *BuildService) executeMultiArchBuild(ctx context.Context, config *Config
 func (s *BuildService) pushSingleArch(ctx context.Context, config *Config, result BuildResult, bldr ContainerBuilder, opts BuildOptions) error {
 	logging.InfoContext(ctx, "Pushing to registry: %s", opts.Registry)
 
-	if err := bldr.Push(ctx, result.ImageRef, opts.Registry); err != nil {
+	digest, err := bldr.Push(ctx, result.ImageRef, opts.Registry)
+	if err != nil {
 		return fmt.Errorf("failed to push image: %w", err)
 	}
 
+	// Use the digest from Push if available, otherwise fall back to result.Digest
+	if digest == "" {
+		digest = result.Digest
+	}
+
 	// Save digest if requested
-	if opts.SaveDigests && result.Digest != "" {
+	if opts.SaveDigests && digest != "" {
 		arch := "unknown"
 		if len(config.Architectures) > 0 {
 			arch = config.Architectures[0]
 		}
-		if err := manifests.SaveDigestToFile(config.Name, arch, result.Digest, opts.DigestDir); err != nil {
+		if err := manifests.SaveDigestToFile(config.Name, arch, digest, opts.DigestDir); err != nil {
 			logging.WarnContext(ctx, "Failed to save digest: %v", err)
+		} else {
+			logging.InfoContext(ctx, "Saved digest for %s: %s", arch, digest)
 		}
 	}
 

@@ -116,8 +116,8 @@ type Builder interface {
 type ContainerBuilder interface {
 	Builder
 
-	// Push pushes the built image to a registry
-	Push(ctx context.Context, imageRef, registry string) error
+	// Push pushes the built image to a registry and returns the digest
+	Push(ctx context.Context, imageRef, registry string) (string, error)
 
 	// Tag adds additional tags to an image
 	Tag(ctx context.Context, imageRef, newTag string) error

@@ -37,10 +37,16 @@ type Config struct {
 	// Version is the version of the template
 	Version string `yaml:"version" json:"version"`
 
+	// Dockerfile specifies Dockerfile-based build configuration
+	// When specified, Base and Provisioners are ignored
+	Dockerfile *DockerfileConfig `yaml:"dockerfile,omitempty" json:"dockerfile,omitempty"`
+
 	// Base is the base image configuration
+	// Ignored when Dockerfile is specified
 	Base BaseImage `yaml:"base" json:"base"`
 
 	// Provisioners is the list of provisioners to run during the build
+	// Ignored when Dockerfile is specified
 	Provisioners []Provisioner `yaml:"provisioners" json:"provisioners"`
 
 	// PostChanges applies Dockerfile-style instructions after provisioners complete
@@ -64,8 +70,47 @@ type Config struct {
 	NoCache       bool              `yaml:"-" json:"-"` // Disable all caching (set by CLI --no-cache flag)
 }
 
+// DockerfileConfig specifies Dockerfile-based build configuration
+type DockerfileConfig struct {
+	// Path is the path to the Dockerfile (default: "Dockerfile")
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+
+	// Context is the build context directory (default: ".")
+	Context string `yaml:"context,omitempty" json:"context,omitempty"`
+
+	// Args are build arguments to pass to the Dockerfile
+	Args map[string]string `yaml:"args,omitempty" json:"args,omitempty"`
+
+	// Target specifies a build stage to target in a multi-stage Dockerfile
+	Target string `yaml:"target,omitempty" json:"target,omitempty"`
+}
+
+// IsDockerfileBased returns true if this config uses a Dockerfile instead of provisioners
+func (c *Config) IsDockerfileBased() bool {
+	return c.Dockerfile != nil
+}
+
+// GetDockerfilePath returns the Dockerfile path with defaults applied
+func (d *DockerfileConfig) GetDockerfilePath() string {
+	if d.Path == "" {
+		return "Dockerfile"
+	}
+	return d.Path
+}
+
+// GetBuildContext returns the build context with defaults applied
+func (d *DockerfileConfig) GetBuildContext() string {
+	if d.Context == "" {
+		return "."
+	}
+	return d.Context
+}
+
 // ArchOverride allows architecture-specific configuration
 type ArchOverride struct {
+	// Dockerfile allows override of Dockerfile configuration for this architecture
+	Dockerfile *DockerfileConfig `yaml:"dockerfile,omitempty" json:"dockerfile,omitempty"`
+
 	// Base is the override base image for this architecture
 	Base *BaseImage `yaml:"base,omitempty" json:"base,omitempty"`
 

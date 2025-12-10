@@ -34,7 +34,7 @@ import (
 // mockContainerBuilder implements ContainerBuilder for testing
 type mockContainerBuilder struct {
 	buildFunc  func(ctx context.Context, cfg Config) (*BuildResult, error)
-	pushFunc   func(ctx context.Context, imageRef, registry string) error
+	pushFunc   func(ctx context.Context, imageRef, registry string) (string, error)
 	tagFunc    func(ctx context.Context, imageRef, newTag string) error
 	removeFunc func(ctx context.Context, imageRef string) error
 	closeFunc  func() error
@@ -53,11 +53,11 @@ func (m *mockContainerBuilder) Build(ctx context.Context, cfg Config) (*BuildRes
 	}, nil
 }
 
-func (m *mockContainerBuilder) Push(ctx context.Context, imageRef, registry string) error {
+func (m *mockContainerBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
 	if m.pushFunc != nil {
 		return m.pushFunc(ctx, imageRef, registry)
 	}
-	return nil
+	return "sha256:1234567890abcdef", nil
 }
 
 func (m *mockContainerBuilder) Tag(ctx context.Context, imageRef, newTag string) error {
@@ -386,12 +386,12 @@ func TestBuildService_PushSingleArch_WithoutDigest(t *testing.T) {
 	pushCalled := false
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
 		return &mockContainerBuilder{
-			pushFunc: func(ctx context.Context, imageRef, registry string) error {
+			pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
 				pushCalled = true
 				if registry != "ghcr.io/myorg" {
-					return fmt.Errorf("unexpected registry: %s", registry)
+					return "", fmt.Errorf("unexpected registry: %s", registry)
 				}
-				return nil
+				return "sha256:1234567890abcdef", nil
 			},
 		}, nil
 	}
@@ -414,9 +414,9 @@ func TestBuildService_PushSingleArch_WithoutDigest(t *testing.T) {
 
 	ctx := context.Background()
 	err := service.pushSingleArch(ctx, buildConfig, result, &mockContainerBuilder{
-		pushFunc: func(ctx context.Context, imageRef, registry string) error {
+		pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
 			pushCalled = true
-			return nil
+			return "sha256:1234567890abcdef", nil
 		},
 	}, buildOpts)
 

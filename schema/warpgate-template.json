@@ -4,6 +4,10 @@
   "$defs": {
     "ArchOverride": {
       "properties": {
+        "dockerfile": {
+          "$ref": "#/$defs/DockerfileConfig",
+          "description": "Dockerfile allows override of Dockerfile configuration for this architecture"
+        },
         "base": {
           "$ref": "#/$defs/BaseImage",
           "description": "Base is the override base image for this architecture"
@@ -108,6 +112,32 @@
         "changes"
       ],
       "description": "ChangelogEntry represents a changelog entry"
+    },
+    "DockerfileConfig": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path is the path to the Dockerfile (default: \"Dockerfile\")"
+        },
+        "context": {
+          "type": "string",
+          "description": "Context is the build context directory (default: \".\")"
+        },
+        "args": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Args are build arguments to pass to the Dockerfile"
+        },
+        "target": {
+          "type": "string",
+          "description": "Target specifies a build stage to target in a multi-stage Dockerfile"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DockerfileConfig specifies Dockerfile-based build configuration"
     },
     "ImageAuth": {
       "properties": {
@@ -476,16 +506,20 @@
       "type": "string",
       "description": "Version is the version of the template"
     },
+    "dockerfile": {
+      "$ref": "#/$defs/DockerfileConfig",
+      "description": "Dockerfile specifies Dockerfile-based build configuration\nWhen specified, Base and Provisioners are ignored"
+    },
     "base": {
       "$ref": "#/$defs/BaseImage",
-      "description": "Base is the base image configuration"
+      "description": "Base is the base image configuration\nIgnored when Dockerfile is specified"
     },
     "provisioners": {
       "items": {
         "$ref": "#/$defs/Provisioner"
       },
       "type": "array",
-      "description": "Provisioners is the list of provisioners to run during the build"
+      "description": "Provisioners is the list of provisioners to run during the build\nIgnored when Dockerfile is specified"
     },
     "post_changes": {
       "items": {

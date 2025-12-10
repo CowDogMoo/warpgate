@@ -67,6 +67,14 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 
 	// Resolve relative paths based on config file location
 	baseDir := filepath.Dir(path)
+	// Make baseDir absolute if it's not already
+	if !filepath.IsAbs(baseDir) {
+		absBaseDir, err := filepath.Abs(baseDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve base directory: %w", err)
+		}
+		baseDir = absBaseDir
+	}
 	l.resolveRelativePaths(&config, baseDir)
 
 	return &config, nil
@@ -108,34 +116,67 @@ func (l *Loader) expandVariables(s string, vars map[string]string) string {
 
 // resolveRelativePaths converts relative paths in the config to absolute paths
 func (l *Loader) resolveRelativePaths(config *builder.Config, baseDir string) {
+	// Resolve Dockerfile paths if using Dockerfile mode
+	l.resolveDockerfilePaths(config, baseDir)
+
+	// Resolve provisioner paths
 	for i := range config.Provisioners {
-		prov := &config.Provisioners[i]
+		l.resolveProvisionerPaths(&config.Provisioners[i], baseDir)
+	}
+}
 
-		switch prov.Type {
-		case "ansible":
-			if prov.PlaybookPath != "" && !filepath.IsAbs(prov.PlaybookPath) {
-				prov.PlaybookPath = filepath.Join(baseDir, prov.PlaybookPath)
-			}
-			if prov.GalaxyFile != "" && !filepath.IsAbs(prov.GalaxyFile) {
-				prov.GalaxyFile = filepath.Join(baseDir, prov.GalaxyFile)
-			}
-			if prov.Inventory != "" && !filepath.IsAbs(prov.Inventory) {
-				prov.Inventory = filepath.Join(baseDir, prov.Inventory)
-			}
+// resolveDockerfilePaths resolves Dockerfile-related paths
+func (l *Loader) resolveDockerfilePaths(config *builder.Config, baseDir string) {
+	if config.Dockerfile == nil {
+		return
+	}
+	if config.Dockerfile.Path != "" && !filepath.IsAbs(config.Dockerfile.Path) {
+		config.Dockerfile.Path = filepath.Join(baseDir, config.Dockerfile.Path)
+	}
+	if config.Dockerfile.Context != "" && !filepath.IsAbs(config.Dockerfile.Context) {
+		config.Dockerfile.Context = filepath.Join(baseDir, config.Dockerfile.Context)
+	}
+}
 
-		case "script":
-			for j := range prov.Scripts {
-				if !filepath.IsAbs(prov.Scripts[j]) {
-					prov.Scripts[j] = filepath.Join(baseDir, prov.Scripts[j])
-				}
-			}
+// resolveProvisionerPaths resolves paths within a single provisioner
+func (l *Loader) resolveProvisionerPaths(prov *builder.Provisioner, baseDir string) {
+	switch prov.Type {
+	case "ansible":
+		l.resolveAnsiblePaths(prov, baseDir)
+	case "script":
+		l.resolveScriptPaths(prov, baseDir)
+	case "powershell":
+		l.resolvePowerShellPaths(prov, baseDir)
+	}
+}
 
-		case "powershell":
-			for j := range prov.PSScripts {
-				if !filepath.IsAbs(prov.PSScripts[j]) {
-					prov.PSScripts[j] = filepath.Join(baseDir, prov.PSScripts[j])
-				}
-			}
+// resolveAnsiblePaths resolves Ansible provisioner paths
+func (l *Loader) resolveAnsiblePaths(prov *builder.Provisioner, baseDir string) {
+	if prov.PlaybookPath != "" && !filepath.IsAbs(prov.PlaybookPath) {
+		prov.PlaybookPath = filepath.Join(baseDir, prov.PlaybookPath)
+	}
+	if prov.GalaxyFile != "" && !filepath.IsAbs(prov.GalaxyFile) {
+		prov.GalaxyFile = filepath.Join(baseDir, prov.GalaxyFile)
+	}
+	if prov.Inventory != "" && !filepath.IsAbs(prov.Inventory) {
+		prov.Inventory = filepath.Join(baseDir, prov.Inventory)
+	}
+}
+
+// resolveScriptPaths resolves script provisioner paths
+func (l *Loader) resolveScriptPaths(prov *builder.Provisioner, baseDir string) {
+	for j := range prov.Scripts {
+		if !filepath.IsAbs(prov.Scripts[j]) {
+			prov.Scripts[j] = filepath.Join(baseDir, prov.Scripts[j])
+		}
+	}
+}
+
+// resolvePowerShellPaths resolves PowerShell provisioner paths
+func (l *Loader) resolvePowerShellPaths(prov *builder.Provisioner, baseDir string) {
+	for j := range prov.PSScripts {
+		if !filepath.IsAbs(prov.PSScripts[j]) {
+			prov.PSScripts[j] = filepath.Join(baseDir, prov.PSScripts[j])
 		}
 	}
 }

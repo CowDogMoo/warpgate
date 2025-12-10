@@ -26,6 +26,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cowdogmoo/warpgate/pkg/builder"
 )
 
 func TestExpandVariables(t *testing.T) {
@@ -245,5 +247,218 @@ targets:
 	expectedImage := "ubuntu:22.04"
 	if config.Base.Image != expectedImage {
 		t.Errorf("Base.Image = %q, want %q", config.Base.Image, expectedImage)
+	}
+}
+
+func TestResolveRelativePathsDockerfile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create test directory structure
+	buildDir := filepath.Join(tmpDir, "build")
+	if err := os.MkdirAll(buildDir, 0755); err != nil {
+		t.Fatalf("Failed to create build dir: %v", err)
+	}
+
+	// Create test files
+	dockerfile := filepath.Join(buildDir, "Dockerfile")
+	if err := os.WriteFile(dockerfile, []byte("FROM ubuntu:22.04"), 0644); err != nil {
+		t.Fatalf("Failed to create Dockerfile: %v", err)
+	}
+
+	tests := []struct {
+		name               string
+		config             builder.Config
+		baseDir            string
+		expectedDockerfile string
+		expectedContext    string
+		description        string
+	}{
+		{
+			name: "relative dockerfile paths",
+			config: builder.Config{
+				Dockerfile: &builder.DockerfileConfig{
+					Path:    "build/Dockerfile",
+					Context: "build",
+				},
+			},
+			baseDir:            tmpDir,
+			expectedDockerfile: filepath.Join(tmpDir, "build", "Dockerfile"),
+			expectedContext:    filepath.Join(tmpDir, "build"),
+			description:        "Should resolve relative Dockerfile paths to absolute",
+		},
+		{
+			name: "absolute dockerfile paths unchanged",
+			config: builder.Config{
+				Dockerfile: &builder.DockerfileConfig{
+					Path:    dockerfile,
+					Context: buildDir,
+				},
+			},
+			baseDir:            tmpDir,
+			expectedDockerfile: dockerfile,
+			expectedContext:    buildDir,
+			description:        "Should not modify absolute paths",
+		},
+		{
+			name: "empty dockerfile context defaults",
+			config: builder.Config{
+				Dockerfile: &builder.DockerfileConfig{
+					Path: "Dockerfile",
+				},
+			},
+			baseDir:            tmpDir,
+			expectedDockerfile: filepath.Join(tmpDir, "Dockerfile"),
+			expectedContext:    "",
+			description:        "Should resolve Dockerfile path even with empty context",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			loader := NewLoader()
+			loader.resolveRelativePaths(&tt.config, tt.baseDir)
+
+			if tt.config.Dockerfile != nil {
+				if tt.config.Dockerfile.Path != tt.expectedDockerfile {
+					t.Errorf("Dockerfile Path = %q, want %q. %s",
+						tt.config.Dockerfile.Path, tt.expectedDockerfile, tt.description)
+				}
+				if tt.expectedContext != "" && tt.config.Dockerfile.Context != tt.expectedContext {
+					t.Errorf("Dockerfile Context = %q, want %q. %s",
+						tt.config.Dockerfile.Context, tt.expectedContext, tt.description)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadFromFileWithDockerfile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create Dockerfile
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte("FROM ubuntu:22.04"), 0644); err != nil {
+		t.Fatalf("Failed to create Dockerfile: %v", err)
+	}
+
+	// Create test config file
+	testFile := filepath.Join(tmpDir, "config.yaml")
+	content := `metadata:
+  name: dockerfile-template
+  version: 1.0.0
+  description: Dockerfile-based template
+  author: test
+  license: MIT
+  tags: []
+  requires:
+    warpgate: '>=1.0.0'
+name: test-app
+version: latest
+dockerfile:
+  path: Dockerfile
+  context: .
+  target: production
+  args:
+    VERSION: 1.0.0
+    BUILD_DATE: ${BUILD_DATE}
+targets:
+  - type: container
+    platforms:
+      - linux/amd64
+`
+
+	if err := os.WriteFile(testFile, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Set environment variable for build date
+	buildDate := "2025-01-15"
+	if err := os.Setenv("BUILD_DATE", buildDate); err != nil {
+		t.Fatalf("Failed to set BUILD_DATE: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("BUILD_DATE"); err != nil {
+			t.Logf("Failed to unset BUILD_DATE: %v", err)
+		}
+	}()
+
+	loader := NewLoader()
+	config, err := loader.LoadFromFile(testFile)
+	if err != nil {
+		t.Fatalf("LoadFromFile() error = %v", err)
+	}
+
+	// Verify Dockerfile configuration was loaded
+	if config.Dockerfile == nil {
+		t.Fatal("Expected Dockerfile config but got nil")
+	}
+
+	// Verify paths are resolved to absolute
+	if !filepath.IsAbs(config.Dockerfile.Path) {
+		t.Errorf("Expected absolute Dockerfile path, got %q", config.Dockerfile.Path)
+	}
+	if !filepath.IsAbs(config.Dockerfile.Context) {
+		t.Errorf("Expected absolute context path, got %q", config.Dockerfile.Context)
+	}
+
+	// Verify values
+	if config.Dockerfile.Target != "production" {
+		t.Errorf("Expected target 'production', got %q", config.Dockerfile.Target)
+	}
+	if config.Dockerfile.Args["VERSION"] != "1.0.0" {
+		t.Errorf("Expected VERSION '1.0.0', got %q", config.Dockerfile.Args["VERSION"])
+	}
+	if config.Dockerfile.Args["BUILD_DATE"] != buildDate {
+		t.Errorf("Expected BUILD_DATE %q, got %q", buildDate, config.Dockerfile.Args["BUILD_DATE"])
+	}
+}
+
+func TestResolveRelativePathsMixed(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create test directory structure
+	ansibleDir := filepath.Join(tmpDir, "ansible")
+	scriptsDir := filepath.Join(tmpDir, "scripts")
+	if err := os.MkdirAll(ansibleDir, 0755); err != nil {
+		t.Fatalf("Failed to create ansible dir: %v", err)
+	}
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("Failed to create scripts dir: %v", err)
+	}
+
+	// Create test files
+	playbookPath := filepath.Join(ansibleDir, "playbook.yml")
+	scriptPath := filepath.Join(scriptsDir, "setup.sh")
+	if err := os.WriteFile(playbookPath, []byte("---\n"), 0644); err != nil {
+		t.Fatalf("Failed to create playbook: %v", err)
+	}
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/bash\n"), 0644); err != nil {
+		t.Fatalf("Failed to create script: %v", err)
+	}
+
+	config := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{
+				Type:         "ansible",
+				PlaybookPath: "ansible/playbook.yml",
+			},
+			{
+				Type:    "script",
+				Scripts: []string{"scripts/setup.sh"},
+			},
+		},
+	}
+
+	loader := NewLoader()
+	loader.resolveRelativePaths(&config, tmpDir)
+
+	// Verify ansible paths are resolved
+	if config.Provisioners[0].PlaybookPath != playbookPath {
+		t.Errorf("PlaybookPath = %q, want %q", config.Provisioners[0].PlaybookPath, playbookPath)
+	}
+
+	// Verify script paths are resolved
+	if config.Provisioners[1].Scripts[0] != scriptPath {
+		t.Errorf("Script path = %q, want %q", config.Provisioners[1].Scripts[0], scriptPath)
 	}
 }

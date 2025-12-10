@@ -33,25 +33,21 @@ RUN go build -trimpath -ldflags="-s -w" -o warpgate ./cmd/warpgate
 # Runtime stage - minimal image with only runtime dependencies
 FROM debian:bookworm-slim
 
-# Install runtime dependencies for BuildKit client and storage libraries
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    libgpgme11 \
-    libassuan0 \
-    libdevmapper1.02.1 \
-    && rm -rf /var/lib/apt/lists/*
-
 # Metadata labels
 LABEL org.opencontainers.image.title="warpgate"
 LABEL org.opencontainers.image.description="Container image builder and template manager"
 LABEL org.opencontainers.image.vendor="CowDogMoo"
 LABEL org.opencontainers.image.source="https://github.com/cowdogmoo/warpgate"
 
-# Install ONLY runtime dependencies (ansible, openssh-clients)
-RUN dnf -y install \
+# Install runtime dependencies for BuildKit client, storage libraries, and Ansible
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libgpgme11 \
+    libassuan0 \
+    libdevmapper1.02.1 \
     ansible \
-    openssh-clients \
-    && dnf -y clean all
+    openssh-client \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy the compiled binary from builder
 COPY --from=builder /build/warpgate /usr/local/bin/warpgate

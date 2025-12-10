@@ -1,0 +1,31 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/cowdogmoo/warpgate/main/schema/warpgate-template.json
+metadata:
+  name: warpgate
+  version: 2.0.1
+  description: Warpgate container image builder and template manager
+  author: Jayson Grace <jayson.e.grace@gmail.com>
+  license: MIT
+  tags:
+    - warpgate
+    - builder
+    - container
+  requires:
+    warpgate: '>=1.0.0'
+
+name: warpgate
+version: latest
+
+dockerfile:
+  path: Dockerfile
+  context: .
+
+targets:
+  - type: container
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    registry: ghcr.io/cowdogmoo
+    tags:
+      - latest
+    push: false

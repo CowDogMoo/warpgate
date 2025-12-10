@@ -24,8 +24,10 @@ infrastructure image creation.
 
 **Why Warp Gate?**
 
-- **Unified provisioning** - Use Ansible or shell scripts for both containers
-  and VMs (no separate Dockerfiles)
+- **Unified workflow** - Build from Dockerfiles OR provisioners
+  (Ansible/shell) with the same tool
+- **Flexible provisioning** - Use native Dockerfiles for simple images,
+  provisioners for complex ones
 - **Faster builds** - Native Go performance with BuildKit integration
 - **Simpler syntax** - Clean YAML templates instead of HCL/JSON
 - **Better portability** - Run natively on Linux or containerized anywhere
@@ -100,7 +102,8 @@ and [Usage Guide](docs/usage-guide.md).
 
 | Feature | Description | Status |
 | --- | --- | --- |
-| **Container Images** | Build OCI images with BuildKit | ✅  Stable |
+| **Container Images** | Build OCI images with BuildKit | ✅ Stable |
+| **Dockerfile Support** | Native Dockerfile builds | ✅ Stable |
 | **AWS AMIs** | Create EC2 AMIs | ✅  Stable |
 | **Multi-arch Builds** | Build amd64/arm64 simultaneously | ✅  Stable |
 | **Template Discovery** | Git/local template repo mgmt | ✅  Stable |

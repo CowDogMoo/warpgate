@@ -278,3 +278,244 @@ func TestPostProcessorDefaultValues(t *testing.T) {
 	assert.Nil(t, pp.Only)
 	assert.Nil(t, pp.Except)
 }
+
+func TestDockerfileConfig(t *testing.T) {
+	tests := []struct {
+		name            string
+		config          DockerfileConfig
+		expectedPath    string
+		expectedContext string
+		description     string
+	}{
+		{
+			name:            "defaults when empty",
+			config:          DockerfileConfig{},
+			expectedPath:    "Dockerfile",
+			expectedContext: ".",
+			description:     "Should use default values when fields are empty",
+		},
+		{
+			name: "custom values",
+			config: DockerfileConfig{
+				Path:    "build/Dockerfile.custom",
+				Context: "src",
+			},
+			expectedPath:    "build/Dockerfile.custom",
+			expectedContext: "src",
+			description:     "Should use custom values when provided",
+		},
+		{
+			name: "with build args and target",
+			config: DockerfileConfig{
+				Path:    "Dockerfile",
+				Context: ".",
+				Args: map[string]string{
+					"VERSION": "1.0.0",
+					"ARCH":    "amd64",
+				},
+				Target: "production",
+			},
+			expectedPath:    "Dockerfile",
+			expectedContext: ".",
+			description:     "Should handle build args and target",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expectedPath, tt.config.GetDockerfilePath(), tt.description)
+			assert.Equal(t, tt.expectedContext, tt.config.GetBuildContext(), tt.description)
+		})
+	}
+}
+
+func TestIsDockerfileBased(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   Config
+		expected bool
+	}{
+		{
+			name: "with dockerfile config",
+			config: Config{
+				Dockerfile: &DockerfileConfig{
+					Path: "Dockerfile",
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "without dockerfile config",
+			config: Config{
+				Base: BaseImage{
+					Image: "ubuntu:22.04",
+				},
+			},
+			expected: false,
+		},
+		{
+			name:     "nil dockerfile config",
+			config:   Config{},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, tt.config.IsDockerfileBased())
+		})
+	}
+}
+
+func TestArchOverride(t *testing.T) {
+	tests := []struct {
+		name        string
+		override    ArchOverride
+		description string
+	}{
+		{
+			name: "dockerfile override",
+			override: ArchOverride{
+				Dockerfile: &DockerfileConfig{
+					Path:    "Dockerfile.arm64",
+					Context: ".",
+				},
+			},
+			description: "Should support Dockerfile override for specific architecture",
+		},
+		{
+			name: "base override",
+			override: ArchOverride{
+				Base: &BaseImage{
+					Image: "ubuntu:22.04-arm64",
+				},
+			},
+			description: "Should support base image override for specific architecture",
+		},
+		{
+			name: "provisioners override with append",
+			override: ArchOverride{
+				Provisioners: []Provisioner{
+					{
+						Type:   "shell",
+						Inline: []string{"echo arm64-specific"},
+					},
+				},
+				AppendProvisioners: true,
+			},
+			description: "Should support provisioners override with append flag",
+		},
+		{
+			name: "provisioners override without append",
+			override: ArchOverride{
+				Provisioners: []Provisioner{
+					{
+						Type:   "shell",
+						Inline: []string{"echo replace all"},
+					},
+				},
+				AppendProvisioners: false,
+			},
+			description: "Should support provisioners override with replace behavior",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.override.Dockerfile != nil {
+				assert.NotNil(t, tt.override.Dockerfile, tt.description)
+			}
+			if tt.override.Base != nil {
+				assert.NotNil(t, tt.override.Base, tt.description)
+			}
+			if len(tt.override.Provisioners) > 0 {
+				assert.NotEmpty(t, tt.override.Provisioners, tt.description)
+			}
+		})
+	}
+}
+
+func TestConfigWithDockerfileBased(t *testing.T) {
+	config := Config{
+		Metadata: Metadata{
+			Name:        "dockerfile-template",
+			Version:     "1.0.0",
+			Description: "Dockerfile-based template",
+			Author:      "Test Author",
+			License:     "MIT",
+		},
+		Name:    "test-app",
+		Version: "latest",
+		Dockerfile: &DockerfileConfig{
+			Path:    "Dockerfile",
+			Context: ".",
+			Args: map[string]string{
+				"VERSION": "1.0.0",
+			},
+			Target: "production",
+		},
+		Targets: []Target{
+			{
+				Type:      "container",
+				Platforms: []string{"linux/amd64", "linux/arm64"},
+			},
+		},
+	}
+
+	assert.True(t, config.IsDockerfileBased())
+	assert.NotNil(t, config.Dockerfile)
+	assert.Equal(t, "Dockerfile", config.Dockerfile.Path)
+	assert.Equal(t, "production", config.Dockerfile.Target)
+	assert.Equal(t, "1.0.0", config.Dockerfile.Args["VERSION"])
+}
+
+func TestConfigWithArchOverrides(t *testing.T) {
+	config := Config{
+		Name:    "multi-arch-app",
+		Version: "1.0.0",
+		Base: BaseImage{
+			Image: "ubuntu:22.04",
+		},
+		ArchOverrides: map[string]ArchOverride{
+			"arm64": {
+				Dockerfile: &DockerfileConfig{
+					Path:    "Dockerfile.arm64",
+					Context: ".",
+				},
+			},
+			"amd64": {
+				Base: &BaseImage{
+					Image: "ubuntu:22.04-amd64-optimized",
+				},
+				Provisioners: []Provisioner{
+					{
+						Type:   "shell",
+						Inline: []string{"echo amd64-specific setup"},
+					},
+				},
+				AppendProvisioners: true,
+			},
+		},
+		Targets: []Target{
+			{
+				Type:      "container",
+				Platforms: []string{"linux/amd64", "linux/arm64"},
+			},
+		},
+	}
+
+	assert.NotNil(t, config.ArchOverrides)
+	assert.Len(t, config.ArchOverrides, 2)
+
+	// Check arm64 override
+	arm64Override := config.ArchOverrides["arm64"]
+	assert.NotNil(t, arm64Override.Dockerfile)
+	assert.Equal(t, "Dockerfile.arm64", arm64Override.Dockerfile.Path)
+
+	// Check amd64 override
+	amd64Override := config.ArchOverrides["amd64"]
+	assert.NotNil(t, amd64Override.Base)
+	assert.Equal(t, "ubuntu:22.04-amd64-optimized", amd64Override.Base.Image)
+	assert.True(t, amd64Override.AppendProvisioners)
+	assert.Len(t, amd64Override.Provisioners, 1)
+}

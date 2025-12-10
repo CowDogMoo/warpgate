@@ -120,24 +120,34 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 // Unlike BuildMultiArch, this method does not limit concurrency as push operations are
 // typically I/O-bound and benefit from maximum parallelism. If any push fails, the context
 // is canceled and remaining pushes are stopped, returning the first error encountered.
+// The digest from each push is captured and stored in the corresponding BuildResult.
 func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildResult, registry string, builder ContainerBuilder) error {
 	logging.Info("Pushing %d architecture images to %s", len(results), registry)
 
 	// Use errgroup for concurrent pushes (no concurrency limit needed for push operations)
 	g, ctx := errgroup.WithContext(ctx)
 
-	for _, result := range results {
-		result := result // Capture loop variable
+	for i := range results {
+		i := i // Capture loop index
+		result := results[i]
 		g.Go(func() error {
 			registryRef := fmt.Sprintf("%s/%s", registry, result.ImageRef)
 			logging.Info("Pushing %s", registryRef)
 
-			if err := builder.Push(ctx, result.ImageRef, registryRef); err != nil {
+			digest, err := builder.Push(ctx, result.ImageRef, registryRef)
+			if err != nil {
 				logging.Error("Failed to push %s: %v", registryRef, err)
 				return fmt.Errorf("push %s: %w", registryRef, err)
 			}
 
-			logging.Info("Successfully pushed %s", registryRef)
+			// Update the digest in the result if we got one from the push
+			if digest != "" {
+				results[i].Digest = digest
+				logging.Info("Successfully pushed %s with digest %s", registryRef, digest)
+			} else {
+				logging.Info("Successfully pushed %s", registryRef)
+			}
+
 			return nil
 		})
 	}

@@ -24,16 +24,42 @@ Warpgate templates use YAML for simple, readable configuration. Templates define
 
 ## Template Structure
 
-Every template requires these top-level keys:
+Warpgate supports two template modes:
+
+### Provisioner-Based Templates
+
+Traditional templates with provisioners (Ansible, shell, etc.):
 
 ```yaml
 metadata: # Template information
 name: # Image name
 base: # Base image configuration
-provisioners: # Build steps (optional)
+provisioners: # Build steps (Ansible/shell/etc.)
 targets: # Build targets
 variables: # Template variables (optional)
 ```
+
+### Dockerfile-Based Templates
+
+Simple templates that use existing Dockerfiles:
+
+```yaml
+metadata: # Template information
+name: # Image name
+dockerfile: # Dockerfile configuration
+  path: Dockerfile # Path to Dockerfile
+  context: . # Build context
+  args: # Build arguments (optional)
+    KEY: value
+targets: # Build targets
+```
+
+**When to use each:**
+
+- **Dockerfile mode**: Simple images, existing Dockerfiles, standard Docker
+  workflows
+- **Provisioner mode**: Complex provisioning, Ansible playbooks,
+  cross-platform builds (containers + AMIs)
 
 ## Metadata Section
 
@@ -338,7 +364,62 @@ targets:
 
 ## Complete Examples
 
-### Minimal Template
+### Dockerfile-Based Template
+
+For simple images with existing Dockerfiles:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/cowdogmoo/warpgate/main/schema/warpgate-template.json
+metadata:
+  name: printer-monitor
+  version: 1.0.0
+  description: Brother printer health monitoring utility
+  author: Your Name <your.email@example.com>
+  license: MIT
+  tags:
+    - monitoring
+    - utility
+  requires:
+    warpgate: '>=1.0.0'
+
+name: printer-monitor
+version: latest
+
+dockerfile:
+  path: Dockerfile           # Relative to this warpgate.yaml
+  context: .                 # Build context directory
+  args:                      # Optional build arguments
+    PYTHON_VERSION: "3.12"
+
+targets:
+  - type: container
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    registry: ghcr.io/myorg
+    tags:
+      - latest
+      - v1.0.0
+    push: false
+```
+
+**Usage:**
+
+```bash
+# Build for amd64
+warpgate build printer-monitor/warpgate.yaml --arch amd64
+
+# Build for arm64 with custom registry
+warpgate build printer-monitor/warpgate.yaml --arch arm64 --registry ghcr.io/myorg
+
+# Build and push
+warpgate build printer-monitor/warpgate.yaml --arch amd64 --push
+
+# Build with custom build args
+warpgate build printer-monitor/warpgate.yaml --arch amd64 --build-arg PYTHON_VERSION=3.11
+```
+
+### Minimal Template (Provisioner Mode)
 
 ```yaml
 metadata:

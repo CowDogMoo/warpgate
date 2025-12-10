@@ -485,3 +485,197 @@ func TestValidator_RequiredFields(t *testing.T) {
 		})
 	}
 }
+
+func TestValidator_ValidateDockerfile(t *testing.T) {
+	validator := NewValidator()
+	tmpDir := t.TempDir()
+
+	// Create test Dockerfile
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte("FROM ubuntu:22.04"), 0644); err != nil {
+		t.Fatalf("Failed to create test Dockerfile: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		config      *builder.Config
+		options     ValidationOptions
+		shouldError bool
+		description string
+	}{
+		{
+			name: "valid dockerfile config with existing file",
+			config: &builder.Config{
+				Name: "test",
+				Dockerfile: &builder.DockerfileConfig{
+					Path: dockerfilePath,
+				},
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			options:     ValidationOptions{SyntaxOnly: false},
+			shouldError: false,
+			description: "Should pass with existing Dockerfile",
+		},
+		{
+			name: "dockerfile config with missing file in full mode",
+			config: &builder.Config{
+				Name: "test",
+				Dockerfile: &builder.DockerfileConfig{
+					Path: "/nonexistent/Dockerfile",
+				},
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			options:     ValidationOptions{SyntaxOnly: false},
+			shouldError: true,
+			description: "Should fail with missing Dockerfile in full validation",
+		},
+		{
+			name: "dockerfile config with missing file in syntax-only mode",
+			config: &builder.Config{
+				Name: "test",
+				Dockerfile: &builder.DockerfileConfig{
+					Path: "/nonexistent/Dockerfile",
+				},
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			options:     ValidationOptions{SyntaxOnly: true},
+			shouldError: false,
+			description: "Should pass with missing Dockerfile in syntax-only mode",
+		},
+		{
+			name: "dockerfile with default path",
+			config: &builder.Config{
+				Name: "test",
+				Dockerfile: &builder.DockerfileConfig{
+					Path: "",
+				},
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			options:     ValidationOptions{SyntaxOnly: true},
+			shouldError: false,
+			description: "Should handle default Dockerfile path",
+		},
+		{
+			name: "dockerfile with build args and target",
+			config: &builder.Config{
+				Name: "test",
+				Dockerfile: &builder.DockerfileConfig{
+					Path: dockerfilePath,
+					Args: map[string]string{
+						"VERSION": "1.0.0",
+					},
+					Target: "production",
+				},
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			options:     ValidationOptions{SyntaxOnly: false},
+			shouldError: false,
+			description: "Should pass with build args and target",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.ValidateWithOptions(tt.config, tt.options)
+			if tt.shouldError && err == nil {
+				t.Errorf("ValidateWithOptions() expected error but got none. %s", tt.description)
+			}
+			if !tt.shouldError && err != nil {
+				t.Errorf("ValidateWithOptions() unexpected error: %v. %s", err, tt.description)
+			}
+		})
+	}
+}
+
+func TestValidator_DockerfileVsProvisioners(t *testing.T) {
+	validator := NewValidator()
+	tmpDir := t.TempDir()
+
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte("FROM ubuntu:22.04"), 0644); err != nil {
+		t.Fatalf("Failed to create Dockerfile: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		config      *builder.Config
+		shouldError bool
+		description string
+	}{
+		{
+			name: "dockerfile mode skips base image validation",
+			config: &builder.Config{
+				Name: "test",
+				Dockerfile: &builder.DockerfileConfig{
+					Path: dockerfilePath,
+				},
+				// Base is empty - should not error in Dockerfile mode
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			shouldError: false,
+			description: "Dockerfile mode should not require base image",
+		},
+		{
+			name: "provisioner mode requires base image",
+			config: &builder.Config{
+				Name: "test",
+				// No Dockerfile config - should require base image
+				Provisioners: []builder.Provisioner{
+					{
+						Type:   "shell",
+						Inline: []string{"echo test"},
+					},
+				},
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			shouldError: true,
+			description: "Provisioner mode should require base image",
+		},
+		{
+			name: "dockerfile with provisioners should work",
+			config: &builder.Config{
+				Name: "test",
+				Dockerfile: &builder.DockerfileConfig{
+					Path: dockerfilePath,
+				},
+				Provisioners: []builder.Provisioner{
+					{
+						Type:   "shell",
+						Inline: []string{"echo test"},
+					},
+				},
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			shouldError: false,
+			description: "Can have both Dockerfile and provisioners",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.Validate(tt.config)
+			if tt.shouldError && err == nil {
+				t.Errorf("Validate() expected error but got none. %s", tt.description)
+			}
+			if !tt.shouldError && err != nil {
+				t.Errorf("Validate() unexpected error: %v. %s", err, tt.description)
+			}
+		})
+	}
+}

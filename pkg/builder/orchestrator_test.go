@@ -50,9 +50,9 @@ func (m *MockContainerBuilder) Tag(ctx context.Context, imageRef, newTag string)
 	return args.Error(0)
 }
 
-func (m *MockContainerBuilder) Push(ctx context.Context, imageRef, destination string) error {
+func (m *MockContainerBuilder) Push(ctx context.Context, imageRef, destination string) (string, error) {
 	args := m.Called(ctx, imageRef, destination)
-	return args.Error(0)
+	return args.String(0), args.Error(1)
 }
 
 func (m *MockContainerBuilder) Close() error {
@@ -265,7 +265,7 @@ func TestPushMultiArch(t *testing.T) {
 			registry: "ghcr.io/test",
 			mockPushSetup: func(m *MockContainerBuilder, results []builder.BuildResult) {
 				for _, result := range results {
-					m.On("Push", mock.Anything, result.ImageRef, mock.Anything).Return(nil).Once()
+					m.On("Push", mock.Anything, result.ImageRef, mock.Anything).Return("sha256:1234567890abcdef", nil).Once()
 				}
 			},
 			expectError: false,
@@ -287,9 +287,9 @@ func TestPushMultiArch(t *testing.T) {
 			registry: "ghcr.io/test",
 			mockPushSetup: func(m *MockContainerBuilder, results []builder.BuildResult) {
 				// First push succeeds
-				m.On("Push", mock.Anything, results[0].ImageRef, mock.Anything).Return(nil).Once()
+				m.On("Push", mock.Anything, results[0].ImageRef, mock.Anything).Return("sha256:1234567890abcdef", nil).Once()
 				// Second push fails
-				m.On("Push", mock.Anything, results[1].ImageRef, mock.Anything).Return(fmt.Errorf("push failed")).Once()
+				m.On("Push", mock.Anything, results[1].ImageRef, mock.Anything).Return("", fmt.Errorf("push failed")).Once()
 			},
 			expectError:   true,
 			errorContains: "multi-arch push failed",

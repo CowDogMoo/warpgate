@@ -59,14 +59,23 @@ func (v *Validator) ValidateWithOptions(config *builder.Config, options Validati
 		return fmt.Errorf("config.name is required")
 	}
 
-	if config.Base.Image == "" {
-		return fmt.Errorf("config.base.image is required")
-	}
-
-	// Validate provisioners
-	for i, prov := range config.Provisioners {
-		if err := v.validateProvisioner(&prov, i); err != nil {
+	// Check if this is a Dockerfile-based build
+	if config.IsDockerfileBased() {
+		// Validate Dockerfile configuration
+		if err := v.validateDockerfile(config.Dockerfile); err != nil {
 			return err
+		}
+	} else {
+		// Validate base image for provisioner-based builds
+		if config.Base.Image == "" {
+			return fmt.Errorf("config.base.image is required (or use dockerfile mode)")
+		}
+
+		// Validate provisioners
+		for i, prov := range config.Provisioners {
+			if err := v.validateProvisioner(&prov, i); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -78,6 +87,22 @@ func (v *Validator) ValidateWithOptions(config *builder.Config, options Validati
 	for i, target := range config.Targets {
 		if err := v.validateTarget(&target, i); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+// validateDockerfile validates Dockerfile configuration
+func (v *Validator) validateDockerfile(df *builder.DockerfileConfig) error {
+	if df == nil {
+		return fmt.Errorf("dockerfile configuration is nil")
+	}
+
+	dockerfilePath := df.GetDockerfilePath()
+	if !v.options.SyntaxOnly {
+		if _, err := os.Stat(dockerfilePath); err != nil {
+			return fmt.Errorf("dockerfile not found: %s", dockerfilePath)
 		}
 	}
 
