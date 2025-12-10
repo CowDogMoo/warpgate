@@ -599,3 +599,77 @@ func verifyNonCredentialFieldsLoaded(t *testing.T, config *Config) {
 		t.Errorf("Expected region 'us-west-2', got '%s'", config.AWS.Region)
 	}
 }
+
+func TestGetEnvWithFallback(t *testing.T) {
+	tests := []struct {
+		name           string
+		primary        string
+		fallback       string
+		primaryValue   string
+		fallbackValue  string
+		expectedResult string
+	}{
+		{
+			name:           "primary set, fallback set - returns primary",
+			primary:        "TEST_PRIMARY",
+			fallback:       "TEST_FALLBACK",
+			primaryValue:   "primary-value",
+			fallbackValue:  "fallback-value",
+			expectedResult: "primary-value",
+		},
+		{
+			name:           "primary not set, fallback set - returns fallback",
+			primary:        "TEST_PRIMARY",
+			fallback:       "TEST_FALLBACK",
+			primaryValue:   "",
+			fallbackValue:  "fallback-value",
+			expectedResult: "fallback-value",
+		},
+		{
+			name:           "primary set, fallback not set - returns primary",
+			primary:        "TEST_PRIMARY",
+			fallback:       "TEST_FALLBACK",
+			primaryValue:   "primary-value",
+			fallbackValue:  "",
+			expectedResult: "primary-value",
+		},
+		{
+			name:           "neither set - returns empty string",
+			primary:        "TEST_PRIMARY",
+			fallback:       "TEST_FALLBACK",
+			primaryValue:   "",
+			fallbackValue:  "",
+			expectedResult: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean up environment before and after test
+			defer func() {
+				_ = os.Unsetenv(tt.primary)
+			}()
+			defer func() {
+				_ = os.Unsetenv(tt.fallback)
+			}()
+
+			// Set environment variables as needed
+			if tt.primaryValue != "" {
+				if err := os.Setenv(tt.primary, tt.primaryValue); err != nil {
+					t.Fatalf("Failed to set environment variable: %v", err)
+				}
+			}
+			if tt.fallbackValue != "" {
+				if err := os.Setenv(tt.fallback, tt.fallbackValue); err != nil {
+					t.Fatalf("Failed to set environment variable: %v", err)
+				}
+			}
+
+			result := getEnvWithFallback(tt.primary, tt.fallback)
+
+			if result != tt.expectedResult {
+				t.Errorf("Expected %q, got %q", tt.expectedResult, result)
+			}
+		})
+	}
+}

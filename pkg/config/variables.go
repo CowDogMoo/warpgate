@@ -27,6 +27,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cowdogmoo/warpgate/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,7 +44,7 @@ func ParseVariables(vars, varFiles []string) (map[string]string, error) {
 	for _, varFile := range varFiles {
 		fileVars, err := LoadVariablesFromFile(varFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load var file %s: %w", varFile, err)
+			return nil, errors.Wrap("load var file", varFile, err)
 		}
 		// Merge file variables (later files override earlier ones)
 		for k, v := range fileVars {
@@ -69,12 +70,12 @@ func ParseVariables(vars, varFiles []string) (map[string]string, error) {
 func LoadVariablesFromFile(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, errors.Wrap("read file", path, err)
 	}
 
 	var variables map[string]string
 	if err := yaml.Unmarshal(data, &variables); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+		return nil, errors.Wrap("parse YAML", path, err)
 	}
 
 	return variables, nil

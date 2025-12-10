@@ -59,6 +59,7 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/errors"
 	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
@@ -107,7 +108,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		// Auto-detect local buildx builder
 		builderName, containerName, err = detectBuildxBuilder(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("no active buildx builder found (set buildkit.endpoint in config for remote BuildKit): %w", err)
+			return nil, errors.Wrap("detect buildx builder", "set buildkit.endpoint in config for remote BuildKit", err)
 		}
 		addr = fmt.Sprintf("docker-container://%s", containerName)
 		logging.Info("Auto-detected BuildKit builder: %s", containerName)
@@ -120,7 +121,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	if strings.HasPrefix(addr, "tcp://") && cfg.BuildKit.TLSEnabled {
 		tlsConfig, err := loadTLSConfig(cfg.BuildKit)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load TLS config: %w", err)
+			return nil, errors.Wrap("load TLS config", "", err)
 		}
 		clientOpts = append(clientOpts, client.WithGRPCDialOption(
 			grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
@@ -137,14 +138,14 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	// Create client connection
 	c, err := client.New(ctx, addr, clientOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to BuildKit: %w", err)
+		return nil, errors.Wrap("connect to BuildKit", "", err)
 	}
 
 	// Verify connection
 	info, err := c.Info(ctx)
 	if err != nil {
 		_ = c.Close()
-		return nil, fmt.Errorf("BuildKit connection failed: %w", err)
+		return nil, errors.Wrap("verify BuildKit connection", "", err)
 	}
 
 	logging.Info("BuildKit client connected (version %s)", info.BuildkitVersion.Version)
@@ -153,7 +154,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	dockerCli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		_ = c.Close()
-		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+		return nil, errors.Wrap("create Docker client", "", err)
 	}
 
 	// Verify Docker connection
@@ -161,7 +162,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	if err != nil {
 		_ = c.Close()
 		_ = dockerCli.Close()
-		return nil, fmt.Errorf("docker connection failed: %w", err)
+		return nil, errors.Wrap("verify Docker connection", "", err)
 	}
 
 	return &BuildKitBuilder{

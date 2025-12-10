@@ -267,6 +267,16 @@ func LoadFromPath(path string) (*Config, error) {
 	})
 }
 
+// getEnvWithFallback returns the value of the primary environment variable if set,
+// otherwise returns the value of the fallback environment variable.
+// Returns an empty string if neither variable is set.
+func getEnvWithFallback(primary, fallback string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	return os.Getenv(fallback)
+}
+
 // populateAWSCredentials reads AWS credentials directly from environment variables
 // This ensures they can never come from config files, preventing accidental credential leaks
 func populateAWSCredentials(cfg *Config) {
@@ -280,17 +290,8 @@ func populateAWSCredentials(cfg *Config) {
 // Supports both WARPGATE_* and standard REGISTRY_* environment variables
 func populateRegistryCredentials(cfg *Config) {
 	// Try WARPGATE_* prefix first, fall back to REGISTRY_*
-	if username := os.Getenv("WARPGATE_REGISTRY_USERNAME"); username != "" {
-		cfg.Registry.Username = username
-	} else {
-		cfg.Registry.Username = os.Getenv("REGISTRY_USERNAME")
-	}
-
-	if token := os.Getenv("WARPGATE_REGISTRY_TOKEN"); token != "" {
-		cfg.Registry.Token = token
-	} else {
-		cfg.Registry.Token = os.Getenv("REGISTRY_TOKEN")
-	}
+	cfg.Registry.Username = getEnvWithFallback("WARPGATE_REGISTRY_USERNAME", "REGISTRY_USERNAME")
+	cfg.Registry.Token = getEnvWithFallback("WARPGATE_REGISTRY_TOKEN", "REGISTRY_TOKEN")
 }
 
 // DetectOCIRuntime finds an available OCI runtime on the system

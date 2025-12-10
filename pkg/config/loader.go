@@ -24,12 +24,12 @@ THE SOFTWARE.
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -52,7 +52,7 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 	// Read the file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
+		return nil, errors.Wrap("read config file", path, err)
 	}
 
 	// Expand variables in the YAML content
@@ -62,7 +62,7 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 	// Parse YAML
 	var config builder.Config
 	if err := yaml.Unmarshal([]byte(expandedData), &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
+		return nil, errors.Wrap("parse config file", path, err)
 	}
 
 	// Resolve relative paths based on config file location
@@ -71,7 +71,7 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 	if !filepath.IsAbs(baseDir) {
 		absBaseDir, err := filepath.Abs(baseDir)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve base directory: %w", err)
+			return nil, errors.Wrap("resolve base directory", "", err)
 		}
 		baseDir = absBaseDir
 	}
@@ -150,42 +150,46 @@ func (l *Loader) resolveProvisionerPaths(prov *builder.Provisioner, baseDir stri
 	}
 }
 
+// resolvePathList resolves a slice of paths relative to baseDir.
+// Paths that are already absolute are left unchanged.
+func resolvePathList(paths []string, baseDir string) {
+	for i := range paths {
+		if paths[i] != "" && !filepath.IsAbs(paths[i]) {
+			paths[i] = filepath.Join(baseDir, paths[i])
+		}
+	}
+}
+
+// resolveSinglePath resolves a single path relative to baseDir.
+// Paths that are already absolute are left unchanged.
+func resolveSinglePath(path *string, baseDir string) {
+	if *path != "" && !filepath.IsAbs(*path) {
+		*path = filepath.Join(baseDir, *path)
+	}
+}
+
 // resolveAnsiblePaths resolves Ansible provisioner paths
 func (l *Loader) resolveAnsiblePaths(prov *builder.Provisioner, baseDir string) {
-	if prov.PlaybookPath != "" && !filepath.IsAbs(prov.PlaybookPath) {
-		prov.PlaybookPath = filepath.Join(baseDir, prov.PlaybookPath)
-	}
-	if prov.GalaxyFile != "" && !filepath.IsAbs(prov.GalaxyFile) {
-		prov.GalaxyFile = filepath.Join(baseDir, prov.GalaxyFile)
-	}
-	if prov.Inventory != "" && !filepath.IsAbs(prov.Inventory) {
-		prov.Inventory = filepath.Join(baseDir, prov.Inventory)
-	}
+	resolveSinglePath(&prov.PlaybookPath, baseDir)
+	resolveSinglePath(&prov.GalaxyFile, baseDir)
+	resolveSinglePath(&prov.Inventory, baseDir)
 }
 
 // resolveScriptPaths resolves script provisioner paths
 func (l *Loader) resolveScriptPaths(prov *builder.Provisioner, baseDir string) {
-	for j := range prov.Scripts {
-		if !filepath.IsAbs(prov.Scripts[j]) {
-			prov.Scripts[j] = filepath.Join(baseDir, prov.Scripts[j])
-		}
-	}
+	resolvePathList(prov.Scripts, baseDir)
 }
 
 // resolvePowerShellPaths resolves PowerShell provisioner paths
 func (l *Loader) resolvePowerShellPaths(prov *builder.Provisioner, baseDir string) {
-	for j := range prov.PSScripts {
-		if !filepath.IsAbs(prov.PSScripts[j]) {
-			prov.PSScripts[j] = filepath.Join(baseDir, prov.PSScripts[j])
-		}
-	}
+	resolvePathList(prov.PSScripts, baseDir)
 }
 
 // LoadFromYAML loads a template configuration from YAML bytes
 func (l *Loader) LoadFromYAML(data []byte) (*builder.Config, error) {
 	var config builder.Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+		return nil, errors.Wrap("parse YAML", "", err)
 	}
 
 	return &config, nil
@@ -195,11 +199,11 @@ func (l *Loader) LoadFromYAML(data []byte) (*builder.Config, error) {
 func (l *Loader) SaveToFile(config *builder.Config, path string) error {
 	data, err := yaml.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+		return errors.Wrap("marshal config", "", err)
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+		return errors.Wrap("write config file", path, err)
 	}
 
 	return nil
