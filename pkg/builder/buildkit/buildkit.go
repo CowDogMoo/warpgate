@@ -26,6 +26,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,9 +35,19 @@ import (
 	"strings"
 	"time"
 
+	dockerconfigfile "github.com/docker/cli/cli/config"
+	dockerconfigtypes "github.com/docker/cli/cli/config/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
+	dockerregistry "github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	digest "github.com/opencontainers/go-digest"
@@ -1015,15 +1026,116 @@ func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done ch
 	}
 }
 
+// getRegistryAuthFromDockerConfig reads Docker's config.json and retrieves
+// credentials for the specified registry. It returns an encoded auth string
+// suitable for use in Docker API calls.
+func getRegistryAuthFromDockerConfig(registry string) (string, error) {
+	// Load Docker config from default location
+	cfg, err := dockerconfigfile.Load("")
+	if err != nil {
+		return "", fmt.Errorf("failed to load Docker config: %w", err)
+	}
+
+	// Get auth config for the registry
+	authConfig, err := cfg.GetAuthConfig(registry)
+	if err != nil {
+		return "", fmt.Errorf("failed to get auth config for %s: %w", registry, err)
+	}
+
+	// If no credentials found, return empty string (anonymous access)
+	if authConfig.Username == "" && authConfig.Password == "" && authConfig.IdentityToken == "" && authConfig.RegistryToken == "" {
+		logging.Debug("No credentials found for registry %s, using anonymous access", registry)
+		return "", nil
+	}
+
+	logging.Debug("Found credentials for registry %s (username: %s)", registry, authConfig.Username)
+
+	// Encode the auth config as base64-encoded JSON
+	encodedAuth, err := encodeAuthConfig(authConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode auth config: %w", err)
+	}
+
+	return encodedAuth, nil
+}
+
+// encodeAuthConfig encodes an AuthConfig struct as a base64-encoded JSON string
+// for use in Docker API's X-Registry-Auth header.
+func encodeAuthConfig(authConfig dockerconfigtypes.AuthConfig) (string, error) {
+	// Convert to registry.AuthConfig format expected by Docker API
+	registryAuth := dockerregistry.AuthConfig{
+		Username:      authConfig.Username,
+		Password:      authConfig.Password,
+		Auth:          authConfig.Auth,
+		ServerAddress: authConfig.ServerAddress,
+		IdentityToken: authConfig.IdentityToken,
+		RegistryToken: authConfig.RegistryToken,
+	}
+
+	// Marshal to JSON
+	authJSON, err := json.Marshal(registryAuth)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal auth config: %w", err)
+	}
+
+	// Encode as base64
+	return base64.URLEncoding.EncodeToString(authJSON), nil
+}
+
+// extractRegistryFromImageRef extracts the registry hostname from an image reference.
+// For example, "ghcr.io/owner/repo:tag" returns "ghcr.io".
+// If no registry is specified (e.g., "ubuntu:latest"), returns "docker.io".
+func extractRegistryFromImageRef(imageRef string) string {
+	// First, remove digest if present (format: image@sha256:...)
+	parts := strings.SplitN(imageRef, "@", 2)
+	imageWithoutDigest := parts[0]
+
+	// Split by slash to get registry
+	slashParts := strings.Split(imageWithoutDigest, "/")
+
+	// If there's only one part (no slashes), it's Docker Hub
+	if len(slashParts) == 1 {
+		return "docker.io"
+	}
+
+	// The first part before the first slash is the registry candidate
+	registryCandidate := slashParts[0]
+
+	// Check if it's a registry by looking for:
+	// 1. Contains a dot (e.g., ghcr.io, registry.example.com)
+	// 2. Contains a colon (e.g., localhost:5000, registry.example.com:8080)
+	// 3. Is "localhost"
+	if strings.Contains(registryCandidate, ".") || strings.Contains(registryCandidate, ":") || registryCandidate == "localhost" {
+		return registryCandidate
+	}
+
+	// Otherwise, it's likely a Docker Hub image with a namespace (e.g., library/ubuntu)
+	return "docker.io"
+}
+
 // Push pushes the built image to a container registry using the Docker SDK.
 // The imageRef should include the full registry path (e.g., "registry.io/org/image:tag").
-// This method streams output for progress visibility and returns the image digest.
+// This method automatically reads credentials from Docker's config.json and uses them
+// for authentication. It streams output for progress visibility and returns the image digest.
 func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
 	logging.Info("Pushing image: %s", imageRef)
 
-	// Create push options
+	// Extract registry from image reference if not provided
+	if registry == "" {
+		registry = extractRegistryFromImageRef(imageRef)
+		logging.Debug("Extracted registry from image ref: %s", registry)
+	}
+
+	// Get authentication credentials from Docker config
+	registryAuth, err := getRegistryAuthFromDockerConfig(registry)
+	if err != nil {
+		logging.Warn("Failed to get registry credentials: %v (attempting push anyway)", err)
+		registryAuth = ""
+	}
+
+	// Create push options with authentication
 	pushOpts := dockerimage.PushOptions{
-		RegistryAuth: "", // TODO: Add registry authentication if needed
+		RegistryAuth: registryAuth,
 	}
 
 	// Push the image
@@ -1175,11 +1287,75 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 	logging.Debug("Manifest list JSON: %s", string(manifestJSON))
 	logging.Info("Successfully created multi-arch manifest: %s", manifestName)
 
-	// Note: Actually pushing the manifest list to a registry would require additional
-	// OCI distribution API implementation. For now, this creates the manifest structure.
-	// TODO: Implement actual registry push using OCI distribution library
-	logging.Warn("Manifest creation completed, but push to registry requires additional implementation")
+	// Push the manifest list to the registry using go-containerregistry
+	ref, err := name.ParseReference(manifestName)
+	if err != nil {
+		return fmt.Errorf("failed to parse manifest name: %w", err)
+	}
 
+	// Build an image index with the manifest descriptors
+	adds := make([]mutate.IndexAddendum, 0, len(entries))
+	for _, entry := range entries {
+		// Parse the image reference to get the remote descriptor
+		imgRef, err := name.ParseReference(entry.ImageRef)
+		if err != nil {
+			logging.Warn("Failed to parse image reference %s: %v (skipping)", entry.ImageRef, err)
+			continue
+		}
+
+		// Get the remote descriptor for this image
+		desc, err := remote.Get(imgRef, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithContext(ctx))
+		if err != nil {
+			logging.Warn("Failed to get remote descriptor for %s: %v (skipping)", entry.ImageRef, err)
+			continue
+		}
+
+		// Convert descriptor to image
+		img, err := desc.Image()
+		if err != nil {
+			logging.Warn("Failed to convert descriptor to image for %s: %v (skipping)", entry.ImageRef, err)
+			continue
+		}
+
+		// Create the platform spec
+		platform := v1.Platform{
+			OS:           entry.OS,
+			Architecture: entry.Architecture,
+		}
+		if entry.Variant != "" {
+			platform.Variant = entry.Variant
+		}
+
+		// Add to the index with platform information
+		// Use the descriptor from remote.Get but override the platform
+		adds = append(adds, mutate.IndexAddendum{
+			Add: img,
+			Descriptor: v1.Descriptor{
+				MediaType: desc.MediaType,
+				Size:      desc.Size,
+				Digest:    desc.Digest,
+				Platform:  &platform,
+			},
+		})
+	}
+
+	// Create an empty index and append all manifests
+	mediaType := types.MediaType(manifestList.MediaType)
+	idx := mutate.IndexMediaType(mutate.AppendManifests(
+		mutate.IndexMediaType(empty.Index, mediaType),
+		adds...,
+	), mediaType)
+
+	// Push the index to the registry
+	logging.Info("Pushing manifest list to registry: %s", manifestName)
+	if err := remote.WriteIndex(ref, idx,
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithContext(ctx),
+	); err != nil {
+		return fmt.Errorf("failed to push manifest list: %w", err)
+	}
+
+	logging.Info("Successfully pushed multi-arch manifest: %s", manifestName)
 	return nil
 }
 

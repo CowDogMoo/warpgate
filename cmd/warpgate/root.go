@@ -140,7 +140,7 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	cfg.Build.DefaultArch = v.GetStringSlice("build.default_arch")
 
 	// 8. Create a context-aware logger and store it in context
-	logger := logging.FromContext(context.TODO()) // Get the initialized logger
+	logger := logging.FromContext(cmd.Context()) // Get the initialized logger
 	ctx := context.WithValue(cmd.Context(), configKey, cfg)
 	ctx = logging.WithLogger(ctx, logger)
 	cmd.SetContext(ctx)

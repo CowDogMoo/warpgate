@@ -9,9 +9,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.4
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.275.1
 	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.50.2
+	github.com/docker/cli v29.1.2+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/go-git/go-git/v5 v5.16.4
+	github.com/google/go-containerregistry v0.20.6
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/lithammer/fuzzysearch v1.1.8
@@ -68,7 +70,6 @@ require (
 	github.com/cyphar/filepath-securejoin v0.5.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/cli v29.0.3+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.4 // indirect
 	github.com/docker/go-connections v0.6.0 // indirect
@@ -99,11 +100,11 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
-	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/sys/capability v0.4.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
@@ -130,6 +131,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tonistiigi/fsutil v0.0.0-20250605211040-586307ad452f // indirect
+	github.com/vbatts/tar-split v0.12.2 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

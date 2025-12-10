@@ -2,12 +2,15 @@ package buildkit
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"testing"
 
+	dockerconfigtypes "github.com/docker/cli/cli/config/types"
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerregistry "github.com/docker/docker/api/types/registry"
 	digest "github.com/opencontainers/go-digest"
@@ -492,6 +495,141 @@ func TestCreateAndPushManifest(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestEncodeAuthConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		authConfig dockerconfigtypes.AuthConfig
+		wantErr    bool
+	}{
+		{
+			name: "basic auth with username and password",
+			authConfig: dockerconfigtypes.AuthConfig{
+				Username:      "testuser",
+				Password:      "testpass",
+				ServerAddress: "ghcr.io",
+			},
+			wantErr: false,
+		},
+		{
+			name: "auth with identity token",
+			authConfig: dockerconfigtypes.AuthConfig{
+				IdentityToken: "sometoken",
+				ServerAddress: "ghcr.io",
+			},
+			wantErr: false,
+		},
+		{
+			name: "auth with registry token",
+			authConfig: dockerconfigtypes.AuthConfig{
+				RegistryToken: "registrytoken",
+				ServerAddress: "docker.io",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			encoded, err := encodeAuthConfig(tt.authConfig)
+
+			if tt.wantErr && err == nil {
+				t.Error("Expected error but got none")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if !tt.wantErr {
+				// Verify the encoded string is valid base64
+				decoded, err := base64.URLEncoding.DecodeString(encoded)
+				if err != nil {
+					t.Errorf("Failed to decode base64: %v", err)
+				}
+
+				// Verify it's valid JSON
+				var authConfig dockerregistry.AuthConfig
+				if err := json.Unmarshal(decoded, &authConfig); err != nil {
+					t.Errorf("Failed to unmarshal JSON: %v", err)
+				}
+
+				// Verify the fields match
+				if authConfig.Username != tt.authConfig.Username {
+					t.Errorf("Username mismatch: got %q, want %q", authConfig.Username, tt.authConfig.Username)
+				}
+				if authConfig.Password != tt.authConfig.Password {
+					t.Errorf("Password mismatch: got %q, want %q", authConfig.Password, tt.authConfig.Password)
+				}
+				if authConfig.IdentityToken != tt.authConfig.IdentityToken {
+					t.Errorf("IdentityToken mismatch: got %q, want %q", authConfig.IdentityToken, tt.authConfig.IdentityToken)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractRegistryFromImageRef(t *testing.T) {
+	tests := []struct {
+		name             string
+		imageRef         string
+		expectedRegistry string
+	}{
+		{
+			name:             "full registry path with tag",
+			imageRef:         "ghcr.io/owner/repo:tag",
+			expectedRegistry: "ghcr.io",
+		},
+		{
+			name:             "full registry path with digest",
+			imageRef:         "ghcr.io/owner/repo@sha256:abc123",
+			expectedRegistry: "ghcr.io",
+		},
+		{
+			name:             "docker hub implicit",
+			imageRef:         "ubuntu:latest",
+			expectedRegistry: "docker.io",
+		},
+		{
+			name:             "docker hub with library",
+			imageRef:         "library/ubuntu:latest",
+			expectedRegistry: "docker.io",
+		},
+		{
+			name:             "localhost registry",
+			imageRef:         "localhost:5000/myapp:latest",
+			expectedRegistry: "localhost:5000",
+		},
+		{
+			name:             "gcr registry",
+			imageRef:         "gcr.io/project/image:tag",
+			expectedRegistry: "gcr.io",
+		},
+		{
+			name:             "ecr registry",
+			imageRef:         "123456789012.dkr.ecr.us-east-1.amazonaws.com/myapp:latest",
+			expectedRegistry: "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		},
+		{
+			name:             "image with multiple path segments",
+			imageRef:         "ghcr.io/org/team/repo:tag",
+			expectedRegistry: "ghcr.io",
+		},
+		{
+			name:             "image with port in registry",
+			imageRef:         "registry.example.com:8080/myapp:latest",
+			expectedRegistry: "registry.example.com:8080",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := extractRegistryFromImageRef(tt.imageRef)
+			if registry != tt.expectedRegistry {
+				t.Errorf("Expected registry %q, got %q", tt.expectedRegistry, registry)
 			}
 		})
 	}
