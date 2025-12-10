@@ -1,7 +1,7 @@
 # Warpgate Container Image
 
 Container image builder and template manager. Warpgate provides a unified interface
-for building container images using Buildah and managing infrastructure templates.
+for building container images using BuildKit and managing infrastructure templates.
 
 ## Container Image Creation and Pushing to GHCR
 
@@ -61,8 +61,8 @@ docker run --rm -v $(pwd):/workspace \
   ghcr.io/cowdogmoo/warpgate:latest list
 ```
 
-**Note:** The `--privileged` flag is required for Buildah to function properly
-within the container.
+**Note:** The `--privileged` flag is required for BuildKit to function properly
+within the container for nested container builds.
 
 ## Development
 

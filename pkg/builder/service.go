@@ -252,7 +252,7 @@ func (s *BuildService) pushMultiArch(ctx context.Context, config *Config, result
 	}
 
 	// Note: Multi-arch manifest creation and push should be done in the command layer
-	// since it requires platform-specific handling (BuildKit vs Buildah)
+	// since it requires platform-specific handling for BuildKit
 
 	logging.InfoContext(ctx, "Successfully pushed multi-arch images to %s", opts.Registry)
 	logging.InfoContext(ctx, "Note: Manifest creation must be done separately in the command layer")

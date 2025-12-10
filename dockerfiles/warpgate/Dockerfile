@@ -1,19 +1,18 @@
 # syntax=docker/dockerfile:1.20
 
 # Build stage - compile the binary
-FROM quay.io/buildah/stable:latest AS builder
+FROM golang:1.25-bookworm AS builder
 
-# Install ONLY build dependencies
-RUN dnf -y install \
-    golang \
+# Install build dependencies for CGO
+RUN apt-get update && apt-get install -y \
     git \
-    gpgme-devel \
-    libassuan-devel \
-    device-mapper-devel \
-    btrfs-progs-devel \
     pkg-config \
+    libgpgme-dev \
+    libassuan-dev \
+    libbtrfs-dev \
+    libdevmapper-dev \
     gcc \
-    && dnf -y clean all
+    && rm -rf /var/lib/apt/lists/*
 
 # Set Go environment
 ENV GOTOOLCHAIN=auto \
@@ -32,7 +31,15 @@ COPY . .
 RUN go build -trimpath -ldflags="-s -w" -o warpgate ./cmd/warpgate
 
 # Runtime stage - minimal image with only runtime dependencies
-FROM quay.io/buildah/stable:latest
+FROM debian:bookworm-slim
+
+# Install runtime dependencies for BuildKit client and storage libraries
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libgpgme11 \
+    libassuan0 \
+    libdevmapper1.02.1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Metadata labels
 LABEL org.opencontainers.image.title="warpgate"

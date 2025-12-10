@@ -55,7 +55,7 @@ type buildOptions struct {
 	varFiles     []string // Files containing variable definitions
 	cacheFrom    []string // Cache sources for BuildKit (e.g., "type=registry,ref=...")
 	cacheTo      []string // Cache destinations for BuildKit (e.g., "type=registry,ref=...")
-	builderType  string   // Builder type override: auto, buildkit, or buildah
+	builderType  string   // Builder type override: auto or buildkit
 	labels       []string // Image labels in key=value format
 	buildArgs    []string // Build arguments in key=value format
 	noCache      bool     // Disable all caching
@@ -121,7 +121,7 @@ Examples:
 	buildCmd.Flags().StringArrayVar(&opts.varFiles, "var-file", []string{}, "Load variables from YAML file")
 	buildCmd.Flags().StringArrayVar(&opts.cacheFrom, "cache-from", []string{}, "External cache sources for BuildKit (e.g., type=registry,ref=user/app:cache)")
 	buildCmd.Flags().StringArrayVar(&opts.cacheTo, "cache-to", []string{}, "External cache destinations for BuildKit (e.g., type=registry,ref=user/app:cache,mode=max)")
-	buildCmd.Flags().StringVar(&opts.builderType, "builder", "", "Builder to use: auto, buildkit, or buildah (overrides config)")
+	buildCmd.Flags().StringVar(&opts.builderType, "builder", "", "Builder to use: auto or buildkit (overrides config)")
 	buildCmd.Flags().StringArrayVar(&opts.labels, "label", []string{}, "Set image labels (key=value)")
 	buildCmd.Flags().StringArrayVar(&opts.buildArgs, "build-arg", []string{}, "Set build arguments (key=value)")
 	buildCmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Disable all caching")
