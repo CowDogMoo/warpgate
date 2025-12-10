@@ -55,15 +55,17 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 )
 
-// BuildKitBuilder implements container image building using Docker BuildKit
+// BuildKitBuilder implements container image building using Docker BuildKit.
+// It manages a BuildKit builder instance and provides methods to build,
+// push, and manage container images using Docker's BuildKit backend.
 type BuildKitBuilder struct {
 	client        *client.Client
-	dockerClient  *dockerclient.Client
+	dockerClient  DockerClient
 	builderName   string
 	containerName string
-	contextDir    string   // Build context directory (calculated intelligently)
-	cacheFrom     []string // External cache sources
-	cacheTo       []string // External cache destinations
+	contextDir    string
+	cacheFrom     []string
+	cacheTo       []string
 }
 
 // Verify that BuildKitBuilder implements builder.ContainerBuilder at compile time
@@ -155,7 +157,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 
 	return &BuildKitBuilder{
 		client:        c,
-		dockerClient:  dockerCli,
+		dockerClient:  newDockerClientAdapter(dockerCli),
 		builderName:   builderName,
 		containerName: containerName,
 		cacheFrom:     []string{},
@@ -724,7 +726,7 @@ func (b *BuildKitBuilder) loadAndTagImage(ctx context.Context, imageTarPath, ima
 		_ = imageFile.Close()
 	}()
 
-	// Load Docker image tar into Docker (quiet=false to show progress)
+	// Load Docker image tar into Docker
 	resp, err := b.dockerClient.ImageLoad(ctx, imageFile)
 	if err != nil {
 		return fmt.Errorf("failed to load image into Docker: %w", err)
