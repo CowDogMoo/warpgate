@@ -39,7 +39,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Build command options
+// buildOptions holds command-line options for the build command
 type buildOptions struct {
 	template     string
 	fromGit      string
@@ -62,12 +62,17 @@ type buildOptions struct {
 	noCache      bool     // Disable all caching
 }
 
-var buildOpts = &buildOptions{}
+var buildCmd *cobra.Command
 
-var buildCmd = &cobra.Command{
-	Use:   "build [config|template]",
-	Short: "Build image from config or template",
-	Long: `Build a container image or AMI from a template configuration.
+func init() {
+	// Create build options locally to avoid global state
+	opts := &buildOptions{}
+
+	// Initialize build command with closure capturing opts
+	buildCmd = &cobra.Command{
+		Use:   "build [config|template]",
+		Short: "Build image from config or template",
+		Long: `Build a container image or AMI from a template configuration.
 
 Examples:
   # Build from local config file
@@ -96,33 +101,34 @@ Examples:
 
   # Build AMI in different region with custom instance type
   warpgate build --template attack-box --target ami --region us-west-2 --instance-type t3.large`,
-	RunE: runBuild,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runBuild(cmd, args, opts)
+		},
+	}
+
+	// Build command flags - bind to local opts
+	buildCmd.Flags().StringVar(&opts.template, "template", "", "Use named template from registry")
+	buildCmd.Flags().StringVar(&opts.fromGit, "from-git", "", "Load template from git URL")
+	buildCmd.Flags().StringVar(&opts.targetType, "target", "", "Override target type (container, ami)")
+	buildCmd.Flags().BoolVar(&opts.push, "push", false, "Push image to registry after build")
+	buildCmd.Flags().StringVar(&opts.registry, "registry", "", "Registry to push to")
+	buildCmd.Flags().StringSliceVar(&opts.arch, "arch", nil, "Architectures to build (comma-separated)")
+	buildCmd.Flags().StringSliceVarP(&opts.tags, "tag", "t", []string{}, "Additional tags to apply")
+	buildCmd.Flags().BoolVar(&opts.saveDigests, "save-digests", false, "Save image digests to files after push")
+	buildCmd.Flags().StringVar(&opts.digestDir, "digest-dir", ".", "Directory to save digest files")
+	buildCmd.Flags().StringVar(&opts.region, "region", "", "AWS region for AMI builds (overrides config)")
+	buildCmd.Flags().StringVar(&opts.instanceType, "instance-type", "", "EC2 instance type for AMI builds (overrides config)")
+	buildCmd.Flags().StringArrayVar(&opts.vars, "var", []string{}, "Set template variables (key=value)")
+	buildCmd.Flags().StringArrayVar(&opts.varFiles, "var-file", []string{}, "Load variables from YAML file")
+	buildCmd.Flags().StringArrayVar(&opts.cacheFrom, "cache-from", []string{}, "External cache sources for BuildKit (e.g., type=registry,ref=user/app:cache)")
+	buildCmd.Flags().StringArrayVar(&opts.cacheTo, "cache-to", []string{}, "External cache destinations for BuildKit (e.g., type=registry,ref=user/app:cache,mode=max)")
+	buildCmd.Flags().StringVar(&opts.builderType, "builder", "", "Builder to use: auto, buildkit, or buildah (overrides config)")
+	buildCmd.Flags().StringArrayVar(&opts.labels, "label", []string{}, "Set image labels (key=value)")
+	buildCmd.Flags().StringArrayVar(&opts.buildArgs, "build-arg", []string{}, "Set build arguments (key=value)")
+	buildCmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Disable all caching")
 }
 
-func init() {
-	// Build command flags
-	buildCmd.Flags().StringVar(&buildOpts.template, "template", "", "Use named template from registry")
-	buildCmd.Flags().StringVar(&buildOpts.fromGit, "from-git", "", "Load template from git URL")
-	buildCmd.Flags().StringVar(&buildOpts.targetType, "target", "", "Override target type (container, ami)")
-	buildCmd.Flags().BoolVar(&buildOpts.push, "push", false, "Push image to registry after build")
-	buildCmd.Flags().StringVar(&buildOpts.registry, "registry", "", "Registry to push to")
-	buildCmd.Flags().StringSliceVar(&buildOpts.arch, "arch", nil, "Architectures to build (comma-separated)")
-	buildCmd.Flags().StringSliceVarP(&buildOpts.tags, "tag", "t", []string{}, "Additional tags to apply")
-	buildCmd.Flags().BoolVar(&buildOpts.saveDigests, "save-digests", false, "Save image digests to files after push")
-	buildCmd.Flags().StringVar(&buildOpts.digestDir, "digest-dir", ".", "Directory to save digest files")
-	buildCmd.Flags().StringVar(&buildOpts.region, "region", "", "AWS region for AMI builds (overrides config)")
-	buildCmd.Flags().StringVar(&buildOpts.instanceType, "instance-type", "", "EC2 instance type for AMI builds (overrides config)")
-	buildCmd.Flags().StringArrayVar(&buildOpts.vars, "var", []string{}, "Set template variables (key=value)")
-	buildCmd.Flags().StringArrayVar(&buildOpts.varFiles, "var-file", []string{}, "Load variables from YAML file")
-	buildCmd.Flags().StringArrayVar(&buildOpts.cacheFrom, "cache-from", []string{}, "External cache sources for BuildKit (e.g., type=registry,ref=user/app:cache)")
-	buildCmd.Flags().StringArrayVar(&buildOpts.cacheTo, "cache-to", []string{}, "External cache destinations for BuildKit (e.g., type=registry,ref=user/app:cache,mode=max)")
-	buildCmd.Flags().StringVar(&buildOpts.builderType, "builder", "", "Builder to use: auto, buildkit, or buildah (overrides config)")
-	buildCmd.Flags().StringArrayVar(&buildOpts.labels, "label", []string{}, "Set image labels (key=value)")
-	buildCmd.Flags().StringArrayVar(&buildOpts.buildArgs, "build-arg", []string{}, "Set build arguments (key=value)")
-	buildCmd.Flags().BoolVar(&buildOpts.noCache, "no-cache", false, "Disable all caching")
-}
-
-func runBuild(cmd *cobra.Command, args []string) error {
+func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	ctx := cmd.Context()
 	cfg := configFromContext(cmd)
 	if cfg == nil {
@@ -132,41 +138,41 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	logging.InfoContext(ctx, "Starting build process")
 
 	// Load and configure build
-	buildConfig, err := loadBuildConfig(ctx, args)
+	buildConfig, err := loadBuildConfig(ctx, args, opts)
 	if err != nil {
 		return err
 	}
 
-	applyConfigOverrides(cmd, buildConfig)
+	applyConfigOverrides(cmd, buildConfig, opts)
 
 	// Validate configuration
-	if err := validateConfig(buildConfig); err != nil {
+	if err := validateConfig(buildConfig, opts); err != nil {
 		return err
 	}
 
 	// Execute build based on target type
-	return executeBuild(cmd, ctx, buildConfig)
+	return executeBuild(cmd, ctx, buildConfig, opts)
 }
 
 // loadBuildConfig loads configuration from template, git, or file
-func loadBuildConfig(ctx context.Context, args []string) (*builder.Config, error) {
-	if buildOpts.template != "" {
-		logging.InfoContext(ctx, "Building from template: %s", buildOpts.template)
-		return loadFromTemplate(buildOpts.template)
+func loadBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*builder.Config, error) {
+	if opts.template != "" {
+		logging.InfoContext(ctx, "Building from template: %s", opts.template)
+		return loadFromTemplate(opts.template)
 	}
-	if buildOpts.fromGit != "" {
-		logging.InfoContext(ctx, "Building from git: %s", buildOpts.fromGit)
-		return loadFromGit(buildOpts.fromGit)
+	if opts.fromGit != "" {
+		logging.InfoContext(ctx, "Building from git: %s", opts.fromGit)
+		return loadFromGit(opts.fromGit)
 	}
 	if len(args) > 0 {
 		logging.InfoContext(ctx, "Building from config file: %s", args[0])
-		return loadFromFile(args[0])
+		return loadFromFile(args[0], opts)
 	}
 	return nil, fmt.Errorf("specify config file, --template, or --from-git")
 }
 
 // applyConfigOverrides applies CLI flag overrides to build config
-func applyConfigOverrides(cmd *cobra.Command, buildConfig *builder.Config) {
+func applyConfigOverrides(cmd *cobra.Command, buildConfig *builder.Config, opts *buildOptions) {
 	ctx := cmd.Context()
 	cfg := configFromContext(cmd)
 	if cfg == nil {
@@ -175,22 +181,22 @@ func applyConfigOverrides(cmd *cobra.Command, buildConfig *builder.Config) {
 	}
 
 	// Apply various overrides
-	applyTargetTypeFilter(buildConfig)
-	applyArchitectureOverrides(buildConfig, cfg)
-	applyRegistryOverride(buildConfig, cfg)
-	applyAMITargetOverrides(buildConfig)
-	applyLabelsAndBuildArgs(ctx, buildConfig)
-	applyCacheOptions(buildConfig)
+	applyTargetTypeFilter(buildConfig, opts)
+	applyArchitectureOverrides(buildConfig, cfg, opts)
+	applyRegistryOverride(buildConfig, cfg, opts)
+	applyAMITargetOverrides(buildConfig, opts)
+	applyLabelsAndBuildArgs(ctx, buildConfig, opts)
+	applyCacheOptions(buildConfig, opts)
 }
 
 // applyLabelsAndBuildArgs parses and applies labels and build arguments from CLI flags
-func applyLabelsAndBuildArgs(ctx context.Context, buildConfig *builder.Config) {
+func applyLabelsAndBuildArgs(ctx context.Context, buildConfig *builder.Config, opts *buildOptions) {
 	// Parse labels
-	if len(buildOpts.labels) > 0 {
+	if len(opts.labels) > 0 {
 		if buildConfig.Labels == nil {
 			buildConfig.Labels = make(map[string]string)
 		}
-		for _, label := range buildOpts.labels {
+		for _, label := range opts.labels {
 			parts := strings.SplitN(label, "=", 2)
 			if len(parts) == 2 {
 				buildConfig.Labels[parts[0]] = parts[1]
@@ -202,11 +208,11 @@ func applyLabelsAndBuildArgs(ctx context.Context, buildConfig *builder.Config) {
 	}
 
 	// Parse build arguments
-	if len(buildOpts.buildArgs) > 0 {
+	if len(opts.buildArgs) > 0 {
 		if buildConfig.BuildArgs == nil {
 			buildConfig.BuildArgs = make(map[string]string)
 		}
-		for _, arg := range buildOpts.buildArgs {
+		for _, arg := range opts.buildArgs {
 			parts := strings.SplitN(arg, "=", 2)
 			if len(parts) == 2 {
 				buildConfig.BuildArgs[parts[0]] = parts[1]
@@ -219,21 +225,21 @@ func applyLabelsAndBuildArgs(ctx context.Context, buildConfig *builder.Config) {
 }
 
 // applyCacheOptions applies cache-related options from CLI flags
-func applyCacheOptions(buildConfig *builder.Config) {
-	if buildOpts.noCache {
+func applyCacheOptions(buildConfig *builder.Config, opts *buildOptions) {
+	if opts.noCache {
 		buildConfig.NoCache = true
 	}
 }
 
 // applyTargetTypeFilter filters targets based on the target type override
-func applyTargetTypeFilter(buildConfig *builder.Config) {
-	if buildOpts.targetType == "" {
+func applyTargetTypeFilter(buildConfig *builder.Config, opts *buildOptions) {
+	if opts.targetType == "" {
 		return
 	}
 
 	filteredTargets := []builder.Target{}
 	for _, target := range buildConfig.Targets {
-		if target.Type == buildOpts.targetType {
+		if target.Type == opts.targetType {
 			filteredTargets = append(filteredTargets, target)
 		}
 	}
@@ -241,9 +247,9 @@ func applyTargetTypeFilter(buildConfig *builder.Config) {
 }
 
 // applyArchitectureOverrides applies architecture overrides to the build config
-func applyArchitectureOverrides(buildConfig *builder.Config, cfg *globalconfig.Config) {
-	if len(buildOpts.arch) > 0 {
-		buildConfig.Architectures = buildOpts.arch
+func applyArchitectureOverrides(buildConfig *builder.Config, cfg *globalconfig.Config, opts *buildOptions) {
+	if len(opts.arch) > 0 {
+		buildConfig.Architectures = opts.arch
 		return
 	}
 
@@ -261,17 +267,17 @@ func applyArchitectureOverrides(buildConfig *builder.Config, cfg *globalconfig.C
 }
 
 // applyRegistryOverride applies registry override to the build config
-func applyRegistryOverride(buildConfig *builder.Config, cfg *globalconfig.Config) {
-	if buildOpts.registry != "" {
-		buildConfig.Registry = buildOpts.registry
+func applyRegistryOverride(buildConfig *builder.Config, cfg *globalconfig.Config, opts *buildOptions) {
+	if opts.registry != "" {
+		buildConfig.Registry = opts.registry
 	} else if buildConfig.Registry == "" {
 		buildConfig.Registry = cfg.Registry.Default
 	}
 }
 
 // applyAMITargetOverrides applies AMI-specific overrides to the build config
-func applyAMITargetOverrides(buildConfig *builder.Config) {
-	if buildOpts.region == "" && buildOpts.instanceType == "" {
+func applyAMITargetOverrides(buildConfig *builder.Config, opts *buildOptions) {
+	if opts.region == "" && opts.instanceType == "" {
 		return
 	}
 
@@ -280,38 +286,38 @@ func applyAMITargetOverrides(buildConfig *builder.Config) {
 			continue
 		}
 
-		if buildOpts.region != "" {
-			buildConfig.Targets[i].Region = buildOpts.region
+		if opts.region != "" {
+			buildConfig.Targets[i].Region = opts.region
 		}
-		if buildOpts.instanceType != "" {
-			buildConfig.Targets[i].InstanceType = buildOpts.instanceType
+		if opts.instanceType != "" {
+			buildConfig.Targets[i].InstanceType = opts.instanceType
 		}
 	}
 }
 
 // validateConfig validates the build configuration
-func validateConfig(buildConfig *builder.Config) error {
+func validateConfig(buildConfig *builder.Config, opts *buildOptions) error {
 	validator := config.NewValidator()
 	if err := validator.Validate(buildConfig); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	// Validate builder type if specified
-	if buildOpts.builderType != "" {
-		if err := builder.ValidateBuilderType(buildOpts.builderType); err != nil {
+	if opts.builderType != "" {
+		if err := builder.ValidateBuilderType(opts.builderType); err != nil {
 			return err
 		}
 	}
 
 	// Validate labels format
-	for _, label := range buildOpts.labels {
+	for _, label := range opts.labels {
 		if !strings.Contains(label, "=") {
 			return fmt.Errorf("invalid label format: %s (expected key=value)", label)
 		}
 	}
 
 	// Validate build-args format
-	for _, arg := range buildOpts.buildArgs {
+	for _, arg := range opts.buildArgs {
 		if !strings.Contains(arg, "=") {
 			return fmt.Errorf("invalid build-arg format: %s (expected key=value)", arg)
 		}
@@ -321,16 +327,16 @@ func validateConfig(buildConfig *builder.Config) error {
 }
 
 // executeBuild executes the build based on target type
-func executeBuild(cmd *cobra.Command, ctx context.Context, buildConfig *builder.Config) error {
+func executeBuild(cmd *cobra.Command, ctx context.Context, buildConfig *builder.Config, opts *buildOptions) error {
 	// Determine target type
-	targetType := determineTargetType(buildConfig)
+	targetType := determineTargetType(buildConfig, opts)
 
 	// Get global config for build settings
 	cfg := configFromContext(cmd)
 
 	switch targetType {
 	case "container":
-		return executeContainerBuild(ctx, buildConfig, cfg)
+		return executeContainerBuild(ctx, buildConfig, cfg, opts)
 	case "ami":
 		return executeAMIBuild(cmd, ctx, buildConfig)
 	default:
@@ -339,10 +345,10 @@ func executeBuild(cmd *cobra.Command, ctx context.Context, buildConfig *builder.
 }
 
 // determineTargetType determines the target type from configuration
-func determineTargetType(buildConfig *builder.Config) string {
+func determineTargetType(buildConfig *builder.Config, opts *buildOptions) string {
 	// Check CLI override
-	if buildOpts.targetType != "" {
-		return buildOpts.targetType
+	if opts.targetType != "" {
+		return opts.targetType
 	}
 
 	// Check config targets
@@ -355,11 +361,11 @@ func determineTargetType(buildConfig *builder.Config) string {
 }
 
 // selectContainerBuilder chooses the appropriate builder based on config and platform
-func selectContainerBuilder(ctx context.Context, cfg *globalconfig.Config) (builder.ContainerBuilder, error) {
+func selectContainerBuilder(ctx context.Context, cfg *globalconfig.Config, opts *buildOptions) (builder.ContainerBuilder, error) {
 	// Determine which builder to use
 	builderTypeStr := cfg.Build.BuilderType
-	if buildOpts.builderType != "" {
-		builderTypeStr = buildOpts.builderType
+	if opts.builderType != "" {
+		builderTypeStr = opts.builderType
 	}
 
 	// Validate builder type
@@ -383,10 +389,10 @@ func selectContainerBuilder(ctx context.Context, cfg *globalconfig.Config) (buil
 
 	// Set BuildKit-specific cache options if this is a BuildKit builder
 	if bk, ok := bldr.(*buildkit.BuildKitBuilder); ok {
-		if buildOpts.noCache {
+		if opts.noCache {
 			logging.Info("Caching disabled via --no-cache flag")
-		} else if len(buildOpts.cacheFrom) > 0 || len(buildOpts.cacheTo) > 0 {
-			bk.SetCacheOptions(buildOpts.cacheFrom, buildOpts.cacheTo)
+		} else if len(opts.cacheFrom) > 0 || len(opts.cacheTo) > 0 {
+			bk.SetCacheOptions(opts.cacheFrom, opts.cacheTo)
 		}
 	}
 
@@ -425,11 +431,11 @@ func enhanceBuildKitError(err error) error {
 }
 
 // executeContainerBuild executes a container build
-func executeContainerBuild(ctx context.Context, buildConfig *builder.Config, cfg *globalconfig.Config) error {
+func executeContainerBuild(ctx context.Context, buildConfig *builder.Config, cfg *globalconfig.Config, opts *buildOptions) error {
 	logging.InfoContext(ctx, "Executing container build")
 
 	// Select builder based on config and platform
-	bldr, err := selectContainerBuilder(ctx, cfg)
+	bldr, err := selectContainerBuilder(ctx, cfg, opts)
 	if err != nil {
 		return fmt.Errorf("failed to initialize container builder: %w", err)
 	}
@@ -441,7 +447,7 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config, cfg
 
 	// Check if multi-arch build is required
 	if len(buildConfig.Architectures) > 1 {
-		return executeMultiArchBuild(ctx, buildConfig, bldr, cfg)
+		return executeMultiArchBuild(ctx, buildConfig, bldr, cfg, opts)
 	}
 
 	// Single architecture build - set platform if not already set
@@ -457,31 +463,31 @@ func executeContainerBuild(ctx context.Context, buildConfig *builder.Config, cfg
 	displayBuildResults(ctx, result)
 
 	// Push if requested
-	if buildOpts.push && buildOpts.registry != "" {
-		logging.InfoContext(ctx, "Pushing to registry: %s", buildOpts.registry)
-		if err := bldr.Push(ctx, result.ImageRef, buildOpts.registry); err != nil {
+	if opts.push && opts.registry != "" {
+		logging.InfoContext(ctx, "Pushing to registry: %s", opts.registry)
+		if err := bldr.Push(ctx, result.ImageRef, opts.registry); err != nil {
 			return fmt.Errorf("failed to push image: %w", err)
 		}
 
 		// Save digest if requested
-		if buildOpts.saveDigests && result.Digest != "" {
+		if opts.saveDigests && result.Digest != "" {
 			arch := "unknown"
 			if len(buildConfig.Architectures) > 0 {
 				arch = buildConfig.Architectures[0]
 			}
-			if err := manifests.SaveDigestToFile(buildConfig.Name, arch, result.Digest, buildOpts.digestDir); err != nil {
+			if err := manifests.SaveDigestToFile(buildConfig.Name, arch, result.Digest, opts.digestDir); err != nil {
 				logging.WarnContext(ctx, "Failed to save digest: %v", err)
 			}
 		}
 
-		logging.InfoContext(ctx, "Successfully pushed to %s", buildOpts.registry)
+		logging.InfoContext(ctx, "Successfully pushed to %s", opts.registry)
 	}
 
 	return nil
 }
 
 // executeMultiArchBuild executes a multi-architecture container build
-func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bldr builder.ContainerBuilder, cfg *globalconfig.Config) error {
+func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bldr builder.ContainerBuilder, cfg *globalconfig.Config, opts *buildOptions) error {
 	logging.InfoContext(ctx, "Executing multi-arch build for %d architectures: %v", len(buildConfig.Architectures), buildConfig.Architectures)
 
 	// Use configured concurrency, or default if not set
@@ -508,42 +514,42 @@ func executeMultiArchBuild(ctx context.Context, buildConfig *builder.Config, bld
 	}
 
 	// Push if requested
-	if buildOpts.push && buildOpts.registry != "" {
-		return pushMultiArchImages(ctx, buildConfig, results, bldr, orchestrator)
+	if opts.push && opts.registry != "" {
+		return pushMultiArchImages(ctx, buildConfig, results, bldr, orchestrator, opts)
 	}
 
 	return nil
 }
 
 // pushMultiArchImages pushes multi-arch images and creates manifest
-func pushMultiArchImages(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr builder.ContainerBuilder, orchestrator *builder.BuildOrchestrator) error {
-	logging.InfoContext(ctx, "Pushing multi-arch images to registry: %s", buildOpts.registry)
+func pushMultiArchImages(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr builder.ContainerBuilder, orchestrator *builder.BuildOrchestrator, opts *buildOptions) error {
+	logging.InfoContext(ctx, "Pushing multi-arch images to registry: %s", opts.registry)
 
 	// Push individual architecture images
-	if err := orchestrator.PushMultiArch(ctx, results, buildOpts.registry, bldr); err != nil {
+	if err := orchestrator.PushMultiArch(ctx, results, opts.registry, bldr); err != nil {
 		return fmt.Errorf("failed to push multi-arch images: %w", err)
 	}
 
 	// Save digests if requested
-	if buildOpts.saveDigests {
-		saveDigests(ctx, buildConfig.Name, results)
+	if opts.saveDigests {
+		saveDigests(ctx, buildConfig.Name, results, opts)
 	}
 
 	// Create and push multi-arch manifest
-	if err := createAndPushManifest(ctx, buildConfig, results, bldr); err != nil {
+	if err := createAndPushManifest(ctx, buildConfig, results, bldr, opts); err != nil {
 		return fmt.Errorf("failed to create multi-arch manifest: %w", err)
 	}
 
-	logging.InfoContext(ctx, "Successfully pushed multi-arch build to %s", buildOpts.registry)
+	logging.InfoContext(ctx, "Successfully pushed multi-arch build to %s", opts.registry)
 	return nil
 }
 
 // saveDigests saves digests for all architectures
-func saveDigests(ctx context.Context, imageName string, results []builder.BuildResult) {
-	logging.InfoContext(ctx, "Saving image digests to %s", buildOpts.digestDir)
+func saveDigests(ctx context.Context, imageName string, results []builder.BuildResult, opts *buildOptions) {
+	logging.InfoContext(ctx, "Saving image digests to %s", opts.digestDir)
 	for _, result := range results {
 		if result.Digest != "" {
-			if err := manifests.SaveDigestToFile(imageName, result.Architecture, result.Digest, buildOpts.digestDir); err != nil {
+			if err := manifests.SaveDigestToFile(imageName, result.Architecture, result.Digest, opts.digestDir); err != nil {
 				logging.WarnContext(ctx, "Failed to save digest for %s: %v", result.Architecture, err)
 			}
 		}
@@ -551,7 +557,7 @@ func saveDigests(ctx context.Context, imageName string, results []builder.BuildR
 }
 
 // createAndPushManifest creates and pushes a multi-arch manifest
-func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr builder.ContainerBuilder) error {
+func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, results []builder.BuildResult, bldr builder.ContainerBuilder, opts *buildOptions) error {
 	manifestName := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
 	logging.InfoContext(ctx, "Creating multi-arch manifest: %s", manifestName)
 
@@ -592,7 +598,7 @@ func createAndPushManifest(ctx context.Context, buildConfig *builder.Config, res
 	}
 
 	// Push manifest to registry
-	destination := fmt.Sprintf("%s/%s", buildOpts.registry, manifestName)
+	destination := fmt.Sprintf("%s/%s", opts.registry, manifestName)
 
 	// Try to create manifest using BuildKit (which supports multi-arch manifests)
 	if bk, ok := bldr.(*buildkit.BuildKitBuilder); ok {
@@ -667,9 +673,9 @@ func displayBuildResults(ctx context.Context, result *builder.BuildResult) {
 }
 
 // loadFromFile loads config from a local file
-func loadFromFile(configPath string) (*builder.Config, error) {
+func loadFromFile(configPath string, opts *buildOptions) (*builder.Config, error) {
 	// Parse variables from CLI flags and var files
-	variables, err := config.ParseVariables(buildOpts.vars, buildOpts.varFiles)
+	variables, err := config.ParseVariables(opts.vars, opts.varFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse variables: %w", err)
 	}
