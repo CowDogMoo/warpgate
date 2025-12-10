@@ -740,6 +740,15 @@ func getPlatformString(cfg builder.Config) string {
 	}
 }
 
+// extractArchFromPlatform extracts architecture from platform string (e.g., "linux/amd64" -> "amd64")
+func extractArchFromPlatform(platform string) string {
+	parts := strings.Split(platform, "/")
+	if len(parts) >= 2 {
+		return parts[1]
+	}
+	return ""
+}
+
 // calculateBuildContext finds the common parent directory of all files referenced in the config
 // This allows builds to work from any directory by automatically determining the appropriate context
 func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, error) {
@@ -947,13 +956,15 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 	digest := getLocalImageDigest(ctx, imageName)
 
 	duration := time.Since(startTime)
+	platform := getPlatformString(cfg)
 
 	return &builder.BuildResult{
-		ImageRef: imageName,
-		Digest:   digest,
-		Platform: getPlatformString(cfg),
-		Duration: duration.String(),
-		Notes:    []string{"Built with native BuildKit LLB", "Image loaded to Docker"},
+		ImageRef:     imageName,
+		Digest:       digest,
+		Architecture: extractArchFromPlatform(platform),
+		Platform:     platform,
+		Duration:     duration.String(),
+		Notes:        []string{"Built with native BuildKit LLB", "Image loaded to Docker"},
 	}, nil
 }
 
@@ -1195,11 +1206,12 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 	duration := time.Since(startTime)
 
 	return &builder.BuildResult{
-		ImageRef: imageName,
-		Digest:   digest,
-		Platform: fmt.Sprintf("linux/%s", cfg.Architectures[0]),
-		Duration: duration.String(),
-		Notes:    []string{"Built from Dockerfile with docker buildx", "Image loaded to Docker"},
+		ImageRef:     imageName,
+		Digest:       digest,
+		Architecture: cfg.Architectures[0],
+		Platform:     fmt.Sprintf("linux/%s", cfg.Architectures[0]),
+		Duration:     duration.String(),
+		Notes:        []string{"Built from Dockerfile with docker buildx", "Image loaded to Docker"},
 	}, nil
 }
 

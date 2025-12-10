@@ -915,3 +915,46 @@ func TestGetPlatformString(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractArchFromPlatform(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		expected string
+	}{
+		{
+			name:     "linux/amd64",
+			platform: "linux/amd64",
+			expected: "amd64",
+		},
+		{
+			name:     "linux/arm64",
+			platform: "linux/arm64",
+			expected: "arm64",
+		},
+		{
+			name:     "linux/arm64/v8",
+			platform: "linux/arm64/v8",
+			expected: "arm64",
+		},
+		{
+			name:     "invalid format",
+			platform: "amd64",
+			expected: "",
+		},
+		{
+			name:     "empty string",
+			platform: "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractArchFromPlatform(tt.platform)
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}

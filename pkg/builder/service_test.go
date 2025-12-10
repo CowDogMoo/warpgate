@@ -25,6 +25,7 @@ package builder
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
@@ -427,6 +428,69 @@ func TestBuildService_PushSingleArch_WithoutDigest(t *testing.T) {
 	if !pushCalled {
 		t.Error("pushSingleArch() did not call Push")
 	}
+}
+
+func TestBuildService_PushSingleArch_UsesResultArchitecture(t *testing.T) {
+	cfg := &globalconfig.Config{}
+	ctx := context.Background()
+
+	// Track what architecture was used when saving digest
+	var capturedArch string
+
+	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
+		return &mockContainerBuilder{
+			pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
+				return "sha256:testdigest123", nil
+			},
+		}, nil
+	}
+
+	service := NewBuildService(cfg, buildKitCreator)
+
+	// Create a config with Architectures set to something different from BuildResult
+	buildConfig := &Config{
+		Name:          "test",
+		Architectures: []string{"wrong-arch"}, // This should NOT be used
+	}
+
+	// BuildResult has the correct architecture
+	result := BuildResult{
+		ImageRef:     "test-image:latest",
+		Architecture: "arm64", // This SHOULD be used
+		Digest:       "sha256:abc123",
+	}
+
+	digestDir := t.TempDir()
+	buildOpts := BuildOptions{
+		Registry:    "ghcr.io/test",
+		SaveDigests: true,
+		DigestDir:   digestDir,
+	}
+
+	err := service.pushSingleArch(ctx, buildConfig, result, &mockContainerBuilder{
+		pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
+			return "sha256:testdigest123", nil
+		},
+	}, buildOpts)
+
+	if err != nil {
+		t.Errorf("pushSingleArch() error = %v", err)
+	}
+
+	// Verify the digest file was created with the correct architecture in the filename
+	// The file should be named: digest-test-arm64.txt (using result.Architecture, not config.Architectures)
+	expectedFile := fmt.Sprintf("%s/digest-test-arm64.txt", digestDir)
+	if _, err := os.Stat(expectedFile); os.IsNotExist(err) {
+		t.Errorf("Expected digest file not found: %s", expectedFile)
+	}
+
+	// Verify the WRONG file was NOT created
+	wrongFile := fmt.Sprintf("%s/digest-test-wrong-arch.txt", digestDir)
+	if _, err := os.Stat(wrongFile); err == nil {
+		t.Errorf("Wrong digest file should not exist: %s", wrongFile)
+	}
+
+	_ = capturedArch
 }
 
 func TestBuildService_ApplyOverridesBeforeBuild(t *testing.T) {

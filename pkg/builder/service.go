@@ -187,9 +187,12 @@ func (s *BuildService) pushSingleArch(ctx context.Context, config *Config, resul
 
 	// Save digest if requested
 	if opts.SaveDigests && digest != "" {
-		arch := "unknown"
-		if len(config.Architectures) > 0 {
-			arch = config.Architectures[0]
+		arch := result.Architecture
+		if arch == "" {
+			arch = "unknown"
+			if len(config.Architectures) > 0 {
+				arch = config.Architectures[0]
+			}
 		}
 		if err := manifests.SaveDigestToFile(config.Name, arch, digest, opts.DigestDir); err != nil {
 			logging.WarnContext(ctx, "Failed to save digest: %v", err)
