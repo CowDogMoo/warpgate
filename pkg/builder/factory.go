@@ -44,19 +44,16 @@ const (
 type BuilderCreatorFunc func(ctx context.Context) (ContainerBuilder, error)
 
 // BuilderFactory creates builder instances based on configuration.
-// It supports BuildKit for image building and can automatically select
-// the best builder for the current platform. The factory pattern allows
-// platform-specific builder creation while maintaining a consistent interface.
+// It uses BuildKit for all image building operations.
 type BuilderFactory struct {
-	builderType       BuilderType
-	buildKitCreator   BuilderCreatorFunc
-	autoSelectCreator BuilderCreatorFunc
+	builderType     BuilderType
+	buildKitCreator BuilderCreatorFunc
 }
 
-// NewBuilderFactory creates a new builder factory with the specified type and creator functions.
+// NewBuilderFactory creates a new builder factory with the specified type and creator function.
 // The builderType parameter accepts "auto" or "buildkit" (case-insensitive).
-// Creator functions are provided for BuildKit and auto-selection.
-func NewBuilderFactory(builderType string, buildKitCreator, autoSelectCreator BuilderCreatorFunc) *BuilderFactory {
+// Both options use BuildKit.
+func NewBuilderFactory(builderType string, buildKitCreator BuilderCreatorFunc) *BuilderFactory {
 	// Normalize builder type
 	normalizedType := strings.ToLower(strings.TrimSpace(builderType))
 
@@ -71,28 +68,18 @@ func NewBuilderFactory(builderType string, buildKitCreator, autoSelectCreator Bu
 	}
 
 	return &BuilderFactory{
-		builderType:       bt,
-		buildKitCreator:   buildKitCreator,
-		autoSelectCreator: autoSelectCreator,
+		builderType:     bt,
+		buildKitCreator: buildKitCreator,
 	}
 }
 
-// CreateContainerBuilder creates a ContainerBuilder instance based on the factory configuration
+// CreateContainerBuilder creates a ContainerBuilder instance based on the factory configuration.
+// Both "auto" and "buildkit" types use BuildKit.
 func (f *BuilderFactory) CreateContainerBuilder(ctx context.Context) (ContainerBuilder, error) {
-	switch f.builderType {
-	case BuilderTypeBuildKit:
-		if f.buildKitCreator == nil {
-			return nil, fmt.Errorf("BuildKit creator not provided")
-		}
-		return f.buildKitCreator(ctx)
-	case BuilderTypeAuto:
-		if f.autoSelectCreator == nil {
-			return nil, fmt.Errorf("auto-select creator not provided")
-		}
-		return f.autoSelectCreator(ctx)
-	default:
-		return nil, fmt.Errorf("unsupported builder type: %s", f.builderType)
+	if f.buildKitCreator == nil {
+		return nil, fmt.Errorf("BuildKit creator not provided")
 	}
+	return f.buildKitCreator(ctx)
 }
 
 // BuilderType returns the configured builder type

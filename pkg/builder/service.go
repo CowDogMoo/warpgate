@@ -39,19 +39,16 @@ import (
 type BuildService struct {
 	globalConfig *globalconfig.Config
 
-	// Platform-specific builder creation functions
-	// These are injected to handle platform differences (macOS vs Linux)
-	buildKitCreator   BuilderCreatorFunc
-	autoSelectCreator BuilderCreatorFunc
+	// Builder creation function
+	buildKitCreator BuilderCreatorFunc
 }
 
 // NewBuildService creates a new build service with the given configuration.
-// The creator functions allow platform-specific builder initialization.
-func NewBuildService(cfg *globalconfig.Config, buildKitCreator, autoSelectCreator BuilderCreatorFunc) *BuildService {
+// The creator function initializes BuildKit builders.
+func NewBuildService(cfg *globalconfig.Config, buildKitCreator BuilderCreatorFunc) *BuildService {
 	return &BuildService{
-		globalConfig:      cfg,
-		buildKitCreator:   buildKitCreator,
-		autoSelectCreator: autoSelectCreator,
+		globalConfig:    cfg,
+		buildKitCreator: buildKitCreator,
 	}
 }
 
@@ -147,11 +144,10 @@ func (s *BuildService) selectContainerBuilder(ctx context.Context, opts BuildOpt
 		return nil, err
 	}
 
-	// Create factory with platform-specific creator functions
+	// Create factory with BuildKit creator
 	factory := NewBuilderFactory(
 		builderTypeStr,
 		s.buildKitCreator,
-		s.autoSelectCreator,
 	)
 
 	// Create the builder

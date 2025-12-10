@@ -40,7 +40,7 @@ THE SOFTWARE.
 // BuildService: The main entry point for executing builds. It coordinates configuration
 // overrides, builder selection, and multi-arch builds:
 //
-//	service := builder.NewBuildService(cfg, buildKitCreator, autoSelectCreator)
+//	service := builder.NewBuildService(cfg, buildKitCreator)
 //	results, err := service.ExecuteContainerBuild(ctx, config, opts)
 //
 // ContainerBuilder Interface: Abstracts container build operations across different backends:
