@@ -402,7 +402,7 @@ func TestConvertWithProvisionerConditionals(t *testing.T) {
 	assert.Contains(t, config.Provisioners[1].Except, "amazon-ebs.ubuntu")
 }
 
-func TestConvertWithEnhancedAnsible(t *testing.T) {
+func TestConvertWithAnsible(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create README.md
@@ -422,7 +422,7 @@ variable "provision_repo_path" {
 	err = os.WriteFile(filepath.Join(tmpDir, "variables.pkr.hcl"), []byte(varsContent), 0644)
 	require.NoError(t, err)
 
-	// Create docker.pkr.hcl with enhanced Ansible provisioner
+	// Create docker.pkr.hcl with Ansible provisioner
 	dockerContent := `build {
   provisioner "ansible" {
     user                     = "ubuntu"
@@ -457,7 +457,7 @@ variable "provision_repo_path" {
 	require.NoError(t, err)
 	require.NotNil(t, config)
 
-	// Verify enhanced Ansible fields
+	// Verify Ansible fields
 	assert.Len(t, config.Provisioners, 1)
 	ansible := config.Provisioners[0]
 
@@ -708,7 +708,7 @@ func TestConvertHCLProvisioners(t *testing.T) {
 			},
 		},
 		{
-			name: "ansible provisioner with enhanced fields",
+			name: "ansible provisioner with fields",
 			builds: []PackerBuild{
 				{
 					Provisioners: []PackerProvisioner{

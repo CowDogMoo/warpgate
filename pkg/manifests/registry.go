@@ -44,10 +44,7 @@ type VerificationOptions struct {
 	MaxConcurrent int // Maximum concurrent verifications (default: 5)
 }
 
-// VerifyDigestsInRegistry verifies that digests exist in the registry using
-// go-containerregistry. Performs verification in parallel for improved performance.
-// Uses errgroup.WithContext() with SetLimit() for concurrency control, matching
-// the pattern used in pkg/builder/orchestrator.go for consistency.
+// VerifyDigestsInRegistry verifies that digests exist in the registry.
 func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts VerificationOptions) error {
 	logging.Info("Verifying %d digest(s) exist in registry...", len(digestFiles))
 

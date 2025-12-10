@@ -67,7 +67,7 @@ func TestProvisionerConditionals(t *testing.T) {
 	assert.Contains(t, prov.Except, "amazon-ebs.ubuntu")
 }
 
-func TestProvisionerEnhancedAnsible(t *testing.T) {
+func TestProvisionerAnsible(t *testing.T) {
 	prov := Provisioner{
 		Type:            "ansible",
 		User:            "ubuntu",
@@ -184,7 +184,7 @@ func TestConfigWithNewFeatures(t *testing.T) {
 	// Verify provisioner conditionals
 	assert.Contains(t, config.Provisioners[0].Only, "docker.amd64")
 
-	// Verify enhanced Ansible
+	// Verify Ansible provisioner
 	assert.Equal(t, "ubuntu", config.Provisioners[1].User)
 	assert.Contains(t, config.Provisioners[1].AnsibleEnvVars, "ANSIBLE_REMOTE_TMP=/tmp")
 

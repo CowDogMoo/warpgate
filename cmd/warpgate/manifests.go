@@ -62,14 +62,12 @@ type manifestsOptions struct {
 	quiet          bool
 	verbose        bool
 
-	// Phase 2: Enhanced features
 	annotations []string // OCI annotations in key=value format
 	labels      []string // OCI labels in key=value format
 	healthCheck bool     // Perform registry health check before operations
 	showDiff    bool     // Show manifest comparison/diff
 	noProgress  bool     // Disable progress indicators
 
-	// Phase 3: Advanced features
 	verifyConcurrency int // Number of concurrent verification requests
 }
 
@@ -154,7 +152,6 @@ func init() {
 	// Authentication
 	manifestsCreateCmd.Flags().StringVar(&manifestsOpts.authFile, "auth-file", "", "Path to authentication file")
 
-	// Phase 2: Enhanced features
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsOpts.annotations, "annotation", nil, "OCI annotations (key=value, can specify multiple)")
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsOpts.labels, "label", nil, "OCI labels (key=value, can specify multiple)")
 	manifestsCreateCmd.Flags().BoolVar(&manifestsOpts.showDiff, "show-diff", false, "Show manifest comparison/diff if manifest exists")

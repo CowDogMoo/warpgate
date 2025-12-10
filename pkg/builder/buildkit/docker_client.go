@@ -12,7 +12,6 @@ import (
 )
 
 // DockerClient defines the interface for Docker operations needed by BuildKit builder.
-// This interface allows for easier testing by enabling mock implementations.
 type DockerClient interface {
 	// Image operations
 	ImagePush(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error)
