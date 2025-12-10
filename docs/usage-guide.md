@@ -19,8 +19,8 @@ Get started in under 60 seconds:
 # Install warpgate
 go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
 
-# Discover available templates
-warpgate discover
+# List available templates
+warpgate templates list
 
 # Build a container image from template
 warpgate build attack-box --arch amd64
@@ -242,15 +242,12 @@ warpgate build mytemplate --target ami
 
 ## Template Management
 
-### Discover Templates
+### List Templates
 
 Find available templates from configured sources:
 
 ```bash
-# Discover all templates
-warpgate discover
-
-# Same as:
+# List all templates
 warpgate templates list
 
 # Output example:
@@ -518,7 +515,7 @@ git push -u origin main
 warpgate templates add team https://github.com/myorg/team-templates.git
 
 # 6. Use templates
-warpgate discover
+warpgate templates list
 warpgate build security-base
 ```
 

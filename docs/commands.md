@@ -7,10 +7,11 @@ Complete CLI command reference for Warpgate.
 ## Table of Contents
 
 - [Global Flags](#global-flags)
+- [init](#init)
 - [build](#build)
 - [validate](#validate)
+- [config](#config)
 - [templates](#templates)
-- [discover](#discover)
 - [manifest](#manifest)
 - [convert](#convert)
 - [version](#version)
@@ -20,10 +21,78 @@ Complete CLI command reference for Warpgate.
 Available for all commands:
 
 ```bash
---config string     Config file path (default: ~/.config/warpgate/config.yaml)
---verbose          Enable verbose logging
---quiet            Suppress non-error output
---help             Show help for command
+--config string       Config file path (default: ~/.config/warpgate/config.yaml)
+--log-level string    Log level (debug, info, warn, error)
+--log-format string   Log format (text, json, color)
+--verbose            Enable verbose logging (equivalent to --log-level debug)
+--quiet              Suppress non-error output
+--help               Show help for command
+```
+
+## init
+
+Initialize a new Warpgate template with scaffolding.
+
+### Synopsis
+
+```bash
+warpgate init [name] [flags]
+```
+
+### Description
+
+The `init` command creates a new template directory with basic structure:
+
+- `warpgate.yaml` - Main template configuration
+- `README.md` - Template documentation
+- `scripts/` - Directory for provisioning scripts
+
+Use `--from` to fork an existing template as a starting point.
+
+### Examples
+
+```bash
+# Create new template
+warpgate init my-image
+
+# Create template in specific directory
+warpgate init my-image --output ./templates/my-image
+
+# Fork from existing template
+warpgate init my-custom-attack-box --from attack-box
+
+# Fork and customize
+warpgate init my-security-base --from official/security-base
+```
+
+### Flags
+
+| Flag             | Type   | Description                               |
+| ---------------- | ------ | ----------------------------------------- |
+| `--from`         | string | Fork from existing template               |
+| `--output`       | string | Output directory (default: current dir)   |
+
+### Output Structure
+
+Running `warpgate init my-image` creates:
+
+```text
+my-image/
+├── warpgate.yaml    # Template configuration
+├── README.md        # Documentation
+└── scripts/         # Provisioning scripts directory
+```
+
+### Template Forking
+
+Fork an existing template to customize it:
+
+```bash
+# Fork official template
+warpgate init my-attack-box --from attack-box
+
+# Result: Creates my-attack-box/ with attack-box template as base
+# You can then customize warpgate.yaml, add provisioners, etc.
 ```
 
 ## build
@@ -78,17 +147,26 @@ warpgate build myimage --save-digests --digest-dir ./digests
 
 ### Flags
 
-| Flag             | Type   | Description                                      |
-| ---------------- | ------ | ------------------------------------------------ |
-| `--arch`         | string | Architectures to build: `amd64`, `arm64`         |
-| `--var`          | string | Override template variable (format: `KEY=value`) |
-| `--var-file`     | string | Load variables from YAML file                    |
-| `--push`         | bool   | Push image to registry after build               |
-| `--registry`     | string | Container registry URL (e.g., `ghcr.io/myorg`)   |
-| `--save-digests` | bool   | Save image digests to files                      |
-| `--digest-dir`   | string | Directory to save digests (default: `./digests`) |
-| `--target`       | string | Build target: `container` (default), `ami`       |
-| `--from-git`     | string | Build from Git repository URL                    |
+| Flag              | Type     | Description                              |
+| ----------------- | -------- | ---------------------------------------- |
+| `--arch`          | string   | Architectures: `amd64`, `arm64`          |
+| `--var`           | string   | Override variable (`KEY=value`)          |
+| `--var-file`      | string   | Load variables from YAML file            |
+| `--push`          | bool     | Push image to registry after build       |
+| `--registry`      | string   | Container registry URL                   |
+| `--tag`           | string[] | Additional tags for the image            |
+| `--label`         | string[] | Set image labels (`key=value`)           |
+| `--build-arg`     | string[] | Set Dockerfile build args (`key=value`)  |
+| `--save-digests`  | bool     | Save image digests to files              |
+| `--digest-dir`    | string   | Directory for digests (default: `.`)     |
+| `--target`        | string   | Build target: `container`, `ami`         |
+| `--template`      | string   | Use named template from registry         |
+| `--from-git`      | string   | Build from Git repository URL            |
+| `--cache-from`    | string[] | External cache sources for BuildKit      |
+| `--cache-to`      | string[] | External cache destinations for BuildKit |
+| `--no-cache`      | bool     | Disable all caching                      |
+| `--region`        | string   | AWS region for AMI builds                |
+| `--instance-type` | string   | EC2 instance type for AMI builds         |
 
 ### Variable Precedence
 
@@ -98,6 +176,94 @@ When the same variable is defined in multiple places:
 2. **Variable files (`--var-file`)**
 3. **Environment variables**
 4. **Template defaults** - Lowest precedence
+
+### Build Caching
+
+Warpgate uses BuildKit's advanced caching capabilities to speed up builds.
+
+#### Local Cache (Default)
+
+BuildKit automatically caches layers locally:
+
+```bash
+# First build (no cache)
+warpgate build myimage --arch amd64
+
+# Second build (uses cache)
+warpgate build myimage --arch amd64
+```
+
+#### Disable Caching
+
+Disable all caching for a clean build:
+
+```bash
+warpgate build myimage --no-cache
+```
+
+#### Remote Cache (Registry-Based)
+
+Share cache across machines or CI builds using a registry:
+
+**Export cache to registry:**
+
+```bash
+warpgate build myimage \
+  --arch amd64 \
+  --push \
+  --cache-to type=registry,ref=ghcr.io/myorg/myimage:buildcache,mode=max
+```
+
+**Import cache from registry:**
+
+```bash
+warpgate build myimage \
+  --arch amd64 \
+  --cache-from type=registry,ref=ghcr.io/myorg/myimage:buildcache
+```
+
+**Use both (for CI/CD):**
+
+```bash
+warpgate build myimage \
+  --arch amd64 \
+  --push \
+  --cache-from type=registry,ref=ghcr.io/myorg/myimage:buildcache \
+  --cache-to type=registry,ref=ghcr.io/myorg/myimage:buildcache,mode=max
+```
+
+**Cache modes:**
+
+- `mode=min` - Export only layers for final image (smaller, faster to push)
+- `mode=max` - Export all layers including intermediate (larger, better cache
+  hits)
+
+#### Multiple Cache Sources
+
+Specify multiple cache sources to try in order:
+
+```bash
+warpgate build myimage \
+  --cache-from type=registry,ref=ghcr.io/myorg/myimage:buildcache \
+  --cache-from type=registry,ref=ghcr.io/myorg/myimage:latest
+```
+
+BuildKit will use the first cache source that has matching layers.
+
+#### CI/CD Caching Example
+
+GitHub Actions workflow with registry caching:
+
+```yaml
+- name: Build with cache
+  run: |
+    warpgate build myimage \
+      --arch amd64,arm64 \
+      --push \
+      --registry ghcr.io/${{ github.repository_owner }} \
+      --cache-from type=registry,ref=ghcr.io/${{ github.repository_owner }}/myimage:buildcache \
+      --cache-to type=registry,ref=ghcr.io/${{ github.repository_owner }}/myimage:buildcache,mode=max
+```
 
 ### Exit Codes
 
@@ -146,6 +312,181 @@ warpgate validate sliver --var ARSENAL_PATH=/opt/arsenal
 - `0` - Template is valid
 - `1` - Template has errors
 - `2` - File not found or parse error
+
+## config
+
+Manage Warpgate's global configuration file.
+
+### Synopsis
+
+```bash
+warpgate config [subcommand] [flags]
+```
+
+### Description
+
+The `config` command manages Warpgate's global configuration file, which stores
+user preferences and environment-specific settings like default registry, AWS
+region, build options, etc.
+
+**Configuration file locations** (searched in order):
+
+1. `$XDG_CONFIG_HOME/warpgate/config.yaml` (typically `~/.config/warpgate/config.yaml`)
+2. `~/.warpgate/config.yaml` (legacy, for backward compatibility)
+3. `./config.yaml` (current directory)
+
+**Configuration precedence** (highest to lowest):
+
+1. CLI flags
+2. Environment variables (`WARPGATE_*`)
+3. Configuration file
+4. Built-in defaults
+
+### Subcommands
+
+#### init
+
+Initialize a default configuration file.
+
+```bash
+warpgate config init
+```
+
+Creates `~/.config/warpgate/config.yaml` with default settings:
+
+```yaml
+buildkit:
+  endpoint: ""
+  tls_enabled: false
+
+registry:
+  default: ghcr.io
+
+aws:
+  region: us-west-2
+  profile: default
+  ami:
+    instance_type: t3.medium
+    volume_size: 8
+
+build:
+  default_arch: [amd64]
+  parallel_builds: true
+  concurrency: 2
+
+templates:
+  repositories:
+    official: https://github.com/cowdogmoo/warpgate-templates.git
+```
+
+#### show
+
+Display current configuration:
+
+```bash
+warpgate config show
+```
+
+Shows the effective configuration with values from all sources merged.
+
+#### path
+
+Show configuration file path:
+
+```bash
+warpgate config path
+```
+
+Displays the path to the configuration file being used.
+
+#### get
+
+Get a specific configuration value:
+
+```bash
+warpgate config get [key]
+```
+
+**Examples:**
+
+```bash
+# Get default registry
+warpgate config get registry.default
+
+# Get AWS region
+warpgate config get aws.region
+
+# Get build defaults
+warpgate config get build.default_arch
+```
+
+#### set
+
+Set a configuration value:
+
+```bash
+warpgate config set [key] [value]
+```
+
+**Examples:**
+
+```bash
+# Set default registry
+warpgate config set registry.default ghcr.io
+
+# Set AWS region
+warpgate config set aws.region us-east-1
+
+# Set default architecture
+warpgate config set build.default_arch amd64,arm64
+
+# Set build concurrency
+warpgate config set build.concurrency 4
+```
+
+### Examples
+
+```bash
+# Initialize config file
+warpgate config init
+
+# Show current configuration
+warpgate config show
+
+# Get specific value
+warpgate config get registry.default
+
+# Set registry
+warpgate config set registry.default ghcr.io/myorg
+
+# Set AWS region
+warpgate config set aws.region us-west-2
+
+# Set multiple architectures
+warpgate config set build.default_arch amd64,arm64
+
+# Show config file location
+warpgate config path
+```
+
+### Configuration Keys
+
+Common configuration keys you can get/set:
+
+| Key                          | Type     | Description                         |
+| ---------------------------- | -------- | ----------------------------------- |
+| `buildkit.endpoint`          | string   | BuildKit endpoint (empty = auto)    |
+| `buildkit.tls_enabled`       | bool     | Enable TLS for BuildKit             |
+| `registry.default`           | string   | Default container registry          |
+| `aws.region`                 | string   | Default AWS region                  |
+| `aws.profile`                | string   | AWS CLI profile name                |
+| `aws.ami.instance_type`      | string   | Default EC2 instance type           |
+| `aws.ami.volume_size`        | int      | Default EBS volume size (GB)        |
+| `build.default_arch`         | string[] | Default architectures to build      |
+| `build.parallel_builds`      | bool     | Enable parallel builds              |
+| `build.concurrency`          | int      | Max concurrent builds               |
+
+See [Configuration Guide](configuration.md) for complete reference.
 
 ## templates
 
@@ -270,31 +611,6 @@ templates:
 ```
 
 See [Template Configuration Guide](template-configuration.md) for details.
-
-## discover
-
-Discover templates from configured sources.
-
-### Synopsis
-
-```bash
-warpgate discover [flags]
-```
-
-### Description
-
-The `discover` command scans configured template sources and displays
-available templates. It's an alias for `warpgate templates list`.
-
-### Examples
-
-```bash
-# Discover all templates
-warpgate discover
-
-# Same as:
-warpgate templates list
-```
 
 ## manifest
 

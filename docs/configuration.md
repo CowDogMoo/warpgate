@@ -20,7 +20,8 @@ Warpgate uses a two-tier configuration system:
 
 This separation allows:
 
-- **Global config** - Machine-specific settings (storage, runtime, AWS region)
+- **Global config** - Machine-specific settings (BuildKit, registry defaults,
+  AWS region)
 - **Template config** - Portable definitions shared across teams
 
 ## Configuration File Locations
@@ -60,13 +61,10 @@ The global config file (`~/.config/warpgate/config.yaml`) controls system-wide s
 ### Complete Example
 
 ```yaml
-# Storage and Runtime Configuration
-storage:
-  driver: vfs # Storage driver: overlay, vfs, etc.
-  root: "" # Optional: custom storage root path
-
-container:
-  runtime: runc # Container runtime: runc, crun, etc.
+# BuildKit Configuration
+buildkit:
+  endpoint: "" # Empty = auto-detect local buildx builder
+  tls_enabled: false
 
 # Registry Configuration
 registry:
@@ -83,8 +81,9 @@ aws:
 
 # Build Defaults
 build:
-  default_arch: amd64
+  default_arch: [amd64]
   parallel_builds: true
+  concurrency: 2
 
 # Template Repository Configuration
 templates:
@@ -93,49 +92,39 @@ templates:
     custom: /path/to/local/templates
 ```
 
-### Storage Configuration
+### BuildKit Configuration
 
-Controls how container images are stored.
-
-```yaml
-storage:
-  driver: vfs # Storage driver
-  root: "" # Custom storage path (optional)
-```
-
-**Supported drivers:**
-
-- **vfs** - Portable, no kernel requirements (recommended for most users)
-- **overlay** - Better performance, requires kernel support
-
-**When to use vfs:**
-
-- Default choice for most installations
-- Rootless containers
-- Systems without overlay support
-- Maximum compatibility
-
-**When to use overlay:**
-
-- Native Linux with root access
-- Maximum performance needed
-- Kernel supports overlay2
-
-### Container Runtime
-
-Specify the container runtime:
+Configure BuildKit builder settings:
 
 ```yaml
-container:
-  runtime: runc # or: crun, kata, gvisor
+buildkit:
+  endpoint: "" # Empty = auto-detect local buildx builder
+  tls_enabled: false
 ```
 
-**Common runtimes:**
+**BuildKit endpoint:**
 
-- **runc** - Default OCI runtime (recommended)
-- **crun** - Faster alternative to runc
-- **kata** - VM-based isolation
-- **gvisor** - sandboxed runtime
+- Leave empty (`""`) to auto-detect the local Docker buildx builder
+- Specify a remote BuildKit endpoint for distributed builds
+- Example: `tcp://buildkit.example.com:1234`
+
+**TLS settings:**
+
+- Set `tls_enabled: true` for remote BuildKit with TLS
+- Requires proper certificates configured in Docker
+
+**Verify your BuildKit setup:**
+
+```bash
+# List available builders
+docker buildx ls
+
+# Create a new builder if needed
+docker buildx create --use --name warpgate-builder
+
+# Inspect current builder
+docker buildx inspect
+```
 
 ### Registry Configuration
 
@@ -174,9 +163,17 @@ Configure default build behavior:
 
 ```yaml
 build:
-  default_arch: amd64 # Default architecture
+  default_arch: [amd64] # Default architectures (can specify multiple)
   parallel_builds: true # Build architectures in parallel
+  concurrency: 2 # Number of concurrent builds
 ```
+
+**Options:**
+
+- `default_arch` - List of architectures to build by default (e.g.,
+  `[amd64]`, `[amd64, arm64]`)
+- `parallel_builds` - Whether to build multiple architectures concurrently
+- `concurrency` - Maximum number of parallel builds
 
 ### Template Repositories
 
