@@ -107,6 +107,13 @@ func NewBuildahBuilder(cfg BuildahConfig) (*BuildahBuilder, error) {
 		logging.Debug("Using custom storage driver: %s", cfg.StorageDriver)
 	}
 
+	// Enable ignore_chown_errors for rootless VFS builds
+	// This allows rootless containers to work with VFS driver despite permission limitations
+	if storeOpts.GraphDriverName == "vfs" {
+		storeOpts.GraphDriverOptions = append(storeOpts.GraphDriverOptions, "vfs.ignore_chown_errors=true")
+		logging.Debug("Enabled ignore_chown_errors for VFS driver")
+	}
+
 	logging.Info("Storage configuration: driver=%s, root=%s, runroot=%s",
 		storeOpts.GraphDriverName, storeOpts.GraphRoot, storeOpts.RunRoot)
 
