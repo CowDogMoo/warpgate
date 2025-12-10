@@ -1,5 +1,3 @@
-//go:build !linux
-
 /*
 Copyright © 2025 Jayson Grace <jayson.e.grace@gmail.com>
 
@@ -22,25 +20,38 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-package main
+package cli
 
-import (
-	"context"
-	"fmt"
-	"runtime"
+// BuildCLIOptions represents command-line options for the build command.
+// This is the raw CLI input before parsing and validation.
+type BuildCLIOptions struct {
+	// Input source (mutually exclusive)
+	ConfigFile string
+	Template   string
+	FromGit    string
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/logging"
-)
+	// Build options
+	TargetType    string
+	Architectures []string
+	Registry      string
+	Tags          []string
+	Region        string
+	InstanceType  string
 
-// autoSelectBuilderFunc automatically selects the best builder for non-Linux platforms
-func autoSelectBuilderFunc(ctx context.Context) (builder.ContainerBuilder, error) {
-	logging.Info("Auto-selecting builder for %s platform", runtime.GOOS)
-	logging.Info("Auto-selected: BuildKit (only option for non-Linux)")
-	return newBuildKitBuilderFunc(ctx)
-}
+	// Build customization (unparsed key=value strings)
+	Labels    []string
+	BuildArgs []string
+	Variables []string
+	VarFiles  []string
 
-// newBuildahBuilderFunc returns an error on non-Linux platforms
-func newBuildahBuilderFunc(_ context.Context) (builder.ContainerBuilder, error) {
-	return nil, fmt.Errorf("buildah builder is only supported on Linux (current platform: %s)", runtime.GOOS)
+	// Cache options
+	CacheFrom   []string
+	CacheTo     []string
+	NoCache     bool
+	BuilderType string
+
+	// Post-build actions
+	Push        bool
+	SaveDigests bool
+	DigestDir   string
 }

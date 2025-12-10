@@ -20,7 +20,80 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-// Package builder provides interfaces and types for building container images and AWS AMIs.
+// Package builder provides the core abstractions and services for building container images and AWS AMIs.
+//
+// This package implements the domain logic for multi-platform builds, coordinating between
+// different builder backends (BuildKit, Buildah) and target types (containers, AMIs).
+//
+// # Architecture
+//
+// The package is organized into several layers:
+//
+//   - Interfaces (builder.go): Core abstractions for ContainerBuilder and AMIBuilder
+//   - Service Layer (service.go): High-level build orchestration and workflow
+//   - Factory (factory.go): Builder selection and instantiation
+//   - Orchestrator (orchestrator.go): Parallel multi-arch build execution
+//   - Configuration (config.go, options.go): Build configuration and overrides
+//
+// # Key Concepts
+//
+// BuildService: The main entry point for executing builds. It coordinates configuration
+// overrides, builder selection, and multi-arch builds:
+//
+//	service := builder.NewBuildService(cfg, buildKitCreator, buildahCreator, autoSelectCreator)
+//	results, err := service.ExecuteContainerBuild(ctx, config, opts)
+//
+// ContainerBuilder Interface: Abstracts container build operations across different backends:
+//
+//	type ContainerBuilder interface {
+//	    Build(ctx context.Context, config Config) (*BuildResult, error)
+//	    Push(ctx context.Context, imageRef, registry string) error
+//	    Close() error
+//	}
+//
+// AMIBuilder Interface: Abstracts AWS AMI build operations:
+//
+//	type AMIBuilder interface {
+//	    Build(ctx context.Context, config Config) (*BuildResult, error)
+//	    Share(ctx context.Context, amiID string, accountIDs []string) error
+//	    Close() error
+//	}
+//
+// BuildOrchestrator: Manages parallel execution of multi-arch builds with concurrency control:
+//
+//	orchestrator := builder.NewBuildOrchestrator(maxConcurrency)
+//	results, err := orchestrator.BuildMultiArch(ctx, requests, builder)
+//
+// # Configuration Precedence
+//
+// Build options follow a clear precedence hierarchy:
+//
+//	CLI Flags > BuildOptions > Template Config > Global Config > Defaults
+//
+// This allows flexible override of configuration at different levels.
+//
+// # Design Principles
+//
+//   - Interface Segregation: Separate interfaces for container and AMI builders
+//   - Dependency Inversion: Service layer depends on interfaces, not concrete implementations
+//   - Single Responsibility: Each component has a focused, well-defined purpose
+//   - Platform Abstraction: Builder backends are abstracted behind common interfaces
+//   - Concurrency Control: Built-in support for parallel multi-arch builds
+//
+// # Platform Support
+//
+// The package supports multiple builder backends with platform-specific initialization:
+//
+//   - BuildKit: Docker BuildKit for modern, efficient container builds (Linux/macOS)
+//   - Buildah: Native container builds without Docker daemon (Linux only)
+//   - Auto: Automatic selection based on platform and availability
+//
+// # Import Cycles
+//
+// To avoid circular dependencies:
+//   - The service layer (service.go) cannot import concrete builder implementations
+//   - Builder factories use function injection for platform-specific creation
+//   - AMI builds are executed in the command layer, not the service layer
 package builder
 
 import (

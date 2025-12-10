@@ -20,6 +20,125 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+// Package templates provides template discovery, loading, and management capabilities.
+//
+// This package enables flexible template sourcing from multiple locations including
+// local directories, git repositories, and official registries. It handles template
+// versioning, caching, and lifecycle management.
+//
+// # Architecture
+//
+// The package is organized into several key components:
+//
+//   - Loader (loader.go): Loads templates from various sources (files, git, registry)
+//   - Manager (manager.go): Manages template sources (add/remove repositories and paths)
+//   - Registry (registry.go): Fetches templates from official registries
+//   - Git (git.go): Clones and updates templates from git repositories
+//   - Scaffold (scaffold.go): Creates new template scaffolds from scratch
+//   - Paths (paths.go): Path validation, expansion, and normalization
+//   - Filters (filters.go): Filters templates by criteria (name, tag, type)
+//
+// # Loading Templates
+//
+// TemplateLoader provides unified access to templates from multiple sources:
+//
+//	loader, err := templates.NewTemplateLoader()
+//	if err != nil {
+//	    return err
+//	}
+//
+//	// Load from local file
+//	config, err := loader.LoadTemplate("./my-template/warpgate.yaml")
+//
+//	// Load from registry (auto-fetches if not cached)
+//	config, err := loader.LoadTemplate("attack-box")
+//
+//	// Load specific version
+//	config, err := loader.LoadTemplate("attack-box@v1.2.0")
+//
+//	// Load from git URL
+//	config, err := loader.LoadTemplate("https://github.com/user/repo.git//template-name")
+//
+// # Managing Template Sources
+//
+// The Manager handles adding and removing template sources:
+//
+//	mgr := templates.NewManager(globalConfig)
+//
+//	// Add git repository
+//	err := mgr.AddGitRepository(ctx, "my-templates", "https://github.com/user/templates.git")
+//
+//	// Add local directory
+//	err := mgr.AddLocalPath(ctx, "/path/to/templates")
+//
+//	// Remove source
+//	err := mgr.RemoveSource(ctx, "my-templates")
+//
+// # Template Discovery
+//
+// Templates can be discovered from configured sources:
+//
+//	// List all available templates
+//	templates, err := templates.List(ctx)
+//
+//	// Filter by criteria
+//	filtered := templates.FilterByName("attack")
+//	filtered = filtered.FilterByType("container")
+//
+// # Creating Templates
+//
+// Scaffold new templates with sensible defaults:
+//
+//	scaffolder := templates.NewScaffolder()
+//	err := scaffolder.CreateTemplate(ctx, "my-template", templates.ScaffoldOptions{
+//	    Description: "My custom template",
+//	    BaseImage:   "ubuntu:22.04",
+//	})
+//
+// # Versioning
+//
+// Templates support semantic versioning with flexible version resolution:
+//
+//	// Exact version
+//	config, err := loader.LoadTemplate("attack-box@1.2.3")
+//
+//	// Version constraint
+//	config, err := loader.LoadTemplate("attack-box@^1.2")
+//
+//	// Latest (default)
+//	config, err := loader.LoadTemplate("attack-box")
+//
+// # Caching
+//
+// Templates are cached locally for performance:
+//
+//   - Git repositories: Cloned to ~/.warpgate/templates/repositories/
+//   - Registry templates: Cached in ~/.warpgate/templates/cache/
+//   - Local paths: Used directly without caching
+//
+// Use the update command to refresh cached templates:
+//
+//	warpgate templates update
+//
+// # Configuration
+//
+// Template sources are configured in the global config (~/.warpgate/config.yaml):
+//
+//	templates:
+//	  repositories:
+//	    official: https://github.com/cowdogmoo/warpgate-templates.git
+//	    custom: https://github.com/myorg/templates.git
+//	  local_paths:
+//	    - /home/user/my-templates
+//	    - ./templates
+//
+// # Design Principles
+//
+//   - Source Flexibility: Support multiple template sources (local, git, registry)
+//   - Caching: Optimize performance through intelligent caching
+//   - Version Control: Full semantic versioning support
+//   - Path Safety: Careful validation and normalization of file paths
+//   - User Experience: Clear error messages and helpful defaults
 package templates
 
 import (

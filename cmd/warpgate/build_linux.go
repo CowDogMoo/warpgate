@@ -62,29 +62,3 @@ func newBuildahBuilderFunc(_ context.Context) (builder.ContainerBuilder, error) 
 	builderCfg := buildah.GetDefaultConfig()
 	return buildah.NewBuildahBuilder(builderCfg)
 }
-
-// createAndPushManifestPlatformSpecific handles platform-specific manifest creation (Buildah on Linux)
-func createAndPushManifestPlatformSpecific(ctx context.Context, manifestName, destination string, entries []builder.ManifestEntry, bldr builder.ContainerBuilder) error {
-	// Check if this is a Buildah builder
-	if bb, ok := bldr.(*buildah.BuildahBuilder); ok {
-		// Buildah uses ManifestManager
-		manifestMgr := bb.GetManifestManager()
-
-		// Create the manifest
-		manifestList, err := manifestMgr.CreateManifest(ctx, manifestName, entries)
-		if err != nil {
-			return fmt.Errorf("failed to create manifest: %w", err)
-		}
-
-		// Push the manifest to the registry
-		if err := manifestMgr.PushManifest(ctx, manifestList, destination); err != nil {
-			return fmt.Errorf("failed to push manifest: %w", err)
-		}
-
-		logging.InfoContext(ctx, "Successfully created and pushed multi-arch manifest to %s", destination)
-		return nil
-	}
-
-	logging.WarnContext(ctx, "Multi-arch manifest creation not supported for this builder type - skipping")
-	return nil
-}
