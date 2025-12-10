@@ -262,7 +262,9 @@ func runManifestsCreate(cmd *cobra.Command, args []string) error {
 
 	// Parse metadata and create manifests
 	annotations, labels := parseMetadata(ctx)
-	createAndPushManifests(ctx, filteredDigests, annotations, labels)
+	if err := createAndPushManifests(ctx, filteredDigests, annotations, labels); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -385,8 +387,19 @@ func parseMetadata(ctx context.Context) (map[string]string, map[string]string) {
 	return annotations, labels
 }
 
-// createAndPushManifests creates and pushes manifests for all tags
-func createAndPushManifests(ctx context.Context, filteredDigests []manifests.DigestFile, annotations, labels map[string]string) {
+// createAndPushManifests creates and pushes manifests for all tags using the appropriate builder
+func createAndPushManifests(ctx context.Context, filteredDigests []manifests.DigestFile, annotations, labels map[string]string) error {
+	// Create the appropriate builder for manifest operations
+	bldr, err := createBuilderForManifests(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create builder: %w", err)
+	}
+	defer func() {
+		if err := bldr.Close(); err != nil {
+			logging.WarnContext(ctx, "Failed to close builder: %v", err)
+		}
+	}()
+
 	// Note: This is NOT atomic - if a later tag fails, earlier tags are already pushed
 	// This is intentional for idempotency and partial success scenarios
 	var failedTags []string
@@ -395,21 +408,20 @@ func createAndPushManifests(ctx context.Context, filteredDigests []manifests.Dig
 	for _, tag := range manifestsOpts.tags {
 		logging.InfoContext(ctx, "Creating manifest for tag: %s", tag)
 
-		if err := manifests.CreateAndPushManifest(ctx, filteredDigests, manifests.CreationOptions{
-			Registry:    manifestsOpts.registry,
-			Namespace:   manifestsOpts.namespace,
-			ImageName:   manifestsOpts.name,
-			Tag:         tag,
-			Annotations: annotations,
-			Labels:      labels,
-		}); err != nil {
+		// Convert DigestFiles to ManifestEntries
+		entries := convertDigestFilesToManifestEntries(filteredDigests, manifestsOpts.registry, manifestsOpts.namespace, tag)
+
+		// Build the manifest name/destination
+		manifestName := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
+
+		// Create and push the manifest using the builder
+		if err := createManifestWithBuilder(ctx, bldr, manifestName, entries); err != nil {
 			logging.ErrorContext(ctx, "Failed to create/push manifest for tag %s: %v", tag, err)
 			failedTags = append(failedTags, tag)
 			continue
 		}
 
-		manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
-		logging.InfoContext(ctx, "Successfully created and pushed manifest to %s", manifestRef)
+		logging.InfoContext(ctx, "Successfully created and pushed manifest to %s", manifestName)
 		successTags = append(successTags, tag)
 	}
 
@@ -417,10 +429,11 @@ func createAndPushManifests(ctx context.Context, filteredDigests []manifests.Dig
 	if len(failedTags) > 0 {
 		logging.ErrorContext(ctx, "Failed to push %d of %d tag(s): %v", len(failedTags), len(manifestsOpts.tags), failedTags)
 		logging.InfoContext(ctx, "Successfully pushed %d tag(s): %v", len(successTags), successTags)
-		os.Exit(ExitRegistryError)
+		return fmt.Errorf("failed to push %d of %d tag(s)", len(failedTags), len(manifestsOpts.tags))
 	}
 
 	logging.InfoContext(ctx, "Successfully pushed all %d tag(s)", len(successTags))
+	return nil
 }
 
 // handleDryRun handles dry-run mode by previewing what would be created
@@ -571,4 +584,52 @@ func initManifestLogging() error {
 	}
 
 	return logging.Initialize(logLevel, "color", manifestsOpts.quiet, manifestsOpts.verbose)
+}
+
+// convertDigestFilesToManifestEntries converts DigestFiles to ManifestEntries
+func convertDigestFilesToManifestEntries(digestFiles []manifests.DigestFile, registry, namespace, tag string) []manifests.ManifestEntry {
+	entries := make([]manifests.ManifestEntry, 0, len(digestFiles))
+
+	for _, df := range digestFiles {
+		// Build the full image reference for this architecture
+		imageRef := manifests.BuildImageReference(manifests.ReferenceOptions{
+			Registry:     registry,
+			Namespace:    namespace,
+			ImageName:    df.ImageName,
+			Architecture: df.Architecture,
+			Tag:          tag,
+		})
+
+		// Parse platform info
+		os := "linux"
+		arch := df.Architecture
+		variant := ""
+
+		// Handle arm/v7, arm/v6, etc.
+		if strings.Contains(arch, "/") {
+			parts := strings.Split(arch, "/")
+			if len(parts) >= 2 {
+				arch = parts[0]
+				variant = parts[1]
+			}
+		}
+
+		platform := fmt.Sprintf("%s/%s", os, df.Architecture)
+		if variant != "" {
+			platform = fmt.Sprintf("%s/%s/%s", os, arch, variant)
+		}
+
+		entry := manifests.ManifestEntry{
+			ImageRef:     imageRef,
+			Digest:       df.Digest,
+			Platform:     platform,
+			Architecture: arch,
+			OS:           os,
+			Variant:      variant,
+		}
+
+		entries = append(entries, entry)
+	}
+
+	return entries
 }

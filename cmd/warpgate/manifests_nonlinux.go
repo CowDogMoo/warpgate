@@ -22,15 +22,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-package manifests
+package main
 
 import (
 	"context"
 	"fmt"
-	"runtime"
+
+	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/builder/buildkit"
+	"github.com/cowdogmoo/warpgate/pkg/manifests"
 )
 
-// CreateAndPushManifest returns an error on non-Linux platforms
-func CreateAndPushManifest(ctx context.Context, digestFiles []DigestFile, opts CreationOptions) error {
-	return fmt.Errorf("CreateAndPushManifest is only supported on Linux with Buildah (current platform: %s)", runtime.GOOS)
+// manifestBuilder is an interface for builders that support manifest operations
+type manifestBuilder interface {
+	builder.ContainerBuilder
+	CreateAndPushManifest(ctx context.Context, manifestName string, entries []manifests.ManifestEntry) error
+}
+
+// createBuilderForManifests creates a BuildKit builder for manifest operations on non-Linux platforms
+func createBuilderForManifests(ctx context.Context) (manifestBuilder, error) {
+	// Create the BuildKit builder
+	return buildkit.NewBuildKitBuilder(ctx)
+}
+
+// createManifestWithBuilder creates and pushes a manifest using the builder
+func createManifestWithBuilder(ctx context.Context, bldr manifestBuilder, manifestName string, entries []manifests.ManifestEntry) error {
+	// Use the builder's CreateAndPushManifest method
+	if err := bldr.CreateAndPushManifest(ctx, manifestName, entries); err != nil {
+		return fmt.Errorf("failed to create and push manifest: %w", err)
+	}
+	return nil
 }

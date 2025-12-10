@@ -170,8 +170,36 @@ func (mm *ManifestManager) PushManifest(ctx context.Context, manifestList manife
 	return nil
 }
 
+// CreateAndPushManifest creates and pushes a multi-arch manifest from manifest entries
+// This is a convenience function that wraps CreateManifest and PushManifest
+// It matches the signature of BuildKitBuilder.CreateAndPushManifest for interface compatibility
+func (b *BuildahBuilder) CreateAndPushManifest(ctx context.Context, manifestName string, entries []warpgatemanifests.ManifestEntry) error {
+	logging.Info("Creating multi-arch manifest: %s with %d entries", manifestName, len(entries))
+
+	if len(entries) == 0 {
+		return fmt.Errorf("no manifest entries provided")
+	}
+
+	// Get the manifest manager
+	manifestMgr := b.GetManifestManager()
+
+	// Create the manifest list
+	manifestList, err := manifestMgr.CreateManifest(ctx, manifestName, entries)
+	if err != nil {
+		return fmt.Errorf("failed to create manifest: %w", err)
+	}
+
+	// Push the manifest to the registry
+	if err := manifestMgr.PushManifest(ctx, manifestList, manifestName); err != nil {
+		return fmt.Errorf("failed to push manifest: %w", err)
+	}
+
+	logging.Info("Successfully created and pushed manifest: %s", manifestName)
+	return nil
+}
+
 // InspectManifest inspects a manifest list
-func (mm *ManifestManager) InspectManifest(ctx context.Context, manifestName string) ([]ManifestEntry, error) {
+func (mm *ManifestManager) InspectManifest(ctx context.Context, manifestName string) ([]warpgatemanifests.ManifestEntry, error) {
 	logging.Debug("Inspecting manifest: %s", manifestName)
 
 	// Get the image from storage
@@ -194,14 +222,14 @@ func (mm *ManifestManager) InspectManifest(ctx context.Context, manifestName str
 
 	// Get all instances from the manifest
 	instances := manifestList.Instances()
-	entries := make([]ManifestEntry, 0, len(instances))
+	entries := make([]warpgatemanifests.ManifestEntry, 0, len(instances))
 
 	for _, instanceDigest := range instances {
 		os, _ := manifestList.OS(instanceDigest)
 		arch, _ := manifestList.Architecture(instanceDigest)
 		variant, _ := manifestList.Variant(instanceDigest)
 
-		entry := ManifestEntry{
+		entry := warpgatemanifests.ManifestEntry{
 			Digest:       instanceDigest,
 			OS:           os,
 			Architecture: arch,
