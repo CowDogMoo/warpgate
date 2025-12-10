@@ -99,6 +99,10 @@ import (
 	"context"
 )
 
+// BuilderCreatorFunc creates a ContainerBuilder instance.
+// The context can be used for initialization and resource cleanup.
+type BuilderCreatorFunc func(ctx context.Context) (ContainerBuilder, error)
+
 // Builder is the main interface for image builders
 type Builder interface {
 	// Build creates an image from the given configuration

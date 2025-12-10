@@ -63,10 +63,10 @@ func (s *BuildService) ExecuteContainerBuild(ctx context.Context, config Config,
 		return nil, fmt.Errorf("failed to apply overrides: %w", err)
 	}
 
-	// Select and initialize builder
-	bldr, err := s.selectContainerBuilder(ctx, opts)
+	// Create builder
+	bldr, err := s.buildKitCreator(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize container builder: %w", err)
+		return nil, fmt.Errorf("failed to create builder: %w", err)
 	}
 	defer func() {
 		if err := bldr.Close(); err != nil {
@@ -95,10 +95,10 @@ func (s *BuildService) Push(ctx context.Context, config Config, results []BuildR
 		return fmt.Errorf("registry must be specified for push")
 	}
 
-	// Re-create builder for push operation
-	bldr, err := s.selectContainerBuilder(ctx, opts)
+	// Create builder for push operation
+	bldr, err := s.buildKitCreator(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to initialize builder for push: %w", err)
+		return fmt.Errorf("failed to create builder for push: %w", err)
 	}
 	defer func() {
 		if closeErr := bldr.Close(); closeErr != nil {
@@ -129,36 +129,6 @@ func DetermineTargetType(config *Config, opts BuildOptions) string {
 
 	// Default to container
 	return "container"
-}
-
-// selectContainerBuilder chooses the appropriate builder based on config and options
-func (s *BuildService) selectContainerBuilder(ctx context.Context, opts BuildOptions) (ContainerBuilder, error) {
-	// Determine which builder to use
-	builderTypeStr := s.globalConfig.Build.BuilderType
-	if opts.BuilderType != "" {
-		builderTypeStr = opts.BuilderType
-	}
-
-	// Validate builder type
-	if err := ValidateBuilderType(builderTypeStr); err != nil {
-		return nil, err
-	}
-
-	// Create factory with BuildKit creator
-	factory := NewBuilderFactory(
-		builderTypeStr,
-		s.buildKitCreator,
-	)
-
-	// Create the builder
-	bldr, err := factory.CreateContainerBuilder(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create builder: %w", err)
-	}
-
-	// Note: Builder-specific options (like BuildKit cache) should be set
-	// in the command layer before passing the builder to the service
-	return bldr, nil
 }
 
 // executeSingleArchBuild executes a single-architecture build

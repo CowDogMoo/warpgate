@@ -62,9 +62,6 @@ type BuildOptions struct {
 	// CacheTo specifies external cache destinations for BuildKit
 	CacheTo []string
 
-	// BuilderType overrides the builder type (auto, buildkit)
-	BuilderType string
-
 	// NoCache disables all caching
 	NoCache bool
 

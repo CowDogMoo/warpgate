@@ -45,10 +45,9 @@ type BuildCLIOptions struct {
 	VarFiles  []string
 
 	// Cache options
-	CacheFrom   []string
-	CacheTo     []string
-	NoCache     bool
-	BuilderType string
+	CacheFrom []string
+	CacheTo   []string
+	NoCache   bool
 
 	// Post-build actions
 	Push        bool

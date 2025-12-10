@@ -25,8 +25,6 @@ package cli
 import (
 	"fmt"
 	"strings"
-
-	"github.com/cowdogmoo/warpgate/pkg/builder"
 )
 
 // Validator validates CLI input before passing to business logic.
@@ -43,10 +41,6 @@ func NewValidator() *Validator {
 
 // ValidateBuildOptions validates build command options for correctness and consistency.
 func (v *Validator) ValidateBuildOptions(opts BuildCLIOptions) error {
-	if err := v.validateBuilderType(opts.BuilderType); err != nil {
-		return err
-	}
-
 	if err := v.validateKeyValueFormats(opts); err != nil {
 		return err
 	}
@@ -59,16 +53,6 @@ func (v *Validator) ValidateBuildOptions(opts BuildCLIOptions) error {
 		return err
 	}
 
-	return nil
-}
-
-// validateBuilderType validates the builder type if specified.
-func (v *Validator) validateBuilderType(builderType string) error {
-	if builderType != "" {
-		if err := builder.ValidateBuilderType(builderType); err != nil {
-			return fmt.Errorf("invalid builder type: %w", err)
-		}
-	}
 	return nil
 }
 

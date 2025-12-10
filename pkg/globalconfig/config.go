@@ -53,6 +53,7 @@ type Config struct {
 	AWS       AWSConfig       `mapstructure:"aws"`
 	Container ContainerConfig `mapstructure:"container"`
 	Convert   ConvertConfig   `mapstructure:"convert"`
+	BuildKit  BuildKitConfig  `mapstructure:"buildkit"`
 }
 
 // RegistryConfig holds registry-related configuration
@@ -103,9 +104,6 @@ type BuildConfig struct {
 	ParallelismLimit     int      `mapstructure:"parallelism_limit"`
 	CPUFraction          float64  `mapstructure:"cpu_fraction"`
 	BaselineBuildTimeMin int      `mapstructure:"baseline_build_time_min"`
-	// BuilderType specifies which builder to use: "auto" or "buildkit"
-	// "auto" automatically selects BuildKit (same as "buildkit")
-	BuilderType string `mapstructure:"builder_type" yaml:"builder_type"`
 }
 
 // ManifestsConfig holds manifest-related configuration
@@ -177,6 +175,30 @@ type ConvertConfig struct {
 	// If empty/zero, falls back to AWS.AMI settings
 	AMIInstanceType string `mapstructure:"ami_instance_type"` // Override for AWS.AMI.InstanceType during conversion
 	AMIVolumeSize   int    `mapstructure:"ami_volume_size"`   // Override for AWS.AMI.VolumeSize during conversion
+}
+
+// BuildKitConfig holds BuildKit daemon connection configuration
+// This allows Warpgate to connect to remote BuildKit daemons (e.g., in Kubernetes)
+type BuildKitConfig struct {
+	// Endpoint is the BuildKit daemon address
+	// Examples:
+	//   - "" (empty): Auto-detect local docker buildx builder (default)
+	//   - "docker-container://buildx_buildkit_default0": Connect to specific buildx container
+	//   - "tcp://buildkitd:1234": Connect to remote BuildKit daemon (K8s service)
+	//   - "unix:///run/buildkit/buildkitd.sock": Connect via Unix socket
+	Endpoint string `mapstructure:"endpoint" yaml:"endpoint,omitempty"`
+
+	// TLSEnabled enables TLS for remote connections (tcp:// endpoints)
+	TLSEnabled bool `mapstructure:"tls_enabled" yaml:"tls_enabled,omitempty"`
+
+	// TLSCACert is the path to the CA certificate for TLS verification
+	TLSCACert string `mapstructure:"tls_ca_cert" yaml:"tls_ca_cert,omitempty"`
+
+	// TLSCert is the path to the client certificate for TLS authentication
+	TLSCert string `mapstructure:"tls_cert" yaml:"tls_cert,omitempty"`
+
+	// TLSKey is the path to the client key for TLS authentication
+	TLSKey string `mapstructure:"tls_key" yaml:"tls_key,omitempty"`
 }
 
 // Load reads and parses the global configuration file
@@ -400,6 +422,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("convert.warpgate_version", ">=1.0.0")
 	v.SetDefault("convert.ami_instance_type", "t3.micro")
 	v.SetDefault("convert.ami_volume_size", 50)
+
+	// BuildKit defaults
+	v.SetDefault("buildkit.endpoint", "")       // Empty = auto-detect local buildx
+	v.SetDefault("buildkit.tls_enabled", false) // TLS disabled by default
+	v.SetDefault("buildkit.tls_ca_cert", "")    // No CA cert by default
+	v.SetDefault("buildkit.tls_cert", "")       // No client cert by default
+	v.SetDefault("buildkit.tls_key", "")        // No client key by default
 }
 
 // bindEnvVars explicitly binds environment variables to config keys
@@ -477,6 +506,13 @@ func bindEnvVars(v *viper.Viper) {
 	bind("convert.warpgate_version", "WARPGATE_CONVERT_WARPGATE_VERSION")
 	bind("convert.ami_instance_type", "WARPGATE_CONVERT_AMI_INSTANCE_TYPE")
 	bind("convert.ami_volume_size", "WARPGATE_CONVERT_AMI_VOLUME_SIZE")
+
+	// BuildKit
+	bind("buildkit.endpoint", "WARPGATE_BUILDKIT_ENDPOINT")
+	bind("buildkit.tls_enabled", "WARPGATE_BUILDKIT_TLS_ENABLED")
+	bind("buildkit.tls_ca_cert", "WARPGATE_BUILDKIT_TLS_CA_CERT")
+	bind("buildkit.tls_cert", "WARPGATE_BUILDKIT_TLS_CERT")
+	bind("buildkit.tls_key", "WARPGATE_BUILDKIT_TLS_KEY")
 }
 
 // Get returns the global config instance

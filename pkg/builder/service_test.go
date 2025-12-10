@@ -262,9 +262,7 @@ func TestBuildService_ExecuteContainerBuild_SingleArch(t *testing.T) {
 		Architectures: []string{"amd64"},
 	}
 
-	buildOpts := BuildOptions{
-		BuilderType: "buildkit",
-	}
+	buildOpts := BuildOptions{}
 
 	ctx := context.Background()
 	results, err := service.ExecuteContainerBuild(ctx, buildConfig, buildOpts)
@@ -301,9 +299,7 @@ func TestBuildService_ExecuteContainerBuild_BuildError(t *testing.T) {
 		Architectures: []string{"amd64"},
 	}
 
-	buildOpts := BuildOptions{
-		BuilderType: "buildkit",
-	}
+	buildOpts := BuildOptions{}
 
 	ctx := context.Background()
 	_, err := service.ExecuteContainerBuild(ctx, buildConfig, buildOpts)
@@ -328,85 +324,13 @@ func TestBuildService_ExecuteContainerBuild_BuilderCreationError(t *testing.T) {
 		Architectures: []string{"amd64"},
 	}
 
-	buildOpts := BuildOptions{
-		BuilderType: "buildkit",
-	}
+	buildOpts := BuildOptions{}
 
 	ctx := context.Background()
 	_, err := service.ExecuteContainerBuild(ctx, buildConfig, buildOpts)
 
 	if err == nil {
 		t.Error("ExecuteContainerBuild() expected error, got nil")
-	}
-}
-
-func TestBuildService_SelectContainerBuilder(t *testing.T) {
-	tests := []struct {
-		name         string
-		globalCfg    *globalconfig.Config
-		opts         BuildOptions
-		wantErr      bool
-		builderCalls int
-	}{
-		{
-			name: "select buildkit builder",
-			globalCfg: &globalconfig.Config{
-				Build: globalconfig.BuildConfig{
-					BuilderType: "buildkit",
-				},
-			},
-			opts:         BuildOptions{},
-			wantErr:      false,
-			builderCalls: 1,
-		},
-		{
-			name: "CLI override builder type",
-			globalCfg: &globalconfig.Config{
-				Build: globalconfig.BuildConfig{
-					BuilderType: "buildkit",
-				},
-			},
-			opts: BuildOptions{
-				BuilderType: "auto",
-			},
-			wantErr:      false,
-			builderCalls: 1,
-		},
-		{
-			name: "invalid builder type",
-			globalCfg: &globalconfig.Config{
-				Build: globalconfig.BuildConfig{
-					BuilderType: "invalid",
-				},
-			},
-			opts:    BuildOptions{},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			buildKitCalls := 0
-
-			buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
-				buildKitCalls++
-				return &mockContainerBuilder{}, nil
-			}
-
-			service := NewBuildService(tt.globalCfg, buildKitCreator)
-
-			ctx := context.Background()
-			builder, err := service.selectContainerBuilder(ctx, tt.opts)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("selectContainerBuilder() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !tt.wantErr && builder != nil {
-				_ = builder.Close()
-			}
-		})
 	}
 }
 
@@ -485,8 +409,7 @@ func TestBuildService_PushSingleArch_WithoutDigest(t *testing.T) {
 	}
 
 	buildOpts := BuildOptions{
-		Registry:    "ghcr.io/myorg",
-		BuilderType: "buildkit",
+		Registry: "ghcr.io/myorg",
 	}
 
 	ctx := context.Background()
@@ -524,7 +447,6 @@ func TestBuildService_ApplyOverridesBeforeBuild(t *testing.T) {
 	buildOpts := BuildOptions{
 		Architectures: []string{"amd64", "arm64"},
 		Registry:      "ghcr.io/myorg",
-		BuilderType:   "buildkit",
 	}
 
 	ctx := context.Background()

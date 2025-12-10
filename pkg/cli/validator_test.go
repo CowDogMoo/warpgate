@@ -50,15 +50,6 @@ func TestValidateBuildOptions(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "invalid builder type",
-			opts: BuildCLIOptions{
-				ConfigFile:  "warpgate.yaml",
-				BuilderType: "invalid",
-			},
-			wantErr: true,
-			errMsg:  "invalid builder type",
-		},
-		{
 			name: "invalid label format",
 			opts: BuildCLIOptions{
 				ConfigFile: "warpgate.yaml",
@@ -173,22 +164,6 @@ func TestValidateBuildOptions(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "only one of",
-		},
-		{
-			name: "valid builder type - buildkit",
-			opts: BuildCLIOptions{
-				ConfigFile:  "warpgate.yaml",
-				BuilderType: "buildkit",
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid builder type - auto",
-			opts: BuildCLIOptions{
-				ConfigFile:  "warpgate.yaml",
-				BuilderType: "auto",
-			},
-			wantErr: false,
 		},
 	}
 

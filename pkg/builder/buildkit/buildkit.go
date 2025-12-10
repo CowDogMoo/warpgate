@@ -24,6 +24,8 @@ package buildkit
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"os"
@@ -35,11 +37,15 @@ import (
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	// CRITICAL: This enables docker-container:// protocol
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 )
@@ -57,19 +63,62 @@ type BuildKitBuilder struct {
 // Verify that BuildKitBuilder implements builder.ContainerBuilder at compile time
 var _ builder.ContainerBuilder = (*BuildKitBuilder)(nil)
 
-// NewBuildKitBuilder creates a new BuildKit builder instance by connecting to the active buildx builder.
-// It automatically detects the running docker buildx builder and establishes a connection using
-// the docker-container:// protocol. Returns an error if Docker is not running or no builder is active.
+// NewBuildKitBuilder creates a new BuildKit builder instance.
+// It supports multiple connection modes:
+//  1. Auto-detect: If no endpoint is configured, detects the active docker buildx builder
+//  2. Explicit endpoint: Uses configured endpoint (docker-container://, tcp://, unix://)
+//  3. Remote TCP: Supports TLS authentication for secure remote connections
+//
+// Returns an error if connection fails or no builder is available.
 func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
-	// Detect active buildx builder
-	builderName, containerName, err := detectBuildxBuilder(ctx)
+	// Load global configuration
+	cfg, err := globalconfig.Load()
 	if err != nil {
-		return nil, fmt.Errorf("no active buildx builder found: %w", err)
+		logging.Warn("Failed to load config, using defaults: %v", err)
+		cfg = &globalconfig.Config{}
 	}
 
-	// Connect using docker-container:// protocol
-	addr := fmt.Sprintf("docker-container://%s", containerName)
-	c, err := client.New(ctx, addr)
+	var addr string
+	var builderName, containerName string
+
+	// Determine connection address
+	if cfg.BuildKit.Endpoint != "" {
+		// Use configured endpoint
+		addr = cfg.BuildKit.Endpoint
+		logging.Info("Using configured BuildKit endpoint: %s", addr)
+	} else {
+		// Auto-detect local buildx builder
+		builderName, containerName, err = detectBuildxBuilder(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("no active buildx builder found (set buildkit.endpoint in config for remote BuildKit): %w", err)
+		}
+		addr = fmt.Sprintf("docker-container://%s", containerName)
+		logging.Info("Auto-detected BuildKit builder: %s", containerName)
+	}
+
+	// Connect to BuildKit with appropriate options
+	clientOpts := []client.ClientOpt{}
+
+	// Add TLS configuration for tcp:// connections
+	if strings.HasPrefix(addr, "tcp://") && cfg.BuildKit.TLSEnabled {
+		tlsConfig, err := loadTLSConfig(cfg.BuildKit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load TLS config: %w", err)
+		}
+		clientOpts = append(clientOpts, client.WithGRPCDialOption(
+			grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		))
+		logging.Info("TLS enabled for BuildKit connection")
+	} else if strings.HasPrefix(addr, "tcp://") {
+		// Insecure TCP connection
+		clientOpts = append(clientOpts, client.WithGRPCDialOption(
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		))
+		logging.Warn("Connecting to BuildKit without TLS (insecure)")
+	}
+
+	// Create client connection
+	c, err := client.New(ctx, addr, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to BuildKit: %w", err)
 	}
@@ -81,8 +130,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		return nil, fmt.Errorf("BuildKit connection failed: %w", err)
 	}
 
-	logging.Info("BuildKit client connected: %s (version %s)",
-		containerName, info.BuildkitVersion.Version)
+	logging.Info("BuildKit client connected (version %s)", info.BuildkitVersion.Version)
 
 	return &BuildKitBuilder{
 		client:        c,
@@ -91,6 +139,35 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		cacheFrom:     []string{},
 		cacheTo:       []string{},
 	}, nil
+}
+
+// loadTLSConfig creates a TLS configuration from BuildKit config
+func loadTLSConfig(cfg globalconfig.BuildKitConfig) (*tls.Config, error) {
+	tlsConfig := &tls.Config{}
+
+	// Load CA certificate if provided
+	if cfg.TLSCACert != "" {
+		caCert, err := os.ReadFile(cfg.TLSCACert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA cert: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA cert")
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	// Load client certificate and key if provided
+	if cfg.TLSCert != "" && cfg.TLSKey != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client cert/key: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsConfig, nil
 }
 
 // SetCacheOptions configures external cache sources and destinations for BuildKit.
