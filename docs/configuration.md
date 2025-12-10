@@ -376,39 +376,6 @@ gh auth login
 warpgate build mytemplate --push --registry ghcr.io
 ```
 
-#### 3. Environment Variables (CI/CD)
-
-For automated pipelines:
-
-```bash
-export WARPGATE_REGISTRY_USERNAME=myusername
-export WARPGATE_REGISTRY_TOKEN=$GITHUB_TOKEN
-
-warpgate build mytemplate --push
-```
-
-**CI/CD examples:**
-
-GitHub Actions:
-
-```yaml
-- name: Build and push
-  env:
-    WARPGATE_REGISTRY_USERNAME: ${{ github.actor }}
-    WARPGATE_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  run: warpgate build mytemplate --push --registry ghcr.io
-```
-
-GitLab CI:
-
-```yaml
-build:
-  script:
-    - export WARPGATE_REGISTRY_USERNAME=$CI_REGISTRY_USER
-    - export WARPGATE_REGISTRY_TOKEN=$CI_REGISTRY_PASSWORD
-    - warpgate build mytemplate --push
-```
-
 ### AWS Credentials
 
 **Never store AWS credentials in config files!** Use the AWS SDK credential chain:

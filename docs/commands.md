@@ -806,16 +806,14 @@ Platform: linux/amd64
 
 Warpgate respects these environment variables:
 
-| Variable                     | Description                             |
-| ---------------------------- | --------------------------------------- |
-| `WARPGATE_CONFIG`            | Config file path (overrides `--config`) |
-| `WARPGATE_CACHE_DIR`         | Cache directory path                    |
-| `WARPGATE_REGISTRY_USERNAME` | Registry username for authentication    |
-| `WARPGATE_REGISTRY_TOKEN`    | Registry token/password                 |
-| `AWS_PROFILE`                | AWS CLI profile to use                  |
-| `AWS_REGION`                 | AWS region for AMI builds               |
-| `AWS_ACCESS_KEY_ID`          | AWS access key                          |
-| `AWS_SECRET_ACCESS_KEY`      | AWS secret key                          |
+| Variable                   | Description                             |
+| -------------------------- | --------------------------------------- |
+| `WARPGATE_CONFIG`          | Config file path (overrides `--config`) |
+| `WARPGATE_CACHE_DIR`       | Cache directory path                    |
+| `AWS_PROFILE`              | AWS CLI profile to use                  |
+| `AWS_REGION`               | AWS region for AMI builds               |
+| `AWS_ACCESS_KEY_ID`        | AWS access key                          |
+| `AWS_SECRET_ACCESS_KEY`    | AWS secret key                          |
 
 ## Exit Codes
 

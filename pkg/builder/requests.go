@@ -29,9 +29,7 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
-// CreateBuildRequests creates build requests for each architecture specified in the configuration.
-// It generates a separate BuildRequest for each architecture, applying any architecture-specific
-// overrides defined in the config. Each request includes the full platform specification and tag.
+// CreateBuildRequests creates build requests for each architecture, applying any arch-specific overrides.
 func CreateBuildRequests(buildConfig *Config) []BuildRequest {
 	requests := make([]BuildRequest, 0, len(buildConfig.Architectures))
 
@@ -59,8 +57,6 @@ func CreateBuildRequests(buildConfig *Config) []BuildRequest {
 }
 
 // ApplyArchOverrides applies architecture-specific overrides to the build configuration.
-// It can override the base image and replace or append provisioners based on the override settings.
-// This allows different build steps for different architectures (e.g., ARM vs x86).
 func ApplyArchOverrides(archConfig *Config, override ArchOverride, arch string) {
 	logging.Info("Applying architecture overrides for %s", arch)
 
@@ -80,8 +76,6 @@ func ApplyArchOverrides(archConfig *Config, override ArchOverride, arch string) 
 }
 
 // ExtractArchitecturesFromTargets extracts unique architectures from target platform specifications.
-// It parses platform strings (e.g., "linux/amd64", "linux/arm64/v8") and returns a deduplicated
-// list of architectures. This is useful when architectures are not explicitly specified in config.
 func ExtractArchitecturesFromTargets(buildConfig *Config) []string {
 	archMap := make(map[string]bool)
 

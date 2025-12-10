@@ -104,24 +104,6 @@ log:
 		t.Fatalf("Failed to write config: %v", err)
 	}
 
-	// Simulate CI environment with credentials from environment variables (secure!)
-	if err := os.Setenv("WARPGATE_REGISTRY_USERNAME", "testuser"); err != nil {
-		t.Fatalf("Failed to set WARPGATE_REGISTRY_USERNAME: %v", err)
-	}
-	if err := os.Setenv("WARPGATE_REGISTRY_TOKEN", "ghp_secrettoken"); err != nil {
-		t.Fatalf("Failed to set WARPGATE_REGISTRY_TOKEN: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("WARPGATE_REGISTRY_USERNAME"); err != nil {
-			t.Logf("Failed to unset WARPGATE_REGISTRY_USERNAME: %v", err)
-		}
-	}()
-	defer func() {
-		if err := os.Unsetenv("WARPGATE_REGISTRY_TOKEN"); err != nil {
-			t.Logf("Failed to unset WARPGATE_REGISTRY_TOKEN: %v", err)
-		}
-	}()
-
 	config, err := LoadFromPath(configPath)
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
@@ -130,14 +112,6 @@ log:
 	// Verify all values loaded correctly
 	if config.Registry.Default != "ghcr.io/myorg" {
 		t.Errorf("Expected registry 'ghcr.io/myorg', got '%s'", config.Registry.Default)
-	}
-
-	if config.Registry.Username != "testuser" {
-		t.Errorf("Expected username 'testuser', got '%s'", config.Registry.Username)
-	}
-
-	if config.Registry.Token != "ghp_secrettoken" {
-		t.Errorf("Expected token from env, got '%s'", config.Registry.Token)
 	}
 
 	if len(config.Build.DefaultArch) != 2 {

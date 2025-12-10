@@ -219,10 +219,7 @@ func (v *Validator) validateFilePath(path string, index int, fileType string) er
 	return nil
 }
 
-// hasUnresolvedVariable checks if a path contains unresolved environment variables
-// This detects common patterns like:
-// - Paths starting with / that seem incomplete (e.g., "/playbooks/..." instead of "/home/user/...")
-// - Paths containing $ or ${ that weren't expanded
+// hasUnresolvedVariable checks if a path contains unresolved environment variables.
 func (v *Validator) hasUnresolvedVariable(path string) bool {
 	// Check for literal $ or ${ in the path
 	if strings.Contains(path, "$") {

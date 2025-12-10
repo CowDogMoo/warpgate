@@ -101,10 +101,6 @@ templates:
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 
-	// Set credentials via environment variables (secure!)
-	cleanup := setupRegistryEnvVars(t)
-	defer cleanup()
-
 	config, err := LoadFromPath(configPath)
 	if err != nil {
 		t.Fatalf("Failed to load config from path: %v", err)
@@ -117,29 +113,11 @@ templates:
 	verifyTemplatesConfig(t, config)
 }
 
-// setupRegistryEnvVars sets up test registry credentials and returns a cleanup function
-func setupRegistryEnvVars(t *testing.T) func() {
-	t.Helper()
-	setEnvOrFatal(t, "WARPGATE_REGISTRY_USERNAME", "testuser")
-	setEnvOrFatal(t, "WARPGATE_REGISTRY_TOKEN", "testtoken")
-
-	return func() {
-		unsetEnvSafe(t, "WARPGATE_REGISTRY_USERNAME")
-		unsetEnvSafe(t, "WARPGATE_REGISTRY_TOKEN")
-	}
-}
-
 // verifyRegistryConfig verifies registry configuration values
 func verifyRegistryConfig(t *testing.T, config *Config) {
 	t.Helper()
 	if config.Registry.Default != "docker.io/myorg" {
 		t.Errorf("Expected registry 'docker.io/myorg', got '%s'", config.Registry.Default)
-	}
-	if config.Registry.Username != "testuser" {
-		t.Errorf("Expected username 'testuser' from env var, got '%s'", config.Registry.Username)
-	}
-	if config.Registry.Token != "testtoken" {
-		t.Errorf("Expected token 'testtoken' from env var, got '%s'", config.Registry.Token)
 	}
 }
 
@@ -311,106 +289,6 @@ func TestDetectOCIRuntime(t *testing.T) {
 	}
 }
 
-// TestLoad_RegistryCredentialsFallback tests that REGISTRY_* env vars work without WARPGATE_ prefix
-func TestLoad_RegistryCredentialsFallback(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-
-	// Create a minimal config file
-	configContent := `registry:
-  default: docker.io
-`
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("Failed to write test config: %v", err)
-	}
-
-	// Set credentials using generic REGISTRY_* env vars (without WARPGATE_ prefix)
-	if err := os.Setenv("REGISTRY_USERNAME", "genericuser"); err != nil {
-		t.Fatalf("Failed to set REGISTRY_USERNAME: %v", err)
-	}
-	if err := os.Setenv("REGISTRY_TOKEN", "generictoken"); err != nil {
-		t.Fatalf("Failed to set REGISTRY_TOKEN: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("REGISTRY_USERNAME"); err != nil {
-			t.Logf("Failed to unset REGISTRY_USERNAME: %v", err)
-		}
-		if err := os.Unsetenv("REGISTRY_TOKEN"); err != nil {
-			t.Logf("Failed to unset REGISTRY_TOKEN: %v", err)
-		}
-	}()
-
-	config, err := LoadFromPath(configPath)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
-
-	// Should use generic REGISTRY_* env vars
-	if config.Registry.Username != "genericuser" {
-		t.Errorf("Expected username 'genericuser' from REGISTRY_USERNAME, got '%s'", config.Registry.Username)
-	}
-
-	if config.Registry.Token != "generictoken" {
-		t.Errorf("Expected token 'generictoken' from REGISTRY_TOKEN, got '%s'", config.Registry.Token)
-	}
-}
-
-// TestLoad_RegistryCredentialsPrecedence tests that WARPGATE_* env vars take precedence over REGISTRY_*
-func TestLoad_RegistryCredentialsPrecedence(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-
-	// Create a minimal config file
-	configContent := `registry:
-  default: docker.io
-`
-	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		t.Fatalf("Failed to write test config: %v", err)
-	}
-
-	// Set both WARPGATE_* and REGISTRY_* env vars
-	if err := os.Setenv("WARPGATE_REGISTRY_USERNAME", "warpgateuser"); err != nil {
-		t.Fatalf("Failed to set WARPGATE_REGISTRY_USERNAME: %v", err)
-	}
-	if err := os.Setenv("REGISTRY_USERNAME", "genericuser"); err != nil {
-		t.Fatalf("Failed to set REGISTRY_USERNAME: %v", err)
-	}
-	if err := os.Setenv("WARPGATE_REGISTRY_TOKEN", "warpgatetoken"); err != nil {
-		t.Fatalf("Failed to set WARPGATE_REGISTRY_TOKEN: %v", err)
-	}
-	if err := os.Setenv("REGISTRY_TOKEN", "generictoken"); err != nil {
-		t.Fatalf("Failed to set REGISTRY_TOKEN: %v", err)
-	}
-	defer func() {
-		if err := os.Unsetenv("WARPGATE_REGISTRY_USERNAME"); err != nil {
-			t.Logf("Failed to unset WARPGATE_REGISTRY_USERNAME: %v", err)
-		}
-		if err := os.Unsetenv("REGISTRY_USERNAME"); err != nil {
-			t.Logf("Failed to unset REGISTRY_USERNAME: %v", err)
-		}
-		if err := os.Unsetenv("WARPGATE_REGISTRY_TOKEN"); err != nil {
-			t.Logf("Failed to unset WARPGATE_REGISTRY_TOKEN: %v", err)
-		}
-		if err := os.Unsetenv("REGISTRY_TOKEN"); err != nil {
-			t.Logf("Failed to unset REGISTRY_TOKEN: %v", err)
-		}
-	}()
-
-	config, err := LoadFromPath(configPath)
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
-
-	// WARPGATE_* should take precedence
-	if config.Registry.Username != "warpgateuser" {
-		t.Errorf("Expected username 'warpgateuser' from WARPGATE_REGISTRY_USERNAME, got '%s'", config.Registry.Username)
-	}
-
-	if config.Registry.Token != "warpgatetoken" {
-		t.Errorf("Expected token 'warpgatetoken' from WARPGATE_REGISTRY_TOKEN, got '%s'", config.Registry.Token)
-	}
-}
-
 // TestLoad_AWSCredentialsFromEnv tests that AWS credentials are loaded from environment variables
 func TestLoad_AWSCredentialsFromEnv(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -527,8 +405,6 @@ func TestLoad_CredentialsNeverFromConfigFile(t *testing.T) {
 	// Try to put credentials in the config file (should be ignored!)
 	configContent := `registry:
   default: docker.io
-  username: malicious_user_from_file
-  token: malicious_token_from_file
 
 aws:
   region: us-west-2
@@ -558,10 +434,6 @@ aws:
 func clearAllCredentialEnvVars(t *testing.T) {
 	t.Helper()
 	credentialEnvVars := []string{
-		"WARPGATE_REGISTRY_USERNAME",
-		"WARPGATE_REGISTRY_TOKEN",
-		"REGISTRY_USERNAME",
-		"REGISTRY_TOKEN",
 		"AWS_ACCESS_KEY_ID",
 		"AWS_SECRET_ACCESS_KEY",
 		"AWS_SESSION_TOKEN",
@@ -575,12 +447,6 @@ func clearAllCredentialEnvVars(t *testing.T) {
 // verifyCredentialsNotFromFile ensures credentials are empty and not loaded from config file
 func verifyCredentialsNotFromFile(t *testing.T, config *Config) {
 	t.Helper()
-	if config.Registry.Username != "" {
-		t.Errorf("SECURITY ISSUE: Registry username loaded from config file! Got '%s'", config.Registry.Username)
-	}
-	if config.Registry.Token != "" {
-		t.Errorf("SECURITY ISSUE: Registry token loaded from config file! Got '%s'", config.Registry.Token)
-	}
 	if config.AWS.AccessKeyID != "" {
 		t.Errorf("SECURITY ISSUE: AWS access key loaded from config file! Got '%s'", config.AWS.AccessKeyID)
 	}
@@ -597,79 +463,5 @@ func verifyNonCredentialFieldsLoaded(t *testing.T, config *Config) {
 	}
 	if config.AWS.Region != "us-west-2" {
 		t.Errorf("Expected region 'us-west-2', got '%s'", config.AWS.Region)
-	}
-}
-
-func TestGetEnvWithFallback(t *testing.T) {
-	tests := []struct {
-		name           string
-		primary        string
-		fallback       string
-		primaryValue   string
-		fallbackValue  string
-		expectedResult string
-	}{
-		{
-			name:           "primary set, fallback set - returns primary",
-			primary:        "TEST_PRIMARY",
-			fallback:       "TEST_FALLBACK",
-			primaryValue:   "primary-value",
-			fallbackValue:  "fallback-value",
-			expectedResult: "primary-value",
-		},
-		{
-			name:           "primary not set, fallback set - returns fallback",
-			primary:        "TEST_PRIMARY",
-			fallback:       "TEST_FALLBACK",
-			primaryValue:   "",
-			fallbackValue:  "fallback-value",
-			expectedResult: "fallback-value",
-		},
-		{
-			name:           "primary set, fallback not set - returns primary",
-			primary:        "TEST_PRIMARY",
-			fallback:       "TEST_FALLBACK",
-			primaryValue:   "primary-value",
-			fallbackValue:  "",
-			expectedResult: "primary-value",
-		},
-		{
-			name:           "neither set - returns empty string",
-			primary:        "TEST_PRIMARY",
-			fallback:       "TEST_FALLBACK",
-			primaryValue:   "",
-			fallbackValue:  "",
-			expectedResult: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Clean up environment before and after test
-			defer func() {
-				_ = os.Unsetenv(tt.primary)
-			}()
-			defer func() {
-				_ = os.Unsetenv(tt.fallback)
-			}()
-
-			// Set environment variables as needed
-			if tt.primaryValue != "" {
-				if err := os.Setenv(tt.primary, tt.primaryValue); err != nil {
-					t.Fatalf("Failed to set environment variable: %v", err)
-				}
-			}
-			if tt.fallbackValue != "" {
-				if err := os.Setenv(tt.fallback, tt.fallbackValue); err != nil {
-					t.Fatalf("Failed to set environment variable: %v", err)
-				}
-			}
-
-			result := getEnvWithFallback(tt.primary, tt.fallback)
-
-			if result != tt.expectedResult {
-				t.Errorf("Expected %q, got %q", tt.expectedResult, result)
-			}
-		})
 	}
 }

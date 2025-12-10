@@ -59,11 +59,6 @@ type Config struct {
 type RegistryConfig struct {
 	// Default registry URL (safe to store in config)
 	Default string `mapstructure:"default" yaml:"default"`
-
-	// Credentials are ONLY read from environment variables (not from config file)
-	// Hidden from YAML output to prevent accidental storage in config files
-	Username string `mapstructure:"-" yaml:"-"` // From WARPGATE_REGISTRY_USERNAME or REGISTRY_USERNAME
-	Token    string `mapstructure:"-" yaml:"-"` // From WARPGATE_REGISTRY_TOKEN or REGISTRY_TOKEN
 }
 
 // TemplatesConfig holds template-related configuration
@@ -188,9 +183,7 @@ type BuildKitConfig struct {
 	TLSKey string `mapstructure:"tls_key" yaml:"tls_key,omitempty"`
 }
 
-// loadConfigWithViper is a helper function that encapsulates the common Viper configuration loading pattern.
-// It takes a setup function that allows callers to inject config-source-specific logic (e.g., file paths vs. config name).
-// This consolidates the duplicated logic between Load() and LoadFromPath().
+// loadConfigWithViper encapsulates the common Viper configuration loading pattern.
 func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 	v := viper.New()
 
@@ -217,16 +210,14 @@ func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	// Populate credentials directly from environment variables
+	// Populate AWS credentials directly from environment variables
 	// This ensures they can NEVER come from config files
 	populateAWSCredentials(&config)
-	populateRegistryCredentials(&config)
 
 	return &config, nil
 }
 
-// Load reads and parses the global configuration file
-// Returns a Config with defaults if no config file exists
+// Load reads and parses the global configuration file.
 func Load() (*Config, error) {
 	return loadConfigWithViper(func(v *viper.Viper) error {
 		// Set config name (without extension)
@@ -267,16 +258,6 @@ func LoadFromPath(path string) (*Config, error) {
 	})
 }
 
-// getEnvWithFallback returns the value of the primary environment variable if set,
-// otherwise returns the value of the fallback environment variable.
-// Returns an empty string if neither variable is set.
-func getEnvWithFallback(primary, fallback string) string {
-	if v := os.Getenv(primary); v != "" {
-		return v
-	}
-	return os.Getenv(fallback)
-}
-
 // populateAWSCredentials reads AWS credentials directly from environment variables
 // This ensures they can never come from config files, preventing accidental credential leaks
 func populateAWSCredentials(cfg *Config) {
@@ -285,19 +266,8 @@ func populateAWSCredentials(cfg *Config) {
 	cfg.AWS.SessionToken = os.Getenv("AWS_SESSION_TOKEN")
 }
 
-// populateRegistryCredentials reads registry credentials directly from environment variables
-// This ensures they can never come from config files, preventing accidental credential leaks
-// Supports both WARPGATE_* and standard REGISTRY_* environment variables
-func populateRegistryCredentials(cfg *Config) {
-	// Try WARPGATE_* prefix first, fall back to REGISTRY_*
-	cfg.Registry.Username = getEnvWithFallback("WARPGATE_REGISTRY_USERNAME", "REGISTRY_USERNAME")
-	cfg.Registry.Token = getEnvWithFallback("WARPGATE_REGISTRY_TOKEN", "REGISTRY_TOKEN")
-}
-
-// DetectOCIRuntime finds an available OCI runtime on the system
-// Returns the first available runtime in order of preference: crun, runc
-// First searches PATH using exec.LookPath (most portable), then falls back to common paths
-// Paths are based on containers/common default runtime search locations
+// DetectOCIRuntime finds an available OCI runtime on the system.
+// Searches PATH first (crun, runc), then falls back to common installation paths.
 func DetectOCIRuntime() string {
 	// First try to find in PATH (most portable and idiomatic)
 	preferredRuntimes := []string{"crun", "runc"}
@@ -425,8 +395,6 @@ func bindEnvVars(v *viper.Viper) {
 
 	// Registry
 	bind("registry.default", "WARPGATE_REGISTRY_DEFAULT")
-	// Note: Registry credentials are NOT bound here - they're read directly from env vars
-	// after unmarshaling to prevent them from being stored in config files
 
 	// Templates
 	bind("templates.cache_dir", "WARPGATE_TEMPLATES_CACHE_DIR")

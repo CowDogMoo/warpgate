@@ -28,9 +28,8 @@ import (
 	"runtime"
 )
 
-// getConfigHome returns the base config directory following CLI tool conventions
-// On Unix-like systems (Linux, macOS, BSD), uses $XDG_CONFIG_HOME or ~/.config
-// This differs from GUI apps which may use platform-specific locations
+// getConfigHome returns the base config directory following CLI tool conventions.
+// Uses $XDG_CONFIG_HOME or ~/.config on Unix-like systems.
 func getConfigHome() string {
 	// Check XDG_CONFIG_HOME first (works on both Linux and macOS)
 	if configHome := os.Getenv("XDG_CONFIG_HOME"); configHome != "" {
@@ -64,15 +63,12 @@ func getCacheHome() string {
 	return ""
 }
 
-// GetConfigDirs returns all config directories to search (in priority order)
-// Includes XDG-style directories and legacy warpgate locations for backward compatibility
-// Exported for use by cmd package
+// GetConfigDirs returns all config directories to search (in priority order).
 func GetConfigDirs() []string {
 	return getConfigDirs()
 }
 
-// getConfigDirs returns all config directories to search (in priority order)
-// Includes XDG system directories and legacy warpgate locations for backward compatibility
+// getConfigDirs returns all config directories to search (in priority order).
 func getConfigDirs() []string {
 	dirs := []string{}
 
@@ -105,8 +101,7 @@ func getConfigDirs() []string {
 	return dirs
 }
 
-// ConfigFile returns the path for creating a new config file
-// This is the primary, preferred location (not a search path)
+// ConfigFile returns the path for creating a new config file.
 func ConfigFile(filename string) (string, error) {
 	configHome := getConfigHome()
 	if configHome == "" {

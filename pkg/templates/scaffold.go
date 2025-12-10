@@ -42,7 +42,6 @@ func NewScaffolder() *Scaffolder {
 }
 
 // Create creates a new template with default structure.
-// It creates the template directory, warpgate.yaml, README.md, and a scripts directory.
 func (s *Scaffolder) Create(ctx context.Context, name, outputDir string) error {
 	// Create template directory
 	templateDir := filepath.Join(outputDir, name)

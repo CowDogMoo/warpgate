@@ -66,8 +66,6 @@ import (
 )
 
 // BuildKitBuilder implements container image building using Docker BuildKit.
-// It manages a BuildKit builder instance and provides methods to build,
-// push, and manage container images using Docker's BuildKit backend.
 type BuildKitBuilder struct {
 	client        *client.Client
 	dockerClient  DockerClient
@@ -82,12 +80,7 @@ type BuildKitBuilder struct {
 var _ builder.ContainerBuilder = (*BuildKitBuilder)(nil)
 
 // NewBuildKitBuilder creates a new BuildKit builder instance.
-// It supports multiple connection modes:
-//  1. Auto-detect: If no endpoint is configured, detects the active docker buildx builder
-//  2. Explicit endpoint: Uses configured endpoint (docker-container://, tcp://, unix://)
-//  3. Remote TCP: Supports TLS authentication for secure remote connections
-//
-// Returns an error if connection fails or no builder is available.
+// Supports auto-detect, explicit endpoint (docker-container://, tcp://, unix://), and remote TCP with TLS.
 func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	// Load global configuration
 	cfg, err := globalconfig.Load()
@@ -626,8 +619,7 @@ func (b *BuildKitBuilder) expandContainerVars(s string, env map[string]string) s
 	return result
 }
 
-// detectCollectionRoot detects if a playbook is from an Ansible collection source directory
-// Returns the collection root directory if detected, empty string otherwise
+// detectCollectionRoot detects if a playbook is from an Ansible collection source directory.
 func detectCollectionRoot(playbookPath string) string {
 	// Check if path contains /playbooks/, /roles/, or similar collection structure
 	if !strings.Contains(playbookPath, "/playbooks/") && !strings.Contains(playbookPath, "/roles/") {
@@ -778,8 +770,7 @@ func extractArchFromPlatform(platform string) string {
 	return ""
 }
 
-// calculateBuildContext finds the common parent directory of all files referenced in the config
-// This allows builds to work from any directory by automatically determining the appropriate context
+// calculateBuildContext finds the common parent directory of all files referenced in the config.
 func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, error) {
 	var paths []string
 
@@ -1058,9 +1049,6 @@ func extractRegistryFromImageRef(imageRef string) string {
 
 // Push pushes the built image to a container registry using the Docker SDK.
 // The imageRef should include the full registry path (e.g., "registry.io/org/image:tag").
-// This method automatically reads credentials using go-containerregistry's DefaultKeychain
-// which supports Docker config, credential helpers, and environment variables.
-// It streams output for progress visibility and returns the image digest.
 func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
 	logging.Info("Pushing image: %s", imageRef)
 
@@ -1137,7 +1125,6 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 
 // Tag creates an additional tag for an existing image using the Docker SDK.
 // The newTag should be the complete tag reference including registry if needed.
-// This is useful for creating architecture-specific tags or version aliases.
 func (b *BuildKitBuilder) Tag(ctx context.Context, imageRef, newTag string) error {
 	if err := b.dockerClient.ImageTag(ctx, imageRef, newTag); err != nil {
 		return fmt.Errorf("docker tag failed: %w", err)
@@ -1148,8 +1135,6 @@ func (b *BuildKitBuilder) Tag(ctx context.Context, imageRef, newTag string) erro
 }
 
 // Remove deletes an image from the local Docker image store using the Docker SDK.
-// This frees up disk space but does not affect images already pushed to registries.
-// Returns an error if the image is in use by a running container.
 func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 	removeOpts := dockerimage.RemoveOptions{
 		Force:         false,
@@ -1166,8 +1151,6 @@ func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 }
 
 // CreateAndPushManifest creates and pushes a multi-architecture manifest list to a registry.
-// It uses BuildKit's native manifest creation capabilities to combine multiple architecture-specific
-// images into a single manifest that allows Docker to automatically select the correct architecture.
 // The manifestName should include the registry path (e.g., "registry.io/org/image:tag").
 func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestName string, entries []manifests.ManifestEntry) error {
 	if len(entries) == 0 {
@@ -1310,8 +1293,6 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 }
 
 // InspectManifest retrieves information about a manifest list from Docker.
-// It uses the Docker SDK to inspect the manifest and extract platform information.
-// This can be used to verify that a multi-arch manifest was created correctly.
 func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName string) ([]manifests.ManifestEntry, error) {
 	logging.Debug("Inspecting manifest: %s", manifestName)
 
@@ -1342,8 +1323,6 @@ func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName stri
 }
 
 // BuildDockerfile builds a container image using a Dockerfile with BuildKit's native client.
-// This method is used when the config specifies a dockerfile section instead of provisioners.
-// It uses BuildKit's dockerfile frontend to build directly without shelling out to docker CLI.
 func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
 	startTime := time.Now()
 	logging.Info("Building image from Dockerfile: %s (native BuildKit)", cfg.Name)
@@ -1462,8 +1441,6 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 }
 
 // Close releases resources and closes connections to BuildKit and Docker daemons.
-// This should be called when the builder is no longer needed, typically via defer.
-// Calling Close multiple times is safe and will not cause errors.
 func (b *BuildKitBuilder) Close() error {
 	var errs []error
 

@@ -79,7 +79,6 @@ type BuildOptions struct {
 }
 
 // ApplyOverrides applies CLI/API overrides to a build configuration.
-// It modifies the config in place and returns an error if any override is invalid.
 // Precedence: BuildOptions > Config > Global Config Defaults
 func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, globalCfg *globalconfig.Config) error {
 	if globalCfg == nil {

@@ -45,26 +45,7 @@ type PlatformInfo struct {
 }
 
 // ParsePlatform parses a platform string into its constituent parts.
-// It handles various platform string formats and normalizes them into a PlatformInfo struct.
-//
-// Supported formats:
-//   - "os/architecture/variant" (e.g., "linux/arm64/v8")
-//   - "os/architecture" (e.g., "linux/amd64")
-//   - "architecture/variant" (e.g., "arm/v7") - assumes OS is "linux"
-//   - "architecture" (e.g., "amd64") - assumes OS is "linux"
-//
-// Parameters:
-//   - platformStr: The platform string to parse
-//
-// Returns:
-//   - PlatformInfo with parsed components. Defaults OS to "linux" if not specified.
-//
-// Examples:
-//
-//	ParsePlatform("linux/amd64")      // -> {OS: "linux", Architecture: "amd64", Variant: ""}
-//	ParsePlatform("linux/arm64/v8")   // -> {OS: "linux", Architecture: "arm64", Variant: "v8"}
-//	ParsePlatform("amd64")            // -> {OS: "linux", Architecture: "amd64", Variant: ""}
-//	ParsePlatform("arm/v7")           // -> {OS: "linux", Architecture: "arm", Variant: "v7"}
+// Supports: "os/arch/variant", "os/arch", "arch/variant", or "arch" (defaults OS to "linux").
 func ParsePlatform(platformStr string) PlatformInfo {
 	info := PlatformInfo{
 		OS: "linux", // Default to linux

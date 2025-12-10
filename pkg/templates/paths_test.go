@@ -316,7 +316,6 @@ func TestExtractRepoName_GitSSHFormat(t *testing.T) {
 	}
 }
 
-// Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && hasSubstring(s, substr)))

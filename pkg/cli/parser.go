@@ -73,7 +73,6 @@ func NewParser() *Parser {
 }
 
 // ParseKeyValuePairs parses key=value pairs from CLI flags.
-// Returns a map and an error if any pair is malformed.
 //
 // Example:
 //
@@ -95,7 +94,6 @@ func (p *Parser) ParseKeyValuePairs(pairs []string) (map[string]string, error) {
 }
 
 // ParseKeyValue parses a single key=value string.
-// Returns the key, value, and an error if the format is invalid.
 func ParseKeyValue(pair string) (string, string, error) {
 	parts := strings.SplitN(pair, "=", 2)
 	if len(parts) != 2 {
@@ -113,7 +111,6 @@ func ParseKeyValue(pair string) (string, string, error) {
 }
 
 // ParseLabels parses label flags in key=value format.
-// Returns a map of labels and an error if any label is malformed.
 func (p *Parser) ParseLabels(labels []string) (map[string]string, error) {
 	if len(labels) == 0 {
 		return nil, nil
@@ -122,7 +119,6 @@ func (p *Parser) ParseLabels(labels []string) (map[string]string, error) {
 }
 
 // ParseBuildArgs parses build argument flags in key=value format.
-// Returns a map of build arguments and an error if any arg is malformed.
 func (p *Parser) ParseBuildArgs(buildArgs []string) (map[string]string, error) {
 	if len(buildArgs) == 0 {
 		return nil, nil
@@ -131,7 +127,6 @@ func (p *Parser) ParseBuildArgs(buildArgs []string) (map[string]string, error) {
 }
 
 // ParseVariables parses variable flags in key=value format.
-// Returns a map of variables and an error if any variable is malformed.
 func (p *Parser) ParseVariables(vars []string) (map[string]string, error) {
 	if len(vars) == 0 {
 		return nil, nil

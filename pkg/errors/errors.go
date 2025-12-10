@@ -26,17 +26,7 @@ package errors
 import "fmt"
 
 // Wrap wraps an error with a descriptive action and optional detail.
-// It returns a formatted error in the form "failed to <action> [(<detail>)]: <error>".
-//
-// Example usage:
-//
-//	if err := doSomething(); err != nil {
-//	    return errors.Wrap("create builder", "", err)
-//	}
-//
-//	if err := parseFile(path); err != nil {
-//	    return errors.Wrap("parse config", path, err)
-//	}
+// Format: "failed to <action> [(<detail>)]: <error>".
 func Wrap(action, detail string, err error) error {
 	if err == nil {
 		return nil

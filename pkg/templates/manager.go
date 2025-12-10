@@ -84,7 +84,6 @@ func (m *Manager) AddGitRepository(ctx context.Context, name, url string) error 
 }
 
 // AddLocalPath adds a local directory to template sources.
-// It expands ~ and converts relative paths to absolute paths.
 func (m *Manager) AddLocalPath(ctx context.Context, path string) error {
 	// Expand and normalize path
 	expandedPath, err := m.validator.ExpandPath(path)

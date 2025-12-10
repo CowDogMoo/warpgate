@@ -52,8 +52,6 @@ func NewBuildService(cfg *globalconfig.Config, buildKitCreator BuilderCreatorFun
 }
 
 // ExecuteContainerBuild performs a complete container build workflow.
-// It handles configuration overrides, builder selection, single/multi-arch builds,
-// and optionally pushes the results to a registry.
 func (s *BuildService) ExecuteContainerBuild(ctx context.Context, config Config, opts BuildOptions) ([]BuildResult, error) {
 	logging.InfoContext(ctx, "Executing container build")
 

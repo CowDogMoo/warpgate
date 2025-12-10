@@ -214,8 +214,6 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 }
 
 // executeAMIBuildInCmd handles AMI builds in the command layer to avoid import cycles.
-// This function lives in the command layer because it needs to import the ami package,
-// which would create a circular dependency if imported by builder.service.
 func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions) (*builder.BuildResult, error) {
 	// Import ami package to create the builder
 	// Note: This avoids circular dependency since cmd can import ami, but builder.service cannot
@@ -285,8 +283,6 @@ func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildCo
 }
 
 // createAMIBuilder creates an AMI builder with the given configuration.
-// This helper function creates the AMI builder in the command layer,
-// which is necessary to avoid circular dependencies between builder.service and ami packages.
 func createAMIBuilder(ctx context.Context, config interface{}) (builder.AMIBuilder, error) {
 	// Convert the anonymous struct to ami.ClientConfig
 	type clientConfig struct {

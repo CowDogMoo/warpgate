@@ -217,10 +217,6 @@ build:
 # Authenticate to registry
 docker login ghcr.io
 
-# Or use environment variables
-export WARPGATE_REGISTRY_USERNAME=myusername
-export WARPGATE_REGISTRY_TOKEN=$GITHUB_TOKEN
-
 # Verify credentials are saved
 cat ~/.docker/config.json
 

@@ -35,8 +35,6 @@ import (
 // Variables are applied with the following precedence (highest to lowest):
 //  1. CLI flags (--var key=value)
 //  2. Var files loaded in order (later files override earlier files)
-//
-// This precedence model allows command-line overrides of file-based configuration.
 func ParseVariables(vars, varFiles []string) (map[string]string, error) {
 	variables := make(map[string]string)
 
@@ -66,7 +64,6 @@ func ParseVariables(vars, varFiles []string) (map[string]string, error) {
 
 // LoadVariablesFromFile loads variables from a YAML file containing key-value pairs.
 // The YAML file should be a flat map of strings (e.g., `KEY: value`).
-// Returns an error if the file cannot be read or contains invalid YAML syntax.
 func LoadVariablesFromFile(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
