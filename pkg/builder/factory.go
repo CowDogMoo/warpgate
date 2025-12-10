@@ -36,8 +36,6 @@ const (
 	BuilderTypeAuto BuilderType = "auto"
 	// BuilderTypeBuildKit uses BuildKit for building images
 	BuilderTypeBuildKit BuilderType = "buildkit"
-	// BuilderTypeBuildah uses Buildah for building images (Linux only)
-	BuilderTypeBuildah BuilderType = "buildah"
 )
 
 // BuilderCreatorFunc creates a ContainerBuilder instance for a specific backend.
@@ -46,20 +44,19 @@ const (
 type BuilderCreatorFunc func(ctx context.Context) (ContainerBuilder, error)
 
 // BuilderFactory creates builder instances based on configuration.
-// It supports multiple builder backends (BuildKit, Buildah) and can automatically
-// select the best builder for the current platform. The factory pattern allows
+// It supports BuildKit for image building and can automatically select
+// the best builder for the current platform. The factory pattern allows
 // platform-specific builder creation while maintaining a consistent interface.
 type BuilderFactory struct {
 	builderType       BuilderType
 	buildKitCreator   BuilderCreatorFunc
-	buildahCreator    BuilderCreatorFunc
 	autoSelectCreator BuilderCreatorFunc
 }
 
 // NewBuilderFactory creates a new builder factory with the specified type and creator functions.
-// The builderType parameter accepts "auto", "buildkit", or "buildah" (case-insensitive).
-// Creator functions are provided for each backend and should return nil if unavailable on the platform.
-func NewBuilderFactory(builderType string, buildKitCreator, buildahCreator, autoSelectCreator BuilderCreatorFunc) *BuilderFactory {
+// The builderType parameter accepts "auto" or "buildkit" (case-insensitive).
+// Creator functions are provided for BuildKit and auto-selection.
+func NewBuilderFactory(builderType string, buildKitCreator, autoSelectCreator BuilderCreatorFunc) *BuilderFactory {
 	// Normalize builder type
 	normalizedType := strings.ToLower(strings.TrimSpace(builderType))
 
@@ -67,8 +64,6 @@ func NewBuilderFactory(builderType string, buildKitCreator, buildahCreator, auto
 	switch normalizedType {
 	case "buildkit":
 		bt = BuilderTypeBuildKit
-	case "buildah":
-		bt = BuilderTypeBuildah
 	case "auto", "":
 		bt = BuilderTypeAuto
 	default:
@@ -78,7 +73,6 @@ func NewBuilderFactory(builderType string, buildKitCreator, buildahCreator, auto
 	return &BuilderFactory{
 		builderType:       bt,
 		buildKitCreator:   buildKitCreator,
-		buildahCreator:    buildahCreator,
 		autoSelectCreator: autoSelectCreator,
 	}
 }
@@ -91,11 +85,6 @@ func (f *BuilderFactory) CreateContainerBuilder(ctx context.Context) (ContainerB
 			return nil, fmt.Errorf("BuildKit creator not provided")
 		}
 		return f.buildKitCreator(ctx)
-	case BuilderTypeBuildah:
-		if f.buildahCreator == nil {
-			return nil, fmt.Errorf("buildah creator not provided")
-		}
-		return f.buildahCreator(ctx)
 	case BuilderTypeAuto:
 		if f.autoSelectCreator == nil {
 			return nil, fmt.Errorf("auto-select creator not provided")
@@ -121,9 +110,9 @@ func ValidateBuilderType(builderType string) error {
 	normalizedType := strings.ToLower(strings.TrimSpace(builderType))
 
 	switch normalizedType {
-	case "auto", "buildkit", "buildah", "":
+	case "auto", "buildkit", "":
 		return nil
 	default:
-		return fmt.Errorf("invalid builder type: %s (supported: auto, buildkit, buildah)", builderType)
+		return fmt.Errorf("invalid builder type: %s (supported: auto, buildkit)", builderType)
 	}
 }

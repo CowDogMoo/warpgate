@@ -18,7 +18,7 @@
 
 Warp Gate is a modern, Go-based CLI tool that simplifies building container
 images and AWS AMIs using declarative YAML templates. Built on
-[Buildah](https://buildah.io/) and the [AWS SDK](https://aws.amazon.com/sdk-for-go/),
+[BuildKit](https://github.com/moby/buildkit) and the [AWS SDK](https://aws.amazon.com/sdk-for-go/),
 it provides a faster, more maintainable alternative to Packer for
 infrastructure image creation.
 
@@ -26,7 +26,7 @@ infrastructure image creation.
 
 - **Unified provisioning** - Use Ansible or shell scripts for both containers
   and VMs (no separate Dockerfiles)
-- **Faster builds** - Native Go performance with Buildah integration
+- **Faster builds** - Native Go performance with BuildKit integration
 - **Simpler syntax** - Clean YAML templates instead of HCL/JSON
 - **Better portability** - Run natively on Linux or containerized anywhere
 - **Template discovery** - Built-in template repository management
@@ -100,7 +100,7 @@ and [Usage Guide](docs/usage-guide.md).
 
 | Feature | Description | Status |
 | --- | --- | --- |
-| **Container Images** | Build OCI images with Buildah | ✅  Stable |
+| **Container Images** | Build OCI images with BuildKit | ✅  Stable |
 | **AWS AMIs** | Create EC2 AMIs | ✅  Stable |
 | **Multi-arch Builds** | Build amd64/arm64 simultaneously | ✅  Stable |
 | **Template Discovery** | Git/local template repo mgmt | ✅  Stable |
@@ -118,7 +118,7 @@ and [Usage Guide](docs/usage-guide.md).
 | ---------------------- | ------------------------- | ----------------------- |
 | **Performance**        | Fast (Go native)          | Slower (plugins)        |
 | **Syntax**             | Simple YAML               | Complex HCL/JSON        |
-| **Container Focus**    | Native Buildah            | Docker plugin only      |
+| **Container Focus**    | Native BuildKit           | Docker plugin only      |
 | **Template Discovery** | Built-in repo mgmt        | Manual                  |
 | **Learning Curve**     | Gentle                    | Steep                   |
 | **Maintenance**        | Single binary             | Multiple plugins        |
@@ -151,8 +151,7 @@ alias warpgate='docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:
 **Prerequisites:**
 
 - Go 1.21+ (for building from source)
-- Docker or Podman (for containerized execution)
-- Linux (for native Buildah integration)
+- Docker or Podman (for container builds via BuildKit)
 
 **See [Installation Guide](docs/installation.md) for detailed
 platform-specific instructions.**
@@ -333,7 +332,7 @@ This project is licensed under the **MIT License** - see the
 
 Warpgate uses open-source libraries:
 
-- [Buildah](https://github.com/containers/buildah) - Apache 2.0
+- [BuildKit](https://github.com/moby/buildkit) - Apache 2.0
 - [AWS SDK for Go](https://github.com/aws/aws-sdk-go-v2) - Apache 2.0
 - [Cobra](https://github.com/spf13/cobra) - Apache 2.0
 - [Viper](https://github.com/spf13/viper) - MIT

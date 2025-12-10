@@ -97,7 +97,7 @@ sudo -E warpgate build mytemplate
 #### Solution 2: Configure rootless containers
 
 ```bash
-# Install rootless Podman/Buildah
+# Install rootless Podman/BuildKit
 # See: https://github.com/containers/podman/blob/main/docs/tutorials/rootless_tutorial.md
 
 # Configure storage
@@ -489,11 +489,11 @@ Check security group allows outbound traffic for:
 
 ## Platform-Specific Issues
 
-### macOS: Build fails with Buildah errors
+### macOS: Build fails with BuildKit errors
 
-**Symptoms:** Native build attempts fail with "buildah not supported on darwin".
+**Symptoms:** Native build attempts fail with "BuildKit not supported on darwin".
 
-**Cause:** Buildah requires Linux kernel features.
+**Cause:** BuildKit requires Linux kernel features.
 
 **Solution:**
 

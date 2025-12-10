@@ -23,7 +23,7 @@ THE SOFTWARE.
 // Package builder provides the core abstractions and services for building container images and AWS AMIs.
 //
 // This package implements the domain logic for multi-platform builds, coordinating between
-// different builder backends (BuildKit, Buildah) and target types (containers, AMIs).
+// BuildKit for container builds and target types (containers, AMIs).
 //
 // # Architecture
 //
@@ -40,7 +40,7 @@ THE SOFTWARE.
 // BuildService: The main entry point for executing builds. It coordinates configuration
 // overrides, builder selection, and multi-arch builds:
 //
-//	service := builder.NewBuildService(cfg, buildKitCreator, buildahCreator, autoSelectCreator)
+//	service := builder.NewBuildService(cfg, buildKitCreator, autoSelectCreator)
 //	results, err := service.ExecuteContainerBuild(ctx, config, opts)
 //
 // ContainerBuilder Interface: Abstracts container build operations across different backends:
@@ -82,11 +82,10 @@ THE SOFTWARE.
 //
 // # Platform Support
 //
-// The package supports multiple builder backends with platform-specific initialization:
+// The package uses BuildKit for container image builds across all platforms:
 //
-//   - BuildKit: Docker BuildKit for modern, efficient container builds (Linux/macOS)
-//   - Buildah: Native container builds without Docker daemon (Linux only)
-//   - Auto: Automatic selection based on platform and availability
+//   - BuildKit: Docker BuildKit for modern, efficient container builds (Linux/macOS/Windows)
+//   - Auto: Automatically selects BuildKit (same as explicit BuildKit selection)
 //
 // # Import Cycles
 //

@@ -26,14 +26,14 @@ Warpgate is a modern alternative to Packer with several key advantages:
 **Better Performance:**
 
 - Native Go implementation (not plugin-based)
-- Buildah integration for efficient container builds
+- BuildKit integration for efficient container builds
 - Faster build times (30-50% faster in benchmarks)
 
 **Enhanced Features:**
 
 - Built-in template discovery and repository management
 - First-class multi-architecture support
-- Better container image focus with native Buildah integration
+- Better container image focus with native BuildKit integration
 - Single binary with no external plugin dependencies
 
 **When to use Warpgate:**
@@ -117,7 +117,7 @@ Warpgate is actively maintained by [CowDogMoo](https://github.com/CowDogMoo) wit
 
 ### Why does Warpgate require Linux for native execution?
 
-Warpgate uses Buildah as a library for container operations. Buildah
+Warpgate uses BuildKit as a library for container operations. BuildKit
 requires Linux kernel features for:
 
 - Container namespaces
@@ -466,7 +466,7 @@ Never use for:
 **Native Go performance:**
 
 - No plugin overhead
-- Direct Buildah library integration
+- Direct BuildKit library integration
 - Efficient layer caching
 
 **Optimized workflows:**

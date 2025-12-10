@@ -26,21 +26,16 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"runtime"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
-// autoSelectBuilderFunc automatically selects the best builder for non-Linux platforms
+// autoSelectBuilderFunc automatically selects the best builder for non-Linux platforms.
+// On non-Linux platforms (macOS, Windows), we use BuildKit via Docker.
 func autoSelectBuilderFunc(ctx context.Context) (builder.ContainerBuilder, error) {
 	logging.Info("Auto-selecting builder for %s platform", runtime.GOOS)
-	logging.Info("Auto-selected: BuildKit (only option for non-Linux)")
+	logging.Info("Auto-selected: BuildKit")
 	return newBuildKitBuilderFunc(ctx)
-}
-
-// newBuildahBuilderFunc returns an error on non-Linux platforms
-func newBuildahBuilderFunc(_ context.Context) (builder.ContainerBuilder, error) {
-	return nil, fmt.Errorf("buildah builder is only supported on Linux (current platform: %s)", runtime.GOOS)
 }

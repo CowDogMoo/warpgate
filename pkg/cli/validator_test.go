@@ -183,14 +183,6 @@ func TestValidateBuildOptions(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid builder type - buildah",
-			opts: BuildCLIOptions{
-				ConfigFile:  "warpgate.yaml",
-				BuilderType: "buildah",
-			},
-			wantErr: false,
-		},
-		{
 			name: "valid builder type - auto",
 			opts: BuildCLIOptions{
 				ConfigFile:  "warpgate.yaml",

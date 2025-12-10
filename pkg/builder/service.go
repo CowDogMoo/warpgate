@@ -42,17 +42,15 @@ type BuildService struct {
 	// Platform-specific builder creation functions
 	// These are injected to handle platform differences (macOS vs Linux)
 	buildKitCreator   BuilderCreatorFunc
-	buildahCreator    BuilderCreatorFunc
 	autoSelectCreator BuilderCreatorFunc
 }
 
 // NewBuildService creates a new build service with the given configuration.
 // The creator functions allow platform-specific builder initialization.
-func NewBuildService(cfg *globalconfig.Config, buildKitCreator, buildahCreator, autoSelectCreator BuilderCreatorFunc) *BuildService {
+func NewBuildService(cfg *globalconfig.Config, buildKitCreator, autoSelectCreator BuilderCreatorFunc) *BuildService {
 	return &BuildService{
 		globalConfig:      cfg,
 		buildKitCreator:   buildKitCreator,
-		buildahCreator:    buildahCreator,
 		autoSelectCreator: autoSelectCreator,
 	}
 }
@@ -153,7 +151,6 @@ func (s *BuildService) selectContainerBuilder(ctx context.Context, opts BuildOpt
 	factory := NewBuilderFactory(
 		builderTypeStr,
 		s.buildKitCreator,
-		s.buildahCreator,
 		s.autoSelectCreator,
 	)
 

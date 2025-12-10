@@ -161,7 +161,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	}
 
 	// Create builder service
-	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc, newBuildahBuilderFunc, autoSelectBuilderFunc)
+	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc, autoSelectBuilderFunc)
 
 	// Convert CLI options to builder options
 	builderOpts := builder.BuildOptions{

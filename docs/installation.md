@@ -15,7 +15,7 @@ Comprehensive installation instructions for Warpgate on all platforms.
 
 - **Go 1.21+** - For building from source ([install Go](https://go.dev/doc/install))
 - **Docker or Podman** - For containerized execution (recommended for macOS/Windows)
-- **Linux** - Required for native Buildah integration
+- **Linux** - Required for native BuildKit integration
 
 ### Optional
 
@@ -106,7 +106,7 @@ warpgate --version
 
 ### Linux (Native Execution)
 
-Warpgate runs natively on Linux with full Buildah integration.
+Warpgate runs natively on Linux with full BuildKit integration.
 
 #### Requirements
 

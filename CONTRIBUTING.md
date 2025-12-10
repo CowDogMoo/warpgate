@@ -309,7 +309,7 @@ func BuildContainer(ctx context.Context, template *Template) (string, error) {
         return "", fmt.Errorf("invalid template: %w", err)
     }
 
-    builder, err := buildah.NewBuilder(ctx, template.BaseImage)
+    builder, err := BuildKit.NewBuilder(ctx, template.BaseImage)
     if err != nil {
         return "", fmt.Errorf("failed to create builder: %w", err)
     }
@@ -492,7 +492,7 @@ func TestBuildRealImage(t *testing.T) {
         t.Skip("Skipping integration test")
     }
 
-    // Test with real Docker/Buildah
+    // Test with real Docker/BuildKit
     ctx := context.Background()
     builder, err := NewBuilder(ctx)
     if err != nil {

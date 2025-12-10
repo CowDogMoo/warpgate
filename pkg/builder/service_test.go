@@ -91,14 +91,11 @@ func TestNewBuildService(t *testing.T) {
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
 		return &mockContainerBuilder{}, nil
 	}
-	buildahCreator := func(ctx context.Context) (ContainerBuilder, error) {
-		return &mockContainerBuilder{}, nil
-	}
 	autoSelectCreator := func(ctx context.Context) (ContainerBuilder, error) {
 		return &mockContainerBuilder{}, nil
 	}
 
-	service := NewBuildService(cfg, buildKitCreator, buildahCreator, autoSelectCreator)
+	service := NewBuildService(cfg, buildKitCreator, autoSelectCreator)
 
 	if service == nil {
 		t.Fatal("NewBuildService() returned nil")
@@ -262,7 +259,7 @@ func TestBuildService_ExecuteContainerBuild_SingleArch(t *testing.T) {
 		}, nil
 	}
 
-	service := NewBuildService(cfg, buildKitCreator, nil, nil)
+	service := NewBuildService(cfg, buildKitCreator, nil)
 
 	buildConfig := Config{
 		Name:          "test",
@@ -301,7 +298,7 @@ func TestBuildService_ExecuteContainerBuild_BuildError(t *testing.T) {
 		}, nil
 	}
 
-	service := NewBuildService(cfg, buildKitCreator, nil, nil)
+	service := NewBuildService(cfg, buildKitCreator, nil)
 
 	buildConfig := Config{
 		Name:          "test",
@@ -328,7 +325,7 @@ func TestBuildService_ExecuteContainerBuild_BuilderCreationError(t *testing.T) {
 		return nil, expectedErr
 	}
 
-	service := NewBuildService(cfg, buildKitCreator, nil, nil)
+	service := NewBuildService(cfg, buildKitCreator, nil)
 
 	buildConfig := Config{
 		Name:          "test",
@@ -374,7 +371,7 @@ func TestBuildService_SelectContainerBuilder(t *testing.T) {
 				},
 			},
 			opts: BuildOptions{
-				BuilderType: "buildah",
+				BuilderType: "auto",
 			},
 			wantErr:      false,
 			builderCalls: 1,
@@ -394,15 +391,9 @@ func TestBuildService_SelectContainerBuilder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buildKitCalls := 0
-			buildahCalls := 0
 
 			buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
 				buildKitCalls++
-				return &mockContainerBuilder{}, nil
-			}
-
-			buildahCreator := func(ctx context.Context) (ContainerBuilder, error) {
-				buildahCalls++
 				return &mockContainerBuilder{}, nil
 			}
 
@@ -410,7 +401,7 @@ func TestBuildService_SelectContainerBuilder(t *testing.T) {
 				return &mockContainerBuilder{}, nil
 			}
 
-			service := NewBuildService(tt.globalCfg, buildKitCreator, buildahCreator, autoSelectCreator)
+			service := NewBuildService(tt.globalCfg, buildKitCreator, autoSelectCreator)
 
 			ctx := context.Background()
 			builder, err := service.selectContainerBuilder(ctx, tt.opts)
@@ -454,7 +445,7 @@ func TestManifestEntry_DigestParsing(t *testing.T) {
 func TestBuildService_SaveDigests(t *testing.T) {
 	cfg := &globalconfig.Config{}
 
-	service := NewBuildService(cfg, nil, nil, nil)
+	service := NewBuildService(cfg, nil, nil)
 
 	results := []BuildResult{
 		{
@@ -489,7 +480,7 @@ func TestBuildService_PushSingleArch_WithoutDigest(t *testing.T) {
 		}, nil
 	}
 
-	service := NewBuildService(cfg, buildKitCreator, nil, nil)
+	service := NewBuildService(cfg, buildKitCreator, nil)
 
 	buildConfig := &Config{
 		Name:          "test",
@@ -530,7 +521,7 @@ func TestBuildService_ApplyOverridesBeforeBuild(t *testing.T) {
 		return &mockContainerBuilder{}, nil
 	}
 
-	service := NewBuildService(cfg, buildKitCreator, nil, nil)
+	service := NewBuildService(cfg, buildKitCreator, nil)
 
 	buildConfig := Config{
 		Name:          "test",

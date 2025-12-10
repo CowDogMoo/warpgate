@@ -29,9 +29,8 @@ import (
 	"fmt"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/builder/buildah"
+	"github.com/cowdogmoo/warpgate/pkg/builder/buildkit"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
-	"go.podman.io/storage/pkg/unshare"
 )
 
 // manifestBuilder is an interface for builders that support manifest operations
@@ -40,16 +39,10 @@ type manifestBuilder interface {
 	CreateAndPushManifest(ctx context.Context, manifestName string, entries []manifests.ManifestEntry) error
 }
 
-// createBuilderForManifests creates a buildah builder for manifest operations on Linux
+// createBuilderForManifests creates a BuildKit builder for manifest operations on Linux
 func createBuilderForManifests(ctx context.Context) (manifestBuilder, error) {
-	// Ensure we're in the right namespace for container operations
-	unshare.MaybeReexecUsingUserNamespace(false)
-
-	// Get buildah configuration
-	builderCfg := buildah.GetDefaultConfig()
-
-	// Create the buildah builder
-	return buildah.NewBuildahBuilder(builderCfg)
+	// Create the BuildKit builder
+	return buildkit.NewBuildKitBuilder(ctx)
 }
 
 // createManifestWithBuilder creates and pushes a manifest using the builder

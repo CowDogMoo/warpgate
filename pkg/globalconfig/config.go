@@ -103,8 +103,8 @@ type BuildConfig struct {
 	ParallelismLimit     int      `mapstructure:"parallelism_limit"`
 	CPUFraction          float64  `mapstructure:"cpu_fraction"`
 	BaselineBuildTimeMin int      `mapstructure:"baseline_build_time_min"`
-	// BuilderType specifies which builder to use: "auto", "buildkit", or "buildah"
-	// "auto" automatically detects the best builder for the platform
+	// BuilderType specifies which builder to use: "auto" or "buildkit"
+	// "auto" automatically selects BuildKit (same as "buildkit")
 	BuilderType string `mapstructure:"builder_type" yaml:"builder_type"`
 }
 
@@ -328,7 +328,7 @@ func DetectOCIRuntime() string {
 		}
 	}
 
-	// If nothing found, return empty string - let buildah use its default
+	// If nothing found, return empty string
 	return ""
 }
 
