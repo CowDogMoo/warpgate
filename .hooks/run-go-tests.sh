@@ -76,7 +76,17 @@ run_tests() {
         unset IFS
 
         for dir in "${pkg_dirs[@]}"; do
-            [[ -n "$dir" ]] && go test -v -short -race -failfast "./$dir/..." 2>&1 | tee -a "$LOGFILE"
+            if [[ -n "$dir" ]]; then
+                # Run go list first to check if there are any packages to test
+                # This handles build constraints like //go:build linux
+                local pkg_list
+                pkg_list=$(go list "./$dir/..." 2>&1)
+                if [[ -n "$pkg_list" ]] && [[ ! "$pkg_list" =~ "matched no packages" ]]; then
+                    go test -v -short -race -failfast "./$dir/..." 2>&1 | tee -a "$LOGFILE"
+                else
+                    echo "Skipping $dir (no packages match current platform/build constraints)" | tee -a "$LOGFILE"
+                fi
+            fi
         done
     else
         if [[ "${GITHUB_ACTIONS}" != 'true' ]]; then
