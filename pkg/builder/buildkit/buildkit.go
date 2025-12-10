@@ -667,11 +667,11 @@ func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, noCac
 	}
 }
 
-// loadAndTagImage loads the built OCI tar into Docker and tags it
-func loadAndTagImage(ctx context.Context, ociTarPath, imageName string) error {
-	// Load OCI tar into Docker
+// loadAndTagImage loads the built Docker image tar into Docker and tags it
+func loadAndTagImage(ctx context.Context, imageTarPath, imageName string) error {
+	// Load Docker image tar into Docker
 	logging.Info("Loading image into Docker...")
-	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", ociTarPath)
+	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", imageTarPath)
 	loadCmd.Stdout = os.Stdout
 	loadCmd.Stderr = os.Stderr
 	if err := loadCmd.Run(); err != nil {
@@ -853,11 +853,11 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
 	}
 
-	// Step 5: Export to OCI tar file and load into Docker
-	ociTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
+	// Step 5: Export to Docker image tar and load into Docker
+	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
 	defer func() {
-		if err := os.Remove(ociTarPath); err != nil {
-			logging.Warn("Failed to remove temporary OCI tar: %v", err)
+		if err := os.Remove(imageTarPath); err != nil {
+			logging.Warn("Failed to remove temporary image tar: %v", err)
 		}
 	}()
 
@@ -867,8 +867,8 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 	solveOpt := client.SolveOpt{
 		Exports: []client.ExportEntry{
 			{
-				Type:   client.ExporterOCI,
-				Output: fixedWriteCloser(ociTarPath),
+				Type:   client.ExporterDocker,
+				Output: fixedWriteCloser(imageTarPath),
 				Attrs:  exportAttrs,
 			},
 		},
@@ -894,7 +894,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 	}
 
 	// Step 7: Load and tag image
-	if err := loadAndTagImage(ctx, ociTarPath, imageName); err != nil {
+	if err := loadAndTagImage(ctx, imageTarPath, imageName); err != nil {
 		return nil, err
 	}
 
