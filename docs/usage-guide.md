@@ -295,7 +295,7 @@ warpgate templates update
 - To get latest template changes
 - When templates appear missing
 
-See [Template Configuration Guide](template-configuration.md) for
+See [Template Repositories Guide](template-repositories.md) for
 comprehensive repository management.
 
 ## Multi-Architecture Builds
@@ -418,41 +418,6 @@ docker run --rm dev-image:latest curl --version
 warpgate build warpgate.yaml --push --registry ghcr.io/myorg
 ```
 
-### CI/CD Pipeline
-
-Automated builds in CI/CD:
-
-**GitHub Actions example:**
-
-```yaml
-name: Build Images
-
-on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Warpgate
-        run: go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
-
-      - name: Login to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Build and push
-        run: |
-          warpgate build warpgate.yaml \
-            --arch amd64,arm64 \
-            --push \
-            --registry ghcr.io/${{ github.repository_owner }} \
-            --var VERSION=${{ github.ref_name }}
-```
-
 ### Team Template Repository
 
 Share templates across your team:
@@ -492,29 +457,9 @@ warpgate templates list
 warpgate build security-base
 ```
 
-### Security Scanning Workflow
-
-Build, scan, and push images:
-
-```bash
-# 1. Build image
-warpgate build myimage --arch amd64
-
-# 2. Scan with Trivy
-trivy image myimage:latest
-
-# 3. If scan passes, push
-if trivy image --exit-code 1 --severity HIGH,CRITICAL myimage:latest; then
-  warpgate build myimage --push --registry ghcr.io/myorg
-else
-  echo "Security scan failed!"
-  exit 1
-fi
-```
-
 ## Next Steps
 
-- **Learn template syntax** - See [Template Format](template-format.md)
-- **Configure Warpgate** - Read [Configuration Guide](configuration.md)
+- **Learn template syntax** - See [Template Reference](template-reference.md)
+- **Configure Warpgate** - Read [CLI Configuration Guide](cli-configuration.md)
 - **View all commands** - Check [Commands Reference](commands.md)
 - **Troubleshoot issues** - Visit [Troubleshooting Guide](troubleshooting.md)

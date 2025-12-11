@@ -135,7 +135,7 @@ warpgate build mytemplate --arch amd64,arm64
 
 **Template guides:**
 
-- [Template Format Reference](template-format.md) - Syntax documentation
+- [Template Reference](template-reference.md) - Syntax documentation
 
 ### How do I create a private template repository?
 
@@ -225,7 +225,7 @@ warpgate templates list
 # Shows templates from all configured sources
 ```
 
-See [Template Configuration Guide](template-configuration.md) for detailed
+See [Template Repositories Guide](template-repositories.md) for detailed
 repository management.
 
 ### How do I share variables across templates?
@@ -269,7 +269,7 @@ Warpgate never stores credentials in config files.
 - **AWS:** Uses AWS SDK credential chain (SSO, environment variables, IAM roles)
 - **Secrets in templates:** Pass via variables at build time, never hardcode
 
-See [Configuration Guide - Security Best Practices](configuration.md#security-best-practices)
+See [CLI Configuration Guide - Security Best Practices](cli-configuration.md#security-best-practices)
 for detailed setup instructions.
 
 ### Is it safe to commit my warpgate.yaml?
@@ -452,9 +452,9 @@ complete solutions.
 **Documentation:**
 
 - [Usage Guide](usage-guide.md) - Practical examples
-- [Configuration Guide](configuration.md) - Setup and config
+- [CLI Configuration Guide](cli-configuration.md) - Setup and config
 - [Troubleshooting](troubleshooting.md) - Common problems
-- [Template Format](template-format.md) - Template syntax
+- [Template Reference](template-reference.md) - Template syntax
 
 **Community:**
 

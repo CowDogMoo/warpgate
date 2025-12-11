@@ -486,7 +486,7 @@ Common configuration keys you can get/set:
 | `build.parallel_builds` | bool     | Enable parallel builds           |
 | `build.concurrency`     | int      | Max concurrent builds            |
 
-See [Configuration Guide](configuration.md) for complete reference.
+See [CLI Configuration Guide](cli-configuration.md) for complete reference.
 
 ## templates
 
@@ -610,7 +610,7 @@ templates:
     private: git@github.com:myorg/private.git
 ```
 
-See [Template Configuration Guide](template-configuration.md) for details.
+See [Template Repositories Guide](template-repositories.md) for details.
 
 ## manifest
 
@@ -843,6 +843,6 @@ warpgate version
 ## See Also
 
 - [Usage Guide](usage-guide.md) - Practical examples and workflows
-- [Configuration Guide](configuration.md) - Configuration reference
-- [Template Format](template-format.md) - Template syntax reference
+- [CLI Configuration Guide](cli-configuration.md) - Configuration reference
+- [Template Reference](template-reference.md) - Template syntax reference
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions

@@ -152,7 +152,7 @@ container:
   default_platforms: [linux/amd64, linux/arm64]
 ```
 
-See [Configuration Guide](configuration.md) for all available options.
+See [CLI Configuration Guide](cli-configuration.md) for all available options.
 
 #### Building Templates
 
@@ -360,7 +360,7 @@ warpgate completion powershell > warpgate.ps1
 
 After installing Warpgate:
 
-1. **Configure Warpgate** - Set up global configuration ([Configuration Guide](configuration.md))
+1. **Configure Warpgate** - Set up global configuration ([CLI Configuration Guide](cli-configuration.md))
 2. **List templates** - Find available templates (`warpgate templates list`)
 3. **Build your first image** - Follow the [Usage Guide](usage-guide.md)
-4. **Create custom templates** - See [Template Format](template-format.md)
+4. **Create custom templates** - See [Template Reference](template-reference.md)

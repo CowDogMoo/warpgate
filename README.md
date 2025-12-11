@@ -62,11 +62,11 @@ docker images | grep attack-box
 
 ### Configuration
 
-- **[Configuration Guide](docs/configuration.md)** - Global configuration and
-  security best practices
-- **[Template Format](docs/template-format.md)** - Complete YAML syntax
+- **[CLI Configuration Guide](docs/cli-configuration.md)** - Global
+  configuration and security best practices
+- **[Template Reference](docs/template-reference.md)** - Complete YAML syntax
   reference
-- **[Template Management](docs/template-configuration.md)** - Repository
+- **[Template Repositories](docs/template-repositories.md)** - Repository
   management and discovery
 
 ### Reference

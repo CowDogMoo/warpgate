@@ -678,5 +678,5 @@ Common validation errors:
 
 ## See Also
 
-- [Template Configuration Guide](template-configuration.md) - Repository management
+- [Template Repositories Guide](template-repositories.md) - Repository management
 - [Main README](../README.md) - Getting started

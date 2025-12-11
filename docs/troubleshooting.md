@@ -579,8 +579,8 @@ When reporting issues, include:
 
 ### 5. Community Resources
 
-- [Template Configuration Guide](template-configuration.md)
-- [Configuration Guide](configuration.md)
+- [Template Repositories Guide](template-repositories.md)
+- [CLI Configuration Guide](cli-configuration.md)
 - [Usage Guide](usage-guide.md)
 - [Commands Reference](commands.md)
 

@@ -177,36 +177,20 @@ build:
 
 ### Template Repositories
 
-Configure multiple template sources:
+Configure template sources (git repositories and local directories):
 
 ```yaml
 templates:
-  # Named repositories (git URLs or local paths)
   repositories:
     official: https://github.com/cowdogmoo/warpgate-templates.git
     private: git@github.com:myorg/private-templates.git
-    local: /Users/username/my-templates
-
-  # Additional local paths to scan for templates
   local_paths:
-    - /opt/shared/templates
     - ~/dev/templates
 ```
 
-**Key differences:**
-
-- **`repositories`**: Named sources (git or local) searched first when using `--template`
-- **`local_paths`**: Additional local directories searched after repositories
-
-Both are used when building by template name:
-
-```bash
-# Searches repositories first, then local_paths
-warpgate build --template sliver
-```
-
-See [Template Management Guide](template-configuration.md) for detailed
-repository management.
+For complete documentation on managing template repositories, private repos,
+discovery order, and best practices, see
+[Template Repositories Guide](template-repositories.md).
 
 ## Security Best Practices
 
@@ -380,7 +364,7 @@ DB_PASSWORD: pass456
 
 ## Next Steps
 
-- **Learn template syntax** - See [Template Format Reference](template-format.md)
+- **Learn template syntax** - See [Template Reference](template-reference.md)
 - **Build images** - Follow the [Usage Guide](usage-guide.md)
-- **Manage template repositories** - Read [Template Management Guide](template-configuration.md)
+- **Manage template repositories** - Read [Template Repositories Guide](template-repositories.md)
 - **Troubleshoot issues** - Check [Troubleshooting Guide](troubleshooting.md)
