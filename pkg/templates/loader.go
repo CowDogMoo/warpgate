@@ -149,6 +149,7 @@ import (
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/config"
+	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -162,12 +163,23 @@ type TemplateLoader struct {
 
 // NewTemplateLoader creates a new template loader
 func NewTemplateLoader() (*TemplateLoader, error) {
+	// Load global config to get cache directory
+	cfg, err := globalconfig.Load()
+	if err != nil {
+		logging.Warn("Failed to load global config, using defaults: %v", err)
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
+	// Use configured cache directory or default
 	cacheDir := filepath.Join(homeDir, ".warpgate", "cache", "templates")
+	if cfg != nil && cfg.Templates.CacheDir != "" {
+		cacheDir = filepath.Join(cfg.Templates.CacheDir, "repos")
+	}
+
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
@@ -274,6 +286,10 @@ func (tl *TemplateLoader) loadFromRegistry(repoURL, templateName, version string
 
 	// Load config from cloned repo
 	configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
+	logging.Debug("Checking for template at path: %s", configPath)
+	if !fileExists(configPath) {
+		return nil, fmt.Errorf("template file not found at: %s", configPath)
+	}
 	return tl.loadFromFile(configPath)
 }
 

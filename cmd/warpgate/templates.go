@@ -24,6 +24,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/cli"
@@ -272,7 +273,7 @@ func runTemplatesInfo(cmd *cobra.Command, args []string) error {
 
 func displayTemplateInfo(templateName string, cfg *builder.Config) {
 	fmt.Printf("\nTemplate: %s\n", templateName)
-	fmt.Println("=" + string(make([]byte, len(templateName)+10)))
+	fmt.Println(strings.Repeat("=", len("Template: ")+len(templateName)))
 
 	displayMetadata(cfg)
 	displayBuildConfig(cfg)
