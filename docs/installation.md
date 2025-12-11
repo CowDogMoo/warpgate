@@ -13,7 +13,7 @@ Comprehensive installation instructions for Warpgate on all platforms.
 
 ### Required
 
-- **Go 1.21+** - For building from source ([install Go](https://go.dev/doc/install))
+- **Go 1.25+** - For building from source ([install Go](https://go.dev/doc/install))
 - **Docker or Podman** - For containerized execution (recommended for macOS/Windows)
 - **Linux** - Required for native BuildKit integration
 

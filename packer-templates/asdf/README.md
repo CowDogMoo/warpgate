@@ -72,18 +72,18 @@ packer build \
 
 ## Configuration Variables
 
-| Variable | Description | Default |
-| -------- | ----------- | ------- |
-| `base_image` | Base container image | `ubuntu` |
-| `base_image_version` | Base image version tag | `22.04` |
-| `provision_repo_path` | Path to collection | `$HOME` |
-| `template_name` | Name for container image | `asdf` |
-| `shell` | Shell for provisioning | `/bin/bash` |
-| `container_registry` | Container registry URL | `ghcr.io` |
-| `registry_namespace` | Registry namespace | `cowdogmoo` |
-| `container_user` | Non-root user | `asdf` |
-| `container_uid` | UID for container user | `1000` |
-| `container_gid` | GID for container user | `1000` |
+| Variable              | Description              | Default     |
+| --------------------- | ------------------------ | ----------- |
+| `base_image`          | Base container image     | `ubuntu`    |
+| `base_image_version`  | Base image version tag   | `22.04`     |
+| `provision_repo_path` | Path to collection       | `$HOME`     |
+| `template_name`       | Name for container image | `asdf`      |
+| `shell`               | Shell for provisioning   | `/bin/bash` |
+| `container_registry`  | Container registry URL   | `ghcr.io`   |
+| `registry_namespace`  | Registry namespace       | `cowdogmoo` |
+| `container_user`      | Non-root user            | `asdf`      |
+| `container_uid`       | UID for container user   | `1000`      |
+| `container_gid`       | GID for container user   | `1000`      |
 
 ## Customization
 
@@ -134,7 +134,7 @@ Create a `.tool-versions` file in your project root:
 ```text
 nodejs 20.10.0
 python 3.11.7
-golang 1.21.5
+golang 1.25.4
 ```
 
 Build your application image:
@@ -162,7 +162,7 @@ node --version
 ### Option 3: Use with Docker Compose
 
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   dev:
     image: ghcr.io/cowdogmoo/asdf:latest

@@ -241,10 +241,10 @@ func TestParseBuildArgs(t *testing.T) {
 	}{
 		{
 			name:  "valid build args",
-			input: []string{"GO_VERSION=1.21", "BUILD_DATE=2024-01-01"},
+			input: []string{"GO_VERSION=1.25", "BUILD_DATE=2025-12-10"},
 			want: map[string]string{
-				"GO_VERSION": "1.21",
-				"BUILD_DATE": "2024-01-01",
+				"GO_VERSION": "1.25",
+				"BUILD_DATE": "2025-12-10",
 			},
 			wantErr: false,
 		},
