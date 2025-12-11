@@ -210,7 +210,6 @@ func (v *Validator) validateFilePath(path string, index int, fileType string) er
 		if _, err := os.Stat(path); err != nil {
 			if v.hasUnresolvedVariable(path) {
 				logging.Warn("provisioner[%d]: %s may contain unresolved environment variables: %s", index, fileType, path)
-				return nil // Don't fail validation for paths with unresolved variables
 			}
 			return fmt.Errorf("provisioner[%d]: %s file not found: %s", index, fileType, path)
 		}
