@@ -1,0 +1,615 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://warpgate.dev/schema/template.json",
+  "$defs": {
+    "ArchOverride": {
+      "properties": {
+        "dockerfile": {
+          "$ref": "#/$defs/DockerfileConfig",
+          "description": "Dockerfile allows override of Dockerfile configuration for this architecture"
+        },
+        "base": {
+          "$ref": "#/$defs/BaseImage",
+          "description": "Base is the override base image for this architecture"
+        },
+        "provisioners": {
+          "items": {
+            "$ref": "#/$defs/Provisioner"
+          },
+          "type": "array",
+          "description": "Provisioners is the list of additional or replacement provisioners for this architecture"
+        },
+        "append_provisioners": {
+          "type": "boolean",
+          "description": "AppendProvisioners indicates whether to append provisioners or replace them entirely"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ArchOverride allows architecture-specific configuration"
+    },
+    "BaseImage": {
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Image is the base container image reference (e.g., \"ubuntu:22.04\", \"alpine:latest\")"
+        },
+        "platform": {
+          "type": "string",
+          "description": "Platform specifies the target platform (e.g., \"linux/amd64\", \"linux/arm64\")"
+        },
+        "pull": {
+          "type": "boolean",
+          "description": "Pull forces pulling the latest version of the base image (default: false)"
+        },
+        "auth": {
+          "$ref": "#/$defs/ImageAuth",
+          "description": "Auth provides authentication credentials for pulling from private registries"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Env sets environment variables in the base image"
+        },
+        "privileged": {
+          "type": "boolean",
+          "description": "Privileged runs the container with extended privileges (use with caution)"
+        },
+        "volumes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Volumes mounts host directories into the container (format: \"host:container\")"
+        },
+        "run_command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "RunCommand overrides the default container run command"
+        },
+        "changes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Changes applies Dockerfile-style instructions (ENV, USER, WORKDIR, ENTRYPOINT, CMD)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "image"
+      ],
+      "description": "BaseImage specifies the base image to start from"
+    },
+    "ChangelogEntry": {
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "Version number for this changelog entry (e.g., \"1.0.0\")"
+        },
+        "date": {
+          "type": "string",
+          "description": "Date of the release in ISO 8601 format (e.g., \"2025-01-15\")"
+        },
+        "changes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Changes is a list of changes made in this version"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "version",
+        "date",
+        "changes"
+      ],
+      "description": "ChangelogEntry represents a changelog entry"
+    },
+    "DockerfileConfig": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path is the path to the Dockerfile (default: \"Dockerfile\")"
+        },
+        "context": {
+          "type": "string",
+          "description": "Context is the build context directory (default: \".\")"
+        },
+        "args": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Args are build arguments to pass to the Dockerfile"
+        },
+        "target": {
+          "type": "string",
+          "description": "Target specifies a build stage to target in a multi-stage Dockerfile"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DockerfileConfig specifies Dockerfile-based build configuration"
+    },
+    "ImageAuth": {
+      "properties": {
+        "username": {
+          "type": "string",
+          "description": "Username is the username for registry authentication"
+        },
+        "password": {
+          "type": "string",
+          "description": "Password is the password or access token for registry authentication (use environment variables for security)"
+        },
+        "registry": {
+          "type": "string",
+          "description": "Registry is the registry URL (e.g., \"ghcr.io\", \"docker.io\", \"quay.io\")"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ImageAuth contains authentication information for pulling images"
+    },
+    "Metadata": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the template (human-readable identifier)"
+        },
+        "version": {
+          "type": "string",
+          "description": "Version of the template (semantic versioning recommended, e.g., \"1.0.0\")"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description provides a brief summary of what this template builds"
+        },
+        "author": {
+          "type": "string",
+          "description": "Author is the creator or maintainer of this template (name and/or email)"
+        },
+        "license": {
+          "type": "string",
+          "description": "License specifies the template's license (e.g., \"MIT\", \"Apache-2.0\")"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Tags are keywords for categorizing and searching templates"
+        },
+        "requires": {
+          "$ref": "#/$defs/Requirements",
+          "description": "Requires specifies version requirements for warpgate and other dependencies"
+        },
+        "changelog": {
+          "items": {
+            "$ref": "#/$defs/ChangelogEntry"
+          },
+          "type": "array",
+          "description": "Changelog documents version history and changes (optional)"
+        },
+        "extra": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Extra allows storing arbitrary key-value metadata (optional)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "description",
+        "author",
+        "license",
+        "tags",
+        "requires"
+      ],
+      "description": "Metadata contains template metadata"
+    },
+    "PostProcessor": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Type is the type of post-processor: \"manifest\", \"docker-tag\", \"docker-push\", \"compress\", or \"checksum\""
+        },
+        "output": {
+          "type": "string",
+          "description": "Output specifies the path where the manifest file should be written"
+        },
+        "strip_path": {
+          "type": "boolean",
+          "description": "StripPath indicates whether to remove directory paths from artifact names in the manifest"
+        },
+        "repository": {
+          "type": "string",
+          "description": "Repository is the target repository name (e.g., \"ghcr.io/org/name\")"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Tags is a list of tags to apply to the image (e.g., [\"latest\", \"v1.0.0\"])"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Force indicates whether to overwrite existing tags if they already exist"
+        },
+        "login_server": {
+          "type": "string",
+          "description": "LoginServer is the registry login server for ECR/ACR authentication"
+        },
+        "login_username": {
+          "type": "string",
+          "description": "LoginUsername is the username for registry authentication"
+        },
+        "login_password": {
+          "type": "string",
+          "description": "LoginPassword is the password or token for registry authentication (use environment variables)"
+        },
+        "format": {
+          "type": "string",
+          "description": "Format specifies the compression format: \"tar.gz\", \"zip\", \"tar.bz2\", etc."
+        },
+        "compression_level": {
+          "type": "integer",
+          "description": "CompressionLevel sets the compression level from 1 (fast) to 9 (best compression)"
+        },
+        "checksum_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "ChecksumTypes specifies hash algorithms to use: \"md5\", \"sha1\", \"sha256\", \"sha512\""
+        },
+        "only": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Only is the list of build sources to restrict execution to"
+        },
+        "except": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Except is the list of build sources to skip execution for"
+        },
+        "keep_input_artifact": {
+          "type": "boolean",
+          "description": "KeepInputArtifact indicates whether to preserve the original artifact after post-processing"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "description": "PostProcessor represents a post-processing step after the build"
+    },
+    "Provisioner": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Type is the type of provisioner: \"shell\", \"ansible\", \"script\", or \"powershell\""
+        },
+        "only": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Only is the list of build sources to restrict execution to (e.g., [\"docker.amd64\", \"docker.arm64\"])"
+        },
+        "except": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Except is the list of build sources to skip execution for"
+        },
+        "inline": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Inline contains shell commands to execute line by line"
+        },
+        "environment": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Environment is the map of environment variables to set during shell command execution"
+        },
+        "playbook_path": {
+          "type": "string",
+          "description": "PlaybookPath is the path to the Ansible playbook file"
+        },
+        "galaxy_file": {
+          "type": "string",
+          "description": "GalaxyFile is the path to requirements.yml for installing Ansible Galaxy roles"
+        },
+        "extra_vars": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "ExtraVars provides additional variables to pass to Ansible"
+        },
+        "inventory": {
+          "type": "string",
+          "description": "Inventory is an inline inventory string for Ansible"
+        },
+        "inventory_file": {
+          "type": "string",
+          "description": "InventoryFile is the path to an Ansible inventory file"
+        },
+        "ansible_env_vars": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "AnsibleEnvVars sets environment variables for Ansible execution (format: \"KEY=value\")"
+        },
+        "use_proxy": {
+          "type": "boolean",
+          "description": "UseProxy enables using a proxy for Ansible connections"
+        },
+        "collections_path": {
+          "type": "string",
+          "description": "CollectionsPath specifies the path to Ansible collections"
+        },
+        "scripts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Scripts is a list of script file paths to execute"
+        },
+        "source": {
+          "type": "string",
+          "description": "Source is the path to the source file to copy"
+        },
+        "destination": {
+          "type": "string",
+          "description": "Destination is the path where the file should be copied to in the container"
+        },
+        "mode": {
+          "type": "string",
+          "description": "Mode is the file permissions (e.g., \"0644\", \"0755\")"
+        },
+        "ps_scripts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "PSScripts is a list of PowerShell script file paths to execute"
+        },
+        "working_dir": {
+          "type": "string",
+          "description": "WorkingDir sets the working directory for provisioner execution"
+        },
+        "user": {
+          "type": "string",
+          "description": "User specifies which user to run the provisioner as"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "description": "Provisioner represents a provisioning step"
+    },
+    "Requirements": {
+      "properties": {
+        "warpgate": {
+          "type": "string",
+          "description": "Warpgate specifies the minimum warpgate version required (e.g., \"\u003e=1.0.0\")"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "warpgate"
+      ],
+      "description": "Requirements specifies version requirements"
+    },
+    "Target": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Type is the type of build target: \"container\" for Docker images or \"ami\" for AWS AMIs"
+        },
+        "platforms": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Platforms specifies target platforms for multi-arch builds (e.g., [\"linux/amd64\", \"linux/arm64\"])"
+        },
+        "registry": {
+          "type": "string",
+          "description": "Registry is the container registry to push to (e.g., \"ghcr.io\", \"docker.io\")"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Tags is a list of image tags to apply (e.g., [\"latest\", \"v1.0.0\"])"
+        },
+        "push": {
+          "type": "boolean",
+          "description": "Push indicates whether to automatically push the image to the registry after building"
+        },
+        "region": {
+          "type": "string",
+          "description": "Region is the AWS region where the AMI will be created (e.g., \"us-east-1\")"
+        },
+        "instance_type": {
+          "type": "string",
+          "description": "InstanceType specifies the EC2 instance type for building (e.g., \"t3.medium\")"
+        },
+        "ami_name": {
+          "type": "string",
+          "description": "AMIName is the name to assign to the created AMI"
+        },
+        "ami_tags": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "AMITags are key-value tags to apply to the AMI"
+        },
+        "subnet_id": {
+          "type": "string",
+          "description": "SubnetID is the VPC subnet ID to use for the build instance"
+        },
+        "volume_size": {
+          "type": "integer",
+          "description": "VolumeSize is the root volume size in GB for the AMI"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "description": "Target represents a build target"
+    }
+  },
+  "properties": {
+    "metadata": {
+      "$ref": "#/$defs/Metadata",
+      "description": "Metadata is the metadata about the template"
+    },
+    "name": {
+      "type": "string",
+      "description": "Name is the name of the image"
+    },
+    "version": {
+      "type": "string",
+      "description": "Version is the version of the template"
+    },
+    "dockerfile": {
+      "$ref": "#/$defs/DockerfileConfig",
+      "description": "Dockerfile specifies Dockerfile-based build configuration\nWhen specified, Base and Provisioners are ignored"
+    },
+    "base": {
+      "$ref": "#/$defs/BaseImage",
+      "description": "Base is the base image configuration\nIgnored when Dockerfile is specified"
+    },
+    "provisioners": {
+      "items": {
+        "$ref": "#/$defs/Provisioner"
+      },
+      "type": "array",
+      "description": "Provisioners is the list of provisioners to run during the build\nIgnored when Dockerfile is specified"
+    },
+    "post_changes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "PostChanges applies Dockerfile-style instructions after provisioners complete\nUseful for setting USER/WORKDIR after creating users during provisioning"
+    },
+    "post_processors": {
+      "items": {
+        "$ref": "#/$defs/PostProcessor"
+      },
+      "type": "array",
+      "description": "PostProcessors is the list of post-processors to run after the build"
+    },
+    "targets": {
+      "items": {
+        "$ref": "#/$defs/Target"
+      },
+      "type": "array",
+      "description": "Targets is the list of build targets (container, AMI, etc.)"
+    },
+    "arch_overrides": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ArchOverride"
+      },
+      "type": "object",
+      "description": "ArchOverrides allows specifying different configurations per architecture"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "metadata",
+    "name",
+    "version",
+    "base",
+    "provisioners",
+    "targets"
+  ],
+  "title": "Warpgate Template",
+  "description": "Schema for Warpgate image build templates",
+  "examples": [
+    {
+      "base": {
+        "image": "ubuntu:22.04",
+        "pull": true
+      },
+      "metadata": {
+        "author": "Security Team \u003csecurity@example.com\u003e",
+        "description": "Example security research template",
+        "license": "MIT",
+        "name": "example-template",
+        "requires": {
+          "warpgate": "\u003e=1.0.0"
+        },
+        "tags": [
+          "security",
+          "research",
+          "linux"
+        ],
+        "version": "1.0.0"
+      },
+      "name": "example-image",
+      "provisioners": [
+        {
+          "inline": [
+            "apt-get update",
+            "apt-get install -y curl git"
+          ],
+          "type": "shell"
+        }
+      ],
+      "targets": [
+        {
+          "platforms": [
+            "linux/amd64",
+            "linux/arm64"
+          ],
+          "push": false,
+          "registry": "ghcr.io/example/repo",
+          "tags": [
+            "latest",
+            "v1.0.0"
+          ],
+          "type": "container"
+        }
+      ],
+      "version": "1.0.0"
+    }
+  ],
+  "warpgateVersion": "dev"
+}

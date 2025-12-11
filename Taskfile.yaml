@@ -2,564 +2,146 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: "3"
 
+vars:
+  BINARY_NAME: warpgate
+  CMD_PATH: ./cmd/warpgate
+
 includes:
+  go:
+    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/go/Taskfile.yaml"
+    vars:
+      BINARY_NAME: warpgate
+      CMD_PATH: ./cmd/warpgate
   docker:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/docker/Taskfile.yaml"
   github:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/github/Taskfile.yaml"
-  packer:
-    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/packer/Taskfile.yaml"
   pre-commit:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/pre-commit/Taskfile.yaml"
   secrets:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/secrets/Taskfile.yaml"
-  terraform:
-    taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/terraform/Taskfile.yaml"
   renovate:
     taskfile: "https://raw.githubusercontent.com/CowDogMoo/taskfile-templates/main/renovate/Taskfile.yaml"
 
 tasks:
   default:
-    desc: "Run all CI tasks"
+    desc: Build, test, and clean
     cmds:
-      - task: run-pre-commit
+      - task: go:default
 
-  run-pre-commit:
-    desc: "Update, clear cache, and run pre-commit hooks"
+  schema:generate:
+    desc: Generate JSON schema for warpgate templates
     cmds:
-      - task: pre-commit:update-hooks
-      - task: pre-commit:clear-cache
-      - task: pre-commit:run-hooks
+      - go run ./cmd/schema-gen -o schema/warpgate-template.json
+    sources:
+      - pkg/builder/config.go
+      - cmd/schema-gen/main.go
+    generates:
+      - schema/warpgate-template.json
 
-  run-image-builder-action:
-    desc: "Run GitHub Actions image-builder workflow using act. Optionally specify TEMPLATE"
-    vars:
-      TEMPLATE: '{{.TEMPLATE | default ""}}'
-      WORKFLOW_FILE: ".github/workflows/warpgate-image-builder.yaml"
-      EVENT_FILE: "/tmp/github-event.json"
-      TEMP_SECRETS_FILE: ".secrets.tmp"
-      OS: "{{OS}}"
-      ARCH: "{{ARCH}}"
+  schema:validate:
+    desc: Validate that JSON schema is up to date
+    cmds:
+      - task: schema:generate
+      - git diff --exit-code schema/warpgate-template.json || (echo "Schema is out of date. Run 'task schema:generate' and commit the changes." && exit 1)
+
+  images:discover:
+    desc: Discover all container images with docker-bake.hcl files
+    silent: true
     cmds:
       - |
-        # Detect platform and architecture
-        OS="${OS:-$(uname -s)}"
-        ARCH="${ARCH:-$(uname -m)}"
-        ARCH_FLAG=""
+        echo "Discovering container images..."
+        find dockerfiles -mindepth 1 -maxdepth 1 -type d -exec test -f {}/docker-bake.hcl \; -exec basename {} \;
 
-        # Check if we're on Mac ARM
-        if [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
-          ARCH_FLAG="--container-architecture linux/amd64"
-        fi
+  images:build:
+    desc: "Build a specific container image (usage: task images:build IMAGE=warpgate)"
+    vars:
+      IMAGE: '{{.IMAGE | default ""}}'
+      PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64"}}'
+      PUSH: '{{.PUSH | default "false"}}'
+    preconditions:
+      - sh: test -n "{{.IMAGE}}"
+        msg: "IMAGE variable is required. Usage - task images:build IMAGE=warpgate"
+      - sh: test -f "dockerfiles/{{.IMAGE}}/docker-bake.hcl"
+        msg: "docker-bake.hcl not found for image {{.IMAGE}}"
+    cmds:
+      - |
+        echo "Building container image: {{.IMAGE}}"
+        echo "Platforms: {{.PLATFORMS}}"
+        echo "Push: {{.PUSH}}"
 
-        # Clean up existing act containers
-        echo "Cleaning up existing act containers..."
-        docker ps -q -f name=act-Image-Builder | xargs -r docker rm -f 2> /dev/null || true
+        # Ensure buildx builder exists and is active
+        docker buildx inspect multiarch-builder 2>/dev/null || \
+          docker buildx create --name multiarch-builder --bootstrap --use --driver docker-container
+        docker buildx use multiarch-builder
 
-        # Set up secrets file
-        SECRETS_FILE="${ACT_SECRETS_FILE:-.secrets}"
-
-        if [ ! -f "$SECRETS_FILE" ]; then
-          echo "Warning: $SECRETS_FILE file not found. Creating temporary one with GITHUB_TOKEN=dummy for testing."
-          echo "GITHUB_TOKEN=dummy" > "{{.TEMP_SECRETS_FILE}}"
-          SECRETS_FILE="{{.TEMP_SECRETS_FILE}}"
-        fi
-
-        # Run act
-        EXIT_CODE=0
-        if [ -n "{{.TEMPLATE}}" ]; then
-          echo "Building template: {{.TEMPLATE}}"
-          echo '{"inputs":{"TEMPLATE":"{{.TEMPLATE}}"}}' > "{{.EVENT_FILE}}"
-          act -W "{{.WORKFLOW_FILE}}" $ARCH_FLAG -e "{{.EVENT_FILE}}" --secret-file "$SECRETS_FILE" || EXIT_CODE=$?
+        # Build using docker bake
+        if [ "{{.PUSH}}" = "true" ]; then
+          # Push to registry
+          docker buildx bake \
+            --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
+            --set "*.platform={{.PLATFORMS}}" \
+            --set "*.output=type=registry,push=true" \
+            multi
         else
-          echo "Building all templates"
-          act -W "{{.WORKFLOW_FILE}}" $ARCH_FLAG --secret-file "$SECRETS_FILE" || EXIT_CODE=$?
+          # Build locally without push (multi-platform images stay in build cache)
+          docker buildx bake \
+            --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
+            --set "*.platform={{.PLATFORMS}}" \
+            --set "*.output=type=image,push=false" \
+            multi
         fi
 
-        # Clean up temporary files
-        if [ "$SECRETS_FILE" = "{{.TEMP_SECRETS_FILE}}" ]; then
-          rm -f "{{.TEMP_SECRETS_FILE}}"
-        fi
-        rm -f "{{.EVENT_FILE}}"
+  images:build-all:
+    desc: "Build all container images (use PUSH=true to push to registry)"
+    vars:
+      PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64"}}'
+      PUSH: '{{.PUSH | default "false"}}'
+    cmds:
+      - |
+        echo "Discovering and building all container images..."
+        echo "Platforms: {{.PLATFORMS}}"
+        echo "Push: {{.PUSH}}"
+        echo ""
 
-        if [ $EXIT_CODE -eq 0 ]; then
-          echo "✓ Image builder workflow completed successfully"
+        IMAGES=$(find dockerfiles -mindepth 1 -maxdepth 1 -type d -exec test -f {}/docker-bake.hcl \; -exec basename {} \;)
+
+        for image in $IMAGES; do
+          echo "========================================="
+          echo "Building: $image"
+          echo "========================================="
+          task images:build IMAGE=$image PLATFORMS={{.PLATFORMS}} PUSH={{.PUSH}}
+          echo ""
+        done
+
+        echo "✅ All images built successfully!"
+
+  images:load:
+    desc: "Build and load a container image locally (single platform)"
+    vars:
+      IMAGE: '{{.IMAGE | default ""}}'
+      PLATFORM: '{{.PLATFORM | default "linux/amd64"}}'
+    preconditions:
+      - sh: test -n "{{.IMAGE}}"
+        msg: "IMAGE variable is required. Usage - task images:load IMAGE=warpgate"
+      - sh: test -f "dockerfiles/{{.IMAGE}}/docker-bake.hcl"
+        msg: "docker-bake.hcl not found for image: {{.IMAGE}}"
+    cmds:
+      - |
+        echo "Building and loading container image: {{.IMAGE}}"
+        echo "Platform: {{.PLATFORM}}"
+
+        # Determine which target to use based on platform
+        if echo "{{.PLATFORM}}" | grep -q "arm64"; then
+          TARGET="arm64"
         else
-          echo "✗ Image builder workflow failed with exit code $EXIT_CODE"
+          TARGET="amd64"
         fi
 
-        exit $EXIT_CODE
-
-  discover-templates:
-    desc: "Discover templates from all configured sources"
-    vars:
-      CONFIG_FILE: '{{.CONFIG_FILE | default "warpgate-config.yaml"}}'
-      OUTPUT_FILE: '{{.OUTPUT_FILE | default "discovered-templates.json"}}'
-      FORMAT: '{{.FORMAT | default "json"}}'
-      VERBOSE: '{{.VERBOSE | default "false"}}'
-    cmds:
-      - |
-        echo "Discovering templates from configured sources..."
-        python3 -c '
-        import json
-        import os
-        import sys
-        from pathlib import Path
-        import yaml
-
-        verbose = "{{.VERBOSE}}" == "true"
-        config_path = Path("{{.CONFIG_FILE}}")
-        output_format = "{{.FORMAT}}"
-        output_path = Path("{{.OUTPUT_FILE}}")
-
-        def log(msg):
-            if verbose:
-                print(f"[DISCOVERY] {msg}", file=sys.stderr)
-
-        # Load config
-        if not config_path.exists():
-            print(f"Error: Configuration file not found: {config_path}", file=sys.stderr)
-            sys.exit(1)
-
-        with open(config_path) as f:
-            config = yaml.safe_load(f)
-
-        if not config or "template_sources" not in config:
-            print("Error: Invalid configuration: template_sources not found", file=sys.stderr)
-            sys.exit(1)
-
-        # Discover templates
-        discovered = []
-        sources = config.get("template_sources", [])
-        build_config = config.get("build_config", {})
-        template_overrides = build_config.get("template_overrides", {})
-        default_namespace = build_config.get("default_namespace", "l50")
-        required_files = config.get("discovery", {}).get("required_files", ["docker.pkr.hcl", "variables.pkr.hcl", "plugins.pkr.hcl"])
-        exclude_patterns = config.get("discovery", {}).get("exclude_patterns", [])
-
-        for source in sources:
-            source_name = source.get("name", "unknown")
-            enabled = source.get("enabled", True)
-
-            if not enabled:
-                log(f"Source {source_name} is disabled, skipping")
-                continue
-
-            source_path = Path(os.path.expandvars(os.path.expanduser(source["path"])))
-
-            if not source_path.exists() or not source_path.is_dir():
-                log(f"Source path does not exist or is not a directory: {source_path}")
-                continue
-
-            log(f"Discovering templates from source {source_name} at {source_path}")
-
-            for item in source_path.iterdir():
-                if not item.is_dir():
-                    continue
-
-                template_name = item.name
-
-                # Check exclude patterns
-                excluded = False
-                for pattern in exclude_patterns:
-                    if pattern.startswith("*") and template_name.endswith(pattern[1:]):
-                        excluded = True
-                    elif pattern.endswith("*") and template_name.startswith(pattern[:-1]):
-                        excluded = True
-                    elif template_name == pattern:
-                        excluded = True
-
-                if excluded:
-                    log(f"Excluding template {template_name} (matches exclude pattern)")
-                    continue
-
-                # Validate template structure
-                valid = all((item / req_file).exists() for req_file in required_files)
-                if not valid:
-                    log(f"Skipping {template_name} (invalid template structure)")
-                    continue
-
-                # Get template config
-                template_config = template_overrides.get(template_name, {})
-                metadata = {
-                    "name": template_name,
-                    "path": str(item.absolute()),
-                    "source": source_name,
-                    "namespace": template_config.get("namespace", default_namespace),
-                    "vars": template_config.get("vars", f"template_name={template_name}"),
-                    "has_ami": (item / "ami.pkr.hcl").exists(),
-                    "has_locals": (item / "locals.pkr.hcl").exists(),
-                    "has_readme": (item / "README.md").exists(),
-                }
-
-                discovered.append(metadata)
-                log(f"Discovered template: {template_name}")
-
-        log(f"Discovery complete: found {len(discovered)} templates")
-
-        # Write output
-        if output_format == "json":
-            with open(output_path, "w") as f:
-                json.dump(discovered, f, indent=2)
-        elif output_format == "yaml":
-            with open(output_path, "w") as f:
-                yaml.dump(discovered, f, default_flow_style=False)
-        elif output_format == "github-matrix":
-            architectures = build_config.get("architectures", ["amd64", "arm64"])
-            templates = [{"name": t["name"], "namespace": t["namespace"], "vars": t["vars"]} for t in discovered]
-            arch_configs = []
-            for arch in architectures:
-                if arch == "amd64":
-                    arch_configs.append({"arch": "amd64", "runner": "ubuntu-latest", "platform": "linux/amd64"})
-                elif arch == "arm64":
-                    arch_configs.append({"arch": "arm64", "runner": "ubuntu-24.04-arm", "platform": "linux/arm64"})
-
-            matrix = {"template": templates, "architecture": arch_configs}
-            with open(output_path, "w") as f:
-                json.dump(matrix, f, indent=2)
-
-        log(f"Wrote output to {output_path}")
-
-        # Print summary
-        print(f"Discovered {len(discovered)} templates:")
-        for template in discovered:
-            name = template.get("name")
-            source = template.get("source")
-            print(f"  - {name} (from {source})")
-        '
-
-  discover-templates-matrix:
-    desc: "Generate GitHub Actions matrix from discovered templates"
-    cmds:
-      - task: discover-templates
-        vars:
-          CONFIG_FILE: warpgate-config.yaml
-          OUTPUT_FILE: .github/workflows/template-matrix.json
-          FORMAT: github-matrix
-          VERBOSE: "true"
-
-  template-build:
-    desc: Build a template image from anywhere in the repo
-    env:
-      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
-    vars:
-      RESOLVED_TEMPLATE_DIR:
-        sh: |
-          python3 -c '
-          import json
-          import sys
-          from pathlib import Path
-
-          template_name = "{{.TEMPLATE_NAME}}"
-          template_dir = "{{.TEMPLATE_DIR}}"
-          discovered_file = "discovered-templates.json"
-
-          # Priority 1: Explicit template directory
-          if template_dir:
-              print(template_dir)
-              sys.exit(0)
-
-          # Priority 2: Look up in discovered templates
-          discovered_path = Path(discovered_file)
-          if discovered_path.exists():
-              try:
-                  with open(discovered_path) as f:
-                      templates = json.load(f)
-
-                  for template in templates:
-                      if template.get("name") == template_name:
-                          print(template["path"])
-                          sys.exit(0)
-              except (json.JSONDecodeError, KeyError, IOError):
-                  pass
-
-          # Priority 3: Default location
-          if template_name:
-              print(f"packer-templates/{template_name}")
-          else:
-              print("./")
-          '
-    cmds:
-      - task: packer:cleanup-packer-manifest
-        vars:
-          MANIFEST_PATH: '{{.MANIFEST_PATH | default "./manifest.json"}}'
-
-      - task: packer:packer-template-build
-        vars:
-          COMMAND: "build"
-          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
-          TEMPLATE_DIR: "{{.RESOLVED_TEMPLATE_DIR}}"
-          ONLY: '{{.ONLY   | default ""}}'
-          VARS: '{{.VARS   | default ""}}'
-          FORCE: '{{.FORCE | default "false"}}'
-
-  template-init:
-    desc: "Initialize a Packer template from anywhere in the repo (supports multi-source)"
-    env:
-      PACKER_PATH: '{{.PACKER_CMD | default "packer"}}'
-    vars:
-      RESOLVED_TEMPLATE_DIR:
-        sh: |
-          python3 -c '
-          import json
-          import sys
-          from pathlib import Path
-
-          template_name = "{{.TEMPLATE_NAME}}"
-          template_dir = "{{.TEMPLATE_DIR}}"
-          discovered_file = "discovered-templates.json"
-
-          # Priority 1: Explicit template directory
-          if template_dir:
-              print(template_dir)
-              sys.exit(0)
-
-          # Priority 2: Look up in discovered templates
-          discovered_path = Path(discovered_file)
-          if discovered_path.exists():
-              try:
-                  with open(discovered_path) as f:
-                      templates = json.load(f)
-
-                  for template in templates:
-                      if template.get("name") == template_name:
-                          print(template["path"])
-                          sys.exit(0)
-              except (json.JSONDecodeError, KeyError, IOError):
-                  pass
-
-          # Priority 3: Default location
-          if template_name:
-              print(f"packer-templates/{template_name}")
-          else:
-              print("./")
-          '
-    cmds:
-      - task: packer:packer-init
-        vars:
-          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
-          TEMPLATE_DIR: "{{.RESOLVED_TEMPLATE_DIR}}"
-          VARS: '{{.VARS | default ""}}'
-
-  template-validate:
-    desc: "Validate a template packer template from anywhere in the repo"
-    cmds:
-      - task: packer:_packer-base
-        vars:
-          COMMAND: "validate"
-          TEMPLATE_NAME: "{{.TEMPLATE_NAME}}"
-          VAR_FILE: '{{.VAR_FILE | default ""}}'
-
-  template-push:
-    desc: "Push multi-architecture Docker images using Packer manifest"
-    requires:
-      vars: ["NAMESPACE", "IMAGE_NAME", "GITHUB_TOKEN", "GITHUB_USER"]
-    vars:
-      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
-      NAMESPACE: "{{ .NAMESPACE }}"
-      IMAGE_NAME: "{{ .IMAGE_NAME }}"
-      TAG: '{{ .TAG | default "latest" }}'
-      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
-      GITHUB_USER: "{{ .GITHUB_USER }}"
-      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
-      ARM64_HASH:
-        sh: |
-          # Check if jq is installed
-          if ! command -v jq &> /dev/null; then
-            echo "Error: jq is not installed. Please install jq to parse JSON files." >&2
-            exit 1
-          fi
-
-          # Check if manifest file exists
-          if [ ! -f "{{ .MANIFEST_PATH }}" ]; then
-            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
-            echo "Please run 'task template-build' first to generate the manifest." >&2
-            exit 1
-          fi
-
-          # Extract hash
-          HASH=$(jq -r '.builds[] | select(.name == "arm64") | .artifact_id' {{ .MANIFEST_PATH }} 2> /dev/null)
-
-          if [ -z "$HASH" ] || [ "$HASH" == "null" ]; then
-            echo "Error: Could not extract arm64 hash from manifest" >&2
-            echo "Manifest may be missing the 'arm64' build." >&2
-            exit 1
-          fi
-
-          echo "$HASH"
-      AMD64_HASH:
-        sh: |
-          # Check if jq is installed
-          if ! command -v jq &> /dev/null; then
-            echo "Error: jq is not installed. Please install jq to parse JSON files." >&2
-            exit 1
-          fi
-
-          # Check if manifest file exists
-          if [ ! -f "{{ .MANIFEST_PATH }}" ]; then
-            echo "Error: Manifest file not found at {{ .MANIFEST_PATH }}" >&2
-            echo "Please run 'task template-build' first to generate the manifest." >&2
-            exit 1
-          fi
-
-          # Extract hash
-          HASH=$(jq -r '.builds[] | select(.name == "amd64") | .artifact_id' {{ .MANIFEST_PATH }} 2> /dev/null)
-
-          if [ -z "$HASH" ] || [ "$HASH" == "null" ]; then
-            echo "Error: Could not extract amd64 hash from manifest" >&2
-            echo "Manifest may be missing the 'amd64' build." >&2
-            exit 1
-          fi
-
-          echo "$HASH"
-    cmds:
-      - |
-        echo "Validating prerequisites for multi-arch push..."
-        echo "Extracting image hashes from manifest:"
-        echo "ARM64_HASH: {{ .ARM64_HASH }}"
-        echo "AMD64_HASH: {{ .AMD64_HASH }}"
-        echo "✓ Prerequisites validated successfully"
-      - task: docker:push-multi-arch
-        vars:
-          REGISTRY: "{{ .REGISTRY }}"
-          NAMESPACE: "{{ .NAMESPACE }}"
-          IMAGE_NAME: "{{ .IMAGE_NAME }}"
-          TAG: "{{ .TAG }}"
-          ARM64_HASH: "{{ .ARM64_HASH }}"
-          AMD64_HASH: "{{ .AMD64_HASH }}"
-          GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
-          GITHUB_USER: "{{ .GITHUB_USER }}"
-
-  template-push-digest:
-    desc: "Push architecture-specific Docker image by digest"
-    requires:
-      vars: ["NAMESPACE", "IMAGE_NAME", "ARCH", "GITHUB_TOKEN", "GITHUB_USER"]
-    vars:
-      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
-      NAMESPACE: "{{ .NAMESPACE }}"
-      IMAGE_NAME: "{{ .IMAGE_NAME }}"
-      ARCH: "{{ .ARCH }}"
-      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
-      GITHUB_USER: "{{ .GITHUB_USER }}"
-      MANIFEST_PATH: '{{ .MANIFEST_PATH | default "./manifest.json" }}'
-      DIGEST_FILE: "digest-{{.IMAGE_NAME}}-{{.ARCH}}.txt"
-    cmds:
-      - |
-        echo "Pushing {{.ARCH}} image for {{.IMAGE_NAME}}..."
-
-        # Check if jq is installed
-        if ! command -v jq &> /dev/null; then
-          echo "Error: jq is not installed. Please install jq to parse JSON files." >&2
-          exit 1
-        fi
-
-        # Check if manifest file exists
-        if [ ! -f "{{.MANIFEST_PATH}}" ]; then
-          echo "Error: Manifest file not found at {{.MANIFEST_PATH}}" >&2
-          exit 1
-        fi
-
-        # Extract image hash from manifest
-        IMAGE_HASH=$(jq -r '.builds[] | select(.name == "{{.ARCH}}") | .artifact_id' "{{.MANIFEST_PATH}}" 2> /dev/null)
-
-        if [ -z "$IMAGE_HASH" ] || [ "$IMAGE_HASH" == "null" ]; then
-          echo "Error: Could not extract {{.ARCH}} hash from manifest" >&2
-          exit 1
-        fi
-
-        echo "Image hash: $IMAGE_HASH"
-
-        # Login to registry
-        echo "Logging in to {{.REGISTRY}}..."
-        echo "{{.GITHUB_TOKEN}}" | docker login "{{.REGISTRY}}" -u "{{.GITHUB_USER}}" --password-stdin
-
-        # Tag and push the image
-        TARGET_TAG="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}:{{.ARCH}}"
-        echo "Tagging image: $IMAGE_HASH → $TARGET_TAG"
-        docker tag "$IMAGE_HASH" "$TARGET_TAG"
-
-        echo "Pushing {{.ARCH}} image..."
-        PUSH_OUTPUT=$(docker push "$TARGET_TAG" 2>&1)
-
-        # Extract digest from push output
-        DIGEST=$(echo "$PUSH_OUTPUT" | grep -oE 'digest: sha256:[a-f0-9]{64}' | cut -d' ' -f2)
-
-        if [ -z "$DIGEST" ]; then
-          echo "Error: Failed to extract digest from push output" >&2
-          echo "Push output:" >&2
-          echo "$PUSH_OUTPUT" >&2
-          exit 1
-        fi
-
-        echo "Pushed {{.ARCH}} image with digest: $DIGEST"
-
-        # Save digest to file
-        echo "$DIGEST" > "{{.DIGEST_FILE}}"
-        echo "Saved digest to {{.DIGEST_FILE}}"
-
-        echo "✓ Successfully pushed {{.ARCH}} image"
-
-  template-create-manifest:
-    desc: "Create and push multi-architecture manifest"
-    requires:
-      vars: ["NAMESPACE", "IMAGE_NAME", "GITHUB_TOKEN", "GITHUB_USER"]
-    vars:
-      REGISTRY: '{{ .REGISTRY | default "ghcr.io" }}'
-      NAMESPACE: "{{ .NAMESPACE }}"
-      IMAGE_NAME: "{{ .IMAGE_NAME }}"
-      TAG: '{{ .TAG | default "latest" }}'
-      GITHUB_TOKEN: "{{ .GITHUB_TOKEN }}"
-      GITHUB_USER: "{{ .GITHUB_USER }}"
-      AMD64_DIGEST_FILE: "digest-{{.IMAGE_NAME}}-amd64.txt"
-      ARM64_DIGEST_FILE: "digest-{{.IMAGE_NAME}}-arm64.txt"
-    cmds:
-      - |
-        # Check if digest files exist
-        if [ ! -f "{{.AMD64_DIGEST_FILE}}" ] || [ ! -f "{{.ARM64_DIGEST_FILE}}" ]; then
-          echo "Error: Required digest files not found"
-          [ ! -f "{{.AMD64_DIGEST_FILE}}" ] && echo "  Missing: {{.AMD64_DIGEST_FILE}}"
-          [ ! -f "{{.ARM64_DIGEST_FILE}}" ] && echo "  Missing: {{.ARM64_DIGEST_FILE}}"
-          echo "Please run 'task template-push-digest' first for both architectures."
-          exit 1
-        fi
-      - |
-        # Login to Docker registry
-        echo "Logging in to {{.REGISTRY}}..."
-        echo "{{.GITHUB_TOKEN}}" | docker login "{{.REGISTRY}}" -u "{{.GITHUB_USER}}" --password-stdin
-      - |
-        # Read digests from files
-        AMD64_DIGEST=$(cat "{{.AMD64_DIGEST_FILE}}" | tr -d '[:space:]')
-        ARM64_DIGEST=$(cat "{{.ARM64_DIGEST_FILE}}" | tr -d '[:space:]')
-
-        if [ -z "$AMD64_DIGEST" ] || [ -z "$ARM64_DIGEST" ]; then
-          echo "Error: Empty digest found"
-          exit 1
-        fi
-
-        echo "AMD64 digest: $AMD64_DIGEST"
-        echo "ARM64 digest: $ARM64_DIGEST"
-
-        # Create manifest with specified tag
-        MANIFEST_TAG="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}:{{.TAG}}"
-        AMD64_IMAGE="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}@$AMD64_DIGEST"
-        ARM64_IMAGE="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}@$ARM64_DIGEST"
-
-        echo "Creating manifest: $MANIFEST_TAG"
-        echo "  AMD64: $AMD64_IMAGE"
-        echo "  ARM64: $ARM64_IMAGE"
-
-        docker buildx imagetools create -t "$MANIFEST_TAG" "$AMD64_IMAGE" "$ARM64_IMAGE"
-
-        echo "✓ Successfully created and pushed manifest: $MANIFEST_TAG"
-
-        # Create manifest with timestamp tag
-        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-        echo "Also creating timestamped manifest..."
-        TIMESTAMP_TAG="{{.REGISTRY}}/{{.NAMESPACE}}/{{.IMAGE_NAME}}:$TIMESTAMP"
-
-        docker buildx imagetools create -t "$TIMESTAMP_TAG" "$AMD64_IMAGE" "$ARM64_IMAGE"
-
-        echo "✓ Multi-architecture manifest creation complete"
-        echo "Available tags:"
-        echo "  - {{.TAG}}"
-        echo "  - $TIMESTAMP"
+        echo "Target: $TARGET"
+
+        docker buildx bake \
+          --file ./dockerfiles/{{.IMAGE}}/docker-bake.hcl \
+          --set "${TARGET}.tags={{.IMAGE}}:latest" \
+          --load \
+          ${TARGET}

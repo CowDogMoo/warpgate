@@ -1,5 +1,5 @@
 ---
-name: 🤖 Renovate
+name: Renovate
 on:
   push:
     branches: ["main"]
@@ -34,8 +34,8 @@ concurrency:
 
 # Retrieve BOT_USER_ID via `curl -s "https://api.github.com/users/${BOT_USERNAME}%5Bbot%5D" | jq .id`
 env:
-  GO_VERSION: 1.24.0
-  PYTHON_VERSION: 3.12.6
+  GO_VERSION: 1.25.5
+  PYTHON_VERSION: 3.13.3
   RENOVATE_GIT_AUTHOR: "${{ secrets.BOT_USERNAME }} <${{ secrets.BOT_USER_ID }}+${{ secrets.BOT_USERNAME }}[bot]@users.noreply.github.com>"
 
 # Permissions block for GitHub App

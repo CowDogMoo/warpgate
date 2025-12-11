@@ -1,0 +1,37 @@
+---
+builds:
+  - id: "warpgate"
+
+    binary: warpgate
+
+    main: ./cmd/warpgate
+
+    # Inject version info via ldflags
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+    goos:
+      - linux
+      - darwin
+      # - windows
+
+    goarch:
+      - amd64
+      - arm
+      - arm64
+
+    # GOARM to build for when GOARCH is arm.
+    goarm:
+      - 6
+      - 7
+
+    # GOAMD64 to build when GOARCH is amd64.
+    goamd64:
+      - v2
+      - v3
+
+    hooks:
+      pre: go mod tidy

@@ -29,6 +29,12 @@
   'github-actions': {
     enabled: true,
   },
+  golang: {
+    enabled: true,
+  },
+  gomod: {
+    enabled: true,
+  },
   packageRules: [
     {
       description: 'Auto merge GitHub Actions updates',
@@ -45,6 +51,30 @@
       ],
       automerge: true,
       automergeType: 'branch',
+    },
+    {
+      description: 'Auto merge Go dependency updates',
+      matchManagers: [
+        'gomod',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+        'digest',
+      ],
+      automerge: true,
+      automergeType: 'pr',
+      automergeStrategy: 'merge-queue',
+    },
+    {
+      description: 'Group Go indirect dependencies',
+      matchManagers: [
+        'gomod',
+      ],
+      matchDepTypes: [
+        'indirect',
+      ],
+      groupName: 'go indirect dependencies',
     },
     {
       description: 'Auto merge Docker updates',
@@ -153,6 +183,19 @@
         'target\\s+"[^"]+"\\s+{[^}]*tags\\s*=\\s*\\["(?<depName>[^:]+):(?<currentValue>[^"]+)"\\]',
       ],
       datasourceTemplate: 'docker',
+    },
+    {
+      customType: 'regex',
+      description: 'Update GO_VERSION environment variable in workflows',
+      fileMatch: [
+        '^\\.github/workflows/[^/]+\\.ya?ml$',
+      ],
+      matchStrings: [
+        'GO_VERSION:\\s*(?<currentValue>\\S+)',
+      ],
+      depNameTemplate: 'golang',
+      datasourceTemplate: 'golang-version',
+      versioningTemplate: 'loose',
     },
   ],
 }

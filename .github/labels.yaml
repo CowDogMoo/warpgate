@@ -1,5 +1,20 @@
 ---
 # Area
+- name: area/go
+  color: "00ADD8" # go blue
+  description: >-
+    Changes made to Go source code (cmd/, pkg/)
+
+- name: area/schema
+  color: "FFD700" # gold
+  description: >-
+    Changes made to JSON schema files
+
+- name: area/scripts
+  color: "90EE90" # light green
+  description: >-
+    Changes made to build and utility scripts
+
 - name: area/dockerfiles
   color: "8fbcbc" # teal
   description: >-

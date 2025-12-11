@@ -1,12 +1,18 @@
-# Code coverage output file
+# Code coverage output files
 coverage-all.out
+coverage.out
 
 # Distribution directory for binaries
 dist/
 
-# Generated binaries
+# Generated binaries (local development)
 wg
-warpgate
+/warpgate
+warpgate-linux
+*.exe
+*.dll
+*.so
+*.dylib
 
 # Generated directories
 builds/
@@ -34,5 +40,8 @@ template-matrix.json
 # Development artifacts
 TODO
 
-# Local tests
-*test*
+# Test output files (but keep *_test.go files!)
+*.test
+test-results/
+testdata/tmp/
+warpgate-test
