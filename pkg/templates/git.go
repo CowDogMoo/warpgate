@@ -23,7 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
-	"crypto/md5"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -150,7 +150,7 @@ func (g *GitOperations) getCachePath(gitURL, version string) string {
 
 	// Add version to path if specified
 	if version != "" && version != "main" && version != "master" {
-		hash := md5.Sum([]byte(version))
+		hash := sha256.Sum256([]byte(version))
 		versionHash := fmt.Sprintf("%x", hash)[:8]
 		cleanURL = filepath.Join(cleanURL, versionHash)
 	}

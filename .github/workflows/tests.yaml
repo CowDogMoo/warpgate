@@ -9,6 +9,7 @@ on:
 env:
   GO_VERSION: 1.25.5
   TASK_VERSION: 3.38.0
+  TASK_X_REMOTE_TASKFILES: 1
 
 jobs:
   tests:
@@ -32,10 +33,10 @@ jobs:
         run: |
           bash .hooks/run-go-tests.sh coverage
 
-      # - name: Send the coverage output
-      #   uses: shogo82148/actions-goveralls@7b1bd2871942af030d707d6574e5f684f9891fb2 # v1
-      #   with:
-      #     path-to-profile: coverage-all.out
+      - name: Send the coverage output
+        uses: shogo82148/actions-goveralls@7b1bd2871942af030d707d6574e5f684f9891fb2 # v1
+        with:
+          path-to-profile: coverage-all.out
 
   schema-validation:
     name: Validate JSON schema is up to date

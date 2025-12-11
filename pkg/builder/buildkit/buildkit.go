@@ -170,7 +170,9 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 
 // loadTLSConfig creates a TLS configuration from BuildKit config
 func loadTLSConfig(cfg globalconfig.BuildKitConfig) (*tls.Config, error) {
-	tlsConfig := &tls.Config{}
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+	}
 
 	// Load CA certificate if provided
 	if cfg.TLSCACert != "" {
