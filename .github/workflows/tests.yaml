@@ -3,13 +3,32 @@ name: Tests
 on:
   merge_group:
   pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
   push:
-    branches: [main]
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
 
 env:
+  DEBIAN_FRONTEND: noninteractive
   GO_VERSION: 1.25.5
   TASK_VERSION: 3.38.0
   TASK_X_REMOTE_TASKFILES: 1
+
+permissions:
+  actions: read
+  checks: write
+  contents: read
+  pull-requests: write
 
 jobs:
   tests:
@@ -19,10 +38,11 @@ jobs:
       - name: Checkout git repository
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-      - name: Set up Go
+      - name: Setup Go
         uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6
         with:
-          go-version: "${{ env.GO_VERSION }}"
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
       - name: Setup git config
         run: |
@@ -45,10 +65,11 @@ jobs:
       - name: Checkout git repository
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
 
-      - name: Set up Go
+      - name: Setup Go
         uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6
         with:
-          go-version: "${{ env.GO_VERSION }}"
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
 
       - name: Setup go-task
         run: |
@@ -56,4 +77,4 @@ jobs:
           task --version
 
       - name: Validate schema is in sync with code
-        run: task schema:validate
+        run: task -y schema:validate
