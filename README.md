@@ -16,37 +16,25 @@
 
 ## Overview
 
-Warp Gate is a modern, Go-based CLI tool that simplifies building container
-images and AWS AMIs using declarative YAML templates. Built exclusively on
-[Docker BuildKit](https://github.com/moby/buildkit), [go-containerregistry](https://github.com/google/go-containerregistry),
-and the [AWS SDK](https://aws.amazon.com/sdk-for-go/).
+Warp Gate creates standardized, reproducible environments. Build container
+images and AWS AMIs from simple YAML templates, then reproduce them anywhere
+with a single command. It handles everything from simple Dockerfiles to complex
+multi-step provisioning with Ansible or shell scripts, and supports building
+for multiple architectures simultaneously.
 
 **Why Warp Gate?**
 
-- **Unified workflow** - Build from Dockerfiles OR provisioners
-  (Ansible/shell) with the same tool
-- **Flexible provisioning** - Use native Dockerfiles for simple images,
-  provisioners for complex ones
-- **Pure Go implementation** - Single binary with no external dependencies
-  beyond Docker
-- **Native BuildKit & go-containerregistry** - Modern container tooling
-  without legacy SDKs
-- **Simpler syntax** - Clean YAML templates instead of HCL/JSON
-- **Credential-aware** - Uses Docker's native authentication
-  (docker login) automatically
-- **Template discovery** - Built-in template repository management
-- **Multi-arch support** - Build and push multi-architecture manifests natively
+- Simple YAML templates
+- One tool for containers and cloud images
 
-**Perfect for:**
+**Useful for:**
 
 - Security teams building attack/defense infrastructure
 - DevOps engineers creating base images
 - Platform teams standardizing environments
-- Anyone frustrated with Packer's complexity
+- Collaboration on infrastructure deployments across teams
 
 ## Quick Start
-
-Get started in under 60 seconds:
 
 ```bash
 # Install warpgate
@@ -62,16 +50,12 @@ warpgate build attack-box --arch amd64
 docker images | grep attack-box
 ```
 
-**New to Warpgate?** See the [Installation Guide](docs/installation.md)
-and [Usage Guide](docs/usage-guide.md).
-
 ## Documentation
 
 ### Getting Started
 
 - **[Installation Guide](docs/installation.md)** - Platform-specific
   installation instructions
-- **[Quick Start](#quick-start)** - Get running in 60 seconds
 - **[Usage Guide](docs/usage-guide.md)** - Common workflows and practical examples
 
 ### Configuration
@@ -97,62 +81,40 @@ and [Usage Guide](docs/usage-guide.md).
 ### Contributing
 
 - **[Contributing Guide](CONTRIBUTING.md)** - Development guide and standards
-- **[License](#license)** - MIT License details
 
 ## Features
 
 ### Core Capabilities
 
-| Feature                    | Description                      | Status    |
-| -------------------------- | -------------------------------- | --------- |
-| **Container Images**       | Build OCI images with BuildKit   | ✅ Stable |
-| **Dockerfile Support**     | Native Dockerfile builds         | ✅ Stable |
-| **AWS AMIs**               | Create EC2 AMIs                  | ✅ Stable |
-| **Multi-arch Builds**      | Build amd64/arm64 simultaneously | ✅ Stable |
-| **Template Discovery**     | Git/local template repo mgmt     | ✅ Stable |
-| **Ansible Provisioner**    | Run Ansible playbooks            | ✅ Stable |
-| **Shell Provisioner**      | Execute shell scripts            | ✅ Stable |
-| **PowerShell Provisioner** | Run PowerShell (Windows)         | ✅ Stable |
-| **Variable Substitution**  | CLI flags/files/env vars         | ✅ Stable |
-| **Packer Conversion**      | Convert Packer to Warpgate       | ⚠️ Beta   |
-| **Registry Push**          | Push images to registries        | ✅ Stable |
-| **Multi-arch Manifests**   | Create/push multi-arch images    | ✅ Stable |
-
-### Why Warpgate vs Packer?
-
-| Aspect                 | Warpgate            | Packer               |
-| ---------------------- | ------------------- | -------------------- |
-| **Performance**        | Fast (Go native)    | Slower (plugins)     |
-| **Syntax**             | Simple YAML         | Complex HCL/JSON     |
-| **Container Focus**    | Native BuildKit     | Docker plugin only   |
-| **Template Discovery** | Built-in repo mgmt  | Manual               |
-| **Learning Curve**     | Gentle              | Steep                |
-| **Maintenance**        | Single binary       | Multiple plugins     |
-| **Multi-arch**         | First-class support | Manual configuration |
-
-### Security Features
-
-- **Credential-free config** - Uses standard auth methods (docker login, AWS profiles)
-- **No token storage** - Integrates with credential helpers
-- **Security scanning** - Automated Semgrep analysis in CI
-- **Least privilege** - Supports IAM roles and SSO
-- **Supply chain security** - Pre-commit hooks and dependency updates
+| Feature                    | Description                      |
+| -------------------------- | -------------------------------- |
+| **Container Images**       | Build OCI images with BuildKit   |
+| **Dockerfile Support**     | Native Dockerfile builds         |
+| **AWS AMIs**               | Create EC2 AMIs                  |
+| **Multi-arch Builds**      | Build amd64/arm64 simultaneously |
+| **Template Discovery**     | Git/local template repo mgmt     |
+| **Ansible Provisioner**    | Run Ansible playbooks            |
+| **Shell Provisioner**      | Execute shell scripts            |
+| **PowerShell Provisioner** | Run PowerShell (Windows)         |
+| **Variable Substitution**  | CLI flags/files/env vars         |
+| **Packer Conversion**      | Convert Packer to Warpgate       |
+| **Registry Push**          | Push images to registries        |
+| **Multi-arch Manifests**   | Create/push multi-arch images    |
 
 ## Installation
 
 ### Quick Install
 
 ```bash
-# Go install (recommended)
+# Go install
 go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
 
 # Container image
 docker pull ghcr.io/cowdogmoo/warpgate:latest
 alias warpgate='docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:latest'
-
-# Pre-built binaries
-# Download from: https://github.com/CowDogMoo/warpgate/releases
 ```
+
+Alternatively, pre-built binaries can be downloaded from: https://github.com/CowDogMoo/warpgate/releases
 
 **Prerequisites:**
 
@@ -162,37 +124,16 @@ alias warpgate='docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:
 **See [Installation Guide](docs/installation.md) for detailed
 platform-specific instructions.**
 
-## Configuration Setup
-
-Warpgate uses a two-tier configuration system:
-
-1. **Global config** (`~/.config/warpgate/config.yaml`) - User preferences and defaults
-2. **Template config** (`warpgate.yaml`) - Image definitions (portable, version-controlled)
-
 ### Quick Configuration
 
-Create `~/.config/warpgate/config.yaml`:
+```bash
+# Initialize default configuration
+warpgate config init
 
-```yaml
-# Registry Configuration
-registry:
-  default: ghcr.io
-
-# AWS Configuration
-aws:
-  region: us-west-2
-  profile: lab
-
-# Build Defaults
-build:
-  default_arch: [amd64]
-  parallel_builds: true
-  concurrency: 2
-
-# BuildKit Configuration (optional)
-buildkit:
-  endpoint: "" # Empty = auto-detect local buildx builder
-  tls_enabled: false
+# Or customize settings
+warpgate config set registry.default ghcr.io
+warpgate config set aws.region your-aws-region
+warpgate config set aws.profile my-aws-profile
 ```
 
 **See [Configuration Guide](docs/configuration.md) for complete configuration reference.**
@@ -226,20 +167,20 @@ warpgate build my-ami-template --target ami
 ### Manage Templates
 
 ```bash
+# Add the official template repository
+warpgate templates add https://github.com/CowDogMoo/warpgate-templates.git
+
+# Update template cache
+warpgate templates update
+
 # List available templates
 warpgate templates list
-
-# Search for templates
-warpgate templates search security
-
-# Add template repository
-warpgate templates add https://github.com/myorg/templates.git
 
 # Get template info
 warpgate templates info attack-box
 
-# Update template cache
-warpgate templates update
+# Search for templates
+warpgate templates search security
 ```
 
 **See [Usage Guide](docs/usage-guide.md) for comprehensive examples and workflows.**
@@ -354,19 +295,13 @@ A: Yes. Core features are stable and used in production environments.
 
 **See [FAQ](docs/faq.md) for more questions and answers.**
 
-## License
-
-This project is licensed under the **MIT License** - see the
-[LICENSE](LICENSE) file for details.
-
-### Third-Party Licenses
+### Built With
 
 Warpgate uses open-source libraries:
 
-- [BuildKit](https://github.com/moby/buildkit) v0.26.2 - Apache 2.0
-- [Docker SDK](https://github.com/docker/docker) v28.5.2 - Apache 2.0
-- [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2) - Apache 2.0
+- [BuildKit](https://github.com/moby/buildkit)
+- [Docker SDK](https://github.com/docker/docker)
+- [AWS SDK for Go v2](https://github.com/aws/aws-sdk-go-v2)
 - [go-containerregistry](https://github.com/google/go-containerregistry)
-  v0.20.6 - Apache 2.0
-- [Cobra](https://github.com/spf13/cobra) v1.10.2 - Apache 2.0
-- [Viper](https://github.com/spf13/viper) v1.21.0 - MIT
+- [Cobra](https://github.com/spf13/cobra)
+- [Viper](https://github.com/spf13/viper)
