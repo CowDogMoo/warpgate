@@ -61,7 +61,7 @@ Steps to Reproduce:
 
 Environment:
 - OS: Ubuntu 22.04 LTS
-- Go: 1.21.3
+- Go: 1.25.4
 - Warpgate: v1.2.0
 - Docker: 24.0.5
 
@@ -115,7 +115,7 @@ Created a useful Warpgate template? Share it:
 
 ### Prerequisites
 
-- **Go 1.21+** - [Install Go](https://go.dev/doc/install)
+- **Go 1.25+** - [Install Go](https://go.dev/doc/install)
 - **Git** - For version control
 - **GitHub CLI (optional)** - `gh` tool for easier workflows
 - **Task (optional)** - [Install Task](https://taskfile.dev/installation/)
