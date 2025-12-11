@@ -140,7 +140,8 @@ container:
 
 ### Variable substitution not working
 
-**Symptoms:** Variables show as `${VAR_NAME}` in built images instead of actual values.
+**Symptoms:** Variables show as `${VAR_NAME}` in built images instead of
+actual values.
 
 **Cause:** Variables not properly defined or passed.
 

@@ -473,18 +473,18 @@ warpgate config path
 
 Common configuration keys you can get/set:
 
-| Key                          | Type     | Description                         |
-| ---------------------------- | -------- | ----------------------------------- |
-| `buildkit.endpoint`          | string   | BuildKit endpoint (empty = auto)    |
-| `buildkit.tls_enabled`       | bool     | Enable TLS for BuildKit             |
-| `registry.default`           | string   | Default container registry          |
-| `aws.region`                 | string   | Default AWS region                  |
-| `aws.profile`                | string   | AWS CLI profile name                |
-| `aws.ami.instance_type`      | string   | Default EC2 instance type           |
-| `aws.ami.volume_size`        | int      | Default EBS volume size (GB)        |
-| `build.default_arch`         | string[] | Default architectures to build      |
-| `build.parallel_builds`      | bool     | Enable parallel builds              |
-| `build.concurrency`          | int      | Max concurrent builds               |
+| Key                          | Type     | Description                        |
+| ---------------------------- | -------- | ---------------------------------- |
+| `buildkit.endpoint`          | string   | BuildKit endpoint (empty = auto)   |
+| `buildkit.tls_enabled`       | bool     | Enable TLS for BuildKit            |
+| `registry.default`           | string   | Default container registry         |
+| `aws.region`                 | string   | Default AWS region                 |
+| `aws.profile`                | string   | AWS CLI profile name               |
+| `aws.ami.instance_type`      | string   | Default EC2 instance type          |
+| `aws.ami.volume_size`        | int      | Default EBS volume size (GB)       |
+| `build.default_arch`         | string[] | Default architectures to build     |
+| `build.parallel_builds`      | bool     | Enable parallel builds             |
+| `build.concurrency`          | int      | Max concurrent builds              |
 
 See [Configuration Guide](configuration.md) for complete reference.
 

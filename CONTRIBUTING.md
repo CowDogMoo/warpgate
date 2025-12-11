@@ -293,7 +293,8 @@ Or create the PR via GitHub web interface.
 Follow standard Go conventions and idioms:
 
 - **Use `gofmt`** - Format all code with `gofmt` (or `go fmt`)
-- **Follow [Effective Go](https://go.dev/doc/effective_go)** - Standard Go best practices
+- **Follow [Effective Go](https://go.dev/doc/effective_go)** - Standard Go
+  best practices
 - **Use [golangci-lint](https://golangci-lint.run/)** - Catch common issues
 - **Write clear names** - Use descriptive variable and function names
 - **Keep functions focused** - Each function should do one thing well

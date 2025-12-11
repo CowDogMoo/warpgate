@@ -105,18 +105,18 @@ and [Usage Guide](docs/usage-guide.md).
 
 | Feature                    | Description                      | Status    |
 | -------------------------- | -------------------------------- | --------- |
-| **Container Images**       | Build OCI images with BuildKit   | ✅ Stable  |
-| **Dockerfile Support**     | Native Dockerfile builds         | ✅ Stable  |
-| **AWS AMIs**               | Create EC2 AMIs                  | ✅ Stable  |
-| **Multi-arch Builds**      | Build amd64/arm64 simultaneously | ✅ Stable  |
-| **Template Discovery**     | Git/local template repo mgmt     | ✅ Stable  |
-| **Ansible Provisioner**    | Run Ansible playbooks            | ✅ Stable  |
-| **Shell Provisioner**      | Execute shell scripts            | ✅ Stable  |
-| **PowerShell Provisioner** | Run PowerShell (Windows)         | ✅ Stable  |
-| **Variable Substitution**  | CLI flags/files/env vars         | ✅ Stable  |
+| **Container Images**       | Build OCI images with BuildKit   | ✅ Stable |
+| **Dockerfile Support**     | Native Dockerfile builds         | ✅ Stable |
+| **AWS AMIs**               | Create EC2 AMIs                  | ✅ Stable |
+| **Multi-arch Builds**      | Build amd64/arm64 simultaneously | ✅ Stable |
+| **Template Discovery**     | Git/local template repo mgmt     | ✅ Stable |
+| **Ansible Provisioner**    | Run Ansible playbooks            | ✅ Stable |
+| **Shell Provisioner**      | Execute shell scripts            | ✅ Stable |
+| **PowerShell Provisioner** | Run PowerShell (Windows)         | ✅ Stable |
+| **Variable Substitution**  | CLI flags/files/env vars         | ✅ Stable |
 | **Packer Conversion**      | Convert Packer to Warpgate       | ⚠️ Beta   |
-| **Registry Push**          | Push images to registries        | ✅ Stable  |
-| **Multi-arch Manifests**   | Create/push multi-arch images    | ✅ Stable  |
+| **Registry Push**          | Push images to registries        | ✅ Stable |
+| **Multi-arch Manifests**   | Create/push multi-arch images    | ✅ Stable |
 
 ### Why Warpgate vs Packer?
 
