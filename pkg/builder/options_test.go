@@ -106,7 +106,7 @@ func TestApplyOverrides(t *testing.T) {
 					"author":  "team",
 				},
 				BuildArgs: map[string]string{
-					"GO_VERSION": "1.21",
+					"GO_VERSION": "1.25",
 				},
 			},
 			globalCfg: &globalconfig.Config{},
@@ -440,8 +440,8 @@ func TestApplyLabelsAndBuildArgs(t *testing.T) {
 					"author":  "team",
 				},
 				BuildArgs: map[string]string{
-					"GO_VERSION": "1.21",
-					"BUILD_DATE": "2024-01-01",
+					"GO_VERSION": "1.25",
+					"BUILD_DATE": "2025-12-10",
 				},
 			},
 			wantLabelsLen:   2,
@@ -462,7 +462,7 @@ func TestApplyLabelsAndBuildArgs(t *testing.T) {
 					"version": "1.0",
 				},
 				BuildArgs: map[string]string{
-					"GO_VERSION": "1.21",
+					"GO_VERSION": "1.25",
 				},
 			},
 			wantLabelsLen:   2,

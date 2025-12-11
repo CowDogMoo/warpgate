@@ -67,10 +67,10 @@ warpgate init my-security-base --from official/security-base
 
 ### Flags
 
-| Flag             | Type   | Description                               |
-| ---------------- | ------ | ----------------------------------------- |
-| `--from`         | string | Fork from existing template               |
-| `--output`       | string | Output directory (default: current dir)   |
+| Flag       | Type   | Description                             |
+| ---------- | ------ | --------------------------------------- |
+| `--from`   | string | Fork from existing template             |
+| `--output` | string | Output directory (default: current dir) |
 
 ### Output Structure
 
@@ -301,11 +301,11 @@ warpgate validate sliver --var ARSENAL_PATH=/opt/arsenal
 
 ### Flags
 
-| Flag            | Type   | Description                                  |
-| --------------- | ------ | -------------------------------------------- |
-| `--var`         | string | Override variable (format: `KEY=value`)      |
-| `--var-file`    | string | Load variables from YAML file                |
-| `--syntax-only` | bool   | Check syntax only, skip semantic validation  |
+| Flag            | Type   | Description                                 |
+| --------------- | ------ | ------------------------------------------- |
+| `--var`         | string | Override variable (format: `KEY=value`)     |
+| `--var-file`    | string | Load variables from YAML file               |
+| `--syntax-only` | bool   | Check syntax only, skip semantic validation |
 
 ### Exit Codes
 
@@ -473,18 +473,18 @@ warpgate config path
 
 Common configuration keys you can get/set:
 
-| Key                          | Type     | Description                        |
-| ---------------------------- | -------- | ---------------------------------- |
-| `buildkit.endpoint`          | string   | BuildKit endpoint (empty = auto)   |
-| `buildkit.tls_enabled`       | bool     | Enable TLS for BuildKit            |
-| `registry.default`           | string   | Default container registry         |
-| `aws.region`                 | string   | Default AWS region                 |
-| `aws.profile`                | string   | AWS CLI profile name               |
-| `aws.ami.instance_type`      | string   | Default EC2 instance type          |
-| `aws.ami.volume_size`        | int      | Default EBS volume size (GB)       |
-| `build.default_arch`         | string[] | Default architectures to build     |
-| `build.parallel_builds`      | bool     | Enable parallel builds             |
-| `build.concurrency`          | int      | Max concurrent builds              |
+| Key                     | Type     | Description                      |
+| ----------------------- | -------- | -------------------------------- |
+| `buildkit.endpoint`     | string   | BuildKit endpoint (empty = auto) |
+| `buildkit.tls_enabled`  | bool     | Enable TLS for BuildKit          |
+| `registry.default`      | string   | Default container registry       |
+| `aws.region`            | string   | Default AWS region               |
+| `aws.profile`           | string   | AWS CLI profile name             |
+| `aws.ami.instance_type` | string   | Default EC2 instance type        |
+| `aws.ami.volume_size`   | int      | Default EBS volume size (GB)     |
+| `build.default_arch`    | string[] | Default architectures to build   |
+| `build.parallel_builds` | bool     | Enable parallel builds           |
+| `build.concurrency`     | int      | Max concurrent builds            |
 
 See [Configuration Guide](configuration.md) for complete reference.
 
@@ -796,9 +796,9 @@ With `--verbose`:
 
 ```text
 warpgate version v1.2.3
-Go version: go1.21.0
+Go version: go1.25.4
 Git commit: abc1234
-Build date: 2024-01-15T10:30:00Z
+Build date: 2025-12-10T10:30:00Z
 Platform: linux/amd64
 ```
 
@@ -806,14 +806,14 @@ Platform: linux/amd64
 
 Warpgate respects these environment variables:
 
-| Variable                   | Description                             |
-| -------------------------- | --------------------------------------- |
-| `WARPGATE_CONFIG`          | Config file path (overrides `--config`) |
-| `WARPGATE_CACHE_DIR`       | Cache directory path                    |
-| `AWS_PROFILE`              | AWS CLI profile to use                  |
-| `AWS_REGION`               | AWS region for AMI builds               |
-| `AWS_ACCESS_KEY_ID`        | AWS access key                          |
-| `AWS_SECRET_ACCESS_KEY`    | AWS secret key                          |
+| Variable                | Description                             |
+| ----------------------- | --------------------------------------- |
+| `WARPGATE_CONFIG`       | Config file path (overrides `--config`) |
+| `WARPGATE_CACHE_DIR`    | Cache directory path                    |
+| `AWS_PROFILE`           | AWS CLI profile to use                  |
+| `AWS_REGION`            | AWS region for AMI builds               |
+| `AWS_ACCESS_KEY_ID`     | AWS access key                          |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key                          |
 
 ## Exit Codes
 

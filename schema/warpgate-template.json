@@ -94,7 +94,7 @@
         },
         "date": {
           "type": "string",
-          "description": "Date of the release in ISO 8601 format (e.g., \"2025-01-15\")"
+          "description": "Date of the release in ISO 8601 format (e.g., \"2025-12-10\")"
         },
         "changes": {
           "items": {

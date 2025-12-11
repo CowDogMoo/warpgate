@@ -162,7 +162,7 @@ type ChangelogEntry struct {
 	// Version number for this changelog entry (e.g., "1.0.0")
 	Version string `yaml:"version" json:"version"`
 
-	// Date of the release in ISO 8601 format (e.g., "2025-01-15")
+	// Date of the release in ISO 8601 format (e.g., "2025-12-10")
 	Date string `yaml:"date" json:"date"`
 
 	// Changes is a list of changes made in this version
