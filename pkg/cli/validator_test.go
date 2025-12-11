@@ -79,7 +79,7 @@ func TestValidateBuildOptions(t *testing.T) {
 			name: "valid build-args",
 			opts: BuildCLIOptions{
 				ConfigFile: "warpgate.yaml",
-				BuildArgs:  []string{"GO_VERSION=1.21", "BUILD_DATE=2024-01-01"},
+				BuildArgs:  []string{"GO_VERSION=1.25", "BUILD_DATE=2025-12-10"},
 			},
 			wantErr: false,
 		},

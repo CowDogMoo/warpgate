@@ -380,15 +380,15 @@ metadata:
     - monitoring
     - utility
   requires:
-    warpgate: '>=1.0.0'
+    warpgate: ">=1.0.0"
 
 name: printer-monitor
 version: latest
 
 dockerfile:
-  path: Dockerfile           # Relative to this warpgate.yaml
-  context: .                 # Build context directory
-  args:                      # Optional build arguments
+  path: Dockerfile # Relative to this warpgate.yaml
+  context: . # Build context directory
+  args: # Optional build arguments
     PYTHON_VERSION: "3.12"
 
 targets:
@@ -605,8 +605,8 @@ provisioners:
   # Conditional Go install
   - type: shell
     inline:
-      - wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-      - tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+      - wget https://go.dev/dl/go1.25.4.linux-amd64.tar.gz
+      - tar -C /usr/local -xzf go1.25.4.linux-amd64.tar.gz
 
 targets:
   - type: container
