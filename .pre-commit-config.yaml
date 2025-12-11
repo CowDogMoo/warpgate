@@ -53,10 +53,10 @@ repos:
         args: ["--fix", "--config", ".hooks/linters/markdownlint.json"]
         exclude: dockerfiles
 
-  - repo: https://github.com/cisagov/pre-commit-packer
-    rev: v0.3.1
+  - repo: https://github.com/tcort/markdown-link-check
+    rev: v3.13.6
     hooks:
-      - id: packer_fmt
+      - id: markdown-link-check
 
   - repo: local
     hooks:
