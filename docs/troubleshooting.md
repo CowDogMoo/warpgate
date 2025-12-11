@@ -76,67 +76,88 @@ docker login
 
 ### "Permission denied" errors on Linux
 
-**Symptoms:** Build fails with permission errors accessing
-`/var/lib/containers` or `/run/containers`.
+**Symptoms:** Build fails with permission errors accessing Docker daemon
+socket (`/var/run/docker.sock`).
 
-**Cause:** Container operations require elevated privileges or rootless setup.
+**Cause:** User is not in the docker group and cannot access Docker daemon.
 
-#### Solution 1: Use sudo (simplest)
-
-```bash
-# Run with sudo
-sudo warpgate build mytemplate
-
-# Pass variables with sudo
-sudo warpgate build mytemplate --var KEY=value
-
-# Preserve environment if needed
-sudo -E warpgate build mytemplate
-```
-
-#### Solution 2: Configure rootless containers
+#### Solution: Add user to docker group
 
 ```bash
-# Install rootless Podman/BuildKit
-# See: https://github.com/containers/podman/blob/main/docs/tutorials/rootless_tutorial.md
+# Add current user to docker group
+sudo usermod -aG docker $USER
 
-# Configure storage
-mkdir -p ~/.local/share/containers/storage
-cat > ~/.config/containers/storage.conf <<EOF
-[storage]
-driver = "vfs"
-runroot = "$HOME/.local/share/containers/storage"
-graphroot = "$HOME/.local/share/containers/storage"
-EOF
+# Log out and back in for changes to take effect
+# Or activate new group membership immediately:
+newgrp docker
 
-# Build without sudo
+# Verify access
+docker ps
+
+# Build templates
 warpgate build mytemplate
 ```
 
-### Build fails with "storage driver" error
+**Alternative: Configure rootless Docker (advanced)
 
-**Symptoms:** Build fails with errors like "storage driver 'overlay' not supported".
+```bash
+# Install rootless Docker
+# See: https://docs.docker.com/engine/security/rootless/
 
-**Cause:** Incompatible storage driver configuration.
+# Install rootless Docker
+curl -fsSL https://get.docker.com/rootless | sh
+
+# Configure environment
+systemctl --user start docker
+export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
+
+# Build templates
+warpgate build mytemplate
+```
+
+### Build fails with "cannot connect to Docker daemon"
+
+**Symptoms:** Build fails with errors like "Cannot connect to the Docker
+daemon" or "Is the docker daemon running?".
+
+**Cause:** Docker daemon is not running or warpgate cannot connect to it.
 
 **Solution:**
+
+**1. Check Docker status:**
+
+```bash
+# Check if Docker is running
+docker ps
+
+# Start Docker daemon (Linux)
+sudo systemctl start docker
+
+# Or use Docker Desktop (macOS/Windows)
+# Start Docker Desktop application
+```
+
+**2. Verify Docker socket permissions:**
+
+```bash
+# Check socket exists and is accessible
+ls -l /var/run/docker.sock
+
+# If permission denied, add user to docker group
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+**3. Configure custom Docker endpoint (if needed):**
 
 Edit `~/.config/warpgate/config.yaml`:
 
 ```yaml
-storage:
-  driver: vfs # Use vfs instead of overlay
-
-container:
-  runtime: runc
+buildkit:
+  endpoint: "unix:///var/run/docker.sock"  # Default
+  # Or for remote Docker: "tcp://remote-host:2376"
+  tls_enabled: false
 ```
-
-**Why vfs?**
-
-- Works on all systems
-- No kernel module requirements
-- Compatible with rootless
-- Slightly slower but more portable
 
 ### Variable substitution not working
 

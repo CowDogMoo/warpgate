@@ -15,51 +15,43 @@ Common questions about Warpgate and their answers.
 
 ### What's the difference between Warpgate and Packer?
 
-Warpgate is a modern alternative to Packer with several key advantages:
+Warpgate is an alternative to Packer with several key advantages:
 
-**Simpler Syntax:**
+**Syntax:**
 
-- Warpgate uses clean YAML instead of complex HCL/JSON
+- YAML configuration instead of HCL/JSON
 - More intuitive structure for defining build steps
 - Easier to learn and maintain
 
-**Better Performance:**
+**Performance:**
 
-- Native Go implementation (not plugin-based)
-- BuildKit integration for efficient container builds
+- Direct BuildKit library integration (no plugin overhead)
+- Efficient container builds
 - Faster build times (30-50% faster in benchmarks)
 
-**Enhanced Features:**
+**Features:**
 
 - Built-in template discovery and repository management
-- First-class multi-architecture support
-- Better container image focus with native BuildKit integration
+- Multi-architecture builds (amd64, arm64)
+- Native BuildKit integration for container images
 - Single binary with no external plugin dependencies
 
-**When to use Warpgate:**
+**Use cases:**
 
 - Building container images using the same provision logic you'd use for
   VM builds and not having to create a separate Dockerfile
 - Building AWS AMIs
-- Want simpler configuration
-- Need faster builds
-- Team template sharing
+- Sharing build configurations across teams
 
-**When to stick with Packer:**
+### Can I convert my existing Packer templates?
 
-- Need specialized builders (Azure, GCP, VMware, etc.)
-- Heavy investment in existing Packer templates
-- Require specific Packer plugins
-
-### Can I use my existing Packer templates?
-
-Yes! Use the conversion tool:
+Yes! Run the conversion tool:
 
 ```bash
 warpgate convert packer-template.pkr.hcl
 ```
 
-**Note:** This is a Beta feature. The converter handles:
+**Note:** This feature is experimental. The converter handles:
 
 - Basic template structure
 - Shell and Ansible provisioners
@@ -79,64 +71,33 @@ After conversion:
 3. Test build: `warpgate build warpgate.yaml`
 4. Adjust as needed
 
-### Is Warpgate production-ready?
-
-**Yes!** Warpgate is stable and used in production environments.
-
-**Stable features:**
-
-- Container image building ✅
-- AWS AMI creation ✅
-- Template management ✅
-- Shell, Ansible, PowerShell provisioners ✅
-- Multi-architecture builds ✅
-- Registry push operations ✅
-
-**Beta features:**
-
-- Packer template conversion ⚠️
-
-The core codebase is well-tested, follows Go best practices, and includes:
-
-- Comprehensive test coverage
-- Automated security scanning (Semgrep)
-- Pre-commit hooks
-- Regular dependency updates
-
-### How is Warpgate maintained?
-
-Warpgate is actively maintained by [CowDogMoo](https://github.com/CowDogMoo) with:
-
-- Regular releases
-- Security updates
-- Community contributions welcome
-- GitHub Issues for bug tracking
-- Discussions for questions and feedback
-
 ## Platform Support
 
-### Why does Warpgate require Linux for native execution?
+### Does Warpgate work on macOS and Windows?
 
-Warpgate uses BuildKit as a library for container operations. BuildKit
-requires Linux kernel features for:
+**Yes!** Warpgate supports macOS, Windows, and Linux.
 
-- Container namespaces
-- Overlay filesystems
-- cgroups for resource management
-
-**Solution for macOS/Windows:**
-
-- Use the containerized version
-- Run inside Docker Desktop
-- Use provided build scripts
+Warpgate uses [BuildKit](https://github.com/moby/buildkit) for container
+builds, which provides cross-platform support through Docker Desktop
+(macOS/Windows) or native Docker (Linux).
 
 ### Can I build Windows containers?
 
-**Current state:** Warpgate focuses on Linux containers and AWS AMIs.
+**Current state:** Warpgate currently supports only Linux containers
+(`linux/amd64`, `linux/arm64`).
 
-**Roadmap:** Windows container support is planned for a future release.
+**Windows AMI support:** Warpgate can build Windows AWS AMIs using the
+PowerShell provisioner, but Windows container image builds are not currently
+supported.
 
-**Workaround:** Use Packer for Windows containers until native support is added.
+**Technical context:** While warpgate uses BuildKit (which can theoretically
+build Windows containers), the current implementation and template system are
+designed exclusively for Linux-based container images. Windows templates were
+removed from the project during the first major refactor in May 2025 (commit 14a1abb).
+
+**Future support:** There is no current roadmap for Windows container support.
+If this is important to you, please [open a GitHub issue](https://github.com/CowDogMoo/warpgate/issues)
+to discuss your use case.
 
 ### Does it work with Apple Silicon (M1/M2/M3)?
 
@@ -164,44 +125,13 @@ alias warpgate='docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:
 warpgate build mytemplate --arch amd64,arm64
 ```
 
-### Can I run Warpgate on ARM servers?
-
-**Yes!** Warpgate runs on ARM64 Linux servers:
-
-```bash
-# Install on ARM64
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
-
-# Build for arm64
-warpgate build mytemplate --arch arm64
-```
-
-Perfect for:
-
-- AWS Graviton instances
-- Raspberry Pi (4+)
-- Ampere Altra servers
-- Other ARM64 Linux systems
-
 ## Templates
 
-### Where can I find example templates?
+### Where can I find existing templates?
 
 **Official templates:**
 
 [warpgate-templates repository](https://github.com/cowdogmoo/warpgate-templates)
-
-Includes:
-
-- `attack-box` - Security testing environment
-- `sliver` - Sliver C2 framework
-- `atomic-red-team` - Atomic Red Team platform
-
-**Discover templates:**
-
-```bash
-warpgate discover
-```
 
 **Template guides:**
 
@@ -329,54 +259,18 @@ warpgate build template1
 warpgate build template2
 ```
 
-#### Method 3: Global defaults in config
-
-While not directly supported, you can use shell aliases:
-
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-alias warpgate-build='warpgate build --var-file ~/.config/warpgate/default-vars.yaml'
-
-# Use alias
-warpgate-build template1
-```
-
 ## Security
 
 ### How does Warpgate handle credentials?
 
-**Never stored in config files!**
+Warpgate never stores credentials in config files.
 
-**Container registries:**
+- **Container registries:** Uses Docker's credential helpers
+- **AWS:** Uses AWS SDK credential chain (SSO, environment variables, IAM roles)
+- **Secrets in templates:** Pass via variables at build time, never hardcode
 
-- Uses Docker credential helpers
-- Reads from `~/.docker/config.json`
-- Supports credential stores (keychain, pass, etc.)
-
-**AWS credentials:**
-
-- Uses AWS SDK credential chain
-- Supports AWS SSO
-- Environment variables
-- IAM roles
-- Never stored in Warpgate config
-
-**Best practices:**
-
-```bash
-# Container registry
-docker login ghcr.io  # Credentials in secure store
-
-# AWS
-aws sso login --profile myprofile  # Temporary credentials
-export AWS_PROFILE=myprofile
-
-# Templates
-# Never hardcode secrets - use variables passed at build time
-warpgate build mytemplate --var API_KEY=$SECRET_KEY
-```
-
-See [Configuration Guide - Security Best Practices](configuration.md#security-best-practices).
+See [Configuration Guide - Security Best Practices](configuration.md#security-best-practices)
+for detailed setup instructions.
 
 ### Is it safe to commit my warpgate.yaml?
 
@@ -433,15 +327,6 @@ warpgate build mytemplate --var-file secrets.yaml
 - Atomic Red Team testing platforms
 - Vulnerability scanning tools
 
-**Security scanning:**
-
-Built-in security features:
-
-- Automated Semgrep scanning in CI
-- Pre-commit hooks
-- Dependency updates via Renovate
-- Security-focused templates
-
 **Responsible use:**
 
 Only use for:
@@ -455,42 +340,8 @@ Never use for:
 
 - Unauthorized access
 - Malicious purposes
-- Production attacks
 
 ## Performance
-
-### How fast is Warpgate compared to Packer?
-
-**Benchmarks show 30-50% faster builds** due to:
-
-**Native Go performance:**
-
-- No plugin overhead
-- Direct BuildKit library integration
-- Efficient layer caching
-
-**Optimized workflows:**
-
-- Parallel multi-arch builds
-- Smart dependency resolution
-- Minimal intermediate steps
-
-**Real-world example:**
-
-```text
-Template: attack-box (Ubuntu + security tools)
-
-Packer build:       8m 32s
-Warpgate build:     5m 47s
-Improvement:        32% faster
-```
-
-Results vary by:
-
-- Base image size
-- Provisioner complexity
-- Network speed
-- System resources
 
 ### Can I build multiple images in parallel?
 
@@ -580,75 +431,21 @@ provisioners:
 
 ## Common Issues
 
-### Why am I getting "permission denied" errors?
-
-**On Linux:** Container operations require elevated privileges.
-
-**Solutions:**
-
-```bash
-# Use sudo (simplest)
-sudo warpgate build mytemplate
-
-# Or configure rootless containers
-# See: Troubleshooting Guide
-```
-
-See [Troubleshooting - Permission Denied](troubleshooting.md#permission-denied-errors-on-linux).
-
 ### My template isn't found, what's wrong?
 
-**Check these:**
+Templates must be in a configured repository and the cache must be updated. Run
+`warpgate templates update` to refresh the cache.
 
-1. **Template is in a configured repository:**
-
-```bash
-warpgate templates list
-```
-
-2. **Repository is accessible:**
-
-```bash
-git ls-remote https://github.com/org/repo.git
-```
-
-3. **Template cache is updated:**
-
-```bash
-warpgate templates update
-```
-
-4. **Template follows correct structure:**
-
-```text
-templates/
-└── my-template/
-    └── warpgate.yaml
-```
-
-See [Troubleshooting - Templates Not Found](troubleshooting.md#templates-not-found).
+See [Troubleshooting - Templates Not Found](troubleshooting.md#templates-not-found)
+for detailed diagnostics.
 
 ### Builds work but pushes fail?
 
-**Cause:** Not authenticated to registry.
+This usually means you're not authenticated to the registry. Authenticate
+with `docker login` and try again.
 
-**Solution:**
-
-```bash
-# Authenticate
-docker login ghcr.io
-
-# Or for GitHub
-gh auth login
-
-# Verify
-docker pull ghcr.io/OWNER/any-public-image
-
-# Try push again
-warpgate build mytemplate --push --registry ghcr.io/OWNER
-```
-
-See [Troubleshooting - Registry Issues](troubleshooting.md#registry-issues).
+See [Troubleshooting - Registry Issues](troubleshooting.md#registry-issues) for
+complete solutions.
 
 ## Still Have Questions?
 

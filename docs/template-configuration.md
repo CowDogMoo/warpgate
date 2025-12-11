@@ -5,25 +5,16 @@ Complete guide to managing Warpgate template sources, repositories, and discover
 ## Table of Contents
 
 - [Overview](#overview)
-- [Quick Start](#quick-start)
 - [Configuration](#configuration)
   - [Configuration File Locations](#configuration-file-locations)
   - [Basic Configuration](#basic-configuration)
   - [Repository Types](#repository-types)
   - [Configuration Options](#configuration-options)
-- [Managing Template Sources](#managing-template-sources)
-  - [Adding Sources](#adding-sources)
-  - [Removing Sources](#removing-sources)
-  - [Updating Cache](#updating-cache)
-- [Using Templates](#using-templates)
-  - [Discovering Templates](#discovering-templates)
-  - [Building from Templates](#building-from-templates)
-  - [Template Discovery Order](#template-discovery-order)
+- [Template Discovery Order](#template-discovery-order)
 - [Template Directory Structure](#template-directory-structure)
 - [Private Repositories](#private-repositories)
 - [Environment Variables](#environment-variables)
 - [Common Scenarios](#common-scenarios)
-- [Troubleshooting](#troubleshooting)
 - [Best Practices](#best-practices)
 
 ## Overview
@@ -44,30 +35,6 @@ automatically discovered and cached.
 - Local directory scanning
 - Template versioning and metadata
 - Private repository support
-
-## Quick Start
-
-Get started with template management in 60 seconds:
-
-```bash
-# List default templates
-warpgate templates list
-
-# Add a Git repository
-warpgate templates add https://github.com/myorg/security-templates.git
-
-# Add a local directory
-warpgate templates add ~/my-templates
-
-# Discover all templates
-warpgate discover
-
-# Build from template
-warpgate build attack-box
-
-# Get template info
-warpgate templates info attack-box
-```
 
 ## Configuration
 
@@ -95,22 +62,17 @@ Warpgate follows the XDG Base Directory Specification:
 
 ### Basic Configuration
 
-Minimal configuration (uses official repository by default):
+**Default behavior:** Warpgate always includes the official repository
+(`https://github.com/cowdogmoo/warpgate-templates.git`) automatically.
 
-```yaml
-# No configuration needed - uses default repository:
-# https://github.com/cowdogmoo/warpgate-templates.git
-```
-
-Custom configuration:
+**Add custom repositories:**
 
 ```yaml
 templates:
-  # Named repositories (git URLs or local paths)
+  # Add your custom repositories (official repo is included automatically)
   repositories:
-    official: https://github.com/cowdogmoo/warpgate-templates.git
     private: git@github.com:myorg/private-templates.git
-    local: /Users/username/my-templates
+    company: https://gitlab.com/company/templates.git
 
   # Additional local paths to scan
   local_paths:
@@ -121,9 +83,21 @@ templates:
   cache_dir: ~/.cache/warpgate/templates
 ```
 
+**Disable the official repository:**
+
+```yaml
+templates:
+  repositories:
+    official: "" # Empty string disables the official repository
+    private: git@github.com:myorg/private-templates.git
+```
+
 ### Repository Types
 
 #### Git Repositories
+
+The `repositories` field accepts **Git URLs only**. Local directories must be
+configured in `local_paths`.
 
 **Public repositories:**
 
@@ -151,69 +125,48 @@ repositories:
 
 #### Local Directories
 
-**Absolute paths:**
-
-```yaml
-repositories:
-  dev: /Users/username/warpgate-templates
-  shared: /opt/company/templates
-```
-
-**Relative paths (from config file location):**
-
-```yaml
-repositories:
-  local: ../templates
-  nearby: ./my-templates
-```
-
-**Home directory paths:**
-
-```yaml
-repositories:
-  home: ~/warpgate-templates
-```
-
-#### Mixed Configuration
-
-Combine git repositories and local paths:
+Local template directories must be configured in `local_paths`, not `repositories`.
 
 ```yaml
 templates:
+  # Git repositories ONLY
   repositories:
-    # Git repos (cached locally)
     official: https://github.com/cowdogmoo/warpgate-templates.git
-    private: git@github.com:myorg/templates.git
+    private: git@github.com:myorg/private-templates.git
 
-    # Local directories (used directly)
-    dev: ~/dev/warpgate-templates
-    shared: /mnt/nfs/shared-templates
-
-  # Additional local scan paths
+  # Local directories ONLY
   local_paths:
-    - ~/projects/*/templates # Glob patterns supported
-    - /opt/templates
+    - /opt/company/templates # Absolute path
+    - ~/dev/warpgate-templates # Home directory
+    - /mnt/nfs/shared-templates # Network mount
 ```
+
+**Key distinction:**
+
+- `repositories`: Git URLs only (cloned and cached)
+- `local_paths`: Local filesystem directories only (used directly)
 
 ### Configuration Options
 
 #### `repositories`
 
-Maps repository names to their sources (git URLs or local paths).
+Maps repository names to Git URLs. **Local paths are not allowed** - use
+`local_paths` instead.
 
 **Format:**
 
 ```yaml
 repositories:
-  <name>: <git-url-or-local-path>
+  <name>: <git-url>
 ```
 
 **Behaviors:**
 
-- Git URLs are cloned and cached in `cache_dir`
-- Local paths are scanned directly (no caching)
-- Repositories are searched in definition order
+- Only Git URLs are accepted (https://, git@)
+- Repositories are cloned and cached in `cache_dir`
+- Searched in definition order
 - First match wins when building by template name
+- Attempting to use a local path will result in an error
 
 **Examples:**
 
@@ -225,8 +178,8 @@ repositories:
   # Custom name for organization
   security-tools: git@github.com:security/templates.git
 
-  # Local development path
-  dev: /Users/username/templates
+  # Private repository
+  company: git@gitlab.company.com:infra/templates.git
 ```
 
 #### `local_paths`
@@ -289,221 +242,9 @@ Override the default cache directory for git repositories.
 cache_dir: /var/cache/warpgate/templates
 ```
 
-## Managing Template Sources
+See [Commands Reference](commands.md#templates) for template management commands.
 
-### Adding Sources
-
-#### Add Git Repository (Auto-named)
-
-The repository name is extracted from the URL:
-
-```bash
-# Adds as 'warpgate-templates'
-warpgate templates add https://github.com/cowdogmoo/warpgate-templates.git
-
-# Adds as 'security-templates'
-warpgate templates add https://github.com/security/security-templates.git
-```
-
-#### Add Git Repository (Custom Name)
-
-Specify a custom name for easy reference:
-
-```bash
-# Adds as 'official'
-warpgate templates add official https://github.com/cowdogmoo/warpgate-templates.git
-
-# Adds as 'security'
-warpgate templates add security git@github.com:myorg/templates.git
-```
-
-#### Add Local Directory
-
-Provide an absolute or relative path:
-
-```bash
-# Absolute path
-warpgate templates add /Users/username/my-templates
-
-# Home directory
-warpgate templates add ~/warpgate-templates
-
-# Relative path
-warpgate templates add ../templates
-```
-
-**What happens:**
-
-- Git URLs are added to `repositories` and cloned
-- Local paths are added to `repositories`
-- Configuration file is updated automatically
-- Templates are immediately available
-
-### Removing Sources
-
-#### Remove by Name (Git Repositories)
-
-```bash
-# Remove named repository
-warpgate templates remove official
-
-# Remove private repository
-warpgate templates remove security-tools
-```
-
-#### Remove by Path (Local Directories)
-
-```bash
-# Remove by absolute path
-warpgate templates remove /Users/username/my-templates
-
-# Remove by home directory path
-warpgate templates remove ~/warpgate-templates
-
-# Remove by relative path
-warpgate templates remove ../templates
-```
-
-**What happens:**
-
-- Repository is removed from configuration
-- Cached data remains (for git repos) but won't be used
-- To fully clean up, delete cache directory manually
-
-### Updating Cache
-
-Force refresh of all git repository caches:
-
-```bash
-warpgate templates update
-```
-
-**When to update:**
-
-- After upstream template changes
-- Periodic refresh (daily/weekly)
-- Before important builds
-- After adding new repositories
-
-**What happens:**
-
-- Pulls latest changes for all git repositories
-- Local directories are always live (no caching)
-- Template metadata is refreshed
-
-## Using Templates
-
-### Discovering Templates
-
-**List all available templates:**
-
-```bash
-warpgate templates list
-```
-
-**Output:**
-
-```text
-NAME              VERSION   SOURCE      DESCRIPTION
-attack-box        1.0.0     official    Security testing environment
-sliver            1.0.0     official    Sliver C2 framework
-atomic-red-team   1.0.0     official    Atomic Red Team test platform
-custom-tool       2.1.0     private     Custom security tool
-dev-template      0.1.0     local       Development template
-```
-
-**Discover templates (alias for list):**
-
-```bash
-warpgate discover
-```
-
-**Get detailed template information:**
-
-```bash
-warpgate templates info attack-box
-```
-
-**Output:**
-
-```text
-Template: attack-box
-Version: 1.0.0
-Source: official
-Description: Comprehensive security testing environment
-
-Base Image: ubuntu:22.04
-
-Provisioners:
-  1. shell - Update system packages
-  2. ansible - Install security tools
-  3. shell - Configure environment
-
-Targets:
-  - container (linux/amd64, linux/arm64)
-
-Variables:
-  TOOLS_PATH: /opt/tools (Installation path for tools)
-  ENABLE_GUI: false (Install GUI tools)
-```
-
-### Building from Templates
-
-#### By Template Name
-
-Searches all repositories for a match:
-
-```bash
-# Build from any configured repository
-warpgate build attack-box
-
-# Build specific architecture
-warpgate build attack-box --arch amd64
-
-# Build with variables
-warpgate build sliver --var ARSENAL_PATH=/custom/path
-```
-
-#### By Local Directory Path
-
-Directly reference a template directory:
-
-```bash
-# Build from local template directory
-warpgate build /Users/username/templates/attack-box
-
-# Relative path
-warpgate build ../templates/custom-tool
-```
-
-#### By Local File
-
-Reference a specific warpgate.yaml file:
-
-```bash
-# Build from specific file
-warpgate build /path/to/warpgate.yaml
-
-# Current directory
-warpgate build ./warpgate.yaml
-```
-
-#### By Git URL
-
-Build directly from a git repository:
-
-```bash
-# Public repository
-warpgate build --from-git https://github.com/user/repo.git//templates/attack-box
-
-# Private repository (requires SSH key)
-warpgate build --from-git git@github.com:myorg/repo.git//path/to/template
-
-# Specific branch or tag
-warpgate build --from-git https://github.com/user/repo.git//templates/tool?ref=v2.0.0
-```
-
-### Template Discovery Order
+## Template Discovery Order
 
 When building by template name with `--template` flag, warpgate searches in
 this order:
@@ -622,8 +363,8 @@ my-templates/
 Add to config:
 
 ```yaml
-repositories:
-  local: /path/to/my-templates
+local_paths:
+  - /path/to/my-templates
 ```
 
 ## Private Repositories
@@ -721,11 +462,11 @@ Override configuration using environment variables:
 ### Override Repositories
 
 ```bash
-# Single repository (JSON format)
-export WARPGATE_TEMPLATES_REPOSITORIES='{"local": "/path/to/templates"}'
+# Single repository (JSON format, Git URLs only)
+export WARPGATE_TEMPLATES_REPOSITORIES='{"official": "https://github.com/cowdogmoo/warpgate-templates.git"}'
 
-# Multiple repositories
-export WARPGATE_TEMPLATES_REPOSITORIES='{"official": "https://github.com/cowdogmoo/warpgate-templates.git", "local": "/path/to/local"}'
+# Multiple repositories (Git URLs only)
+export WARPGATE_TEMPLATES_REPOSITORIES='{"official": "https://github.com/cowdogmoo/warpgate-templates.git", "private": "git@github.com:myorg/templates.git"}'
 ```
 
 ### Override Local Paths
@@ -748,8 +489,12 @@ export WARPGATE_TEMPLATES_CACHE_DIR="/custom/cache/location"
 
 ```bash
 #!/bin/bash
-# Build with temporary template source
-export WARPGATE_TEMPLATES_REPOSITORIES='{"temp": "/tmp/test-templates"}'
+# Build with temporary Git repository
+export WARPGATE_TEMPLATES_REPOSITORIES='{"ci": "https://github.com/myorg/templates.git"}'
+warpgate build test-template
+
+# Or use local path for testing
+export WARPGATE_TEMPLATES_LOCAL_PATHS='["/tmp/test-templates"]'
 warpgate build test-template
 
 # Environment override takes precedence over config file
@@ -764,8 +509,9 @@ Local development with official templates as fallback:
 ```yaml
 templates:
   repositories:
-    dev: ~/dev/warpgate-templates # Local development (checked first)
-    official: https://github.com/cowdogmoo/warpgate-templates.git # Fallback
+    official: https://github.com/cowdogmoo/warpgate-templates.git # Git repos
+  local_paths:
+    - ~/dev/warpgate-templates # Local development (checked after repos)
 ```
 
 ### Production/Enterprise Setup
@@ -790,257 +536,6 @@ Use environment variables for flexibility:
 export WARPGATE_TEMPLATES_REPOSITORIES='{"ci": "https://github.com/myorg/templates.git?ref=v2.0.0"}'
 export WARPGATE_TEMPLATES_CACHE_DIR="/tmp/warpgate-cache"
 warpgate build production-image --arch amd64,arm64
-```
-
-## Troubleshooting
-
-### Templates Not Found
-
-**Symptoms:**
-
-```text
-Error: template 'attack-box' not found
-```
-
-**Diagnosis:**
-
-```bash
-# Check configuration
-cat ~/.config/warpgate/config.yaml
-
-# List available templates
-warpgate templates list
-
-# Check specific template
-warpgate templates info attack-box
-```
-
-**Solutions:**
-
-1. **Update cache (for git repositories):**
-
-   ```bash
-   warpgate templates update
-   ```
-
-2. **Verify repository is configured:**
-
-   ```bash
-   # Add the repository
-   warpgate templates add https://github.com/cowdogmoo/warpgate-templates.git
-   ```
-
-3. **Check if template is in local_paths:**
-
-   If your template is in a local directory, ensure it's configured:
-
-   ```yaml
-   templates:
-     local_paths:
-       - /path/to/your/templates
-   ```
-
-   Then verify the structure:
-
-   ```bash
-   # Template should be at:
-   ls /path/to/your/templates/templates/attack-box/warpgate.yaml
-   ```
-
-   Now you can use:
-
-   ```bash
-   warpgate build --template attack-box
-   ```
-
-4. **Check repository accessibility:**
-
-   ```bash
-   # For git repositories
-   git ls-remote https://github.com/cowdogmoo/warpgate-templates.git
-
-   # For local directories
-   ls -la /path/to/templates/templates/
-   ```
-
-5. **Verify directory structure:**
-
-   ```bash
-   # Templates must be in templates/ subdirectory
-   # ✓ Correct: repository/templates/attack-box/warpgate.yaml
-   # ✗ Wrong: repository/attack-box/warpgate.yaml
-   ```
-
-### Duplicate Templates
-
-**Symptoms:**
-
-Multiple templates with the same name from different sources.
-
-**Diagnosis:**
-
-```bash
-warpgate templates list
-# Shows source for each template
-```
-
-**Understanding precedence:**
-
-Templates are found in configuration order:
-
-1. First `repositories` entry
-2. Second `repositories` entry
-3. First `local_paths` entry
-4. Second `local_paths` entry
-
-**Solutions:**
-
-1. **Remove duplicate source:**
-
-   ```bash
-   warpgate templates remove duplicate-source
-   ```
-
-2. **Reorder repositories:**
-
-   ```yaml
-   repositories:
-     priority-first: ... # This wins for duplicates
-     priority-second: ...
-   ```
-
-3. **Use full path:**
-
-   ```bash
-   # Build from specific location
-   warpgate build /path/to/specific/template
-   ```
-
-### Private Repository Access Failed
-
-**Symptoms:**
-
-```text
-Error: failed to clone repository: authentication failed
-```
-
-**Diagnosis:**
-
-```bash
-# Test SSH access
-ssh -T git@github.com
-
-# Test git access
-git ls-remote git@github.com:myorg/private-templates.git
-```
-
-**Solutions:**
-
-1. **Setup SSH key:**
-
-   ```bash
-   ssh-keygen -t ed25519 -C "your.email@example.com"
-   ssh-add ~/.ssh/id_ed25519
-   # Add public key to GitHub/GitLab
-   ```
-
-2. **Configure git credentials:**
-
-   ```bash
-   git config --global credential.helper store
-   # Or use OS-specific helper
-   ```
-
-3. **Use HTTPS with token:**
-
-   ```bash
-   # GitHub: Create personal access token
-   # Use as password when prompted
-   ```
-
-4. **Verify repository URL:**
-
-   ```yaml
-   # SSH format
-   git@github.com:org/repo.git
-
-   # HTTPS format
-   https://github.com/org/repo.git
-   ```
-
-### Cache is Stale
-
-**Symptoms:**
-
-Old template versions are used despite upstream changes.
-
-**Solution:**
-
-```bash
-# Update all git repository caches
-warpgate templates update
-
-# Or manually clear cache
-rm -rf ~/.cache/warpgate/templates/*
-warpgate templates update
-```
-
-### Template Build Fails
-
-**Symptoms:**
-
-Template builds successfully from direct path but fails by name.
-
-**Diagnosis:**
-
-```bash
-# Check template source
-warpgate templates info template-name
-
-# Verify it's finding the right template
-warpgate templates list | grep template-name
-```
-
-**Solutions:**
-
-1. **Use full path:**
-
-   ```bash
-   warpgate build /full/path/to/template
-   ```
-
-2. **Check discovery order:**
-
-   ```yaml
-   # Ensure correct repository is first
-   repositories:
-     correct-source: ... # Move this up
-   ```
-
-3. **Verify template structure:**
-
-   ```bash
-   # Must have warpgate.yaml
-   ls /path/to/template/warpgate.yaml
-   ```
-
-### Permission Denied on Cache Directory
-
-**Symptoms:**
-
-```text
-Error: failed to write cache: permission denied
-```
-
-**Solution:**
-
-```bash
-# Fix cache directory permissions
-mkdir -p ~/.cache/warpgate/templates
-chmod 755 ~/.cache/warpgate/templates
-
-# Or use custom cache directory
-export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
 ```
 
 ## Best Practices
@@ -1076,29 +571,6 @@ export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
    └── infrastructure/
        ├── base-ubuntu/
        └── base-alpine/
-   ```
-
-### Security
-
-1. **Use SSH for private repositories:**
-
-   ```yaml
-   repositories:
-     private: git@github.com:org/repo.git # ✓ SSH
-     # Not: https://github.com/org/repo.git  # ✗ Requires token management
-   ```
-
-2. **Never commit credentials:**
-
-   - Use git credential helpers
-   - Use SSH keys, not passwords
-   - Don't store tokens in config files
-
-3. **Audit template sources:**
-
-   ```bash
-   # Regularly review configured sources
-   cat ~/.config/warpgate/config.yaml
    ```
 
 ### Maintenance
@@ -1137,9 +609,9 @@ export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
 1. **Use local paths for frequently used templates:**
 
    ```yaml
-   # Faster than git repositories
-   repositories:
-     dev: ~/dev/templates # No network access needed
+   # Faster than git repositories (no cloning/caching)
+   local_paths:
+     - ~/dev/templates # Direct filesystem access
    ```
 
 2. **Set reasonable cache expiry:**
@@ -1156,59 +628,3 @@ export WARPGATE_TEMPLATES_CACHE_DIR=/tmp/warpgate-cache
    local_paths:
      - /opt/templates # Only what you need
    ```
-
-### Collaboration
-
-1. **Share template repositories:**
-
-   - Use git for version control
-   - Provide clear README in repository
-   - Use branches for development
-
-2. **Document configuration:**
-
-   ```yaml
-   # Add comments in config.yaml
-   repositories:
-     # Official Warpgate templates (maintained by community)
-     official: https://github.com/cowdogmoo/warpgate-templates.git
-
-     # Company-internal templates (requires VPN)
-     company: git@gitlab.internal.com:infra/templates.git
-   ```
-
-3. **Use consistent template structure:**
-   - Follow standard directory layout
-   - Include metadata in all templates
-   - Document variables and requirements
-
-## Summary
-
-**Key Takeaways:**
-
-- ✅ Templates can come from git repositories or local directories
-- ✅ Configuration is in `~/.config/warpgate/config.yaml`
-- ✅ Git repositories are automatically cached
-- ✅ Templates are discovered in configuration order
-- ✅ Private repositories require SSH or HTTPS authentication
-- ✅ Use `warpgate templates` commands to manage sources
-- ✅ Update cache regularly with `warpgate templates update`
-
-**Quick Reference:**
-
-```bash
-# List templates
-warpgate templates list
-
-# Add source
-warpgate templates add <url-or-path>
-
-# Remove source
-warpgate templates remove <name-or-path>
-
-# Update cache
-warpgate templates update
-
-# Build from template
-warpgate build <template-name>
-```

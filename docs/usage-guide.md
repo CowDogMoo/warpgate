@@ -13,8 +13,6 @@ Practical examples and common workflows for building images with Warpgate.
 
 ## Quick Start
 
-Get started in under 60 seconds:
-
 ```bash
 # Install warpgate
 go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
@@ -33,8 +31,6 @@ docker images | grep attack-box
 
 ### Build from Template
 
-Build container images using discovered templates:
-
 ```bash
 # Build from discovered template
 warpgate build attack-box
@@ -51,8 +47,6 @@ warpgate build attack-box --push --registry ghcr.io/myorg
 
 ### Build from Local File
 
-Build from a template file in your current directory:
-
 ```bash
 # Validate template first (recommended)
 warpgate validate warpgate.yaml
@@ -65,8 +59,6 @@ warpgate build warpgate.yaml --arch amd64 --var VERSION=1.2.3
 ```
 
 ### Build from Git Repository
-
-Build directly from a Git repository:
 
 ```bash
 # Build from GitHub repo
@@ -86,8 +78,6 @@ warpgate build --from-git git@github.com:myorg/private-templates.git//path/to/te
 - Add `?ref=branch` or `?ref=v1.0.0` for specific refs
 
 ### Build with Variable Overrides
-
-Customize builds using variables:
 
 **Via CLI flags:**
 
@@ -132,8 +122,6 @@ warpgate build sliver
 
 ### Push to Registry
 
-Build and push images to a container registry:
-
 ```bash
 # Authenticate first
 docker login ghcr.io
@@ -159,8 +147,6 @@ warpgate build myimage \
 ## AWS AMIs
 
 ### Build an AMI
-
-Create AWS AMIs for EC2:
 
 **Prerequisites:**
 
@@ -212,8 +198,6 @@ targets:
 
 ### Multi-Target Builds
 
-Build both containers and AMIs:
-
 ```yaml
 targets:
   # Container target
@@ -244,8 +228,6 @@ warpgate build mytemplate --target ami
 
 ### List Templates
 
-Find available templates from configured sources:
-
 ```bash
 # List all templates
 warpgate templates list
@@ -259,8 +241,6 @@ warpgate templates list
 
 ### Get Template Information
 
-View detailed information about a template:
-
 ```bash
 warpgate templates info attack-box
 
@@ -273,8 +253,6 @@ warpgate templates info attack-box
 ```
 
 ### Add Template Sources
-
-Add Git repositories or local directories:
 
 ```bash
 # Add Git repository (auto-generates name)
@@ -292,8 +270,6 @@ warpgate templates add private-templates git@github.com:myorg/private-templates.
 
 ### Remove Template Sources
 
-Remove a template source:
-
 ```bash
 # Remove by name
 warpgate templates remove my-templates
@@ -303,8 +279,6 @@ warpgate templates list
 ```
 
 ### Update Template Cache
-
-Refresh templates from all configured sources:
 
 ```bash
 # Update all template sources
@@ -351,19 +325,17 @@ warpgate build myimage --arch amd64,arm64 --push --registry ghcr.io/myorg
 
 ### Create Multi-Arch Manifests
 
-Create a manifest that references both architectures:
-
 ```bash
 # Build for multiple architectures first
 warpgate build myimage --arch amd64,arm64 --push --registry ghcr.io/myorg
 
 # Create multi-arch manifest
-warpgate manifest create \
+warpgate manifests create \
   --name ghcr.io/myorg/myimage:latest \
   --images ghcr.io/myorg/myimage:latest-amd64,ghcr.io/myorg/myimage:latest-arm64
 
 # Push manifest to registry
-warpgate manifest push ghcr.io/myorg/myimage:latest
+warpgate manifests push ghcr.io/myorg/myimage:latest
 ```
 
 **Result:** Users can pull `ghcr.io/myorg/myimage:latest` and automatically
@@ -371,11 +343,12 @@ get the correct architecture.
 
 ### Inspect Manifests
 
-View manifest details:
-
 ```bash
 # Inspect multi-arch manifest
-warpgate manifest inspect ghcr.io/myorg/myimage:latest
+warpgate manifests inspect --registry ghcr.io --namespace myorg --name myimage --tag latest
+
+# Or with short flags
+warpgate manifests inspect --registry ghcr.io --namespace myorg --name myimage -t latest
 
 # Shows:
 # - Supported platforms

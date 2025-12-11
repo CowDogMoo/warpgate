@@ -7,22 +7,23 @@ Complete guide to configuring Warpgate for your environment.
 - [Overview](#overview)
 - [Configuration File Locations](#configuration-file-locations)
 - [Global Configuration](#global-configuration)
-- [Template Configuration](#template-configuration)
 - [Security Best Practices](#security-best-practices)
 
 ## Overview
 
-Warpgate uses a two-tier configuration system:
+Warpgate separates configuration from templates:
 
-1. **Global config** (`~/.config/warpgate/config.yaml`) - User preferences,
-   defaults, and system settings
-2. **Template config** (`warpgate.yaml`) - Image definitions (portable, version-controlled)
+1. **Configuration** (`~/.config/warpgate/config.yaml`) - User preferences,
+   defaults, and system settings (machine-specific)
+2. **Templates** (`warpgate.yaml`) - Image definitions that specify what to
+   build (portable, version-controlled)
 
 This separation allows:
 
-- **Global config** - Machine-specific settings (BuildKit, registry defaults,
-  AWS region)
-- **Template config** - Portable definitions shared across teams
+- **Configuration** - Machine-specific settings like BuildKit endpoint, registry
+  defaults, AWS region, and build preferences
+- **Templates** - Portable image definitions shared across teams that define
+  base images, provisioners, and build targets
 
 ## Configuration File Locations
 
@@ -69,7 +70,6 @@ buildkit:
 # Registry Configuration
 registry:
   default: ghcr.io # Default registry for pushes
-  # NOTE: Use docker login for authentication, NOT config files
 
 # AWS Configuration
 aws:
@@ -205,137 +205,8 @@ Both are used when building by template name:
 warpgate build --template sliver
 ```
 
-See [Template Configuration Guide](template-configuration.md) for detailed
+See [Template Management Guide](template-configuration.md) for detailed
 repository management.
-
-## Template Configuration
-
-Templates define **what** to build. They are portable and should be version-controlled.
-
-### Minimal Template
-
-```yaml
-# Template metadata
-metadata:
-  name: my-image
-  version: 1.0.0
-  description: "My custom security image"
-
-# Image name (used for tagging)
-name: my-image
-
-# Base image
-base:
-  image: ubuntu:22.04
-
-# Provisioners run in order
-provisioners:
-  - type: shell
-    inline:
-      - apt-get update
-      - apt-get install -y curl
-
-# Build targets
-targets:
-  - type: container
-    platforms:
-      - linux/amd64
-```
-
-### Template Variables
-
-Make templates customizable with variables:
-
-```yaml
-metadata:
-  name: customizable-image
-  version: 1.0.0
-
-name: customizable-image
-
-base:
-  image: ubuntu:22.04
-
-# Define variables with defaults
-variables:
-  ARSENAL_PATH:
-    type: string
-    default: "/opt/arsenal"
-    description: "Path to arsenal installation"
-
-  ENABLE_DEBUG:
-    type: bool
-    default: false
-    description: "Enable debug logging"
-
-  WORKER_COUNT:
-    type: int
-    default: 4
-    description: "Number of worker processes"
-
-# Use variables in provisioners
-provisioners:
-  - type: shell
-    inline:
-      - echo "Installing to ${ARSENAL_PATH}"
-      - mkdir -p ${ARSENAL_PATH}
-      - echo "Workers: ${WORKER_COUNT}"
-
-targets:
-  - type: container
-    platforms:
-      - linux/amd64
-```
-
-### Variable Substitution
-
-Variables use `${VAR_NAME}` syntax:
-
-```yaml
-provisioners:
-  - type: shell
-    inline:
-      - mkdir -p ${INSTALL_PATH}
-      - echo "Version: ${VERSION}"
-      - cp files/* ${INSTALL_PATH}/
-```
-
-### Overriding Variables
-
-Variables can be overridden at build time:
-
-**1. CLI flags (highest precedence):**
-
-```bash
-warpgate build mytemplate --var ARSENAL_PATH=/custom/path --var VERSION=2.0.0
-```
-
-**2. Variable files:**
-
-Create `vars.yaml`:
-
-```yaml
-ARSENAL_PATH: /custom/path
-VERSION: 2.0.0
-ENABLE_DEBUG: true
-```
-
-Use it:
-
-```bash
-warpgate build mytemplate --var-file vars.yaml
-```
-
-**3. Environment variables (lowest precedence):**
-
-```bash
-export ARSENAL_PATH=/custom/path
-export VERSION=2.0.0
-warpgate build mytemplate
-```
-
-**Precedence order:** CLI flags > Variable files > Environment variables >
-Template defaults
 
 ## Security Best Practices
 
@@ -509,7 +380,7 @@ DB_PASSWORD: pass456
 
 ## Next Steps
 
-- **Create templates** - See [Template Format](template-format.md)
+- **Learn template syntax** - See [Template Format Reference](template-format.md)
 - **Build images** - Follow the [Usage Guide](usage-guide.md)
-- **Manage templates** - Read [Template Configuration](template-configuration.md)
+- **Manage template repositories** - Read [Template Management Guide](template-configuration.md)
 - **Troubleshoot issues** - Check [Troubleshooting Guide](troubleshooting.md)
