@@ -183,7 +183,7 @@ Configure template sources (git repositories and local directories):
 templates:
   repositories:
     official: https://github.com/cowdogmoo/warpgate-templates.git
-    private: git@github.com:myorg/private-templates.git
+    private: git@git.example.com:mycompany/private-templates.git
   local_paths:
     - ~/dev/templates
 ```
@@ -257,7 +257,7 @@ warpgate build --template my-ami --target ami
 
 ```ini
 [profile myawsprofile]
-sso_start_url = https://myorg.awsapps.com/start
+sso_start_url = https://example-org.awsapps.com/start
 sso_region = us-east-1
 sso_account_id = 123456789012
 sso_role_name = PowerUserAccess

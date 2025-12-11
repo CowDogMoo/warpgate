@@ -71,7 +71,7 @@ Warpgate follows the XDG Base Directory Specification:
 templates:
   # Add your custom repositories (official repo is included automatically)
   repositories:
-    private: git@github.com:myorg/private-templates.git
+    private: git@git.example.com:mycompany/private-templates.git
     company: https://gitlab.com/company/templates.git
 
   # Additional local paths to scan
@@ -89,7 +89,7 @@ templates:
 templates:
   repositories:
     official: "" # Empty string disables the official repository
-    private: git@github.com:myorg/private-templates.git
+    private: git@git.example.com:mycompany/private-templates.git
 ```
 
 ### Repository Types
@@ -111,8 +111,8 @@ repositories:
 
 ```yaml
 repositories:
-  private: git@github.com:myorg/private-templates.git
-  company: git@gitlab.company.com:infra/templates.git
+  private: git@git.example.com:mycompany/private-templates.git
+  company: git@gitlab.example.com:infra/templates.git
 ```
 
 **Private repositories (HTTPS with credentials):**
@@ -120,7 +120,7 @@ repositories:
 ```yaml
 repositories:
   # Requires git credential helper configured
-  private: https://github.com/myorg/private-templates.git
+  private: https://git.example.com/mycompany/private-templates.git
 ```
 
 #### Local Directories
@@ -132,7 +132,7 @@ templates:
   # Git repositories ONLY
   repositories:
     official: https://github.com/cowdogmoo/warpgate-templates.git
-    private: git@github.com:myorg/private-templates.git
+    private: git@git.example.com:mycompany/private-templates.git
 
   # Local directories ONLY
   local_paths:
@@ -179,7 +179,7 @@ repositories:
   security-tools: git@github.com:security/templates.git
 
   # Private repository
-  company: git@gitlab.company.com:infra/templates.git
+  company: git@gitlab.example.com:infra/templates.git
 ```
 
 #### `local_paths`
@@ -390,8 +390,8 @@ cat ~/.ssh/id_ed25519.pub
 ```yaml
 templates:
   repositories:
-    private: git@github.com:myorg/private-templates.git
-    gitlab: git@gitlab.company.com:infra/templates.git
+    private: git@git.example.com:mycompany/private-templates.git
+    gitlab: git@gitlab.example.com:infra/templates.git
 ```
 
 **Test access:**
@@ -401,7 +401,7 @@ templates:
 ssh -T git@github.com
 
 # Test GitLab access
-ssh -T git@gitlab.company.com
+ssh -T git@gitlab.example.com
 ```
 
 ### HTTPS Authentication
@@ -428,14 +428,14 @@ git config --global credential.helper wincred
 ```yaml
 templates:
   repositories:
-    private: https://github.com/myorg/private-templates.git
+    private: https://git.example.com/mycompany/private-templates.git
 ```
 
 **First Use:**
 
 ```bash
 # First template operation will prompt for credentials
-warpgate templates add https://github.com/myorg/private-templates.git
+warpgate templates add https://git.example.com/mycompany/private-templates.git
 # Enter username and password/token when prompted
 # Credentials are saved by helper for future use
 ```
@@ -450,7 +450,7 @@ For GitHub HTTPS access:
 
 # Use token as password
 git config --global credential.helper store
-warpgate templates add https://github.com/myorg/private-templates.git
+warpgate templates add https://git.example.com/mycompany/private-templates.git
 # Username: your-github-username
 # Password: ghp_your_personal_access_token
 ```
@@ -466,7 +466,7 @@ Override configuration using environment variables:
 export WARPGATE_TEMPLATES_REPOSITORIES='{"official": "https://github.com/cowdogmoo/warpgate-templates.git"}'
 
 # Multiple repositories (Git URLs only)
-export WARPGATE_TEMPLATES_REPOSITORIES='{"official": "https://github.com/cowdogmoo/warpgate-templates.git", "private": "git@github.com:myorg/templates.git"}'
+export WARPGATE_TEMPLATES_REPOSITORIES='{"official": "https://github.com/cowdogmoo/warpgate-templates.git", "private": "git@git.example.com:mycompany/templates.git"}'
 ```
 
 ### Override Local Paths
@@ -490,7 +490,7 @@ export WARPGATE_TEMPLATES_CACHE_DIR="/custom/cache/location"
 ```bash
 #!/bin/bash
 # Build with temporary Git repository
-export WARPGATE_TEMPLATES_REPOSITORIES='{"ci": "https://github.com/myorg/templates.git"}'
+export WARPGATE_TEMPLATES_REPOSITORIES='{"ci": "https://git.example.com/mycompany/templates.git"}'
 warpgate build test-template
 
 # Or use local path for testing
@@ -521,7 +521,7 @@ Private company templates with official fallback:
 ```yaml
 templates:
   repositories:
-    company: git@gitlab.company.com:infra/templates.git # Private company templates
+    company: git@gitlab.example.com:infra/templates.git # Private company templates
     official: https://github.com/cowdogmoo/warpgate-templates.git # Official templates
   local_paths:
     - /mnt/nfs/shared-templates # Shared team templates
@@ -533,7 +533,7 @@ templates:
 Use environment variables for flexibility:
 
 ```bash
-export WARPGATE_TEMPLATES_REPOSITORIES='{"ci": "https://github.com/myorg/templates.git?ref=v2.0.0"}'
+export WARPGATE_TEMPLATES_REPOSITORIES='{"ci": "https://git.example.com/mycompany/templates.git?ref=v2.0.0"}'
 export WARPGATE_TEMPLATES_CACHE_DIR="/tmp/warpgate-cache"
 warpgate build production-image --arch amd64,arm64
 ```

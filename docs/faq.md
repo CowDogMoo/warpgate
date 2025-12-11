@@ -176,7 +176,7 @@ EOF
 git init
 git add .
 git commit -m "Initial template"
-git remote add origin git@github.com:myorg/my-templates.git
+git remote add origin git@git.example.com:mycompany/my-templates.git
 git push -u origin main
 ```
 
@@ -184,13 +184,13 @@ git push -u origin main
 
 ```bash
 # SSH (private)
-warpgate templates add company git@github.com:myorg/my-templates.git
+warpgate templates add company git@git.example.com:mycompany/my-templates.git
 
 # Or configure in config file
 cat >> ~/.config/warpgate/config.yaml <<EOF
 templates:
   repositories:
-    company: git@github.com:myorg/my-templates.git
+    company: git@git.example.com:mycompany/my-templates.git
 EOF
 
 warpgate templates update
@@ -205,8 +205,8 @@ warpgate templates list
 templates:
   repositories:
     official: https://github.com/cowdogmoo/warpgate-templates.git
-    company: git@github.com:myorg/company-templates.git
-    team: git@github.com:myorg/team-templates.git
+    company: git@git.example.com:mycompany/company-templates.git
+    team: git@git.example.com:mycompany/team-templates.git
     local: /Users/username/my-templates
 ```
 
@@ -214,7 +214,7 @@ templates:
 
 ```bash
 warpgate templates add official https://github.com/cowdogmoo/warpgate-templates.git
-warpgate templates add company git@github.com:myorg/company-templates.git
+warpgate templates add company git@git.example.com:mycompany/company-templates.git
 warpgate templates add local ~/my-templates
 ```
 

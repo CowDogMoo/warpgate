@@ -65,10 +65,10 @@ warpgate build warpgate.yaml --arch amd64 --var VERSION=1.2.3
 warpgate build --from-git https://github.com/cowdogmoo/warpgate-templates.git//templates/attack-box
 
 # Build from specific branch or tag
-warpgate build --from-git https://github.com/myorg/templates.git?ref=develop//path/to/template
+warpgate build --from-git https://git.example.com/mycompany/templates.git?ref=develop//path/to/template
 
 # Build from private repo (requires SSH key or credentials)
-warpgate build --from-git git@github.com:myorg/private-templates.git//path/to/template
+warpgate build --from-git git@git.example.com:mycompany/private-templates.git//path/to/template
 ```
 
 **Git URL format:**
@@ -256,16 +256,16 @@ warpgate templates info attack-box
 
 ```bash
 # Add Git repository (auto-generates name)
-warpgate templates add https://github.com/myorg/security-templates.git
+warpgate templates add https://git.example.com/mycompany/security-templates.git
 
 # Add with custom name
-warpgate templates add my-templates https://github.com/myorg/templates.git
+warpgate templates add my-templates https://git.example.com/mycompany/templates.git
 
 # Add local directory
 warpgate templates add ~/my-warpgate-templates
 
 # Add private repository (SSH)
-warpgate templates add private-templates git@github.com:myorg/private-templates.git
+warpgate templates add private-templates git@git.example.com:mycompany/private-templates.git
 ```
 
 ### Remove Template Sources
@@ -446,11 +446,11 @@ EOF
 git init
 git add .
 git commit -m "Add security-base template"
-git remote add origin git@github.com:myorg/team-templates.git
+git remote add origin git@git.example.com:mycompany/team-templates.git
 git push -u origin main
 
 # 5. Team members add repository
-warpgate templates add team https://github.com/myorg/team-templates.git
+warpgate templates add team https://git.example.com/mycompany/team-templates.git
 
 # 6. Use templates
 warpgate templates list
