@@ -67,8 +67,12 @@ func (g *GitOperations) CloneOrUpdate(gitURL, version string) (string, error) {
 // clone clones a repository to the specified path
 func (g *GitOperations) clone(gitURL, version, repoPath string) (string, error) {
 	cloneOpts := &git.CloneOptions{
-		URL:      gitURL,
-		Progress: os.Stdout,
+		URL: gitURL,
+	}
+
+	// Only show progress if not in quiet mode
+	if !logging.IsQuiet() {
+		cloneOpts.Progress = os.Stdout
 	}
 
 	// If a specific version is requested, try to checkout that tag/branch
