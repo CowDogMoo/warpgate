@@ -1076,7 +1076,6 @@ func extractRegistryFromImageRef(imageRef string) string {
 func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
 	logging.Info("Pushing image: %s", imageRef)
 
-	// Tag image with full registry path before pushing
 	fullImageRef := imageRef
 	if registry != "" && !strings.Contains(imageRef, "/") {
 		// imageRef is bare (e.g., "attack-box:latest"), prepend registry
@@ -1086,7 +1085,6 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		}
 	}
 
-	// Extract registry hostname for auth (e.g., "ghcr.io" from "ghcr.io/org/image:tag")
 	registryHostname := extractRegistryFromImageRef(fullImageRef)
 	logging.Debug("Using registry hostname for auth: %s", registryHostname)
 

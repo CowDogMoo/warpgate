@@ -63,9 +63,7 @@ type ManifestInfo struct {
 	Architectures []ArchitectureInfo
 }
 
-// ArchitectureInfo contains information about a specific architecture in a manifest.
-//
-// The meaning of fields depends on whether this is from a single-arch or multi-arch manifest:
+// ArchitectureInfo field meanings depend on whether this is from a single-arch or multi-arch manifest:
 //
 // Multi-architecture manifest (OCI Index/Docker Manifest List):
 //   - Digest: The digest of the platform-specific manifest (not the config blob)

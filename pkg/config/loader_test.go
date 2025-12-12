@@ -289,10 +289,9 @@ targets:
 
 	loader := NewLoader()
 
-	// Test that LoadFromFile still works (backward compatibility)
-	config, err := loader.LoadFromFile(testFile)
+	config, err := loader.LoadFromFileWithVars(testFile, nil)
 	if err != nil {
-		t.Fatalf("LoadFromFile() error = %v", err)
+		t.Fatalf("LoadFromFileWithVars() error = %v", err)
 	}
 
 	expectedImage := "ubuntu:22.04"
@@ -434,9 +433,9 @@ targets:
 	}()
 
 	loader := NewLoader()
-	config, err := loader.LoadFromFile(testFile)
+	config, err := loader.LoadFromFileWithVars(testFile, nil)
 	if err != nil {
-		t.Fatalf("LoadFromFile() error = %v", err)
+		t.Fatalf("LoadFromFileWithVars() error = %v", err)
 	}
 
 	// Verify Dockerfile configuration was loaded

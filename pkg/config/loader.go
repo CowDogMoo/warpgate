@@ -42,14 +42,6 @@ func NewLoader() *Loader {
 	return &Loader{}
 }
 
-// LoadFromFile loads a template configuration from a YAML file without variables.
-// This is a convenience method that calls LoadFromFileWithVars with nil variables.
-//
-// Deprecated: Use LoadFromFileWithVars directly to support variable substitution.
-func (l *Loader) LoadFromFile(path string) (*builder.Config, error) {
-	return l.LoadFromFileWithVars(path, nil)
-}
-
 // LoadFromFileWithVars loads a template configuration from a YAML file with variable substitution
 // Variables from the vars map take precedence over environment variables
 func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*builder.Config, error) {
