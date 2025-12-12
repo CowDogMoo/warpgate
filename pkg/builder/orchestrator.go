@@ -76,18 +76,17 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 			configCopy := req.Config
 			configCopy.Base.Platform = req.Platform
 
-			// Include architecture in name to prevent local image overwrites
-			originalName := configCopy.Name
-			configCopy.Name = fmt.Sprintf("%s-%s", originalName, req.Architecture)
+			// Use architecture as tag to prevent local image overwrites
+			configCopy.Version = req.Architecture
 
 			result, err := builder.Build(ctx, configCopy)
 			if err != nil {
-				logging.Error("Failed to build %s for %s: %v", originalName, req.Architecture, err)
-				return errors.Wrap(fmt.Sprintf("build %s", originalName), req.Architecture, err)
+				logging.Error("Failed to build %s for %s: %v", req.Config.Name, req.Architecture, err)
+				return errors.Wrap(fmt.Sprintf("build %s", req.Config.Name), req.Architecture, err)
 			}
 
 			results[i] = *result
-			logging.Info("Successfully built %s for %s: %s", originalName, req.Architecture, result.ImageRef)
+			logging.Info("Successfully built %s for %s: %s", req.Config.Name, req.Architecture, result.ImageRef)
 			return nil
 		})
 	}

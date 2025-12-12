@@ -132,11 +132,10 @@ func TestBuildMultiArch(t *testing.T) {
 			},
 			mockBuildSetup: func(m *MockContainerBuilder, requests []builder.BuildRequest) {
 				for i, req := range requests {
-					expectedName := fmt.Sprintf("%s-%s", req.Config.Name, req.Architecture)
 					m.On("Build", mock.Anything, mock.MatchedBy(func(cfg builder.Config) bool {
-						return cfg.Name == expectedName
+						return cfg.Name == req.Config.Name && cfg.Version == req.Architecture
 					})).Return(&builder.BuildResult{
-						ImageRef:     fmt.Sprintf("localhost/%s", expectedName),
+						ImageRef:     fmt.Sprintf("localhost/%s:%s", req.Config.Name, req.Architecture),
 						Digest:       fmt.Sprintf("sha256:abc%d", i),
 						Architecture: req.Architecture,
 						Platform:     req.Platform,
@@ -169,21 +168,19 @@ func TestBuildMultiArch(t *testing.T) {
 				},
 			},
 			mockBuildSetup: func(m *MockContainerBuilder, requests []builder.BuildRequest) {
-				// First build succeeds - expect architecture in name
-				expectedName0 := fmt.Sprintf("%s-%s", requests[0].Config.Name, requests[0].Architecture)
+				// First build succeeds
 				m.On("Build", mock.Anything, mock.MatchedBy(func(cfg builder.Config) bool {
-					return cfg.Name == expectedName0
+					return cfg.Name == requests[0].Config.Name && cfg.Version == requests[0].Architecture
 				})).Return(&builder.BuildResult{
-					ImageRef:     "localhost/test-image-amd64",
+					ImageRef:     "localhost/test-image:amd64",
 					Architecture: "amd64",
 					Platform:     "linux/amd64",
 					Duration:     "1s",
 				}, nil).Once()
 
-				// Second build fails - expect architecture in name
-				expectedName1 := fmt.Sprintf("%s-%s", requests[1].Config.Name, requests[1].Architecture)
+				// Second build fails
 				m.On("Build", mock.Anything, mock.MatchedBy(func(cfg builder.Config) bool {
-					return cfg.Name == expectedName1
+					return cfg.Name == requests[1].Config.Name && cfg.Version == requests[1].Architecture
 				})).Return(nil, fmt.Errorf("build failed")).Once()
 			},
 			expectError:   true,
@@ -252,12 +249,12 @@ func TestPushMultiArch(t *testing.T) {
 			name: "successful multi-arch push",
 			results: []builder.BuildResult{
 				{
-					ImageRef:     "localhost/test-image-amd64",
+					ImageRef:     "localhost/test-image:amd64",
 					Architecture: "amd64",
 					Platform:     "linux/amd64",
 				},
 				{
-					ImageRef:     "localhost/test-image-arm64",
+					ImageRef:     "localhost/test-image:arm64",
 					Architecture: "arm64",
 					Platform:     "linux/arm64",
 				},
@@ -274,12 +271,12 @@ func TestPushMultiArch(t *testing.T) {
 			name: "push failure for one architecture",
 			results: []builder.BuildResult{
 				{
-					ImageRef:     "localhost/test-image-amd64",
+					ImageRef:     "localhost/test-image:amd64",
 					Architecture: "amd64",
 					Platform:     "linux/amd64",
 				},
 				{
-					ImageRef:     "localhost/test-image-arm64",
+					ImageRef:     "localhost/test-image:arm64",
 					Architecture: "arm64",
 					Platform:     "linux/arm64",
 				},

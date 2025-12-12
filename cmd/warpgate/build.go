@@ -51,22 +51,20 @@ type buildOptions struct {
 	digestDir    string
 	region       string
 	instanceType string
-	vars         []string // Variable overrides in key=value format
-	varFiles     []string // Files containing variable definitions
-	cacheFrom    []string // Cache sources for BuildKit (e.g., "type=registry,ref=...")
-	cacheTo      []string // Cache destinations for BuildKit (e.g., "type=registry,ref=...")
-	labels       []string // Image labels in key=value format
-	buildArgs    []string // Build arguments in key=value format
-	noCache      bool     // Disable all caching
+	vars         []string
+	varFiles     []string
+	cacheFrom    []string
+	cacheTo      []string
+	labels       []string
+	buildArgs    []string
+	noCache      bool
 }
 
 var buildCmd *cobra.Command
 
 func init() {
-	// Create build options locally to avoid global state
 	opts := &buildOptions{}
 
-	// Initialize build command with closure capturing opts
 	buildCmd = &cobra.Command{
 		Use:   "build [config|template]",
 		Short: "Build image from config or template",
@@ -134,14 +132,12 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	logging.InfoContext(ctx, "Starting build process")
 
-	// Validate CLI input
 	validator := cli.NewValidator()
 	cliOpts := buildOptsToCliOpts(args, opts)
 	if err := validator.ValidateBuildOptions(cliOpts); err != nil {
 		return fmt.Errorf("invalid options: %w", err)
 	}
 
-	// Parse CLI input
 	parser := cli.NewParser()
 	labels, err := parser.ParseLabels(opts.labels)
 	if err != nil {
@@ -152,16 +148,13 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 		return fmt.Errorf("failed to parse build-args: %w", err)
 	}
 
-	// Load build configuration
 	buildConfig, err := loadBuildConfig(ctx, args, opts)
 	if err != nil {
 		return err
 	}
 
-	// Create builder service
 	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc)
 
-	// Convert CLI options to builder options
 	builderOpts := builder.BuildOptions{
 		TargetType:    opts.targetType,
 		Architectures: opts.arch,
@@ -179,10 +172,8 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 		DigestDir:     opts.digestDir,
 	}
 
-	// Determine target type
 	targetType := builder.DetermineTargetType(buildConfig, builderOpts)
 
-	// Execute build based on target type
 	var results []builder.BuildResult
 	switch targetType {
 	case "container":
@@ -191,7 +182,6 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 			return err
 		}
 	case "ami":
-		// AMI builds must be done in command layer to avoid import cycles
 		result, err := executeAMIBuildInCmd(ctx, cfg, buildConfig, builderOpts)
 		if err != nil {
 			return err
@@ -201,11 +191,9 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 		return fmt.Errorf("unsupported target type: %s", targetType)
 	}
 
-	// Display results
 	formatter := cli.NewOutputFormatter("text")
 	formatter.DisplayBuildResults(ctx, results)
 
-	// Push if requested
 	if opts.push && opts.registry != "" {
 		return service.Push(ctx, *buildConfig, results, builderOpts)
 	}
@@ -215,11 +203,8 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 // executeAMIBuildInCmd handles AMI builds in the command layer to avoid import cycles.
 func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions) (*builder.BuildResult, error) {
-	// Import ami package to create the builder
-	// Note: This avoids circular dependency since cmd can import ami, but builder.service cannot
 	logging.InfoContext(ctx, "Executing AMI build")
 
-	// Find the AMI target to get region information
 	var amiTarget *builder.Target
 	for i := range buildConfig.Targets {
 		if buildConfig.Targets[i].Type == "ami" {
@@ -232,7 +217,6 @@ func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildCo
 		return nil, fmt.Errorf("no AMI target found in configuration")
 	}
 
-	// Determine region (CLI override > target config > global config > error)
 	region := builderOpts.Region
 	if region == "" {
 		region = amiTarget.Region
@@ -244,9 +228,6 @@ func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildCo
 		return nil, fmt.Errorf("AWS region must be specified (use --region flag, set in template, or configure in global config)")
 	}
 
-	// Create AMI client configuration
-	// Note: We import ami package here to avoid circular dependency
-	// The ami package can import builder types, but builder.service cannot import ami
 	amiConfig := struct {
 		Region          string
 		Profile         string
@@ -261,7 +242,6 @@ func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildCo
 		SessionToken:    cfg.AWS.SessionToken,
 	}
 
-	// Import the ami package and create the builder
 	amiBuilder, err := createAMIBuilder(ctx, amiConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AMI builder: %w", err)
@@ -272,7 +252,6 @@ func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildCo
 		}
 	}()
 
-	// Execute the AMI build
 	result, err := amiBuilder.Build(ctx, *buildConfig)
 	if err != nil {
 		return nil, fmt.Errorf("AMI build failed: %w", err)
@@ -284,7 +263,6 @@ func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildCo
 
 // createAMIBuilder creates an AMI builder with the given configuration.
 func createAMIBuilder(ctx context.Context, config interface{}) (builder.AMIBuilder, error) {
-	// Convert the anonymous struct to ami.ClientConfig
 	type clientConfig struct {
 		Region          string
 		Profile         string
@@ -395,6 +373,9 @@ func loadFromFile(configPath string, variables map[string]string) (*builder.Conf
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
+
+	cfg.IsLocalTemplate = true
+
 	return cfg, nil
 }
 
