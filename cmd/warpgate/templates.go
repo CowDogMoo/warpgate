@@ -213,16 +213,26 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create template registry: %w", err)
 	}
 
-	// List all templates from all sources
-	templateList, err := registry.List("all")
-	if err != nil {
-		return fmt.Errorf("failed to list templates: %w", err)
-	}
+	var templateList []templates.TemplateInfo
 
-	// Apply source filter if specified and not "all"
-	if templatesListSource != "all" {
-		filter := templates.NewFilter()
-		templateList = filter.BySource(templateList, templatesListSource)
+	// Use local-only listing when --source local to avoid git operations
+	if templatesListSource == "local" {
+		templateList, err = registry.ListLocal()
+		if err != nil {
+			return fmt.Errorf("failed to list local templates: %w", err)
+		}
+	} else {
+		// List all templates from all sources
+		templateList, err = registry.List("all")
+		if err != nil {
+			return fmt.Errorf("failed to list templates: %w", err)
+		}
+
+		// Apply source filter if specified and not "all"
+		if templatesListSource != "all" {
+			filter := templates.NewFilter()
+			templateList = filter.BySource(templateList, templatesListSource)
+		}
 	}
 
 	// Output empty JSON array for structured formats when no templates found

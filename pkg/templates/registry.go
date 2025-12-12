@@ -277,6 +277,47 @@ func (tr *TemplateRegistry) listAll() ([]TemplateInfo, error) {
 	return allTemplates, nil
 }
 
+// ListLocal returns templates from local paths only (no git operations)
+func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
+	var allTemplates []TemplateInfo
+
+	// Check repos for local paths
+	for repoName, repoURL := range tr.repos {
+		if !isLocalPath(repoURL) {
+			continue
+		}
+		templates, err := tr.discoverTemplates(repoURL)
+		if err != nil {
+			logging.Warn("Failed to scan local repo %s: %v", repoName, err)
+			continue
+		}
+		// Tag templates with their repository name
+		for i := range templates {
+			templates[i].Repository = repoName
+		}
+		allTemplates = append(allTemplates, templates...)
+	}
+
+	// Scan additional local paths from config
+	for _, localPath := range tr.localPaths {
+		if !isLocalPath(localPath) {
+			continue
+		}
+		templates, err := tr.discoverTemplates(localPath)
+		if err != nil {
+			logging.Warn("Failed to scan local path %s: %v", localPath, err)
+			continue
+		}
+		// Tag templates with their source path
+		for i := range templates {
+			templates[i].Repository = fmt.Sprintf("local:%s", filepath.Base(localPath))
+		}
+		allTemplates = append(allTemplates, templates...)
+	}
+
+	return allTemplates, nil
+}
+
 // discoverTemplates finds all templates in a repository
 func (tr *TemplateRegistry) discoverTemplates(repoPath string) ([]TemplateInfo, error) {
 	templatesDir := filepath.Join(repoPath, "templates")

@@ -131,10 +131,16 @@ func (g *GitOperations) pullUpdates(repoPath string) error {
 		return fmt.Errorf("failed to get worktree: %w", err)
 	}
 
-	err = w.Pull(&git.PullOptions{
+	pullOpts := &git.PullOptions{
 		RemoteName: "origin",
-		Progress:   os.Stdout,
-	})
+	}
+
+	// Only show progress if not in quiet mode
+	if !logging.IsQuiet() {
+		pullOpts.Progress = os.Stdout
+	}
+
+	err = w.Pull(pullOpts)
 
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("failed to pull updates: %w", err)
