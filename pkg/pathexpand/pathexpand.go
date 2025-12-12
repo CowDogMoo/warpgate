@@ -1,5 +1,3 @@
-//go:build linux
-
 /*
 Copyright © 2025 Jayson Grace <jayson.e.grace@gmail.com>
 
@@ -22,34 +20,46 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-package main
+// Package pathexpand provides functionality for expanding paths with tilde and environment variables.
+package pathexpand
 
 import (
-	"context"
-	"fmt"
-
-	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/builder/buildkit"
-	"github.com/cowdogmoo/warpgate/pkg/manifests"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
-// manifestBuilder is an interface for builders that support manifest operations
-type manifestBuilder interface {
-	builder.ContainerBuilder
-	CreateAndPushManifest(ctx context.Context, manifestName string, entries []manifests.ManifestEntry) error
-}
+// ExpandPath expands environment variables and home directory in a path.
+// It handles both ${VAR} syntax and ~ (tilde) for the home directory.
+//
+// Examples:
+//   - "~/projects" -> "/home/user/projects"
+//   - "${HOME}/work" -> "/home/user/work"
+//   - "~" -> "/home/user"
+//   - "~/path/to/dir" -> "/home/user/path/to/dir"
+func ExpandPath(path string) (string, error) {
+	path = os.ExpandEnv(path)
 
-// createBuilderForManifests creates a BuildKit builder for manifest operations on Linux
-func createBuilderForManifests(ctx context.Context) (manifestBuilder, error) {
-	// Create the BuildKit builder
-	return buildkit.NewBuildKitBuilder(ctx)
-}
-
-// createManifestWithBuilder creates and pushes a manifest using the builder
-func createManifestWithBuilder(ctx context.Context, bldr manifestBuilder, manifestName string, entries []manifests.ManifestEntry) error {
-	// Use the builder's CreateAndPushManifest method
-	if err := bldr.CreateAndPushManifest(ctx, manifestName, entries); err != nil {
-		return fmt.Errorf("failed to create and push manifest: %w", err)
+	if strings.HasPrefix(path, "~/") || path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if path == "~" {
+			return home, nil
+		}
+		return filepath.Join(home, path[2:]), nil
 	}
-	return nil
+
+	return path, nil
+}
+
+// MustExpandPath is like ExpandPath but panics on error.
+// Use this only when you're certain the home directory can be determined.
+func MustExpandPath(path string) string {
+	expanded, err := ExpandPath(path)
+	if err != nil {
+		return os.ExpandEnv(path)
+	}
+	return expanded
 }

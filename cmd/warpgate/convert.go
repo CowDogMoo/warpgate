@@ -32,6 +32,7 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/convert"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
 	"github.com/spf13/cobra"
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
@@ -178,17 +179,12 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 
 // resolveTemplatePath resolves the template directory path to an absolute path
 func resolveTemplatePath(templateDir string) (string, error) {
-	// Expand home directory if present
-	if strings.HasPrefix(templateDir, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to expand home directory: %w", err)
-		}
-		templateDir = filepath.Join(home, templateDir[2:])
+	expandedDir, err := pathexpand.ExpandPath(templateDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to expand path: %w", err)
 	}
 
-	// Convert to absolute path
-	absTemplateDir, err := filepath.Abs(templateDir)
+	absTemplateDir, err := filepath.Abs(expandedDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve template directory: %w", err)
 	}
@@ -330,12 +326,8 @@ func tryIncludedConfig(ctx context.Context, cfg *ini.File, home, currentName, cu
 		return name, email
 	}
 
-	// Expand ~ to home directory
-	if strings.HasPrefix(includePath, "~/") {
-		includePath = filepath.Join(home, includePath[2:])
-	}
+	includePath = pathexpand.MustExpandPath(includePath)
 
-	// Try to load the included file
 	includedCfg, err := ini.Load(includePath)
 	if err != nil {
 		return name, email

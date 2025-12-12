@@ -34,6 +34,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
@@ -772,6 +773,24 @@ func extractArchFromPlatform(platform string) string {
 	return ""
 }
 
+// expandPath expands ~ and environment variables in paths and converts to absolute paths.
+func expandPath(path string) (string, error) {
+	expandedPath, err := pathexpand.ExpandPath(path)
+	if err != nil {
+		return "", errors.Wrap("expand path", path, err)
+	}
+
+	if !filepath.IsAbs(expandedPath) {
+		absPath, err := filepath.Abs(expandedPath)
+		if err != nil {
+			return "", errors.Wrap("get absolute path", expandedPath, err)
+		}
+		return absPath, nil
+	}
+
+	return expandedPath, nil
+}
+
 // calculateBuildContext finds the common parent directory of all files referenced in the config.
 func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, error) {
 	var paths []string
@@ -781,18 +800,34 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 		switch prov.Type {
 		case "ansible":
 			if prov.PlaybookPath != "" {
-				paths = append(paths, os.ExpandEnv(prov.PlaybookPath))
+				expanded, err := expandPath(prov.PlaybookPath)
+				if err != nil {
+					return "", fmt.Errorf("failed to expand playbook path %s: %w", prov.PlaybookPath, err)
+				}
+				paths = append(paths, expanded)
 			}
 			if prov.GalaxyFile != "" {
-				paths = append(paths, os.ExpandEnv(prov.GalaxyFile))
+				expanded, err := expandPath(prov.GalaxyFile)
+				if err != nil {
+					return "", fmt.Errorf("failed to expand galaxy file path %s: %w", prov.GalaxyFile, err)
+				}
+				paths = append(paths, expanded)
 			}
 		case "file":
 			if prov.Source != "" {
-				paths = append(paths, os.ExpandEnv(prov.Source))
+				expanded, err := expandPath(prov.Source)
+				if err != nil {
+					return "", fmt.Errorf("failed to expand file source path %s: %w", prov.Source, err)
+				}
+				paths = append(paths, expanded)
 			}
 		case "script":
 			for _, script := range prov.Scripts {
-				paths = append(paths, os.ExpandEnv(script))
+				expanded, err := expandPath(script)
+				if err != nil {
+					return "", fmt.Errorf("failed to expand script path %s: %w", script, err)
+				}
+				paths = append(paths, expanded)
 			}
 		}
 	}
@@ -802,28 +837,13 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 		return ".", nil
 	}
 
-	// Convert all paths to absolute
-	absPaths := make([]string, 0, len(paths))
-	for _, p := range paths {
-		absPath, err := filepath.Abs(p)
-		if err != nil {
-			logging.Warn("Failed to get absolute path for %s: %v", p, err)
-			continue
-		}
-		absPaths = append(absPaths, absPath)
-	}
-
-	if len(absPaths) == 0 {
-		return ".", nil
-	}
-
-	// Find common parent directory
-	commonParent := filepath.Dir(absPaths[0])
-	for _, p := range absPaths[1:] {
+	// Paths are already absolute from expandPath, find common parent directory
+	commonParent := filepath.Dir(paths[0])
+	for _, p := range paths[1:] {
 		commonParent = findCommonParent(commonParent, p)
 	}
 
-	logging.Info("Calculated build context from %d file(s): %s", len(absPaths), commonParent)
+	logging.Info("Calculated build context from %d file(s): %s", len(paths), commonParent)
 	return commonParent, nil
 }
 
@@ -868,9 +888,9 @@ func findCommonParent(path1, path2 string) string {
 
 // makeRelativePath converts an absolute path to be relative to the build context
 func (b *BuildKitBuilder) makeRelativePath(path string) (string, error) {
-	absPath, err := filepath.Abs(os.ExpandEnv(path))
+	absPath, err := expandPath(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to get absolute path: %w", err)
+		return "", fmt.Errorf("failed to expand path: %w", err)
 	}
 
 	absContext, err := filepath.Abs(b.contextDir)
@@ -886,10 +906,11 @@ func (b *BuildKitBuilder) makeRelativePath(path string) (string, error) {
 	return relPath, nil
 }
 
-// Build creates a container image using BuildKit's Low-Level Build (LLB) primitives.
-// It converts the Warpgate configuration to LLB, executes the build with BuildKit, and loads
-// the resulting image into Docker's image store. The build process includes intelligent caching
-// for package managers and proper handling of file copies and provisioners.
+// Build creates a container image using BuildKit's Low-Level Build (LLB) primitives
+// by converting the Warpgate configuration to LLB, executing the build with BuildKit, and
+// loading the resulting image into Docker's image store. The build process automatically
+// detects package managers (apt-get, yum, pip, npm, go, etc.) and adds persistent cache
+// mounts to speed up subsequent builds.
 func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
 	// Check if this is a Dockerfile-based build
 	if cfg.IsDockerfileBased() {
@@ -1050,20 +1071,23 @@ func extractRegistryFromImageRef(imageRef string) string {
 }
 
 // Push pushes the built image to a container registry using the Docker SDK.
-// The imageRef should include the full registry path (e.g., "registry.io/org/image:tag").
+// If imageRef is bare (no registry prefix), it will be tagged with the registry before pushing.
+// The registry parameter is used for both tagging and authentication lookup.
 func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
 	logging.Info("Pushing image: %s", imageRef)
 
-	// Extract registry from image reference if not provided
-	if registry == "" {
-		registry = extractRegistryFromImageRef(imageRef)
-		logging.Debug("Extracted registry from image ref: %s", registry)
+	// Tag image with full registry path before pushing
+	fullImageRef := imageRef
+	if registry != "" && !strings.Contains(imageRef, "/") {
+		// imageRef is bare (e.g., "attack-box:latest"), prepend registry
+		fullImageRef = fmt.Sprintf("%s/%s", registry, imageRef)
+		if err := b.Tag(ctx, imageRef, fullImageRef); err != nil {
+			return "", fmt.Errorf("failed to tag image with registry: %w", err)
+		}
 	}
 
-	// Extract just the registry hostname for auth lookup
-	// The registry parameter may include namespace (e.g., "ghcr.io/l50")
-	// but auth lookup needs just the hostname (e.g., "ghcr.io")
-	registryHostname := extractRegistryFromImageRef(registry)
+	// Extract registry hostname for auth (e.g., "ghcr.io" from "ghcr.io/org/image:tag")
+	registryHostname := extractRegistryFromImageRef(fullImageRef)
 	logging.Debug("Using registry hostname for auth: %s", registryHostname)
 
 	// Get authentication credentials using unified adapter
@@ -1078,10 +1102,10 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		RegistryAuth: registryAuth,
 	}
 
-	// Push the image
-	resp, err := b.dockerClient.ImagePush(ctx, imageRef, pushOpts)
+	logging.Info("Pushing to: %s", fullImageRef)
+	resp, err := b.dockerClient.ImagePush(ctx, fullImageRef, pushOpts)
 	if err != nil {
-		return "", fmt.Errorf("docker push failed: %w", err)
+		return "", fmt.Errorf("failed to push %s: %w", fullImageRef, err)
 	}
 	defer func() {
 		_ = resp.Close()
@@ -1102,8 +1126,7 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		}
 	}
 
-	// Get the digest from the pushed image
-	inspect, err := b.dockerClient.ImageInspect(ctx, imageRef)
+	inspect, err := b.dockerClient.ImageInspect(ctx, fullImageRef)
 	if err != nil {
 		logging.Warn("Failed to inspect image after push: %v", err)
 		return "", nil // Return empty digest, not an error - push was successful
@@ -1121,7 +1144,7 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		}
 	}
 
-	logging.Warn("No digest found for %s", imageRef)
+	logging.Warn("No digest found for %s", fullImageRef)
 	return "", nil
 }
 

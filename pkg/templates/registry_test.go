@@ -28,6 +28,79 @@ import (
 	"testing"
 )
 
+// TestIsPlaceholderURL tests detection of RFC 2606 reserved documentation domains
+func TestIsPlaceholderURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		shouldMatch bool
+	}{
+		// RFC 2606 reserved example domains - should be flagged
+		{"example.com domain", "https://example.com/repo.git", true},
+		{"example.org domain", "https://example.org/repo.git", true},
+		{"example.net domain", "https://example.net/repo.git", true},
+		{"subdomain of example.com", "https://api.example.com/repo.git", true},
+		{"subdomain of example.org", "https://git.example.org/repo.git", true},
+		{".example TLD", "https://foo.example/repo.git", true},
+		{".test TLD", "https://foo.test/repo.git", true},
+		{".invalid TLD", "https://foo.invalid/repo.git", true},
+		{".localhost TLD", "https://foo.localhost/repo.git", true},
+
+		// git@ format with RFC 2606 domains - should be flagged
+		{"git@ with example.com", "git@example.com:user/repo.git", true},
+		{"git@ with example.org", "git@example.org:user/repo.git", true},
+		{"git@ with .test", "git@git.test:user/repo.git", true},
+
+		// Real URLs that should NOT be flagged
+		{"real cowdogmoo repo", "https://github.com/cowdogmoo/warpgate-templates.git", false},
+		{"real organization", "https://github.com/kubernetes/kubernetes.git", false},
+		{"real user repo", "https://github.com/torvalds/linux.git", false},
+		{"gitlab real repo", "https://gitlab.com/gitlab-org/gitlab.git", false},
+		{"bitbucket real repo", "https://bitbucket.org/atlassian/python-bitbucket.git", false},
+		{"git@ real repo", "git@github.com:cowdogmoo/warpgate.git", false},
+		{"git@ real user", "git@github.com:torvalds/linux.git", false},
+
+		// Edge cases - repos with "example" in name but real domains
+		{"example in path", "https://github.com/acme/example-app.git", false},
+		{"examples repo name", "https://github.com/company/examples.git", false},
+		{"example- prefix", "https://github.com/org/example-configs.git", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isPlaceholderURL(tt.url)
+			if result != tt.shouldMatch {
+				t.Errorf("isPlaceholderURL(%q) = %v, want %v", tt.url, result, tt.shouldMatch)
+			}
+		})
+	}
+}
+
+// TestIsValidGitURL tests Git URL validation
+func TestIsValidGitURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		url   string
+		valid bool
+	}{
+		{"https URL", "https://git.example.com/jdoe/repo.git", true},
+		{"http URL", "http://git.example.com/jdoe/repo.git", true},
+		{"git@ URL", "git@git.example.com:jdoe/repo.git", true},
+		{"local path", "/home/jdoe/repo", false},
+		{"relative path", "../templates", false},
+		{"invalid protocol", "ftp://git.example.com/jdoe/repo.git", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isValidGitURL(tt.url)
+			if result != tt.valid {
+				t.Errorf("isValidGitURL(%q) = %v, want %v", tt.url, result, tt.valid)
+			}
+		})
+	}
+}
+
 func TestNewTemplateRegistry(t *testing.T) {
 	// Clear any config-related env vars to ensure clean test environment
 	originalLocalPaths := os.Getenv("WARPGATE_TEMPLATES_LOCAL_PATHS")
@@ -55,12 +128,92 @@ func TestNewTemplateRegistry(t *testing.T) {
 		t.Error("Cache directory not set")
 	}
 
-	// Check that official repo is registered by default when no config exists
-	// Note: If user has a config file with custom repositories, this test may fail
-	// The registry should only add "official" if no repos or local paths are configured
+	// Check that official repo is always registered by default
 	repos := registry.GetRepositories()
-	if len(repos) == 0 && len(registry.localPaths) == 0 {
-		t.Error("Expected at least one repository or local path to be configured")
+	if len(repos) == 0 {
+		t.Error("Expected at least one repository to be configured")
+	}
+
+	if url, ok := repos["official"]; !ok {
+		t.Error("Expected official repository to be registered by default")
+	} else if url != "https://github.com/cowdogmoo/warpgate-templates.git" {
+		t.Errorf("Expected official repo URL, got %s", url)
+	}
+}
+
+func TestTemplateRegistryDefaultOfficialRepo(t *testing.T) {
+	// Test that official repo persists when adding custom repos
+	tempDir, err := os.MkdirTemp("", "warpgate-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	registry := &TemplateRegistry{
+		repos: map[string]string{
+			"official": "https://github.com/cowdogmoo/warpgate-templates.git",
+			"custom":   "https://github.com/acme-corp/repo.git",
+		},
+		cacheDir: tempDir,
+	}
+
+	repos := registry.GetRepositories()
+
+	if len(repos) != 2 {
+		t.Errorf("Expected 2 repositories, got %d", len(repos))
+	}
+
+	if _, ok := repos["official"]; !ok {
+		t.Error("Official repository should be present")
+	}
+
+	if _, ok := repos["custom"]; !ok {
+		t.Error("Custom repository should be present")
+	}
+}
+
+func TestTemplateRegistryDisableOfficialRepo(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "warpgate-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	repos := map[string]string{
+		"official": "https://github.com/cowdogmoo/warpgate-templates.git",
+	}
+
+	configRepos := map[string]string{
+		"official": "",
+		"custom":   "https://github.com/acme-corp/repo.git",
+	}
+
+	for name, url := range configRepos {
+		if url != "" {
+			repos[name] = url
+		} else {
+			delete(repos, name)
+		}
+	}
+
+	if len(repos) != 1 {
+		t.Errorf("Expected 1 repository, got %d", len(repos))
+	}
+
+	if _, ok := repos["official"]; ok {
+		t.Error("Official repository should be disabled")
+	}
+
+	if _, ok := repos["custom"]; !ok {
+		t.Error("Custom repository should be present")
 	}
 }
 
@@ -212,6 +365,59 @@ func TestTemplateRegistryMatchesQuery(t *testing.T) {
 			result := registry.matchesQuery(tt.template, tt.query)
 			if result != tt.expected {
 				t.Errorf("matchesQuery() = %v, want %v for query %q", result, tt.expected, tt.query)
+			}
+		})
+	}
+}
+
+func TestIsLocalPath(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "warpgate-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	tests := []struct {
+		name     string
+		path     string
+		expected bool
+	}{
+		{
+			name:     "absolute path exists",
+			path:     tempDir,
+			expected: true,
+		},
+		{
+			name:     "https git url",
+			path:     "https://github.com/cowdogmoo/warpgate-templates.git",
+			expected: false,
+		},
+		{
+			name:     "ssh git url",
+			path:     "git@github.com:cowdogmoo/warpgate-templates.git",
+			expected: false,
+		},
+		{
+			name:     "http url",
+			path:     "http://example.com/repo.git",
+			expected: false,
+		},
+		{
+			name:     "non-existent absolute path",
+			path:     "/non/existent/path",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isLocalPath(tt.path)
+			if result != tt.expected {
+				t.Errorf("isLocalPath(%q) = %v, want %v", tt.path, result, tt.expected)
 			}
 		})
 	}

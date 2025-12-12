@@ -159,7 +159,7 @@ targets:
 	require.NoError(t, err)
 
 	// Test loading from local file (absolute path)
-	cfg, err := loader.LoadTemplate(configPath)
+	cfg, err := loader.LoadTemplateWithVars(configPath, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "test-template", cfg.Name)
@@ -171,7 +171,7 @@ func TestTemplateLoader_LoadTemplate_InvalidFile(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test loading from non-existent file
-	_, err = loader.LoadTemplate("/non/existent/path/warpgate.yaml")
+	_, err = loader.LoadTemplateWithVars("/non/existent/path/warpgate.yaml", nil)
 	assert.Error(t, err)
 }
 
@@ -198,7 +198,7 @@ func TestTemplateLoader_LoadTemplate_ReferenceTypes(t *testing.T) {
 		},
 		{
 			name:     "https git url",
-			ref:      "https://github.com/user/repo.git",
+			ref:      "https://git.example.com/jdoe/repo.git",
 			expected: "git",
 		},
 		{
@@ -266,6 +266,6 @@ name: test
 	require.NoError(t, err)
 
 	// Should fail validation
-	_, err = loader.loadFromFile(invalidConfig)
+	_, err = loader.loadFromFileWithVars(invalidConfig, nil)
 	assert.Error(t, err)
 }

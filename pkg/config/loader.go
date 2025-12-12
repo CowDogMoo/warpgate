@@ -30,6 +30,7 @@ import (
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/errors"
+	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,7 +42,10 @@ func NewLoader() *Loader {
 	return &Loader{}
 }
 
-// LoadFromFile loads a template configuration from a YAML file
+// LoadFromFile loads a template configuration from a YAML file without variables.
+// This is a convenience method that calls LoadFromFileWithVars with nil variables.
+//
+// Deprecated: Use LoadFromFileWithVars directly to support variable substitution.
 func (l *Loader) LoadFromFile(path string) (*builder.Config, error) {
 	return l.LoadFromFileWithVars(path, nil)
 }
@@ -80,6 +84,10 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 	return &config, nil
 }
 
+func expandTildePath(path string) string {
+	return pathexpand.MustExpandPath(path)
+}
+
 // expandVariables expands ${VAR} style variables only
 // Variables from the vars map take precedence over environment variables
 // $VAR syntax (without braces) is left untouched for container-level expansion
@@ -93,16 +101,17 @@ func (l *Loader) expandVariables(s string, vars map[string]string) string {
 			end := strings.IndexByte(s[i+2:], '}')
 			if end >= 0 {
 				varName := s[i+2 : i+2+end]
-				// First check CLI/var-file variables (highest precedence)
+				var value string
 				if vars != nil {
-					if value, ok := vars[varName]; ok {
-						result.WriteString(value)
-						i += end + 2 // skip past ${varName}
-						continue
+					if v, ok := vars[varName]; ok {
+						value = v
 					}
 				}
-				// Fall back to environment variables
-				result.WriteString(os.Getenv(varName))
+				if value == "" {
+					value = os.Getenv(varName)
+				}
+				value = expandTildePath(value)
+				result.WriteString(value)
 				i += end + 2 // skip past ${varName}
 				continue
 			}
@@ -130,11 +139,17 @@ func (l *Loader) resolveDockerfilePaths(config *builder.Config, baseDir string) 
 	if config.Dockerfile == nil {
 		return
 	}
-	if config.Dockerfile.Path != "" && !filepath.IsAbs(config.Dockerfile.Path) {
-		config.Dockerfile.Path = filepath.Join(baseDir, config.Dockerfile.Path)
+	if config.Dockerfile.Path != "" {
+		config.Dockerfile.Path = expandTildePath(config.Dockerfile.Path)
+		if !filepath.IsAbs(config.Dockerfile.Path) {
+			config.Dockerfile.Path = filepath.Join(baseDir, config.Dockerfile.Path)
+		}
 	}
-	if config.Dockerfile.Context != "" && !filepath.IsAbs(config.Dockerfile.Context) {
-		config.Dockerfile.Context = filepath.Join(baseDir, config.Dockerfile.Context)
+	if config.Dockerfile.Context != "" {
+		config.Dockerfile.Context = expandTildePath(config.Dockerfile.Context)
+		if !filepath.IsAbs(config.Dockerfile.Context) {
+			config.Dockerfile.Context = filepath.Join(baseDir, config.Dockerfile.Context)
+		}
 	}
 }
 
@@ -150,21 +165,25 @@ func (l *Loader) resolveProvisionerPaths(prov *builder.Provisioner, baseDir stri
 	}
 }
 
-// resolvePathList resolves a slice of paths relative to baseDir.
-// Paths that are already absolute are left unchanged.
+// resolvePathList converts paths to absolute. Absolute paths are left unchanged.
 func resolvePathList(paths []string, baseDir string) {
 	for i := range paths {
-		if paths[i] != "" && !filepath.IsAbs(paths[i]) {
-			paths[i] = filepath.Join(baseDir, paths[i])
+		if paths[i] != "" {
+			paths[i] = expandTildePath(paths[i])
+			if !filepath.IsAbs(paths[i]) {
+				paths[i] = filepath.Join(baseDir, paths[i])
+			}
 		}
 	}
 }
 
-// resolveSinglePath resolves a single path relative to baseDir.
-// Paths that are already absolute are left unchanged.
+// resolveSinglePath converts path to absolute. Absolute paths are left unchanged.
 func resolveSinglePath(path *string, baseDir string) {
-	if *path != "" && !filepath.IsAbs(*path) {
-		*path = filepath.Join(baseDir, *path)
+	if *path != "" {
+		*path = expandTildePath(*path)
+		if !filepath.IsAbs(*path) {
+			*path = filepath.Join(baseDir, *path)
+		}
 	}
 }
 

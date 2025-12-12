@@ -84,6 +84,57 @@ func TestExpandVariables(t *testing.T) {
 		},
 	}
 
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("Failed to get home directory: %v", err)
+	}
+
+	tildeTests := []struct {
+		name     string
+		input    string
+		vars     map[string]string
+		envVars  map[string]string
+		expected string
+	}{
+		{
+			name:     "Tilde expanded in CLI variable",
+			input:    "path: ${REPO_PATH}",
+			vars:     map[string]string{"REPO_PATH": "~/ansible-collection"},
+			envVars:  nil,
+			expected: "path: " + filepath.Join(home, "ansible-collection"),
+		},
+		{
+			name:     "Tilde expanded in environment variable",
+			input:    "path: ${REPO_PATH}",
+			vars:     nil,
+			envVars:  map[string]string{"REPO_PATH": "~/my-repo"},
+			expected: "path: " + filepath.Join(home, "my-repo"),
+		},
+		{
+			name:     "Tilde expansion with multiple path segments",
+			input:    "path: ${BASE_PATH}/subdir",
+			vars:     map[string]string{"BASE_PATH": "~/projects/warpgate"},
+			envVars:  nil,
+			expected: "path: " + filepath.Join(home, "projects/warpgate") + "/subdir",
+		},
+		{
+			name:     "Non-tilde path unchanged",
+			input:    "path: ${ABSOLUTE_PATH}",
+			vars:     map[string]string{"ABSOLUTE_PATH": "/opt/data"},
+			envVars:  nil,
+			expected: "path: /opt/data",
+		},
+		{
+			name:     "Mixed tilde and non-tilde variables",
+			input:    "home: ${HOME_PATH}, work: ${WORK_PATH}",
+			vars:     map[string]string{"HOME_PATH": "~/personal", "WORK_PATH": "/opt/work"},
+			envVars:  nil,
+			expected: "home: " + filepath.Join(home, "personal") + ", work: /opt/work",
+		},
+	}
+
+	tests = append(tests, tildeTests...)
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set up environment variables

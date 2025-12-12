@@ -64,7 +64,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Load configuration
 	loader := config.NewLoader()
-	cfg, err := loader.LoadFromFile(configPath)
+	cfg, err := loader.LoadFromFileWithVars(configPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}

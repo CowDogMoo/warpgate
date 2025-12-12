@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/builder/buildkit"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/spf13/cobra"
@@ -544,7 +546,14 @@ func displayManifestInfo(info *manifests.ManifestInfo) {
 	fmt.Printf("Name:         %s\n", info.Name)
 	fmt.Printf("Tag:          %s\n", info.Tag)
 	fmt.Printf("Digest:       %s\n", info.Digest)
-	fmt.Printf("Media Type:   %s\n", info.MediaType)
+
+	isMultiArch := len(info.Architectures) > 1
+	if isMultiArch {
+		fmt.Printf("Media Type:   %s (multi-architecture manifest)\n", info.MediaType)
+	} else {
+		fmt.Printf("Media Type:   %s (single-architecture manifest)\n", info.MediaType)
+	}
+
 	fmt.Printf("Size:         %d bytes\n", info.Size)
 
 	if len(info.Annotations) > 0 {
@@ -554,17 +563,32 @@ func displayManifestInfo(info *manifests.ManifestInfo) {
 		}
 	}
 
-	fmt.Printf("\n=== Architectures (%d) ===\n", len(info.Architectures))
-	for i, arch := range info.Architectures {
-		fmt.Printf("\n[%d] %s/%s", i+1, arch.OS, arch.Architecture)
+	if isMultiArch {
+		fmt.Printf("\n=== Architectures (%d) ===\n", len(info.Architectures))
+		for i, arch := range info.Architectures {
+			fmt.Printf("\n[%d] %s/%s", i+1, arch.OS, arch.Architecture)
+			if arch.Variant != "" {
+				fmt.Printf("/%s", arch.Variant)
+			}
+			fmt.Println()
+			fmt.Printf("    Manifest Digest: %s\n", arch.Digest)
+			fmt.Printf("    Size:            %d bytes\n", arch.Size)
+			if arch.MediaType != "" {
+				fmt.Printf("    Media Type:      %s\n", arch.MediaType)
+			}
+		}
+	} else {
+		fmt.Println("\n=== Platform ===")
+		arch := info.Architectures[0]
+		fmt.Printf("\nOS/Architecture: %s/%s", arch.OS, arch.Architecture)
 		if arch.Variant != "" {
 			fmt.Printf("/%s", arch.Variant)
 		}
 		fmt.Println()
-		fmt.Printf("    Digest:    %s\n", arch.Digest)
-		fmt.Printf("    Size:      %d bytes\n", arch.Size)
+		fmt.Printf("Config Digest:   %s\n", arch.Digest)
+		fmt.Printf("Config Size:     %d bytes\n", arch.Size)
 		if arch.MediaType != "" {
-			fmt.Printf("    Media:     %s\n", arch.MediaType)
+			fmt.Printf("Config Media:    %s\n", arch.MediaType)
 		}
 	}
 	fmt.Println()
@@ -616,4 +640,23 @@ func convertDigestFilesToManifestEntries(digestFiles []manifests.DigestFile, reg
 	}
 
 	return entries
+}
+
+// manifestBuilder is an interface for builders that support manifest operations
+type manifestBuilder interface {
+	builder.ContainerBuilder
+	CreateAndPushManifest(ctx context.Context, manifestName string, entries []manifests.ManifestEntry) error
+}
+
+// createBuilderForManifests creates a BuildKit builder for manifest operations
+func createBuilderForManifests(ctx context.Context) (manifestBuilder, error) {
+	return buildkit.NewBuildKitBuilder(ctx)
+}
+
+// createManifestWithBuilder creates and pushes a manifest using the builder
+func createManifestWithBuilder(ctx context.Context, bldr manifestBuilder, manifestName string, entries []manifests.ManifestEntry) error {
+	if err := bldr.CreateAndPushManifest(ctx, manifestName, entries); err != nil {
+		return fmt.Errorf("failed to create and push manifest: %w", err)
+	}
+	return nil
 }

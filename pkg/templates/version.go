@@ -116,8 +116,8 @@ func (vm *VersionManager) CheckCompatibility(templateVersion, requiredWarpgateVe
 	return compatible, warnings, nil
 }
 
-// CompareVersions compares two semantic versions
-// Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
+// CompareVersions compares two semantic versions and returns -1 if v1 < v2,
+// 0 if v1 == v2, or 1 if v1 > v2.
 func (vm *VersionManager) CompareVersions(v1, v2 string) (int, error) {
 	ver1, err := vm.ParseVersion(v1)
 	if err != nil {

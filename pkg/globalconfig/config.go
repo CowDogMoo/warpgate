@@ -64,15 +64,17 @@ type RegistryConfig struct {
 // TemplatesConfig holds template-related configuration
 type TemplatesConfig struct {
 	CacheDir string `mapstructure:"cache_dir" yaml:"cache_dir"`
-	// Repositories maps repository names to their git URLs or local paths
+	// Repositories maps repository names to Git URLs only (local paths not allowed)
 	// Example:
 	//   repositories:
 	//     official: https://github.com/cowdogmoo/warpgate-templates.git
-	//     local: /path/to/local/templates
-	//     private: https://github.com/myorg/private-templates.git
+	//     private: git@github.com:myorg/private-templates.git
 	Repositories map[string]string `mapstructure:"repositories" yaml:"repositories"`
-	// LocalPaths lists additional local directories to search for templates
-	// These are scanned in order when listing/discovering templates
+	// LocalPaths lists local directories to search for templates
+	// Example:
+	//   local_paths:
+	//     - /opt/shared/templates
+	//     - ~/dev/templates
 	LocalPaths []string `mapstructure:"local_paths" yaml:"local_paths"`
 }
 

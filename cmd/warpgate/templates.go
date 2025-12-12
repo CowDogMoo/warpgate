@@ -262,7 +262,7 @@ func runTemplatesInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load the template configuration
-	cfg, err := loader.LoadTemplate(templateName)
+	cfg, err := loader.LoadTemplateWithVars(templateName, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load template: %w", err)
 	}

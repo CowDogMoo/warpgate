@@ -27,6 +27,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/cowdogmoo/warpgate/pkg/errors"
+	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
 )
 
 // PathValidator handles template path validation and normalization.
@@ -46,25 +49,21 @@ func (pv *PathValidator) IsGitURL(s string) bool {
 
 // NormalizePath normalizes a path for comparison by expanding ~ and converting to absolute path.
 func (pv *PathValidator) NormalizePath(path string) (string, error) {
-	// Expand home directory if needed
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		path = filepath.Join(home, path[2:])
+	expandedPath, err := pathexpand.ExpandPath(path)
+	if err != nil {
+		return "", errors.Wrap("normalize path", path, err)
 	}
 
 	// Make path absolute if relative (and it looks like a path)
-	if !filepath.IsAbs(path) && (strings.Contains(path, "/") || strings.HasPrefix(path, ".")) {
-		absPath, err := filepath.Abs(path)
+	if !filepath.IsAbs(expandedPath) && (strings.Contains(expandedPath, "/") || strings.HasPrefix(expandedPath, ".")) {
+		absPath, err := filepath.Abs(expandedPath)
 		if err != nil {
-			return "", fmt.Errorf("failed to get absolute path: %w", err)
+			return "", errors.Wrap("get absolute path", expandedPath, err)
 		}
-		path = absPath
+		return absPath, nil
 	}
 
-	return path, nil
+	return expandedPath, nil
 }
 
 // ValidateLocalPath validates that a path exists and is a directory.
@@ -86,29 +85,25 @@ func (pv *PathValidator) ValidateLocalPath(path string) error {
 
 // ExpandPath expands ~ in paths and converts to absolute paths.
 func (pv *PathValidator) ExpandPath(path string) (string, error) {
-	// Expand home directory if needed
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		path = filepath.Join(home, path[2:])
+	expandedPath, err := pathexpand.ExpandPath(path)
+	if err != nil {
+		return "", errors.Wrap("expand path", path, err)
 	}
 
 	// Make path absolute if relative
-	if !filepath.IsAbs(path) {
-		absPath, err := filepath.Abs(path)
+	if !filepath.IsAbs(expandedPath) {
+		absPath, err := filepath.Abs(expandedPath)
 		if err != nil {
-			return "", fmt.Errorf("failed to get absolute path: %w", err)
+			return "", errors.Wrap("get absolute path", expandedPath, err)
 		}
-		path = absPath
+		return absPath, nil
 	}
 
-	return path, nil
+	return expandedPath, nil
 }
 
 // ExtractRepoName extracts a repository name from a git URL.
-// For example: https://github.com/user/my-templates.git => my-templates
+// For example: https://git.example.com/jdoe/my-templates.git => my-templates
 func ExtractRepoName(gitURL string) string {
 	// Remove .git suffix if present
 	name := strings.TrimSuffix(gitURL, ".git")

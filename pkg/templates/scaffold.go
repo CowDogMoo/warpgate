@@ -81,7 +81,7 @@ func (s *Scaffolder) Fork(ctx context.Context, fromTemplate, newName, outputDir 
 		return fmt.Errorf("failed to create loader: %w", err)
 	}
 
-	cfg, err := loader.LoadTemplate(fromTemplate)
+	cfg, err := loader.LoadTemplateWithVars(fromTemplate, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load template: %w", err)
 	}

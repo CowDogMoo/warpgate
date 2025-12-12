@@ -38,12 +38,12 @@ func TestIsGitURL(t *testing.T) {
 	}{
 		{
 			name:  "https URL",
-			input: "https://github.com/user/repo.git",
+			input: "https://git.example.com/jdoe/repo.git",
 			want:  true,
 		},
 		{
 			name:  "http URL",
-			input: "http://github.com/user/repo.git",
+			input: "http://git.example.com/jdoe/repo.git",
 			want:  true,
 		},
 		{
@@ -245,12 +245,12 @@ func TestExtractRepoName(t *testing.T) {
 	}{
 		{
 			name:   "https URL with .git",
-			gitURL: "https://github.com/user/my-templates.git",
+			gitURL: "https://git.example.com/jdoe/my-templates.git",
 			want:   "my-templates",
 		},
 		{
 			name:   "https URL without .git",
-			gitURL: "https://github.com/user/my-templates",
+			gitURL: "https://git.example.com/jdoe/my-templates",
 			want:   "my-templates",
 		},
 		{
@@ -265,7 +265,7 @@ func TestExtractRepoName(t *testing.T) {
 		},
 		{
 			name:   "URL with trailing slash",
-			gitURL: "https://github.com/user/repo.git/",
+			gitURL: "https://git.example.com/jdoe/repo.git/",
 			want:   "templates",
 		},
 		{

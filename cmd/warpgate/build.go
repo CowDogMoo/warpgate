@@ -337,17 +337,22 @@ func buildOptsToCliOpts(args []string, opts *buildOptions) cli.BuildCLIOptions {
 
 // loadBuildConfig loads configuration from template, git, or file
 func loadBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*builder.Config, error) {
+	variables, err := config.ParseVariables(opts.vars, opts.varFiles)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse variables: %w", err)
+	}
+
 	if opts.template != "" {
 		logging.InfoContext(ctx, "Building from template: %s", opts.template)
-		return loadFromTemplate(opts.template)
+		return loadFromTemplate(opts.template, variables)
 	}
 	if opts.fromGit != "" {
 		logging.InfoContext(ctx, "Building from git: %s", opts.fromGit)
-		return loadFromGit(opts.fromGit)
+		return loadFromGit(opts.fromGit, variables)
 	}
 	if len(args) > 0 {
 		logging.InfoContext(ctx, "Building from config file: %s", args[0])
-		return loadFromFile(args[0], opts)
+		return loadFromFile(args[0], variables)
 	}
 	return nil, fmt.Errorf("specify config file, --template, or --from-git")
 }
@@ -383,14 +388,8 @@ func enhanceBuildKitError(err error) error {
 	return err
 }
 
-// loadFromFile loads config from a local file
-func loadFromFile(configPath string, opts *buildOptions) (*builder.Config, error) {
-	// Parse variables from CLI flags and var files
-	variables, err := config.ParseVariables(opts.vars, opts.varFiles)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse variables: %w", err)
-	}
-
+// loadFromFile loads config from a local file with variable substitution
+func loadFromFile(configPath string, variables map[string]string) (*builder.Config, error) {
 	loader := config.NewLoader()
 	cfg, err := loader.LoadFromFileWithVars(configPath, variables)
 	if err != nil {
@@ -399,14 +398,14 @@ func loadFromFile(configPath string, opts *buildOptions) (*builder.Config, error
 	return cfg, nil
 }
 
-// loadFromTemplate loads config from a template (official registry or cached)
-func loadFromTemplate(templateName string) (*builder.Config, error) {
+// loadFromTemplate loads config from a template (official registry or cached) with variable substitution
+func loadFromTemplate(templateName string, variables map[string]string) (*builder.Config, error) {
 	loader, err := templates.NewTemplateLoader()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize template loader: %w", err)
 	}
 
-	cfg, err := loader.LoadTemplate(templateName)
+	cfg, err := loader.LoadTemplateWithVars(templateName, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load template: %w", err)
 	}
@@ -414,15 +413,14 @@ func loadFromTemplate(templateName string) (*builder.Config, error) {
 	return cfg, nil
 }
 
-// loadFromGit loads config from a git repository
-func loadFromGit(gitURL string) (*builder.Config, error) {
+// loadFromGit loads config from a git repository with variable substitution
+func loadFromGit(gitURL string, variables map[string]string) (*builder.Config, error) {
 	loader, err := templates.NewTemplateLoader()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize template loader: %w", err)
 	}
 
-	// The LoadTemplate method already handles git URLs
-	cfg, err := loader.LoadTemplate(gitURL)
+	cfg, err := loader.LoadTemplateWithVars(gitURL, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load template from git: %w", err)
 	}

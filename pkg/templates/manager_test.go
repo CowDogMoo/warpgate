@@ -66,32 +66,32 @@ func TestAddGitRepository(t *testing.T) {
 		{
 			name:     "add new repository with name",
 			repoName: "my-templates",
-			url:      "https://github.com/user/templates.git",
+			url:      "https://github.com/acme/templates.git",
 			existing: map[string]string{},
 			wantErr:  false,
 		},
 		{
 			name:     "add new repository without name (auto-generate)",
 			repoName: "",
-			url:      "https://github.com/user/my-repo.git",
+			url:      "https://github.com/acme/my-repo.git",
 			existing: map[string]string{},
 			wantErr:  false,
 		},
 		{
 			name:     "add duplicate repository with same URL",
 			repoName: "existing",
-			url:      "https://github.com/user/templates.git",
+			url:      "https://github.com/acme/templates.git",
 			existing: map[string]string{
-				"existing": "https://github.com/user/templates.git",
+				"existing": "https://github.com/acme/templates.git",
 			},
 			wantErr: false, // Should warn but not error
 		},
 		{
 			name:     "add repository with conflicting name but different URL",
 			repoName: "existing",
-			url:      "https://github.com/user/different.git",
+			url:      "https://github.com/acme/different.git",
 			existing: map[string]string{
-				"existing": "https://github.com/user/templates.git",
+				"existing": "https://github.com/acme/templates.git",
 			},
 			wantErr: true,
 		},
@@ -255,7 +255,7 @@ func TestRemoveSource_Repository(t *testing.T) {
 			LocalPaths: []string{},
 			Repositories: map[string]string{
 				"official": "https://github.com/official/templates.git",
-				"custom":   "https://github.com/custom/templates.git",
+				"custom":   "https://github.com/acme-corp/templates.git",
 			},
 		},
 	}
@@ -329,7 +329,7 @@ func TestRemoveFromRepositories(t *testing.T) {
 		Templates: globalconfig.TemplatesConfig{
 			Repositories: map[string]string{
 				"official": "https://github.com/official/templates.git",
-				"custom":   "https://github.com/custom/templates.git",
+				"custom":   "https://github.com/acme-corp/templates.git",
 			},
 		},
 	}

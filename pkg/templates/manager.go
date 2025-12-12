@@ -48,7 +48,7 @@ func NewManager(cfg *globalconfig.Config) *Manager {
 
 // AddGitRepository adds a git repository to template sources.
 // If name is empty, it auto-generates one from the URL.
-func (m *Manager) AddGitRepository(ctx context.Context, name, url string) error {
+func (m *Manager) AddGitRepository(ctx context.Context, name, gitURL string) error {
 	// Initialize repositories map if nil
 	if m.config.Templates.Repositories == nil {
 		m.config.Templates.Repositories = make(map[string]string)
@@ -56,20 +56,28 @@ func (m *Manager) AddGitRepository(ctx context.Context, name, url string) error 
 
 	// Auto-generate name if not provided
 	if name == "" {
-		name = ExtractRepoName(url)
+		name = ExtractRepoName(gitURL)
+	}
+
+	if !m.validator.IsGitURL(gitURL) {
+		return fmt.Errorf("invalid Git URL '%s'; expected https://, http://, or git@ URL", gitURL)
+	}
+
+	if isPlaceholderURL(gitURL) {
+		return fmt.Errorf("URL '%s' appears to be a placeholder from documentation examples; please use a real repository URL", gitURL)
 	}
 
 	// Check if already exists
 	if existing, ok := m.config.Templates.Repositories[name]; ok {
-		if existing == url {
+		if existing == gitURL {
 			logging.WarnContext(ctx, "Repository '%s' already exists", name)
 			return nil
 		}
 		return fmt.Errorf("repository name '%s' already exists with different URL: %s", name, existing)
 	}
 
-	logging.InfoContext(ctx, "Adding git repository: %s -> %s", name, url)
-	m.config.Templates.Repositories[name] = url
+	logging.InfoContext(ctx, "Adding git repository: %s -> %s", name, gitURL)
+	m.config.Templates.Repositories[name] = gitURL
 
 	// Save to config file
 	if err := m.saveConfigValue("templates.repositories", m.config.Templates.Repositories); err != nil {
