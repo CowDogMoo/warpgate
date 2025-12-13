@@ -21,17 +21,24 @@ releases, including:
 
 ```bash
 # 1. Preview changes since last release
-task go:release-changelog FROM=v2.0.1
+task go:release-changelog FROM=$CURRENT_VERSION
 
-# 2. Create and push release tag (triggers goreleaser)
-task go:release TAG=v3.0.0
+# 2. Create and push release tag (triggers goreleaser GitHub Action)
+task go:release TAG=$NEXT_VERSION
 
-# 3. Watch the release build
+# 3. Wait for the release build (takes 5-10 minutes)
 task go:release-watch
 
-# 4. Verify release
-task go:release-check TAG=v3.0.0
+# 4. Verify release once the release build completes
+task go:release-check TAG=$NEXT_VERSION
 ```
+
+**⏱️ Important Timing Notes:**
+
+- **Step 2** only creates the git tag - it does NOT create the release
+- **Step 3** is where goreleaser builds all binaries (5-10 minutes)
+- **Step 4** will show "release not found" if you run it before step 3 finishes
+- The release appears on GitHub only after all binaries are built and uploaded
 
 ---
 
@@ -45,16 +52,16 @@ Warp Gate follows [Semantic Versioning](https://semver.org/):
 
 ### Version Decision Matrix
 
-| Change Type                           | Example                           | Version Type |
-| ------------------------------------- | --------------------------------- | ------------ |
-| Remove features/templates             | Deleted legacy Packer templates   | **MAJOR**    |
-| Change configuration format           | New template YAML schema          | **MAJOR**    |
-| Breaking API changes                  | Renamed CLI commands              | **MAJOR**    |
-| New features/capabilities             | Added new provisioner             | **MINOR**    |
-| Non-breaking enhancements             | Additional template options       | **MINOR**    |
-| Bug fixes                             | Fixed build errors                | **PATCH**    |
-| Documentation updates                 | Updated README                    | **PATCH**    |
-| Dependency updates (non-breaking)     | Updated Go dependencies           | **PATCH**    |
+| Change Type                       | Example                         | Version Type |
+| --------------------------------- | ------------------------------- | ------------ |
+| Remove features/templates         | Deleted legacy Packer templates | **MAJOR**    |
+| Change configuration format       | New template YAML schema        | **MAJOR**    |
+| Breaking API changes              | Renamed CLI commands            | **MAJOR**    |
+| New features/capabilities         | Added new provisioner           | **MINOR**    |
+| Non-breaking enhancements         | Additional template options     | **MINOR**    |
+| Bug fixes                         | Fixed build errors              | **PATCH**    |
+| Documentation updates             | Updated README                  | **PATCH**    |
+| Dependency updates (non-breaking) | Updated Go dependencies         | **PATCH**    |
 
 ### Checking What Changed
 
@@ -175,12 +182,14 @@ task go:release TAG=v3.0.0
 ```
 
 **What it does:**
+
 - Creates an annotated git tag
 - Pushes tag to remote (triggers goreleaser)
 - Validates working directory is clean
 - Requires gh CLI
 
 **Preconditions:**
+
 - Clean working directory (no uncommitted changes)
 - No staged changes
 - `gh` CLI installed
@@ -202,6 +211,7 @@ task go:release-changelog FROM=v2.0.1 TO=HEAD
 ```
 
 **Variables:**
+
 - `FROM` (optional) - Starting tag (defaults to latest tag)
 - `TO` (optional) - Ending ref (defaults to HEAD)
 
@@ -236,6 +246,7 @@ task go:release-test
 ```
 
 **What it does:**
+
 - Runs goreleaser in snapshot mode
 - Creates binaries in `dist/` directory
 - Does not publish anything
@@ -264,6 +275,7 @@ task go:release-draft TAG=v3.0.0 TITLE="Major Release v3.0.0"
 ```
 
 **Variables:**
+
 - `TAG` (required) - Release tag
 - `TITLE` (optional) - Release title (defaults to TAG)
 - `NOTES` (optional) - Custom notes (defaults to auto-generated)
@@ -280,6 +292,7 @@ task go:release-delete TAG=v1.0.0
 ```
 
 **What it does:**
+
 - Deletes GitHub release
 - Deletes local git tag
 - Deletes remote git tag
@@ -304,6 +317,7 @@ on:
 ```
 
 **Workflow:**
+
 1. Tag push triggers the workflow
 2. Fetches all tags and sets up Go 1.25.5
 3. Runs goreleaser with `.goreleaser.yaml` config
@@ -335,6 +349,7 @@ Use this checklist for major releases:
 
 ```markdown
 ## Pre-Release
+
 - [ ] All tests passing
 - [ ] Documentation updated
 - [ ] CHANGELOG reviewed
@@ -344,6 +359,7 @@ Use this checklist for major releases:
 - [ ] Dependencies updated
 
 ## Release
+
 - [ ] Determined correct version number
 - [ ] Reviewed changelog (`task go:release-changelog`)
 - [ ] Tested goreleaser locally (`task go:release-test`)
@@ -352,11 +368,9 @@ Use this checklist for major releases:
 - [ ] Verified release created (`task go:release-check`)
 
 ## Post-Release
+
 - [ ] Tested installation (`go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest`)
 - [ ] Verified binaries work on different platforms
-- [ ] Updated documentation if needed
-- [ ] Announced release (if major)
-- [ ] Closed milestone (if applicable)
 ```
 
 ---
@@ -365,11 +379,11 @@ Use this checklist for major releases:
 
 ### Tag Naming Convention
 
-| Release Type | Tag Format     | Example       | When to Use              |
-| ------------ | -------------- | ------------- | ------------------------ |
-| Stable       | `vMAJOR.MINOR.PATCH` | `v3.0.0`      | Production releases      |
-| Pre-release  | `vX.Y.Z-beta.N`      | `v3.0.0-beta.1` | Testing before stable    |
-| Release Candidate | `vX.Y.Z-rc.N`   | `v3.0.0-rc.1`   | Final testing            |
+| Release Type      | Tag Format           | Example         | When to Use           |
+| ----------------- | -------------------- | --------------- | --------------------- |
+| Stable            | `vMAJOR.MINOR.PATCH` | `v3.0.0`        | Production releases   |
+| Pre-release       | `vX.Y.Z-beta.N`      | `v3.0.0-beta.1` | Testing before stable |
+| Release Candidate | `vX.Y.Z-rc.N`        | `v3.0.0-rc.1`   | Final testing         |
 
 ### Creating Tags
 
@@ -432,78 +446,6 @@ git push origin :refs/tags/v3.0.0
 task go:release-delete TAG=v3.0.0
 ```
 
-### Working Directory Not Clean
-
-**Issue:** Cannot create tag with uncommitted changes
-
-```bash
-# View status
-git status
-
-# Commit changes
-git add .
-git commit -m "chore: prepare for release"
-
-# Or stash changes
-git stash
-```
-
-### Release Created But Assets Missing
-
-**Issue:** Release exists but binaries not uploaded
-
-```bash
-# Check workflow logs
-gh run view --log
-
-# Manually trigger goreleaser (from main branch)
-git checkout main
-git pull
-git tag -f v3.0.0
-git push -f origin v3.0.0
-```
-
-### Binary Doesn't Work After Release
-
-**Issue:** Users report binary issues
-
-```bash
-# Test installation
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@v3.0.0
-
-# Verify version
-warpgate --version
-
-# Download and test binary directly
-wget https://github.com/CowDogMoo/warpgate/releases/download/v3.0.0/warpgate-linux-amd64
-chmod +x warpgate-linux-amd64
-./warpgate-linux-amd64 --version
-```
-
-### Wrong Version in Binary
-
-**Issue:** `warpgate --version` shows incorrect version
-
-The version is injected via ldflags in `.goreleaser.yaml`:
-
-```yaml
-ldflags:
-  - -s -w
-  - -X main.version={{.Version}}
-  - -X main.commit={{.Commit}}
-  - -X main.date={{.Date}}
-```
-
-Ensure your `cmd/warpgate/main.go` has these variables:
-
-```go
-var (
-    version = "dev"
-    commit  = "unknown"
-    date    = "unknown"
-)
-```
-
 ---
 
 ## 📊 Release Analytics
@@ -538,43 +480,8 @@ git shortlog v2.0.1..v3.0.0 -sn
 
 ## 📚 Related Documentation
 
-- [Main README](../README.md) - Repository overview
 - [Commands Reference](./commands.md) - CLI documentation
 - [Troubleshooting Guide](./troubleshooting.md) - Common issues
 - [Semantic Versioning](https://semver.org/) - Version numbering standard
 - [GoReleaser Documentation](https://goreleaser.com/) - Release tool docs
 - [Conventional Commits](https://www.conventionalcommits.org/) - Commit message format
-
----
-
-## 🎯 Best Practices
-
-### DO
-
-- ✅ Follow semantic versioning strictly
-- ✅ Test releases locally with `task go:release-test`
-- ✅ Write meaningful release notes
-- ✅ Document breaking changes clearly
-- ✅ Update CHANGELOG before releasing
-- ✅ Announce major releases
-- ✅ Use task automation for consistency
-
-### DON'T
-
-- ❌ Release with uncommitted changes
-- ❌ Skip testing on major releases
-- ❌ Use `gh release create` (bypasses goreleaser)
-- ❌ Delete tags without careful consideration
-- ❌ Force push to main branch
-- ❌ Release without reviewing changelog
-
----
-
-## 📞 Getting Help
-
-If you encounter issues not covered in this guide:
-
-1. Check the [Troubleshooting Guide](./troubleshooting.md)
-2. Search [existing issues](https://github.com/CowDogMoo/warpgate/issues)
-3. Open a [new issue](https://github.com/CowDogMoo/warpgate/issues/new)
-4. Review [goreleaser documentation](https://goreleaser.com/errors/)
