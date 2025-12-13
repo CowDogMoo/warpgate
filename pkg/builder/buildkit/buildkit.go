@@ -62,8 +62,8 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/errors"
 	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
-	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
+	"github.com/cowdogmoo/warpgate/pkg/templates"
 )
 
 // BuildKitBuilder implements container image building using Docker BuildKit.
