@@ -47,6 +47,25 @@ func (pv *PathValidator) IsGitURL(s string) bool {
 		strings.HasPrefix(s, "git@")
 }
 
+// IsLocalPath checks if a path is a local directory.
+func (pv *PathValidator) IsLocalPath(path string) bool {
+	if filepath.IsAbs(path) {
+		info, err := os.Stat(path)
+		return err == nil && info.IsDir()
+	}
+
+	if strings.HasPrefix(path, ".") || strings.HasPrefix(path, "~") {
+		expandedPath, err := pathexpand.ExpandPath(path)
+		if err != nil {
+			return false
+		}
+		info, err := os.Stat(expandedPath)
+		return err == nil && info.IsDir()
+	}
+
+	return !pv.IsGitURL(path)
+}
+
 // NormalizePath normalizes a path for comparison by expanding ~ and converting to absolute path.
 func (pv *PathValidator) NormalizePath(path string) (string, error) {
 	expandedPath, err := pathexpand.ExpandPath(path)

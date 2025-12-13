@@ -91,11 +91,12 @@ func TestIsValidGitURL(t *testing.T) {
 		{"invalid protocol", "ftp://git.example.com/jdoe/repo.git", false},
 	}
 
+	pv := NewPathValidator()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isValidGitURL(tt.url)
+			result := pv.IsGitURL(tt.url)
 			if result != tt.valid {
-				t.Errorf("isValidGitURL(%q) = %v, want %v", tt.url, result, tt.valid)
+				t.Errorf("IsGitURL(%q) = %v, want %v", tt.url, result, tt.valid)
 			}
 		})
 	}
@@ -413,11 +414,12 @@ func TestIsLocalPath(t *testing.T) {
 		},
 	}
 
+	pv := NewPathValidator()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isLocalPath(tt.path)
+			result := pv.IsLocalPath(tt.path)
 			if result != tt.expected {
-				t.Errorf("isLocalPath(%q) = %v, want %v", tt.path, result, tt.expected)
+				t.Errorf("IsLocalPath(%q) = %v, want %v", tt.path, result, tt.expected)
 			}
 		})
 	}

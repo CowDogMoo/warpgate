@@ -34,16 +34,16 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
-	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"gopkg.in/yaml.v3"
 )
 
 // TemplateRegistry manages template repositories
 type TemplateRegistry struct {
-	repos      map[string]string // name -> git URL or local path
-	localPaths []string          // additional local directories to scan
-	cacheDir   string            // persistent cache directory
+	repos         map[string]string // name -> git URL or local path
+	localPaths    []string          // additional local directories to scan
+	cacheDir      string            // persistent cache directory
+	pathValidator *PathValidator    // path validation utilities
 }
 
 // CacheMetadata stores information about cached templates
@@ -62,31 +62,6 @@ type TemplateInfo struct {
 	Path        string
 	Tags        []string
 	Author      string
-}
-
-// isLocalPath checks if a path is a local directory
-func isLocalPath(path string) bool {
-	if filepath.IsAbs(path) {
-		info, err := os.Stat(path)
-		return err == nil && info.IsDir()
-	}
-
-	if strings.HasPrefix(path, ".") || strings.HasPrefix(path, "~") {
-		expandedPath := pathexpand.MustExpandPath(path)
-		info, err := os.Stat(expandedPath)
-		return err == nil && info.IsDir()
-	}
-
-	return !strings.HasPrefix(path, "http://") &&
-		!strings.HasPrefix(path, "https://") &&
-		!strings.HasPrefix(path, "git@")
-}
-
-// isValidGitURL checks if a URL is a valid Git URL
-func isValidGitURL(url string) bool {
-	return strings.HasPrefix(url, "https://") ||
-		strings.HasPrefix(url, "http://") ||
-		strings.HasPrefix(url, "git@")
 }
 
 // isPlaceholderURL detects URLs that appear to be documentation placeholders
@@ -159,11 +134,13 @@ func NewTemplateRegistry() (*TemplateRegistry, error) {
 				continue
 			}
 
-			if isLocalPath(url) {
+			// Create temporary PathValidator for validation
+			pv := NewPathValidator()
+			if pv.IsLocalPath(url) {
 				return nil, fmt.Errorf("repository '%s' is a local path (%s); use 'local_paths' for local directories, 'repositories' for git URLs only", name, url)
 			}
 
-			if !isValidGitURL(url) {
+			if !pv.IsGitURL(url) {
 				return nil, fmt.Errorf("repository '%s' has invalid Git URL '%s'; expected https://, http://, or git@ URL", name, url)
 			}
 
@@ -176,9 +153,10 @@ func NewTemplateRegistry() (*TemplateRegistry, error) {
 	}
 
 	tr := &TemplateRegistry{
-		repos:      repos,
-		localPaths: cfg.Templates.LocalPaths,
-		cacheDir:   cacheDir,
+		repos:         repos,
+		localPaths:    cfg.Templates.LocalPaths,
+		cacheDir:      cacheDir,
+		pathValidator: NewPathValidator(),
 	}
 
 	return tr, nil
@@ -197,7 +175,7 @@ func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
 		return nil, fmt.Errorf("unknown repository: %s", repoName)
 	}
 
-	if isLocalPath(repoURL) {
+	if tr.pathValidator.IsLocalPath(repoURL) {
 		logging.Debug("Scanning local templates directory: %s", repoURL)
 		return tr.discoverTemplates(repoURL)
 	}
@@ -259,7 +237,7 @@ func (tr *TemplateRegistry) listAll() ([]TemplateInfo, error) {
 
 	// Scan additional local paths
 	for _, localPath := range tr.localPaths {
-		if !isLocalPath(localPath) {
+		if !tr.pathValidator.IsLocalPath(localPath) {
 			continue
 		}
 		templates, err := tr.discoverTemplates(localPath)
@@ -283,7 +261,7 @@ func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
 
 	// Check repos for local paths
 	for repoName, repoURL := range tr.repos {
-		if !isLocalPath(repoURL) {
+		if !tr.pathValidator.IsLocalPath(repoURL) {
 			continue
 		}
 		templates, err := tr.discoverTemplates(repoURL)
@@ -300,7 +278,7 @@ func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
 
 	// Scan additional local paths from config
 	for _, localPath := range tr.localPaths {
-		if !isLocalPath(localPath) {
+		if !tr.pathValidator.IsLocalPath(localPath) {
 			continue
 		}
 		templates, err := tr.discoverTemplates(localPath)

@@ -152,16 +152,16 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
-	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
 )
 
 // TemplateLoader handles template discovery and loading
 type TemplateLoader struct {
-	cacheDir   string
-	registry   *TemplateRegistry
-	configLoad *config.Loader
-	gitOps     *GitOperations
-	variables  map[string]string // Variables for template substitution
+	cacheDir      string
+	registry      *TemplateRegistry
+	configLoad    *config.Loader
+	gitOps        *GitOperations
+	variables     map[string]string // Variables for template substitution
+	pathValidator *PathValidator    // path validation utilities
 }
 
 // NewTemplateLoader creates a new template loader
@@ -193,11 +193,12 @@ func NewTemplateLoader() (*TemplateLoader, error) {
 	}
 
 	return &TemplateLoader{
-		cacheDir:   cacheDir,
-		registry:   registry,
-		configLoad: config.NewLoader(),
-		gitOps:     NewGitOperations(cacheDir),
-		variables:  make(map[string]string),
+		cacheDir:      cacheDir,
+		registry:      registry,
+		configLoad:    config.NewLoader(),
+		gitOps:        NewGitOperations(cacheDir),
+		variables:     make(map[string]string),
+		pathValidator: NewPathValidator(),
 	}, nil
 }
 
@@ -266,7 +267,7 @@ func (tl *TemplateLoader) loadTemplateByNameWithVars(name string, vars map[strin
 	for repoName, repoURL := range repos {
 		logging.Debug("Checking repository %s: %s", repoName, repoURL)
 		// Check if it's a local path
-		if tl.isLocalPath(repoURL) {
+		if tl.pathValidator.IsLocalPath(repoURL) {
 			configPath := filepath.Join(repoURL, "templates", templateName, "warpgate.yaml")
 			logging.Debug("Checking local path: %s", configPath)
 			if fileExists(configPath) {
@@ -288,7 +289,7 @@ func (tl *TemplateLoader) loadTemplateByNameWithVars(name string, vars map[strin
 	// Also check local paths from config
 	localPaths := tl.registry.GetLocalPaths()
 	for _, localPath := range localPaths {
-		if !tl.isLocalPath(localPath) {
+		if !tl.pathValidator.IsLocalPath(localPath) {
 			continue
 		}
 		configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
@@ -317,27 +318,6 @@ func (tl *TemplateLoader) loadFromRegistryWithVars(repoURL, templateName, versio
 		return nil, fmt.Errorf("template file not found at: %s", configPath)
 	}
 	return tl.loadFromFileWithVars(configPath, vars)
-}
-
-// isLocalPath checks if a path is a local directory
-func (tl *TemplateLoader) isLocalPath(path string) bool {
-	// Absolute paths
-	if filepath.IsAbs(path) {
-		info, err := os.Stat(path)
-		return err == nil && info.IsDir()
-	}
-
-	// Relative paths or home paths
-	if strings.HasPrefix(path, ".") || strings.HasPrefix(path, "~") {
-		expandedPath := pathexpand.MustExpandPath(path)
-		info, err := os.Stat(expandedPath)
-		return err == nil && info.IsDir()
-	}
-
-	// Not a URL
-	return !strings.HasPrefix(path, "http://") &&
-		!strings.HasPrefix(path, "https://") &&
-		!strings.HasPrefix(path, "git@")
 }
 
 // loadFromGitWithVars loads a template from a git URL with variable substitution.
