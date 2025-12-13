@@ -271,7 +271,10 @@ func createAMIBuilder(ctx context.Context, config interface{}) (builder.AMIBuild
 		SessionToken    string
 	}
 
-	cfg := config.(clientConfig)
+	cfg, ok := config.(clientConfig)
+	if !ok {
+		return nil, fmt.Errorf("invalid config type: expected clientConfig")
+	}
 	amiCfg := ami.ClientConfig{
 		Region:          cfg.Region,
 		Profile:         cfg.Profile,
