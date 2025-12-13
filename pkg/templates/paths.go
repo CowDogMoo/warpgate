@@ -121,6 +121,18 @@ func (pv *PathValidator) ExpandPath(path string) (string, error) {
 	return expandedPath, nil
 }
 
+// FileExists checks if a file or directory exists.
+func (pv *PathValidator) FileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// DirExists checks if a path exists and is a directory.
+func (pv *PathValidator) DirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
 // ExtractRepoName extracts a repository name from a git URL.
 // For example: https://git.example.com/jdoe/my-templates.git => my-templates
 func ExtractRepoName(gitURL string) string {

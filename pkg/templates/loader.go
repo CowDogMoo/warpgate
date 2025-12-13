@@ -225,12 +225,12 @@ func (tl *TemplateLoader) LoadTemplateWithVars(ref string, vars map[string]strin
 	logging.Debug("Loading template: %s", ref)
 
 	// Strategy 1: Local file path (absolute or relative warpgate.yaml)
-	if filepath.IsAbs(ref) || fileExists(ref) {
+	if filepath.IsAbs(ref) || tl.pathValidator.FileExists(ref) {
 		logging.Debug("Loading template from local file: %s", ref)
 		// If it's a directory, look for warpgate.yaml inside
 		if info, err := os.Stat(ref); err == nil && info.IsDir() {
 			configPath := filepath.Join(ref, "warpgate.yaml")
-			if fileExists(configPath) {
+			if tl.pathValidator.FileExists(configPath) {
 				return tl.loadFromFileWithVars(configPath, mergedVars)
 			}
 			return nil, fmt.Errorf("no warpgate.yaml found in directory: %s", ref)
@@ -270,7 +270,7 @@ func (tl *TemplateLoader) loadTemplateByNameWithVars(name string, vars map[strin
 		if tl.pathValidator.IsLocalPath(repoURL) {
 			configPath := filepath.Join(repoURL, "templates", templateName, "warpgate.yaml")
 			logging.Debug("Checking local path: %s", configPath)
-			if fileExists(configPath) {
+			if tl.pathValidator.FileExists(configPath) {
 				logging.Debug("Found template %s in local path: %s", templateName, repoURL)
 				return tl.loadFromFileWithVars(configPath, vars)
 			}
@@ -293,7 +293,7 @@ func (tl *TemplateLoader) loadTemplateByNameWithVars(name string, vars map[strin
 			continue
 		}
 		configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
-		if fileExists(configPath) {
+		if tl.pathValidator.FileExists(configPath) {
 			logging.Debug("Found template %s in local path: %s", templateName, localPath)
 			return tl.loadFromFileWithVars(configPath, vars)
 		}
@@ -314,7 +314,7 @@ func (tl *TemplateLoader) loadFromRegistryWithVars(repoURL, templateName, versio
 	// Load config from cloned repo
 	configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
 	logging.Debug("Checking for template at path: %s", configPath)
-	if !fileExists(configPath) {
+	if !tl.pathValidator.FileExists(configPath) {
 		return nil, fmt.Errorf("template file not found at: %s", configPath)
 	}
 	return tl.loadFromFileWithVars(configPath, vars)
@@ -371,10 +371,4 @@ func parseTemplateRef(ref string) (name, version string) {
 		version = parts[1]
 	}
 	return name, version
-}
-
-// fileExists checks if a file exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }

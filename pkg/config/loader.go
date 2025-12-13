@@ -76,10 +76,6 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 	return &config, nil
 }
 
-func expandTildePath(path string) string {
-	return pathexpand.MustExpandPath(path)
-}
-
 // expandVariables expands ${VAR} style variables only
 // Variables from the vars map take precedence over environment variables
 // $VAR syntax (without braces) is left untouched for container-level expansion
@@ -102,7 +98,7 @@ func (l *Loader) expandVariables(s string, vars map[string]string) string {
 				if value == "" {
 					value = os.Getenv(varName)
 				}
-				value = expandTildePath(value)
+				value = pathexpand.MustExpandPath(value)
 				result.WriteString(value)
 				i += end + 2 // skip past ${varName}
 				continue
@@ -132,13 +128,13 @@ func (l *Loader) resolveDockerfilePaths(config *builder.Config, baseDir string) 
 		return
 	}
 	if config.Dockerfile.Path != "" {
-		config.Dockerfile.Path = expandTildePath(config.Dockerfile.Path)
+		config.Dockerfile.Path = pathexpand.MustExpandPath(config.Dockerfile.Path)
 		if !filepath.IsAbs(config.Dockerfile.Path) {
 			config.Dockerfile.Path = filepath.Join(baseDir, config.Dockerfile.Path)
 		}
 	}
 	if config.Dockerfile.Context != "" {
-		config.Dockerfile.Context = expandTildePath(config.Dockerfile.Context)
+		config.Dockerfile.Context = pathexpand.MustExpandPath(config.Dockerfile.Context)
 		if !filepath.IsAbs(config.Dockerfile.Context) {
 			config.Dockerfile.Context = filepath.Join(baseDir, config.Dockerfile.Context)
 		}
@@ -161,7 +157,7 @@ func (l *Loader) resolveProvisionerPaths(prov *builder.Provisioner, baseDir stri
 func resolvePathList(paths []string, baseDir string) {
 	for i := range paths {
 		if paths[i] != "" {
-			paths[i] = expandTildePath(paths[i])
+			paths[i] = pathexpand.MustExpandPath(paths[i])
 			if !filepath.IsAbs(paths[i]) {
 				paths[i] = filepath.Join(baseDir, paths[i])
 			}
@@ -172,7 +168,7 @@ func resolvePathList(paths []string, baseDir string) {
 // resolveSinglePath converts path to absolute. Absolute paths are left unchanged.
 func resolveSinglePath(path *string, baseDir string) {
 	if *path != "" {
-		*path = expandTildePath(*path)
+		*path = pathexpand.MustExpandPath(*path)
 		if !filepath.IsAbs(*path) {
 			*path = filepath.Join(baseDir, *path)
 		}

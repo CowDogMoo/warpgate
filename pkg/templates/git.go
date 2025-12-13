@@ -50,8 +50,9 @@ func NewGitOperations(cacheDir string) *GitOperations {
 func (g *GitOperations) CloneOrUpdate(gitURL, version string) (string, error) {
 	repoPath := g.getCachePath(gitURL, version)
 
+	pv := NewPathValidator()
 	// Check if already cached
-	if dirExists(repoPath) {
+	if pv.DirExists(repoPath) {
 		logging.Debug("Repository already cached at %s, pulling updates", repoPath)
 		if err := g.pullUpdates(repoPath); err != nil {
 			logging.Warn("Failed to pull updates, using cached version: %v", err)
@@ -166,10 +167,4 @@ func (g *GitOperations) getCachePath(gitURL, version string) string {
 	}
 
 	return filepath.Join(g.cacheDir, cleanURL)
-}
-
-// dirExists checks if a directory exists
-func dirExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }

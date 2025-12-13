@@ -34,7 +34,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
@@ -63,6 +62,7 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/errors"
 	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 )
 
@@ -722,40 +722,24 @@ func extractArchFromPlatform(platform string) string {
 	return ""
 }
 
-// expandPath expands ~ and environment variables in paths and converts to absolute paths.
-func expandPath(path string) (string, error) {
-	expandedPath, err := pathexpand.ExpandPath(path)
-	if err != nil {
-		return "", errors.Wrap("expand path", path, err)
-	}
-
-	if !filepath.IsAbs(expandedPath) {
-		absPath, err := filepath.Abs(expandedPath)
-		if err != nil {
-			return "", errors.Wrap("get absolute path", expandedPath, err)
-		}
-		return absPath, nil
-	}
-
-	return expandedPath, nil
-}
-
 // calculateBuildContext finds the common parent directory of all files referenced in the config.
 func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, error) {
 	var paths []string
+
+	pv := templates.NewPathValidator()
 
 	for _, prov := range cfg.Provisioners {
 		switch prov.Type {
 		case "ansible":
 			if prov.PlaybookPath != "" {
-				expanded, err := expandPath(prov.PlaybookPath)
+				expanded, err := pv.ExpandPath(prov.PlaybookPath)
 				if err != nil {
 					return "", fmt.Errorf("failed to expand playbook path %s: %w", prov.PlaybookPath, err)
 				}
 				paths = append(paths, expanded)
 			}
 			if prov.GalaxyFile != "" {
-				expanded, err := expandPath(prov.GalaxyFile)
+				expanded, err := pv.ExpandPath(prov.GalaxyFile)
 				if err != nil {
 					return "", fmt.Errorf("failed to expand galaxy file path %s: %w", prov.GalaxyFile, err)
 				}
@@ -763,7 +747,7 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 			}
 		case "file":
 			if prov.Source != "" {
-				expanded, err := expandPath(prov.Source)
+				expanded, err := pv.ExpandPath(prov.Source)
 				if err != nil {
 					return "", fmt.Errorf("failed to expand file source path %s: %w", prov.Source, err)
 				}
@@ -771,7 +755,7 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 			}
 		case "script":
 			for _, script := range prov.Scripts {
-				expanded, err := expandPath(script)
+				expanded, err := pv.ExpandPath(script)
 				if err != nil {
 					return "", fmt.Errorf("failed to expand script path %s: %w", script, err)
 				}
@@ -828,7 +812,8 @@ func findCommonParent(path1, path2 string) string {
 
 // makeRelativePath converts an absolute path to be relative to the build context
 func (b *BuildKitBuilder) makeRelativePath(path string) (string, error) {
-	absPath, err := expandPath(path)
+	pv := templates.NewPathValidator()
+	absPath, err := pv.ExpandPath(path)
 	if err != nil {
 		return "", fmt.Errorf("failed to expand path: %w", err)
 	}
