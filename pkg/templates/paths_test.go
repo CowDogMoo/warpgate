@@ -25,6 +25,7 @@ package templates
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -38,12 +39,12 @@ func TestIsGitURL(t *testing.T) {
 	}{
 		{
 			name:  "https URL",
-			input: "https://github.com/user/repo.git",
+			input: "https://git.example.com/jdoe/repo.git",
 			want:  true,
 		},
 		{
 			name:  "http URL",
-			input: "http://github.com/user/repo.git",
+			input: "http://git.example.com/jdoe/repo.git",
 			want:  true,
 		},
 		{
@@ -184,7 +185,7 @@ func TestValidateLocalPath(t *testing.T) {
 				return
 			}
 			if tt.wantErr && tt.errMsg != "" && err != nil {
-				if !contains(err.Error(), tt.errMsg) {
+				if !strings.Contains(err.Error(), tt.errMsg) {
 					t.Errorf("ValidateLocalPath() error = %v, want error containing %q", err, tt.errMsg)
 				}
 			}
@@ -245,12 +246,12 @@ func TestExtractRepoName(t *testing.T) {
 	}{
 		{
 			name:   "https URL with .git",
-			gitURL: "https://github.com/user/my-templates.git",
+			gitURL: "https://git.example.com/jdoe/my-templates.git",
 			want:   "my-templates",
 		},
 		{
 			name:   "https URL without .git",
-			gitURL: "https://github.com/user/my-templates",
+			gitURL: "https://git.example.com/jdoe/my-templates",
 			want:   "my-templates",
 		},
 		{
@@ -265,7 +266,7 @@ func TestExtractRepoName(t *testing.T) {
 		},
 		{
 			name:   "URL with trailing slash",
-			gitURL: "https://github.com/user/repo.git/",
+			gitURL: "https://git.example.com/jdoe/repo.git/",
 			want:   "templates",
 		},
 		{
@@ -314,18 +315,4 @@ func TestExtractRepoName_GitSSHFormat(t *testing.T) {
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && hasSubstring(s, substr)))
-}
-
-func hasSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

@@ -26,7 +26,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/spf13/viper"
 )
@@ -34,12 +34,12 @@ import (
 // Manager handles template source management including adding, removing,
 // and persisting template repositories and local paths.
 type Manager struct {
-	config    *globalconfig.Config
+	config    *config.Config
 	validator *PathValidator
 }
 
 // NewManager creates a new template manager with the given configuration.
-func NewManager(cfg *globalconfig.Config) *Manager {
+func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
 		config:    cfg,
 		validator: NewPathValidator(),
@@ -48,7 +48,7 @@ func NewManager(cfg *globalconfig.Config) *Manager {
 
 // AddGitRepository adds a git repository to template sources.
 // If name is empty, it auto-generates one from the URL.
-func (m *Manager) AddGitRepository(ctx context.Context, name, url string) error {
+func (m *Manager) AddGitRepository(ctx context.Context, name, gitURL string) error {
 	// Initialize repositories map if nil
 	if m.config.Templates.Repositories == nil {
 		m.config.Templates.Repositories = make(map[string]string)
@@ -56,27 +56,35 @@ func (m *Manager) AddGitRepository(ctx context.Context, name, url string) error 
 
 	// Auto-generate name if not provided
 	if name == "" {
-		name = ExtractRepoName(url)
+		name = ExtractRepoName(gitURL)
+	}
+
+	if !m.validator.IsGitURL(gitURL) {
+		return fmt.Errorf("invalid Git URL '%s'; expected https://, http://, or git@ URL", gitURL)
+	}
+
+	if isPlaceholderURL(gitURL) {
+		return fmt.Errorf("URL '%s' appears to be a placeholder from documentation examples; please use a real repository URL", gitURL)
 	}
 
 	// Check if already exists
 	if existing, ok := m.config.Templates.Repositories[name]; ok {
-		if existing == url {
+		if existing == gitURL {
 			logging.WarnContext(ctx, "Repository '%s' already exists", name)
 			return nil
 		}
 		return fmt.Errorf("repository name '%s' already exists with different URL: %s", name, existing)
 	}
 
-	logging.InfoContext(ctx, "Adding git repository: %s -> %s", name, url)
-	m.config.Templates.Repositories[name] = url
+	logging.InfoContext(ctx, "Adding git repository: %s -> %s", name, gitURL)
+	m.config.Templates.Repositories[name] = gitURL
 
 	// Save to config file
 	if err := m.saveConfigValue("templates.repositories", m.config.Templates.Repositories); err != nil {
 		return err
 	}
 
-	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	configPath, _ := config.ConfigFile("config.yaml")
 	logging.InfoContext(ctx, "Repository added successfully as '%s' to %s", name, configPath)
 	logging.InfoContext(ctx, "Run 'warpgate templates update' to fetch templates")
 
@@ -114,7 +122,7 @@ func (m *Manager) AddLocalPath(ctx context.Context, path string) error {
 		return err
 	}
 
-	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	configPath, _ := config.ConfigFile("config.yaml")
 	logging.InfoContext(ctx, "Template directory added successfully to %s", configPath)
 
 	return nil
@@ -145,7 +153,7 @@ func (m *Manager) RemoveSource(ctx context.Context, pathOrName string) error {
 	}
 
 	// Log results
-	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	configPath, _ := config.ConfigFile("config.yaml")
 	if removedFromPaths {
 		logging.InfoContext(ctx, "Removed from local_paths in %s", configPath)
 	}
@@ -184,7 +192,7 @@ func (m *Manager) removeFromRepositories(name string) bool {
 
 // saveConfigValue saves a single configuration value to the config file.
 func (m *Manager) saveConfigValue(key string, value interface{}) error {
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}
@@ -208,7 +216,7 @@ func (m *Manager) saveConfigValue(key string, value interface{}) error {
 
 // saveTemplatesConfig saves the entire templates configuration to the config file.
 func (m *Manager) saveTemplatesConfig() error {
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}

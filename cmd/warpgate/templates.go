@@ -77,6 +77,7 @@ Examples:
 var (
 	templatesListFormat string
 	templatesListSource string
+	templatesListQuiet  bool
 )
 
 var templatesListCmd = &cobra.Command{
@@ -131,6 +132,7 @@ func init() {
 	// Add flags to templates list command
 	templatesListCmd.Flags().StringVarP(&templatesListFormat, "format", "f", "table", "Output format (table, json, gha-matrix)")
 	templatesListCmd.Flags().StringVarP(&templatesListSource, "source", "s", "all", "Filter by source (all, local, git, or specific repo name)")
+	templatesListCmd.Flags().BoolVarP(&templatesListQuiet, "quiet", "q", false, "Suppress informational output")
 }
 
 func runTemplatesAdd(cmd *cobra.Command, args []string) error {
@@ -193,32 +195,63 @@ func runTemplatesRemove(cmd *cobra.Command, args []string) error {
 
 func runTemplatesList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	logging.InfoContext(ctx, "Fetching available templates...")
 
-	// Create template registry
+	// Suppress logging for quiet mode or structured output formats
+	shouldSuppressLog := templatesListQuiet || templatesListFormat == "json" || templatesListFormat == "gha-matrix"
+
+	if shouldSuppressLog {
+		logging.SetQuiet(true)
+		defer logging.SetQuiet(false)
+	}
+
+	if !shouldSuppressLog {
+		logging.InfoContext(ctx, "Fetching available templates...")
+	}
+
 	registry, err := templates.NewTemplateRegistry()
 	if err != nil {
 		return fmt.Errorf("failed to create template registry: %w", err)
 	}
 
-	// List all templates from all sources
-	templateList, err := registry.List("all")
-	if err != nil {
-		return fmt.Errorf("failed to list templates: %w", err)
+	var templateList []templates.TemplateInfo
+
+	// Use local-only listing when --source local to avoid git operations
+	if templatesListSource == "local" {
+		templateList, err = registry.ListLocal()
+		if err != nil {
+			return fmt.Errorf("failed to list local templates: %w", err)
+		}
+	} else {
+		// List all templates from all sources
+		templateList, err = registry.List("all")
+		if err != nil {
+			return fmt.Errorf("failed to list templates: %w", err)
+		}
+
+		// Apply source filter if specified and not "all"
+		if templatesListSource != "all" {
+			filter := templates.NewFilter()
+			templateList = filter.BySource(templateList, templatesListSource)
+		}
 	}
 
-	// Apply source filter if specified
-	if templatesListSource != "all" {
-		filter := templates.NewFilter()
-		templateList = filter.BySource(templateList, templatesListSource)
-	}
-
+	// Output empty JSON array for structured formats when no templates found
 	if len(templateList) == 0 {
-		logging.InfoContext(ctx, "No templates found. Configure template repositories or local paths in ~/.warpgate/config.yaml")
+		switch templatesListFormat {
+		case "gha-matrix":
+			fmt.Println("{\"template\": []}")
+			return nil
+		case "json":
+			fmt.Println("[]")
+			return nil
+		}
+
+		if !shouldSuppressLog {
+			logging.InfoContext(ctx, "No templates found. Configure template repositories or local paths in ~/.warpgate/config.yaml")
+		}
 		return nil
 	}
 
-	// Use output formatter
 	formatter := cli.NewOutputFormatter(templatesListFormat)
 	return formatter.DisplayTemplateList(templateList)
 }
@@ -262,7 +295,7 @@ func runTemplatesInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load the template configuration
-	cfg, err := loader.LoadTemplate(templateName)
+	cfg, err := loader.LoadTemplateWithVars(templateName, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load template: %w", err)
 	}

@@ -340,6 +340,16 @@ func SetQuiet(quiet bool) {
 	logger.SetQuiet(quiet)
 }
 
+// IsQuiet returns whether the global logger is in quiet mode.
+func IsQuiet() bool {
+	if err := ensureLogger(); err != nil {
+		return false
+	}
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
+	return logger.Quiet
+}
+
 // SetVerbose enables or disables verbose mode on the global logger.
 // In verbose mode, info and debug messages are displayed on console.
 func SetVerbose(verbose bool) {

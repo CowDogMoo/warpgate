@@ -52,15 +52,15 @@ func TestGitOperations_GetCachePath(t *testing.T) {
 	}{
 		{
 			name:     "https url without version",
-			gitURL:   "https://github.com/user/repo.git",
+			gitURL:   "https://git.example.com/jdoe/repo.git",
 			version:  "",
-			contains: []string{cacheDir, "github.com", "user", "repo"},
+			contains: []string{cacheDir, "git.example.com", "jdoe", "repo"},
 		},
 		{
 			name:     "https url with version",
-			gitURL:   "https://github.com/user/repo.git",
+			gitURL:   "https://git.example.com/jdoe/repo.git",
 			version:  "v1.2.0",
-			contains: []string{cacheDir, "github.com", "user", "repo"},
+			contains: []string{cacheDir, "git.example.com", "jdoe", "repo"},
 		},
 		{
 			name:     "ssh url",
@@ -70,9 +70,9 @@ func TestGitOperations_GetCachePath(t *testing.T) {
 		},
 		{
 			name:     "url with main branch",
-			gitURL:   "https://github.com/user/repo.git",
+			gitURL:   "https://git.example.com/jdoe/repo.git",
 			version:  "main",
-			contains: []string{cacheDir, "github.com", "user", "repo"},
+			contains: []string{cacheDir, "git.example.com", "jdoe", "repo"},
 		},
 	}
 
@@ -84,7 +84,6 @@ func TestGitOperations_GetCachePath(t *testing.T) {
 				assert.Contains(t, path, part)
 			}
 
-			// Verify no .git suffix in path
 			assert.NotContains(t, path, ".git")
 		})
 	}
@@ -101,17 +100,17 @@ func TestGitOperations_CachePathCleaning(t *testing.T) {
 	}{
 		{
 			name:    "https with .git",
-			gitURL:  "https://github.com/user/repo.git",
+			gitURL:  "https://git.example.com/jdoe/repo.git",
 			version: "",
 		},
 		{
 			name:    "https without .git",
-			gitURL:  "https://github.com/user/repo",
+			gitURL:  "https://git.example.com/jdoe/repo",
 			version: "",
 		},
 		{
 			name:    "http url",
-			gitURL:  "http://github.com/user/repo.git",
+			gitURL:  "http://git.example.com/jdoe/repo.git",
 			version: "",
 		},
 		{
@@ -143,7 +142,7 @@ func TestGitOperations_VersionHashing(t *testing.T) {
 	cacheDir := t.TempDir()
 	gitOps := NewGitOperations(cacheDir)
 
-	gitURL := "https://github.com/user/repo.git"
+	gitURL := "https://git.example.com/jdoe/repo.git"
 
 	// Get paths for different versions
 	pathWithoutVersion := gitOps.getCachePath(gitURL, "")
@@ -261,7 +260,7 @@ func TestGitOperations_MultipleVersions(t *testing.T) {
 	cacheDir := t.TempDir()
 	gitOps := NewGitOperations(cacheDir)
 
-	gitURL := "https://github.com/user/repo.git"
+	gitURL := "https://git.example.com/jdoe/repo.git"
 
 	versions := []string{"v1.0.0", "v1.1.0", "v2.0.0"}
 	paths := make(map[string]string)
@@ -285,23 +284,42 @@ func TestGitOperations_URLVariations(t *testing.T) {
 	cacheDir := t.TempDir()
 	gitOps := NewGitOperations(cacheDir)
 
-	// Different URL formats for the same repo
-	urls := []string{
-		"https://github.com/user/repo.git",
-		"https://github.com/user/repo",
-		"http://github.com/user/repo.git",
-		"git@github.com:user/repo.git",
+	tests := []struct {
+		name     string
+		url      string
+		contains []string
+	}{
+		{
+			name:     "https with .git",
+			url:      "https://git.example.com/jdoe/repo.git",
+			contains: []string{"git.example.com", "jdoe", "repo"},
+		},
+		{
+			name:     "https without .git",
+			url:      "https://git.example.com/jdoe/repo",
+			contains: []string{"git.example.com", "jdoe", "repo"},
+		},
+		{
+			name:     "http with .git",
+			url:      "http://git.example.com/jdoe/repo.git",
+			contains: []string{"git.example.com", "jdoe", "repo"},
+		},
+		{
+			name:     "ssh github format",
+			url:      "git@github.com:user/repo.git",
+			contains: []string{"github.com", "user", "repo"},
+		},
 	}
 
-	paths := make([]string, len(urls))
-	for i, url := range urls {
-		paths[i] = gitOps.getCachePath(url, "")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := gitOps.getCachePath(tt.url, "")
 
-	// All paths should resolve to similar structure (github.com/user/repo)
-	for _, path := range paths {
-		assert.Contains(t, path, "github.com")
-		assert.Contains(t, path, "user")
-		assert.Contains(t, path, "repo")
+			for _, part := range tt.contains {
+				assert.Contains(t, path, part, "Path should contain %s", part)
+			}
+
+			assert.NotContains(t, path, ".git")
+		})
 	}
 }

@@ -25,13 +25,14 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"gopkg.in/yaml.v3"
@@ -39,9 +40,10 @@ import (
 
 // TemplateRegistry manages template repositories
 type TemplateRegistry struct {
-	repos      map[string]string // name -> git URL or local path
-	localPaths []string          // additional local directories to scan
-	cacheDir   string            // persistent cache directory
+	repos         map[string]string // name -> git URL or local path
+	localPaths    []string          // additional local directories to scan
+	cacheDir      string            // persistent cache directory
+	pathValidator *PathValidator    // path validation utilities
 }
 
 // CacheMetadata stores information about cached templates
@@ -62,48 +64,92 @@ type TemplateInfo struct {
 	Author      string
 }
 
+// isPlaceholderURL detects URLs that appear to be documentation placeholders
+// by checking for RFC 2606 reserved domains and common placeholder patterns.
+func isPlaceholderURL(rawURL string) bool {
+	// Handle git@ URLs by converting to https:// for parsing
+	// Format: git@hostname:path -> https://hostname/path
+	parseURL := rawURL
+	if strings.HasPrefix(rawURL, "git@") {
+		withoutPrefix := strings.TrimPrefix(rawURL, "git@")
+		parts := strings.SplitN(withoutPrefix, ":", 2)
+		if len(parts) == 2 {
+			parseURL = "https://" + parts[0] + "/" + parts[1]
+		} else {
+			parseURL = "https://" + withoutPrefix
+		}
+	}
+
+	u, err := url.Parse(parseURL)
+	if err != nil {
+		logging.Debug("URL parse failed for %q: %v (not a placeholder)", rawURL, err)
+		return false // If it doesn't parse, let other validation handle it
+	}
+
+	hostname := strings.ToLower(u.Hostname())
+
+	// RFC 2606 reserved domains for documentation and examples
+	// See: https://datatracker.ietf.org/doc/html/rfc2606
+	return hostname == "example.com" ||
+		hostname == "example.org" ||
+		hostname == "example.net" ||
+		strings.HasSuffix(hostname, ".example") ||
+		strings.HasSuffix(hostname, ".example.com") ||
+		strings.HasSuffix(hostname, ".example.org") ||
+		strings.HasSuffix(hostname, ".example.net") ||
+		strings.HasSuffix(hostname, ".invalid") ||
+		strings.HasSuffix(hostname, ".test") ||
+		strings.HasSuffix(hostname, ".localhost")
+}
+
 // NewTemplateRegistry creates a new template registry
 func NewTemplateRegistry() (*TemplateRegistry, error) {
 	// Load global config to get repositories and local paths
-	cfg, err := globalconfig.Load()
+	cfg, err := config.Load()
 	if err != nil {
 		logging.Warn("Failed to load global config, using defaults: %v", err)
-		cfg = &globalconfig.Config{}
+		cfg = &config.Config{}
 	}
 
-	homeDir, err := os.UserHomeDir()
+	// Get cache directory for registry
+	cacheDir, err := config.GetCacheDir("registry")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, err
 	}
 
-	cacheDir := filepath.Join(homeDir, ".warpgate", "cache", "registry")
-	if cfg.Templates.CacheDir != "" {
-		cacheDir = cfg.Templates.CacheDir
-	}
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create cache directory: %w", err)
-	}
-
-	// Initialize with repositories from config
 	repos := make(map[string]string)
+	repos["official"] = "https://github.com/cowdogmoo/warpgate-templates.git"
+
 	if len(cfg.Templates.Repositories) > 0 {
 		for name, url := range cfg.Templates.Repositories {
-			// Skip empty URLs (allows users to disable default repos)
-			if url != "" {
-				repos[name] = url
+			if url == "" {
+				delete(repos, name)
+				continue
 			}
+
+			// Create temporary PathValidator for validation
+			pv := NewPathValidator()
+			if pv.IsLocalPath(url) {
+				return nil, fmt.Errorf("repository '%s' is a local path (%s); use 'local_paths' for local directories, 'repositories' for git URLs only", name, url)
+			}
+
+			if !pv.IsGitURL(url) {
+				return nil, fmt.Errorf("repository '%s' has invalid Git URL '%s'; expected https://, http://, or git@ URL", name, url)
+			}
+
+			if isPlaceholderURL(url) {
+				return nil, fmt.Errorf("repository '%s' appears to be a placeholder from documentation (%s); please update or remove it from your config at ~/.config/warpgate/config.yaml", name, url)
+			}
+
+			repos[name] = url
 		}
-	}
-	// Only add default repository if no repositories configured at all
-	// and no local paths specified
-	if len(repos) == 0 && len(cfg.Templates.LocalPaths) == 0 {
-		repos["official"] = "https://github.com/cowdogmoo/warpgate-templates.git"
 	}
 
 	tr := &TemplateRegistry{
-		repos:      repos,
-		localPaths: cfg.Templates.LocalPaths,
-		cacheDir:   cacheDir,
+		repos:         repos,
+		localPaths:    cfg.Templates.LocalPaths,
+		cacheDir:      cacheDir,
+		pathValidator: NewPathValidator(),
 	}
 
 	return tr, nil
@@ -122,17 +168,13 @@ func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
 		return nil, fmt.Errorf("unknown repository: %s", repoName)
 	}
 
-	// Check if this is a local path
-	if tr.isLocalPath(repoURL) {
+	if tr.pathValidator.IsLocalPath(repoURL) {
 		logging.Debug("Scanning local templates directory: %s", repoURL)
 		return tr.discoverTemplates(repoURL)
 	}
-
-	// Git repository - use caching
 	cache, err := tr.loadCache(repoName)
 	if err == nil && cache != nil {
-		// Check if cache is recent (less than 1 hour old)
-		if time.Since(cache.LastUpdated) < time.Hour {
+		if time.Since(cache.LastUpdated) < DefaultCacheDuration {
 			logging.Debug("Using cached templates for repository: %s", repoName)
 			templates := make([]TemplateInfo, 0, len(cache.Templates))
 			for _, tmpl := range cache.Templates {
@@ -168,6 +210,34 @@ func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
 	return templates, nil
 }
 
+// tagTemplatesWithRepository tags all templates in the slice with the given repository name.
+func tagTemplatesWithRepository(templates []TemplateInfo, repoName string) {
+	for i := range templates {
+		templates[i].Repository = repoName
+	}
+}
+
+// scanLocalPaths discovers templates from local paths and tags them appropriately.
+func (tr *TemplateRegistry) scanLocalPaths() []TemplateInfo {
+	var templates []TemplateInfo
+
+	for _, localPath := range tr.localPaths {
+		if !tr.pathValidator.IsLocalPath(localPath) {
+			continue
+		}
+		discovered, err := tr.discoverTemplates(localPath)
+		if err != nil {
+			logging.Warn("Failed to scan local path %s: %v", localPath, err)
+			continue
+		}
+		// Tag templates with their source path
+		tagTemplatesWithRepository(discovered, fmt.Sprintf("local:%s", filepath.Base(localPath)))
+		templates = append(templates, discovered...)
+	}
+
+	return templates
+}
+
 // listAll returns all templates from all configured sources (repos and local paths)
 func (tr *TemplateRegistry) listAll() ([]TemplateInfo, error) {
 	var allTemplates []TemplateInfo
@@ -180,63 +250,45 @@ func (tr *TemplateRegistry) listAll() ([]TemplateInfo, error) {
 			continue
 		}
 		// Tag templates with their repository
-		for i := range templates {
-			templates[i].Repository = repoName
-		}
+		tagTemplatesWithRepository(templates, repoName)
 		allTemplates = append(allTemplates, templates...)
 	}
 
 	// Scan additional local paths
-	for _, localPath := range tr.localPaths {
-		if !tr.isLocalPath(localPath) {
-			continue
-		}
-		templates, err := tr.discoverTemplates(localPath)
-		if err != nil {
-			logging.Warn("Failed to scan local path %s: %v", localPath, err)
-			continue
-		}
-		// Tag templates with their source path
-		for i := range templates {
-			templates[i].Repository = fmt.Sprintf("local:%s", filepath.Base(localPath))
-		}
-		allTemplates = append(allTemplates, templates...)
-	}
+	allTemplates = append(allTemplates, tr.scanLocalPaths()...)
 
 	return allTemplates, nil
 }
 
-// isLocalPath checks if a path is a local directory
-func (tr *TemplateRegistry) isLocalPath(path string) bool {
-	// Absolute paths
-	if filepath.IsAbs(path) {
-		info, err := os.Stat(path)
-		return err == nil && info.IsDir()
-	}
+// ListLocal returns templates from local paths only (no git operations)
+func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
+	var allTemplates []TemplateInfo
 
-	// Relative paths starting with . or ..
-	if strings.HasPrefix(path, ".") || strings.HasPrefix(path, "~") {
-		// Expand home directory
-		if strings.HasPrefix(path, "~") {
-			home, err := os.UserHomeDir()
-			if err == nil {
-				path = filepath.Join(home, path[1:])
-			}
+	// Check repos for local paths
+	for repoName, repoURL := range tr.repos {
+		if !tr.pathValidator.IsLocalPath(repoURL) {
+			continue
 		}
-		info, err := os.Stat(path)
-		return err == nil && info.IsDir()
+		templates, err := tr.discoverTemplates(repoURL)
+		if err != nil {
+			logging.Warn("Failed to scan local repo %s: %v", repoName, err)
+			continue
+		}
+		// Tag templates with their repository name
+		tagTemplatesWithRepository(templates, repoName)
+		allTemplates = append(allTemplates, templates...)
 	}
 
-	// Not a URL (git URL)
-	return !strings.HasPrefix(path, "http://") &&
-		!strings.HasPrefix(path, "https://") &&
-		!strings.HasPrefix(path, "git@")
+	// Scan additional local paths from config
+	allTemplates = append(allTemplates, tr.scanLocalPaths()...)
+
+	return allTemplates, nil
 }
 
 // discoverTemplates finds all templates in a repository
 func (tr *TemplateRegistry) discoverTemplates(repoPath string) ([]TemplateInfo, error) {
 	templatesDir := filepath.Join(repoPath, "templates")
-	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
+	if !tr.pathValidator.DirExists(templatesDir) {
 		return nil, fmt.Errorf("templates directory not found in repository")
 	}
 
@@ -255,7 +307,7 @@ func (tr *TemplateRegistry) discoverTemplates(repoPath string) ([]TemplateInfo, 
 
 		// Look for warpgate.yaml in each template directory
 		configPath := filepath.Join(templatesDir, entry.Name(), "warpgate.yaml")
-		if _, err := os.Stat(configPath); err != nil {
+		if !tr.pathValidator.FileExists(configPath) {
 			continue // Skip if no config found
 		}
 
@@ -316,8 +368,8 @@ func (tr *TemplateRegistry) Search(query string) ([]TemplateInfo, error) {
 	return allTemplates, nil
 }
 
-// matchesQuery checks if a template matches a search query
-// Uses both exact substring matching and fuzzy matching for better results
+// matchesQuery checks if a template matches a search query using both
+// exact substring matching and fuzzy matching for better results.
 func (tr *TemplateRegistry) matchesQuery(tmpl TemplateInfo, query string) bool {
 	query = strings.ToLower(query)
 
@@ -406,7 +458,7 @@ func (tr *TemplateRegistry) saveCache(repoName string, templates []TemplateInfo)
 		return err
 	}
 
-	return os.WriteFile(cachePath, data, 0644)
+	return os.WriteFile(cachePath, data, config.FilePermReadWrite)
 }
 
 // UpdateCache forces a cache refresh for a repository
@@ -479,7 +531,7 @@ func (tr *TemplateRegistry) LoadRepositories() error {
 	configPath := filepath.Join(tr.cacheDir, "repositories.json")
 
 	// If file doesn't exist, use defaults
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	if !tr.pathValidator.FileExists(configPath) {
 		return nil
 	}
 
@@ -510,7 +562,7 @@ func (tr *TemplateRegistry) SaveRepositories() error {
 		return fmt.Errorf("failed to marshal repository config: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, config.FilePermReadWrite); err != nil {
 		return fmt.Errorf("failed to write repository config: %w", err)
 	}
 

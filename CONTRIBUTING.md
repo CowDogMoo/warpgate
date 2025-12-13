@@ -683,7 +683,7 @@ Update CHANGELOG.md before each release with:
 ### Resources
 
 - [README](README.md) - Project overview and usage
-- [Template Configuration Guide](docs/template-configuration.md) - Template management
+- [Template Repositories Guide](docs/template-repositories.md) - Template management
 - [Go Documentation](https://pkg.go.dev/github.com/cowdogmoo/warpgate) -
   Code documentation
 

@@ -32,7 +32,7 @@ repos:
       - id: go-cyclo
         args: [-over=15]
       - id: golangci-lint
-        args: [--timeout=5m]
+        args: [--timeout=5m, --enable=unused]
       - id: go-critic
       - id: go-build
       - id: go-mod-tidy
@@ -51,12 +51,12 @@ repos:
     hooks:
       - id: markdownlint
         args: ["--fix", "--config", ".hooks/linters/markdownlint.json"]
-        exclude: dockerfiles
 
-  - repo: https://github.com/cisagov/pre-commit-packer
-    rev: v0.3.1
+  - repo: https://github.com/tcort/markdown-link-check
+    rev: v3.14.2
     hooks:
-      - id: packer_fmt
+      - id: markdown-link-check
+        args: ["--config", ".markdown-link-check.json"]
 
   - repo: local
     hooks:

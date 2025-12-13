@@ -86,114 +86,12 @@
       ],
       groupName: 'go indirect dependencies',
     },
-    {
-      description: 'Auto merge Docker updates',
-      matchManagers: [
-        'docker-compose',
-        'dockerfile',
-      ],
-      matchUpdateTypes: [
-        'minor',
-        'patch',
-        'digest',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-      automergeStrategy: 'merge-queue',
-    },
-    {
-      description: 'Disable updates for guacamole-provisioner Dockerfile',
-      matchManagers: [
-        'dockerfile',
-      ],
-      matchFileNames: [
-        'dockerfiles/guacamole-provisioner/Dockerfile',
-      ],
-      enabled: false,
-    },
-    {
-      description: 'Auto merge Packer plugin updates',
-      matchManagers: [
-        'terraform',
-      ],
-      matchFileNames: [
-        '**/*.pkr.hcl',
-      ],
-      matchUpdateTypes: [
-        'minor',
-        'patch',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-      automergeStrategy: 'merge-queue',
-    },
-    {
-      description: 'Group Packer plugin updates by tool',
-      matchManagers: [
-        'terraform',
-      ],
-      matchFileNames: [
-        'packer-templates/atomic-red-team/**/*.pkr.hcl',
-      ],
-      groupName: 'atomic-red-team packer plugins',
-    },
-    {
-      description: 'Group Packer plugin updates by tool',
-      matchManagers: [
-        'terraform',
-      ],
-      matchFileNames: [
-        'packer-templates/attack-box/**/*.pkr.hcl',
-      ],
-      groupName: 'attack-box packer plugins',
-    },
-    {
-      description: 'Group Packer plugin updates by tool',
-      matchManagers: [
-        'terraform',
-      ],
-      matchFileNames: [
-        'packer-templates/runzero-explorer/**/*.pkr.hcl',
-      ],
-      groupName: 'runzero-explorer packer plugins',
-    },
-    {
-      description: 'Group Packer plugin updates by tool',
-      matchManagers: [
-        'terraform',
-      ],
-      matchFileNames: [
-        'packer-templates/sliver/**/*.pkr.hcl',
-      ],
-      groupName: 'sliver packer plugins',
-    },
-    {
-      description: 'Group Packer plugin updates by tool',
-      matchManagers: [
-        'terraform',
-      ],
-      matchFileNames: [
-        'packer-templates/ttpforge/**/*.pkr.hcl',
-      ],
-      groupName: 'ttpforge packer plugins',
-    },
   ],
   lockFileMaintenance: {
     enabled: true,
     automerge: true,
   },
   customManagers: [
-    {
-      customType: 'regex',
-      description: 'Update Docker images in docker-bake.hcl files',
-      managerFilePatterns: [
-        '/docker-bake\\.hcl$/',
-      ],
-      matchStrings: [
-        'target\\s+"[^"]+"\\s+{[^}]*tags\\s*=\\s*\\["(?<depName>[^:]+):(?<currentValue>[^"]+)"\\]',
-      ],
-      datasourceTemplate: 'docker',
-    },
     {
       customType: 'regex',
       description: 'Update GO_VERSION environment variable in workflows',

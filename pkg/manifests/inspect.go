@@ -63,12 +63,24 @@ type ManifestInfo struct {
 	Architectures []ArchitectureInfo
 }
 
-// ArchitectureInfo contains information about a specific architecture in a manifest
+// ArchitectureInfo field meanings depend on whether this is from a single-arch or multi-arch manifest:
+//
+// Multi-architecture manifest (OCI Index/Docker Manifest List):
+//   - Digest: The digest of the platform-specific manifest (not the config blob)
+//   - Size: The size of the platform-specific manifest
+//   - MediaType: The media type of the platform-specific manifest
+//   - OS/Architecture/Variant: Platform information from the index descriptor
+//
+// Single-architecture manifest:
+//   - Digest: The digest of the config blob (not the manifest itself)
+//   - Size: The size of the config blob
+//   - MediaType: The media type of the config blob (e.g., application/vnd.docker.container.image.v1+json)
+//   - OS/Architecture/Variant: Platform information from the config file
 type ArchitectureInfo struct {
 	OS           string
 	Architecture string
 	Variant      string
-	Digest       string
+	Digest       string // Platform manifest digest (multi-arch) or config blob digest (single-arch)
 	Size         int64
 	MediaType    string
 }
@@ -183,8 +195,9 @@ func parseSingleArchManifestFromDescriptor(descriptor *remote.Descriptor, info *
 	// Get config file for platform info
 	configFile, err := img.ConfigFile()
 	if err != nil {
-		logging.Debug("Failed to get config file for platform info: %v", err)
-		// Continue without platform info
+		logging.Warn("Failed to get config file for manifest %s: %v. Architecture info will be incomplete.",
+			manifest.Config.Digest.String()[:12], err)
+		// Continue without platform info - we'll use "unknown" values
 		configFile = nil
 	}
 

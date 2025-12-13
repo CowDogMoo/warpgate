@@ -13,8 +13,6 @@ Practical examples and common workflows for building images with Warpgate.
 
 ## Quick Start
 
-Get started in under 60 seconds:
-
 ```bash
 # Install warpgate
 go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
@@ -33,8 +31,6 @@ docker images | grep attack-box
 
 ### Build from Template
 
-Build container images using discovered templates:
-
 ```bash
 # Build from discovered template
 warpgate build attack-box
@@ -51,8 +47,6 @@ warpgate build attack-box --push --registry ghcr.io/myorg
 
 ### Build from Local File
 
-Build from a template file in your current directory:
-
 ```bash
 # Validate template first (recommended)
 warpgate validate warpgate.yaml
@@ -66,17 +60,15 @@ warpgate build warpgate.yaml --arch amd64 --var VERSION=1.2.3
 
 ### Build from Git Repository
 
-Build directly from a Git repository:
-
 ```bash
 # Build from GitHub repo
 warpgate build --from-git https://github.com/cowdogmoo/warpgate-templates.git//templates/attack-box
 
 # Build from specific branch or tag
-warpgate build --from-git https://github.com/myorg/templates.git?ref=develop//path/to/template
+warpgate build --from-git https://git.example.com/mycompany/templates.git?ref=develop//path/to/template
 
 # Build from private repo (requires SSH key or credentials)
-warpgate build --from-git git@github.com:myorg/private-templates.git//path/to/template
+warpgate build --from-git git@git.example.com:mycompany/private-templates.git//path/to/template
 ```
 
 **Git URL format:**
@@ -86,8 +78,6 @@ warpgate build --from-git git@github.com:myorg/private-templates.git//path/to/te
 - Add `?ref=branch` or `?ref=v1.0.0` for specific refs
 
 ### Build with Variable Overrides
-
-Customize builds using variables:
 
 **Via CLI flags:**
 
@@ -132,8 +122,6 @@ warpgate build sliver
 
 ### Push to Registry
 
-Build and push images to a container registry:
-
 ```bash
 # Authenticate first
 docker login ghcr.io
@@ -159,8 +147,6 @@ warpgate build myimage \
 ## AWS AMIs
 
 ### Build an AMI
-
-Create AWS AMIs for EC2:
 
 **Prerequisites:**
 
@@ -212,8 +198,6 @@ targets:
 
 ### Multi-Target Builds
 
-Build both containers and AMIs:
-
 ```yaml
 targets:
   # Container target
@@ -244,8 +228,6 @@ warpgate build mytemplate --target ami
 
 ### List Templates
 
-Find available templates from configured sources:
-
 ```bash
 # List all templates
 warpgate templates list
@@ -258,8 +240,6 @@ warpgate templates list
 ```
 
 ### Get Template Information
-
-View detailed information about a template:
 
 ```bash
 warpgate templates info attack-box
@@ -274,25 +254,21 @@ warpgate templates info attack-box
 
 ### Add Template Sources
 
-Add Git repositories or local directories:
-
 ```bash
 # Add Git repository (auto-generates name)
-warpgate templates add https://github.com/myorg/security-templates.git
+warpgate templates add https://git.example.com/mycompany/security-templates.git
 
 # Add with custom name
-warpgate templates add my-templates https://github.com/myorg/templates.git
+warpgate templates add my-templates https://git.example.com/mycompany/templates.git
 
 # Add local directory
 warpgate templates add ~/my-warpgate-templates
 
 # Add private repository (SSH)
-warpgate templates add private-templates git@github.com:myorg/private-templates.git
+warpgate templates add private-templates git@git.example.com:mycompany/private-templates.git
 ```
 
 ### Remove Template Sources
-
-Remove a template source:
 
 ```bash
 # Remove by name
@@ -303,8 +279,6 @@ warpgate templates list
 ```
 
 ### Update Template Cache
-
-Refresh templates from all configured sources:
 
 ```bash
 # Update all template sources
@@ -321,7 +295,7 @@ warpgate templates update
 - To get latest template changes
 - When templates appear missing
 
-See [Template Configuration Guide](template-configuration.md) for
+See [Template Repositories Guide](template-repositories.md) for
 comprehensive repository management.
 
 ## Multi-Architecture Builds
@@ -351,19 +325,17 @@ warpgate build myimage --arch amd64,arm64 --push --registry ghcr.io/myorg
 
 ### Create Multi-Arch Manifests
 
-Create a manifest that references both architectures:
-
 ```bash
 # Build for multiple architectures first
 warpgate build myimage --arch amd64,arm64 --push --registry ghcr.io/myorg
 
 # Create multi-arch manifest
-warpgate manifest create \
+warpgate manifests create \
   --name ghcr.io/myorg/myimage:latest \
   --images ghcr.io/myorg/myimage:latest-amd64,ghcr.io/myorg/myimage:latest-arm64
 
 # Push manifest to registry
-warpgate manifest push ghcr.io/myorg/myimage:latest
+warpgate manifests push ghcr.io/myorg/myimage:latest
 ```
 
 **Result:** Users can pull `ghcr.io/myorg/myimage:latest` and automatically
@@ -371,11 +343,12 @@ get the correct architecture.
 
 ### Inspect Manifests
 
-View manifest details:
-
 ```bash
 # Inspect multi-arch manifest
-warpgate manifest inspect ghcr.io/myorg/myimage:latest
+warpgate manifests inspect --registry ghcr.io --namespace myorg --name myimage --tag latest
+
+# Or with short flags
+warpgate manifests inspect --registry ghcr.io --namespace myorg --name myimage -t latest
 
 # Shows:
 # - Supported platforms
@@ -445,41 +418,6 @@ docker run --rm dev-image:latest curl --version
 warpgate build warpgate.yaml --push --registry ghcr.io/myorg
 ```
 
-### CI/CD Pipeline
-
-Automated builds in CI/CD:
-
-**GitHub Actions example:**
-
-```yaml
-name: Build Images
-
-on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Warpgate
-        run: go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
-
-      - name: Login to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Build and push
-        run: |
-          warpgate build warpgate.yaml \
-            --arch amd64,arm64 \
-            --push \
-            --registry ghcr.io/${{ github.repository_owner }} \
-            --var VERSION=${{ github.ref_name }}
-```
-
 ### Team Template Repository
 
 Share templates across your team:
@@ -508,40 +446,20 @@ EOF
 git init
 git add .
 git commit -m "Add security-base template"
-git remote add origin git@github.com:myorg/team-templates.git
+git remote add origin git@git.example.com:mycompany/team-templates.git
 git push -u origin main
 
 # 5. Team members add repository
-warpgate templates add team https://github.com/myorg/team-templates.git
+warpgate templates add team https://git.example.com/mycompany/team-templates.git
 
 # 6. Use templates
 warpgate templates list
 warpgate build security-base
 ```
 
-### Security Scanning Workflow
-
-Build, scan, and push images:
-
-```bash
-# 1. Build image
-warpgate build myimage --arch amd64
-
-# 2. Scan with Trivy
-trivy image myimage:latest
-
-# 3. If scan passes, push
-if trivy image --exit-code 1 --severity HIGH,CRITICAL myimage:latest; then
-  warpgate build myimage --push --registry ghcr.io/myorg
-else
-  echo "Security scan failed!"
-  exit 1
-fi
-```
-
 ## Next Steps
 
-- **Learn template syntax** - See [Template Format](template-format.md)
-- **Configure Warpgate** - Read [Configuration Guide](configuration.md)
+- **Learn template syntax** - See [Template Reference](template-reference.md)
+- **Configure Warpgate** - Read [CLI Configuration Guide](cli-configuration.md)
 - **View all commands** - Check [Commands Reference](commands.md)
 - **Troubleshoot issues** - Visit [Troubleshooting Guide](troubleshooting.md)

@@ -17,15 +17,17 @@
 ## Overview
 
 Warp Gate creates standardized, reproducible environments. Build container
-images and AWS AMIs from simple YAML templates, then reproduce them anywhere
-with a single command. It handles everything from simple Dockerfiles to complex
-multi-step provisioning with Ansible or shell scripts, and supports building
-for multiple architectures simultaneously.
+images and AWS AMIs from YAML templates, then reproduce them anywhere
+with a single command. It handles everything from straightforward Dockerfiles
+to complex multi-step provisioning with Ansible or shell scripts, and supports
+building for multiple architectures simultaneously.
 
 **Why Warp Gate?**
 
-- Simple YAML templates
+- [Declarative YAML templates](https://github.com/CowDogMoo/warpgate-templates)
 - One tool for containers and cloud images
+- Extensible provisioning (Ansible, shell, PowerShell)
+- Multiarch support
 
 **Useful for:**
 
@@ -60,11 +62,11 @@ docker images | grep attack-box
 
 ### Configuration
 
-- **[Configuration Guide](docs/configuration.md)** - Global and template
-  configuration
-- **[Template Format](docs/template-format.md)** - Complete YAML syntax
+- **[CLI Configuration Guide](docs/cli-configuration.md)** - Global
+  configuration and security best practices
+- **[Template Reference](docs/template-reference.md)** - Complete YAML syntax
   reference
-- **[Template Management](docs/template-configuration.md)** - Repository
+- **[Template Repositories](docs/template-repositories.md)** - Repository
   management and discovery
 
 ### Reference
@@ -73,14 +75,10 @@ docker images | grep attack-box
 - **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
 - **[FAQ](docs/faq.md)** - Frequently asked questions
 
-### Examples & Guides
+### Templates
 
-- **[Official Templates](https://github.com/CowDogMoo/warpgate-templates)**
-  - Ready-to-use templates
-
-### Contributing
-
-- **[Contributing Guide](CONTRIBUTING.md)** - Development guide and standards
+- **[Official Templates](https://github.com/CowDogMoo/warpgate-templates)** -
+  Ready-to-use templates
 
 ## Features
 
@@ -95,205 +93,16 @@ docker images | grep attack-box
 | **Template Discovery**     | Git/local template repo mgmt     |
 | **Ansible Provisioner**    | Run Ansible playbooks            |
 | **Shell Provisioner**      | Execute shell scripts            |
-| **PowerShell Provisioner** | Run PowerShell (Windows)         |
+| **PowerShell Provisioner** | Run PowerShell (Windows AMIs)    |
 | **Variable Substitution**  | CLI flags/files/env vars         |
 | **Packer Conversion**      | Convert Packer to Warpgate       |
 | **Registry Push**          | Push images to registries        |
 | **Multi-arch Manifests**   | Create/push multi-arch images    |
 
-## Installation
-
-### Quick Install
-
-```bash
-# Go install
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
-
-# Container image
-docker pull ghcr.io/cowdogmoo/warpgate:latest
-alias warpgate='docker run --rm -v $(pwd):/workspace ghcr.io/cowdogmoo/warpgate:latest'
-```
-
-Alternatively, pre-built binaries can be downloaded from: https://github.com/CowDogMoo/warpgate/releases
-
-**Prerequisites:**
-
-- Go 1.25+ (for building from source)
-- Docker with BuildKit support (for container builds)
-
-**See [Installation Guide](docs/installation.md) for detailed
-platform-specific instructions.**
-
-### Quick Configuration
-
-```bash
-# Initialize default configuration
-warpgate config init
-
-# Or customize settings
-warpgate config set registry.default ghcr.io
-warpgate config set aws.region your-aws-region
-warpgate config set aws.profile my-aws-profile
-```
-
-**See [Configuration Guide](docs/configuration.md) for complete configuration reference.**
-
-## Basic Usage
-
-### Build Container Images
-
-```bash
-# Build from template
-warpgate build attack-box --arch amd64
-
-# Build with variables
-warpgate build sliver --var ARSENAL_PATH=/opt/arsenal --var VERSION=1.0.0
-
-# Build and push to registry
-warpgate build myimage --push --registry ghcr.io/myorg
-```
-
-### Build AWS AMIs
-
-```bash
-# Configure AWS credentials
-aws sso login --profile myprofile
-export AWS_PROFILE=myprofile
-
-# Build AMI
-warpgate build my-ami-template --target ami
-```
-
-### Manage Templates
-
-```bash
-# Add the official template repository
-warpgate templates add https://github.com/CowDogMoo/warpgate-templates.git
-
-# Update template cache
-warpgate templates update
-
-# List available templates
-warpgate templates list
-
-# Get template info
-warpgate templates info attack-box
-
-# Search for templates
-warpgate templates search security
-```
-
-**See [Usage Guide](docs/usage-guide.md) for comprehensive examples and workflows.**
-
-## Creating Templates
-
-Templates use simple YAML syntax:
-
-```yaml
-metadata:
-  name: my-image
-  version: 1.0.0
-  description: "My custom security image"
-  author: "Your Name"
-  license: MIT
-
-name: my-image
-version: latest
-
-# Option 1: Dockerfile-based build
-dockerfile:
-  path: Dockerfile
-  context: .
-  args:
-    VERSION: "1.0.0"
-
-# Option 2: Provisioner-based build
-base:
-  image: ubuntu:22.04
-  platform: linux/amd64
-
-provisioners:
-  - type: shell
-    inline:
-      - apt-get update
-      - apt-get install -y curl wget
-
-targets:
-  - type: container
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    registry: ghcr.io/myorg
-    tags:
-      - latest
-      - v1.0.0
-```
-
-**See [Template Format Reference](docs/template-format.md) for complete
-syntax documentation.**
-
 ## How to Contribute
 
-We welcome contributions! Warpgate is built for and by the community.
-
-**Ways to contribute:**
-
-- Report bugs and request features via [Issues](https://github.com/CowDogMoo/warpgate/issues)
-- Submit pull requests for fixes and features
-- Improve documentation
-- Share templates in [warpgate-templates](https://github.com/CowDogMoo/warpgate-templates)
-
-### Quick Start for Contributors
-
-```bash
-# Fork and clone
-gh repo fork CowDogMoo/warpgate --clone
-cd warpgate
-
-# Install dependencies
-go mod download
-
-# Build and test
-task go:build
-task go:test
-
-# Run pre-commit checks
-task pre-commit:run
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
-
-## Troubleshooting
-
-**Common Issues:**
-
-- **"Cannot connect to BuildKit daemon"** - Ensure Docker is running with
-  an active buildx builder (`docker buildx ls`)
-- **"No active buildx builder found"** - Create one with
-  `docker buildx create --use`
-- **Templates not found** - Run `warpgate templates update` to refresh cache
-- **Registry push fails** - Authenticate with `docker login <registry>`
-  before building
-
-See [Troubleshooting Guide](docs/troubleshooting.md) for detailed solutions.
-
-## FAQ
-
-**Q: What's the difference between Warpgate and Packer?**
-
-A: Warpgate offers simpler YAML syntax, faster Go-native builds, native
-BuildKit integration, built-in template discovery, first-class
-multi-architecture support, and unified workflows for both containers and AMIs.
-
-**Q: Can I use my existing Packer templates?**
-
-A: Yes! Use `warpgate convert packer-template.pkr.hcl`.
-
-**Q: Is Warpgate production-ready?**
-
-A: Yes. Core features are stable and used in production environments.
-
-**See [FAQ](docs/faq.md) for more questions and answers.**
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for ways to
+contribute and development guidelines.
 
 ### Built With
 

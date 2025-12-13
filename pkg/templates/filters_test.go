@@ -105,7 +105,7 @@ func TestBySource_LocalMatching(t *testing.T) {
 		},
 		{
 			Name:       "git-template",
-			Repository: "https://github.com/user/templates.git",
+			Repository: "https://git.example.com/jdoe/templates.git",
 		},
 	}
 

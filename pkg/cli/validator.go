@@ -25,17 +25,21 @@ package cli
 import (
 	"fmt"
 	"strings"
+
+	"github.com/cowdogmoo/warpgate/pkg/templates"
 )
 
 // Validator validates CLI input before passing to business logic.
 type Validator struct {
-	parser *Parser
+	parser        *Parser
+	pathValidator *templates.PathValidator
 }
 
 // NewValidator creates a new CLI validator.
 func NewValidator() *Validator {
 	return &Validator{
-		parser: NewParser(),
+		parser:        NewParser(),
+		pathValidator: templates.NewPathValidator(),
 	}
 }
 
@@ -121,7 +125,7 @@ func (v *Validator) ValidateTemplateAddOptions(name, urlOrPath string) error {
 	}
 
 	// If name is provided, urlOrPath must be a git URL
-	if name != "" && !IsGitURL(urlOrPath) {
+	if name != "" && !v.pathValidator.IsGitURL(urlOrPath) {
 		return fmt.Errorf("when providing a name, the URL must be a git URL (not a local path)")
 	}
 
@@ -163,11 +167,4 @@ func isValidConfigKey(key string) bool {
 	}
 
 	return true
-}
-
-// IsGitURL checks if a string is a git URL.
-func IsGitURL(s string) bool {
-	return strings.HasPrefix(s, "http://") ||
-		strings.HasPrefix(s, "https://") ||
-		strings.HasPrefix(s, "git@")
 }

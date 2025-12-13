@@ -25,7 +25,7 @@ package builder
 import (
 	"context"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -80,7 +80,7 @@ type BuildOptions struct {
 
 // ApplyOverrides applies CLI/API overrides to a build configuration.
 // Precedence: BuildOptions > Config > Global Config Defaults
-func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, globalCfg *globalconfig.Config) error {
+func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, globalCfg *config.Config) error {
 	if globalCfg == nil {
 		logging.WarnContext(ctx, "No global configuration provided, some defaults may not be applied")
 	}
@@ -111,7 +111,7 @@ func applyTargetTypeFilter(config *Config, opts BuildOptions) {
 }
 
 // applyArchitectureOverrides applies architecture overrides to the build config
-func applyArchitectureOverrides(config *Config, opts BuildOptions, globalCfg *globalconfig.Config) {
+func applyArchitectureOverrides(config *Config, opts BuildOptions, globalCfg *config.Config) {
 	// CLI option takes highest precedence
 	if len(opts.Architectures) > 0 {
 		config.Architectures = opts.Architectures
@@ -133,7 +133,7 @@ func applyArchitectureOverrides(config *Config, opts BuildOptions, globalCfg *gl
 }
 
 // applyRegistryOverride applies registry override to the build config
-func applyRegistryOverride(config *Config, opts BuildOptions, globalCfg *globalconfig.Config) {
+func applyRegistryOverride(config *Config, opts BuildOptions, globalCfg *config.Config) {
 	if opts.Registry != "" {
 		config.Registry = opts.Registry
 	} else if config.Registry == "" && globalCfg != nil {

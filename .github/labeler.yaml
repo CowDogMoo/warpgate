@@ -15,14 +15,6 @@ area/scripts:
   - changed-files:
       - any-glob-to-any-file: "scripts/**/*"
 
-area/dockerfiles:
-  - changed-files:
-      - any-glob-to-any-file: "dockerfiles/**/*"
-
-area/packer:
-  - changed-files:
-      - any-glob-to-any-file: "packer-templates/**/*"
-
 area/docs:
   - changed-files:
       - any-glob-to-any-file: "docs/**/*"
@@ -39,25 +31,3 @@ area/pre-commit:
 area/taskfile:
   - changed-files:
       - any-glob-to-any-file: "Taskfile.yaml"
-
-# Tool-specific labelers
-tool/atomic-red-team:
-  - changed-files:
-      - any-glob-to-any-file: "packer-templates/atomic-red-team/**/*"
-      - any-glob-to-any-file: "dockerfiles/atomic-red/**/*"
-
-tool/attack-box:
-  - changed-files:
-      - any-glob-to-any-file: "packer-templates/attack-box/**/*"
-
-tool/runzero:
-  - changed-files:
-      - any-glob-to-any-file: "packer-templates/runzero-explorer/**/*"
-
-tool/sliver:
-  - changed-files:
-      - any-glob-to-any-file: "packer-templates/sliver/**/*"
-
-tool/ttpforge:
-  - changed-files:
-      - any-glob-to-any-file: "packer-templates/ttpforge/**/*"

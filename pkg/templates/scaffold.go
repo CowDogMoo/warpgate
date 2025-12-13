@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"gopkg.in/yaml.v3"
 )
@@ -45,13 +46,13 @@ func NewScaffolder() *Scaffolder {
 func (s *Scaffolder) Create(ctx context.Context, name, outputDir string) error {
 	// Create template directory
 	templateDir := filepath.Join(outputDir, name)
-	if err := os.MkdirAll(templateDir, 0755); err != nil {
+	if err := os.MkdirAll(templateDir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
 	// Create scripts directory
 	scriptsDir := filepath.Join(templateDir, "scripts")
-	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+	if err := os.MkdirAll(scriptsDir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create scripts directory: %w", err)
 	}
 
@@ -81,20 +82,20 @@ func (s *Scaffolder) Fork(ctx context.Context, fromTemplate, newName, outputDir 
 		return fmt.Errorf("failed to create loader: %w", err)
 	}
 
-	cfg, err := loader.LoadTemplate(fromTemplate)
+	cfg, err := loader.LoadTemplateWithVars(fromTemplate, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load template: %w", err)
 	}
 
 	// Create output directory
 	templateDir := filepath.Join(outputDir, newName)
-	if err := os.MkdirAll(templateDir, 0755); err != nil {
+	if err := os.MkdirAll(templateDir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
 	// Create scripts directory
 	scriptsDir := filepath.Join(templateDir, "scripts")
-	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+	if err := os.MkdirAll(scriptsDir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create scripts directory: %w", err)
 	}
 

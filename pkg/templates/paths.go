@@ -27,6 +27,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/cowdogmoo/warpgate/pkg/errors"
 )
 
 // PathValidator handles template path validation and normalization.
@@ -44,27 +46,42 @@ func (pv *PathValidator) IsGitURL(s string) bool {
 		strings.HasPrefix(s, "git@")
 }
 
+// IsLocalPath checks if a path is a local directory.
+func (pv *PathValidator) IsLocalPath(path string) bool {
+	if filepath.IsAbs(path) {
+		info, err := os.Stat(path)
+		return err == nil && info.IsDir()
+	}
+
+	if strings.HasPrefix(path, ".") || strings.HasPrefix(path, "~") {
+		expandedPath, err := ExpandPath(path)
+		if err != nil {
+			return false
+		}
+		info, err := os.Stat(expandedPath)
+		return err == nil && info.IsDir()
+	}
+
+	return !pv.IsGitURL(path)
+}
+
 // NormalizePath normalizes a path for comparison by expanding ~ and converting to absolute path.
 func (pv *PathValidator) NormalizePath(path string) (string, error) {
-	// Expand home directory if needed
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		path = filepath.Join(home, path[2:])
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", errors.Wrap("normalize path", path, err)
 	}
 
 	// Make path absolute if relative (and it looks like a path)
-	if !filepath.IsAbs(path) && (strings.Contains(path, "/") || strings.HasPrefix(path, ".")) {
-		absPath, err := filepath.Abs(path)
+	if !filepath.IsAbs(expandedPath) && (strings.Contains(expandedPath, "/") || strings.HasPrefix(expandedPath, ".")) {
+		absPath, err := filepath.Abs(expandedPath)
 		if err != nil {
-			return "", fmt.Errorf("failed to get absolute path: %w", err)
+			return "", errors.Wrap("get absolute path", expandedPath, err)
 		}
-		path = absPath
+		return absPath, nil
 	}
 
-	return path, nil
+	return expandedPath, nil
 }
 
 // ValidateLocalPath validates that a path exists and is a directory.
@@ -86,29 +103,37 @@ func (pv *PathValidator) ValidateLocalPath(path string) error {
 
 // ExpandPath expands ~ in paths and converts to absolute paths.
 func (pv *PathValidator) ExpandPath(path string) (string, error) {
-	// Expand home directory if needed
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
-		}
-		path = filepath.Join(home, path[2:])
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", errors.Wrap("expand path", path, err)
 	}
 
 	// Make path absolute if relative
-	if !filepath.IsAbs(path) {
-		absPath, err := filepath.Abs(path)
+	if !filepath.IsAbs(expandedPath) {
+		absPath, err := filepath.Abs(expandedPath)
 		if err != nil {
-			return "", fmt.Errorf("failed to get absolute path: %w", err)
+			return "", errors.Wrap("get absolute path", expandedPath, err)
 		}
-		path = absPath
+		return absPath, nil
 	}
 
-	return path, nil
+	return expandedPath, nil
+}
+
+// FileExists checks if a file or directory exists.
+func (pv *PathValidator) FileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// DirExists checks if a path exists and is a directory.
+func (pv *PathValidator) DirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // ExtractRepoName extracts a repository name from a git URL.
-// For example: https://github.com/user/my-templates.git => my-templates
+// For example: https://git.example.com/jdoe/my-templates.git => my-templates
 func ExtractRepoName(gitURL string) string {
 	// Remove .git suffix if present
 	name := strings.TrimSuffix(gitURL, ".git")
@@ -137,4 +162,39 @@ func ExtractRepoName(gitURL string) string {
 	}
 
 	return name
+}
+
+// ExpandPath expands environment variables and home directory in a path.
+// It handles both ${VAR} syntax and ~ (tilde) for the home directory.
+//
+// Examples:
+//   - "~/projects" -> "/home/user/projects"
+//   - "${HOME}/work" -> "/home/user/work"
+//   - "~" -> "/home/user"
+//   - "~/path/to/dir" -> "/home/user/path/to/dir"
+func ExpandPath(path string) (string, error) {
+	path = os.ExpandEnv(path)
+
+	if strings.HasPrefix(path, "~/") || path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if path == "~" {
+			return home, nil
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+
+	return path, nil
+}
+
+// MustExpandPath is like ExpandPath but panics on error.
+// Use this only when you're certain the home directory can be determined.
+func MustExpandPath(path string) string {
+	expanded, err := ExpandPath(path)
+	if err != nil {
+		return os.ExpandEnv(path)
+	}
+	return expanded
 }

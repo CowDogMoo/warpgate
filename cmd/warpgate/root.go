@@ -28,7 +28,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -76,8 +76,8 @@ func init() {
 
 // configFromContext retrieves the config from the command context.
 // Returns nil if no config is stored in context.
-func configFromContext(cmd *cobra.Command) *globalconfig.Config {
-	if cfg, ok := cmd.Context().Value(configKey).(*globalconfig.Config); ok {
+func configFromContext(cmd *cobra.Command) *config.Config {
+	if cfg, ok := cmd.Context().Value(configKey).(*config.Config); ok {
 		return cfg
 	}
 	return nil
@@ -87,18 +87,18 @@ func configFromContext(cmd *cobra.Command) *globalconfig.Config {
 // CLI Flags > Environment Variables > Config File > Defaults
 func initConfig(cmd *cobra.Command, args []string) error {
 	// 1. Load global config (handles defaults, env vars, and config file)
-	var cfg *globalconfig.Config
+	var cfg *config.Config
 	var err error
 	if cfgFile != "" {
-		cfg, err = globalconfig.LoadFromPath(cfgFile)
+		cfg, err = config.LoadFromPath(cfgFile)
 	} else {
-		cfg, err = globalconfig.Load()
+		cfg, err = config.Load()
 	}
 
 	if err != nil {
 		// Use default config as fallback
 		logging.Warn("failed to load config, using defaults: %v", err)
-		cfg = &globalconfig.Config{}
+		cfg = &config.Config{}
 	}
 
 	// 2. Create a new Viper instance for flag binding

@@ -24,6 +24,8 @@ package cli
 
 import (
 	"testing"
+
+	"github.com/cowdogmoo/warpgate/pkg/templates"
 )
 
 func TestValidateBuildOptions(t *testing.T) {
@@ -324,7 +326,11 @@ func TestValidateConfigSetOptions(t *testing.T) {
 	}
 }
 
+// TestIsGitURL is now handled by PathValidator tests in pkg/templates/paths_test.go
+// Keeping this test for backwards compatibility but delegating to PathValidator
 func TestIsGitURL(t *testing.T) {
+	pv := templates.NewPathValidator()
+
 	tests := []struct {
 		name  string
 		input string
@@ -369,7 +375,7 @@ func TestIsGitURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsGitURL(tt.input); got != tt.want {
+			if got := pv.IsGitURL(tt.input); got != tt.want {
 				t.Errorf("IsGitURL() = %v, want %v", got, tt.want)
 			}
 		})

@@ -26,7 +26,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/opencontainers/go-digest"
@@ -36,7 +36,7 @@ import (
 // pushing, and manifest creation. It coordinates between builders, orchestrators,
 // and configuration to execute complex multi-stage builds.
 type BuildService struct {
-	globalConfig *globalconfig.Config
+	globalConfig *config.Config
 
 	// Builder creation function
 	buildKitCreator BuilderCreatorFunc
@@ -44,7 +44,7 @@ type BuildService struct {
 
 // NewBuildService creates a new build service with the given configuration.
 // The creator function initializes BuildKit builders.
-func NewBuildService(cfg *globalconfig.Config, buildKitCreator BuilderCreatorFunc) *BuildService {
+func NewBuildService(cfg *config.Config, buildKitCreator BuilderCreatorFunc) *BuildService {
 	return &BuildService{
 		globalConfig:    cfg,
 		buildKitCreator: buildKitCreator,
@@ -83,6 +83,50 @@ func (s *BuildService) ExecuteContainerBuild(ctx context.Context, config Config,
 	}
 
 	return []BuildResult{*result}, nil
+}
+
+// ExecuteAMIBuild performs a complete AMI build workflow with the provided AMI builder.
+// It handles region resolution and AMI target selection before delegating to the builder.
+// The caller is responsible for creating and closing the AMI builder to avoid import cycles.
+func (s *BuildService) ExecuteAMIBuild(ctx context.Context, config Config, opts BuildOptions, amiBuilder AMIBuilder) (*BuildResult, error) {
+	logging.InfoContext(ctx, "Executing AMI build")
+
+	// Find AMI target in configuration
+	var amiTarget *Target
+	for i := range config.Targets {
+		if config.Targets[i].Type == "ami" {
+			amiTarget = &config.Targets[i]
+			break
+		}
+	}
+
+	if amiTarget == nil {
+		return nil, fmt.Errorf("no AMI target found in configuration")
+	}
+
+	// Resolve region from multiple sources (CLI flag > target config > global config)
+	region := opts.Region
+	if region == "" {
+		region = amiTarget.Region
+	}
+	if region == "" && s.globalConfig != nil {
+		region = s.globalConfig.AWS.Region
+	}
+	if region == "" {
+		return nil, fmt.Errorf("AWS region must be specified (use --region flag, set in template, or configure in global config)")
+	}
+
+	// Update options with resolved region
+	opts.Region = region
+
+	// Execute the build
+	result, err := amiBuilder.Build(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("AMI build failed: %w", err)
+	}
+
+	logging.InfoContext(ctx, "AMI build completed successfully: %s", result.AMIID)
+	return result, nil
 }
 
 // Push pushes build results to a registry and optionally saves digests.

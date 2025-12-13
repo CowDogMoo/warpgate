@@ -15,16 +15,6 @@
   description: >-
     Changes made to build and utility scripts
 
-- name: area/dockerfiles
-  color: "8fbcbc" # teal
-  description: >-
-    Changes made to Dockerfiles and Docker configurations
-
-- name: area/packer
-  color: "bc8f8f" # salmon
-  description: >-
-    Changes made to Packer templates and configurations
-
 - name: area/docs
   color: "8fbc8f" # light green
   description: >-
@@ -44,32 +34,6 @@
   color: "BC9BE3" # lavender
   description: >-
     Changes made to pre-commit hooks
-
-# Tool-specific labels
-- name: tool/atomic-red-team
-  color: "FF6B6B" # red
-  description: >-
-    Changes related to Atomic Red Team configurations
-
-- name: tool/attack-box
-  color: "4ECDC4" # turquoise
-  description: >-
-    Changes related to Attack Box configurations
-
-- name: tool/runzero
-  color: "45B7D1" # sky blue
-  description: >-
-    Changes related to RunZero Explorer configurations
-
-- name: tool/sliver
-  color: "96CEB4" # mint
-  description: >-
-    Changes related to Sliver C2 configurations
-
-- name: tool/ttpforge
-  color: "DDA0DD" # plum
-  description: >-
-    Changes related to TTPForge configurations
 
 # Renovate
 - name: renovate/container

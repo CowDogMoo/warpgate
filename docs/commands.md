@@ -486,7 +486,7 @@ Common configuration keys you can get/set:
 | `build.parallel_builds` | bool     | Enable parallel builds           |
 | `build.concurrency`     | int      | Max concurrent builds            |
 
-See [Configuration Guide](configuration.md) for complete reference.
+See [CLI Configuration Guide](cli-configuration.md) for complete reference.
 
 ## templates
 
@@ -551,16 +551,16 @@ warpgate templates add [name] [url|path]
 
 ```bash
 # Add Git repository (auto-generates name)
-warpgate templates add https://github.com/myorg/templates.git
+warpgate templates add https://git.example.com/mycompany/templates.git
 
 # Add with custom name
-warpgate templates add my-templates https://github.com/myorg/templates.git
+warpgate templates add my-templates https://git.example.com/mycompany/templates.git
 
 # Add local directory
 warpgate templates add ~/my-warpgate-templates
 
 # Add private repository
-warpgate templates add private git@github.com:myorg/private-templates.git
+warpgate templates add private git@git.example.com:mycompany/private-templates.git
 ```
 
 #### remove
@@ -607,10 +607,10 @@ templates:
   repositories:
     official: https://github.com/cowdogmoo/warpgate-templates.git
     custom: /path/to/local/templates
-    private: git@github.com:myorg/private.git
+    private: git@git.example.com:mycompany/private.git
 ```
 
-See [Template Configuration Guide](template-configuration.md) for details.
+See [Template Repositories Guide](template-repositories.md) for details.
 
 ## manifest
 
@@ -843,6 +843,6 @@ warpgate version
 ## See Also
 
 - [Usage Guide](usage-guide.md) - Practical examples and workflows
-- [Configuration Guide](configuration.md) - Configuration reference
-- [Template Format](template-format.md) - Template syntax reference
+- [CLI Configuration Guide](cli-configuration.md) - Configuration reference
+- [Template Reference](template-reference.md) - Template syntax reference
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions

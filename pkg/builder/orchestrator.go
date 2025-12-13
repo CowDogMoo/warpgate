@@ -26,6 +26,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cowdogmoo/warpgate/pkg/errors"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"golang.org/x/sync/errgroup"
 )
@@ -72,34 +73,26 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 		g.Go(func() error {
 			logging.Info("Building %s for %s", req.Config.Name, req.Architecture)
 
-			// Modify config for specific architecture
 			configCopy := req.Config
 			configCopy.Base.Platform = req.Platform
 
-			// Build the image
+			// Use architecture as tag to prevent local image overwrites
+			configCopy.Version = req.Architecture
+
 			result, err := builder.Build(ctx, configCopy)
 			if err != nil {
 				logging.Error("Failed to build %s for %s: %v", req.Config.Name, req.Architecture, err)
-				return fmt.Errorf("build %s (%s): %w", req.Config.Name, req.Architecture, err)
+				return errors.Wrap(fmt.Sprintf("build %s", req.Config.Name), req.Architecture, err)
 			}
 
-			// Tag with architecture-specific tag
-			archTag := fmt.Sprintf("%s-%s", req.Tag, req.Architecture)
-			if err := builder.Tag(ctx, result.ImageRef, archTag); err != nil {
-				logging.Error("Failed to tag image: %v", err)
-				return fmt.Errorf("tag %s for %s: %w", archTag, req.Architecture, err)
-			}
-
-			result.ImageRef = archTag
 			results[i] = *result
-			logging.Info("Successfully built %s for %s: %s", req.Config.Name, req.Architecture, archTag)
+			logging.Info("Successfully built %s for %s: %s", req.Config.Name, req.Architecture, result.ImageRef)
 			return nil
 		})
 	}
 
-	// Wait for all builds to complete
 	if err := g.Wait(); err != nil {
-		return results, fmt.Errorf("multi-arch build failed: %w", err)
+		return results, errors.Wrap("complete multi-arch build", "", err)
 	}
 
 	logging.Info("Successfully completed all %d architecture builds", len(requests))
@@ -110,28 +103,26 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildResult, registry string, builder ContainerBuilder) error {
 	logging.Info("Pushing %d architecture images to %s", len(results), registry)
 
-	// Use errgroup for concurrent pushes (no concurrency limit needed for push operations)
 	g, ctx := errgroup.WithContext(ctx)
 
 	for i := range results {
 		i := i // Capture loop index
 		result := results[i]
 		g.Go(func() error {
-			registryRef := fmt.Sprintf("%s/%s", registry, result.ImageRef)
-			logging.Info("Pushing %s", registryRef)
+			logging.Info("Pushing %s to %s", result.ImageRef, registry)
 
 			digest, err := builder.Push(ctx, result.ImageRef, registry)
 			if err != nil {
-				logging.Error("Failed to push %s: %v", registryRef, err)
-				return fmt.Errorf("push %s: %w", registryRef, err)
+				logging.Error("Failed to push %s: %v", result.ImageRef, err)
+				return errors.Wrap("push image", result.ImageRef, err)
 			}
 
 			// Update the digest in the result if we got one from the push
 			if digest != "" {
 				results[i].Digest = digest
-				logging.Info("Successfully pushed %s with digest %s", registryRef, digest)
+				logging.Info("Successfully pushed %s with digest %s", result.ImageRef, digest)
 			} else {
-				logging.Info("Successfully pushed %s", registryRef)
+				logging.Info("Successfully pushed %s", result.ImageRef)
 			}
 
 			return nil
@@ -140,7 +131,7 @@ func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildR
 
 	// Wait for all pushes to complete
 	if err := g.Wait(); err != nil {
-		return fmt.Errorf("multi-arch push failed: %w", err)
+		return errors.Wrap("complete multi-arch push", "", err)
 	}
 
 	return nil

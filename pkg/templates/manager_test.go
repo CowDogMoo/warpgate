@@ -28,11 +28,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 )
 
 func TestNewManager(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 	manager := NewManager(cfg)
 
 	if manager == nil {
@@ -51,7 +51,7 @@ func TestNewManager(t *testing.T) {
 func TestAddGitRepository(t *testing.T) {
 	// Skip this test if config file doesn't exist (e.g., in CI)
 	// This test requires filesystem persistence which should be an integration test
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil || !fileExists(configPath) {
 		t.Skip("Skipping test that requires config file persistence - should be an integration test")
 	}
@@ -66,32 +66,32 @@ func TestAddGitRepository(t *testing.T) {
 		{
 			name:     "add new repository with name",
 			repoName: "my-templates",
-			url:      "https://github.com/user/templates.git",
+			url:      "https://github.com/acme/templates.git",
 			existing: map[string]string{},
 			wantErr:  false,
 		},
 		{
 			name:     "add new repository without name (auto-generate)",
 			repoName: "",
-			url:      "https://github.com/user/my-repo.git",
+			url:      "https://github.com/acme/my-repo.git",
 			existing: map[string]string{},
 			wantErr:  false,
 		},
 		{
 			name:     "add duplicate repository with same URL",
 			repoName: "existing",
-			url:      "https://github.com/user/templates.git",
+			url:      "https://github.com/acme/templates.git",
 			existing: map[string]string{
-				"existing": "https://github.com/user/templates.git",
+				"existing": "https://github.com/acme/templates.git",
 			},
 			wantErr: false, // Should warn but not error
 		},
 		{
 			name:     "add repository with conflicting name but different URL",
 			repoName: "existing",
-			url:      "https://github.com/user/different.git",
+			url:      "https://github.com/acme/different.git",
 			existing: map[string]string{
-				"existing": "https://github.com/user/templates.git",
+				"existing": "https://github.com/acme/templates.git",
 			},
 			wantErr: true,
 		},
@@ -99,8 +99,8 @@ func TestAddGitRepository(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &globalconfig.Config{
-				Templates: globalconfig.TemplatesConfig{
+			cfg := &config.Config{
+				Templates: config.TemplatesConfig{
 					Repositories: tt.existing,
 				},
 			}
@@ -122,7 +122,7 @@ func TestAddGitRepository(t *testing.T) {
 func TestAddLocalPath(t *testing.T) {
 	// Skip this test if config file doesn't exist (e.g., in CI)
 	// This test requires filesystem persistence which should be an integration test
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil || !fileExists(configPath) {
 		t.Skip("Skipping test that requires config file persistence - should be an integration test")
 	}
@@ -158,8 +158,8 @@ func TestAddLocalPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &globalconfig.Config{
-				Templates: globalconfig.TemplatesConfig{
+			cfg := &config.Config{
+				Templates: config.TemplatesConfig{
 					LocalPaths: tt.existing,
 				},
 			}
@@ -180,7 +180,7 @@ func TestAddLocalPath(t *testing.T) {
 func TestAddLocalPath_HomePath(t *testing.T) {
 	// Skip this test if config file doesn't exist (e.g., in CI)
 	// This test requires filesystem persistence which should be an integration test
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil || !fileExists(configPath) {
 		t.Skip("Skipping test that requires config file persistence - should be an integration test")
 	}
@@ -190,8 +190,8 @@ func TestAddLocalPath_HomePath(t *testing.T) {
 
 	// We can't easily test ~ expansion without mocking os.UserHomeDir
 	// But we can test that the path validator is called
-	cfg := &globalconfig.Config{
-		Templates: globalconfig.TemplatesConfig{
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
 			LocalPaths: []string{},
 		},
 	}
@@ -209,7 +209,7 @@ func TestAddLocalPath_HomePath(t *testing.T) {
 func TestRemoveSource_LocalPath(t *testing.T) {
 	// Skip this test if config file doesn't exist (e.g., in CI)
 	// This test requires filesystem persistence which should be an integration test
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil || !fileExists(configPath) {
 		t.Skip("Skipping test that requires config file persistence - should be an integration test")
 	}
@@ -218,8 +218,8 @@ func TestRemoveSource_LocalPath(t *testing.T) {
 	anotherPath := filepath.Join(tmpDir, "another")
 	_ = os.MkdirAll(anotherPath, 0755)
 
-	cfg := &globalconfig.Config{
-		Templates: globalconfig.TemplatesConfig{
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
 			LocalPaths: []string{tmpDir, anotherPath},
 			Repositories: map[string]string{
 				"official": "https://github.com/official/templates.git",
@@ -245,17 +245,17 @@ func TestRemoveSource_LocalPath(t *testing.T) {
 func TestRemoveSource_Repository(t *testing.T) {
 	// Skip this test if config file doesn't exist (e.g., in CI)
 	// This test requires filesystem persistence which should be an integration test
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil || !fileExists(configPath) {
 		t.Skip("Skipping test that requires config file persistence - should be an integration test")
 	}
 
-	cfg := &globalconfig.Config{
-		Templates: globalconfig.TemplatesConfig{
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
 			LocalPaths: []string{},
 			Repositories: map[string]string{
 				"official": "https://github.com/official/templates.git",
-				"custom":   "https://github.com/custom/templates.git",
+				"custom":   "https://github.com/acme-corp/templates.git",
 			},
 		},
 	}
@@ -280,8 +280,8 @@ func TestRemoveSource_Repository(t *testing.T) {
 }
 
 func TestRemoveSource_NotFound(t *testing.T) {
-	cfg := &globalconfig.Config{
-		Templates: globalconfig.TemplatesConfig{
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
 			LocalPaths:   []string{},
 			Repositories: map[string]string{},
 		},
@@ -301,8 +301,8 @@ func TestRemoveFromLocalPaths(t *testing.T) {
 	tmpDir1 := "/path/to/templates1"
 	tmpDir2 := "/path/to/templates2"
 
-	cfg := &globalconfig.Config{
-		Templates: globalconfig.TemplatesConfig{
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
 			LocalPaths: []string{tmpDir1, tmpDir2},
 		},
 	}
@@ -325,11 +325,11 @@ func TestRemoveFromLocalPaths(t *testing.T) {
 }
 
 func TestRemoveFromRepositories(t *testing.T) {
-	cfg := &globalconfig.Config{
-		Templates: globalconfig.TemplatesConfig{
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
 			Repositories: map[string]string{
 				"official": "https://github.com/official/templates.git",
-				"custom":   "https://github.com/custom/templates.git",
+				"custom":   "https://github.com/acme-corp/templates.git",
 			},
 		},
 	}
@@ -352,8 +352,8 @@ func TestRemoveFromRepositories(t *testing.T) {
 }
 
 func TestRemoveFromRepositories_NotFound(t *testing.T) {
-	cfg := &globalconfig.Config{
-		Templates: globalconfig.TemplatesConfig{
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
 			Repositories: map[string]string{
 				"official": "https://github.com/official/templates.git",
 			},

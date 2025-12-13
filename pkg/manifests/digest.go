@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/opencontainers/go-digest"
 )
@@ -170,7 +171,7 @@ func SaveDigestToFile(imageName, arch, digestStr, dir string) error {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create digest directory: %w", err)
 	}
 
