@@ -237,10 +237,11 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 
 	// Output empty JSON array for structured formats when no templates found
 	if len(templateList) == 0 {
-		if templatesListFormat == "gha-matrix" {
+		switch templatesListFormat {
+		case "gha-matrix":
 			fmt.Println("{\"template\": []}")
 			return nil
-		} else if templatesListFormat == "json" {
+		case "json":
 			fmt.Println("[]")
 			return nil
 		}

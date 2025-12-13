@@ -200,16 +200,7 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	fmt.Print(string(data))
 
 	// Show config file path if it exists
-	v := viper.New()
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-
-	// Add config paths (same as config.Load)
-	configDirs := config.GetConfigDirs()
-	for _, dir := range configDirs {
-		v.AddConfigPath(dir)
-	}
-	v.AddConfigPath(".")
+	v := config.NewConfigViper()
 
 	if err := v.ReadInConfig(); err == nil {
 		fmt.Printf("\n# Config file: %s\n", v.ConfigFileUsed())
@@ -222,16 +213,7 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 
 func runConfigPath(cmd *cobra.Command, args []string) error {
 	// Try to find existing config
-	v := viper.New()
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-
-	// Add config paths
-	configDirs := config.GetConfigDirs()
-	for _, dir := range configDirs {
-		v.AddConfigPath(dir)
-	}
-	v.AddConfigPath(".")
+	v := config.NewConfigViper()
 
 	if err := v.ReadInConfig(); err == nil {
 		fmt.Println(v.ConfigFileUsed())
@@ -253,16 +235,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	value := args[1]
 
 	// Try to find existing config first
-	v := viper.New()
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-
-	// Add config paths
-	configDirs := config.GetConfigDirs()
-	for _, dir := range configDirs {
-		v.AddConfigPath(dir)
-	}
-	v.AddConfigPath(".")
+	v := config.NewConfigViper()
 
 	// Try to read existing config
 	ctx := cmd.Context()

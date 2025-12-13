@@ -22,36 +22,28 @@ THE SOFTWARE.
 
 package config
 
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-)
+import "github.com/spf13/viper"
 
-// GetCacheDir returns the cache directory for a given subdirectory.
-// It respects the configured cache directory or falls back to the default.
-// The directory is created if it doesn't exist.
-func GetCacheDir(subdirectory string) (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+// NewConfigViper creates and configures a new Viper instance for warpgate config files.
+// It sets up the config name, type, and search paths according to warpgate's conventions:
+// - Config name: "config"
+// - Config type: "yaml"
+// - Search paths: XDG-compliant directories + current directory
+//
+// This centralizes the viper configuration setup used by all config commands.
+func NewConfigViper() *viper.Viper {
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+
+	// Add all standard config directories
+	configDirs := GetConfigDirs()
+	for _, dir := range configDirs {
+		v.AddConfigPath(dir)
 	}
 
-	// Try to load config to get custom cache directory
-	cfg, err := Load()
+	// Also check current directory
+	v.AddConfigPath(".")
 
-	// Default cache directory
-	cacheDir := filepath.Join(homeDir, ".warpgate", "cache", subdirectory)
-
-	// Override with configured directory if available
-	if err == nil && cfg != nil && cfg.Templates.CacheDir != "" {
-		cacheDir = filepath.Join(cfg.Templates.CacheDir, subdirectory)
-	}
-
-	// Create the directory if it doesn't exist
-	if err := os.MkdirAll(cacheDir, DirPermReadWriteExec); err != nil {
-		return "", fmt.Errorf("failed to create cache directory: %w", err)
-	}
-
-	return cacheDir, nil
+	return v
 }

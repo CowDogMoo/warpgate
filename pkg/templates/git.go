@@ -65,6 +65,41 @@ func (g *GitOperations) CloneOrUpdate(gitURL, version string) (string, error) {
 	return g.clone(gitURL, version, repoPath)
 }
 
+// isSpecificVersion checks if the version is a specific tag/branch (not main/master)
+func isSpecificVersion(version string) bool {
+	return version != "" && version != "main" && version != "master"
+}
+
+// cloneWithRetry attempts to clone a repository, retrying with branch reference if tag fails
+func (g *GitOperations) cloneWithRetry(repoPath string, cloneOpts *git.CloneOptions, version string) (*git.Repository, error) {
+	repo, err := git.PlainClone(repoPath, false, cloneOpts)
+	if err != nil && isSpecificVersion(version) {
+		// If tag clone failed, try as a branch
+		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(version)
+		return git.PlainClone(repoPath, false, cloneOpts)
+	}
+	return repo, err
+}
+
+// checkoutVersion attempts to checkout a specific version (tag or branch)
+func checkoutVersion(repo *git.Repository, version string) error {
+	w, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+
+	// Try as a tag first
+	checkoutOpts := &git.CheckoutOptions{
+		Branch: plumbing.NewTagReferenceName(version),
+	}
+	if err := w.Checkout(checkoutOpts); err != nil {
+		// Try as a branch
+		checkoutOpts.Branch = plumbing.NewBranchReferenceName(version)
+		return w.Checkout(checkoutOpts)
+	}
+	return nil
+}
+
 // clone clones a repository to the specified path
 func (g *GitOperations) clone(gitURL, version, repoPath string) (string, error) {
 	cloneOpts := &git.CloneOptions{
@@ -77,43 +112,20 @@ func (g *GitOperations) clone(gitURL, version, repoPath string) (string, error) 
 	}
 
 	// If a specific version is requested, try to checkout that tag/branch
-	if version != "" && version != "main" && version != "master" {
-		// Try as a tag first
+	if isSpecificVersion(version) {
 		cloneOpts.ReferenceName = plumbing.NewTagReferenceName(version)
 		cloneOpts.SingleBranch = true
 	}
 
-	repo, err := git.PlainClone(repoPath, false, cloneOpts)
+	repo, err := g.cloneWithRetry(repoPath, cloneOpts, version)
 	if err != nil {
-		// If tag clone failed, try as a branch
-		if version != "" && version != "main" && version != "master" {
-			cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(version)
-			repo, err = git.PlainClone(repoPath, false, cloneOpts)
-			if err != nil {
-				return "", fmt.Errorf("failed to clone repository: %w", err)
-			}
-		} else {
-			return "", fmt.Errorf("failed to clone repository: %w", err)
-		}
+		return "", fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	// If version is specified, try to checkout
-	if version != "" && version != "main" && version != "master" {
-		w, err := repo.Worktree()
-		if err != nil {
-			return repoPath, nil // Return path even if checkout fails
-		}
-
-		// Try to checkout the version
-		checkoutOpts := &git.CheckoutOptions{
-			Branch: plumbing.NewTagReferenceName(version),
-		}
-		if err := w.Checkout(checkoutOpts); err != nil {
-			// Try as a branch
-			checkoutOpts.Branch = plumbing.NewBranchReferenceName(version)
-			if err := w.Checkout(checkoutOpts); err != nil {
-				logging.Warn("Could not checkout version %s, using default branch", version)
-			}
+	if isSpecificVersion(version) {
+		if err := checkoutVersion(repo, version); err != nil {
+			logging.Warn("Could not checkout version %s, using default branch", version)
 		}
 	}
 

@@ -30,12 +30,12 @@ import (
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/convert"
 	"github.com/cowdogmoo/warpgate/pkg/config"
+	"github.com/cowdogmoo/warpgate/pkg/convert"
+	"github.com/cowdogmoo/warpgate/pkg/git"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/spf13/cobra"
-	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -114,7 +114,8 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 	// If author not provided, try to get from git config
 	author := convertOpts.author
 	if author == "" {
-		author = getGitAuthor(ctx)
+		gitReader := git.NewConfigReader()
+		author = gitReader.GetAuthor(ctx)
 		if author != "" {
 			logging.InfoContext(ctx, "Using git config for author: %s", author)
 		}
@@ -265,100 +266,4 @@ func displayConversionSummary(buildConfig *builder.Config, outputPath string) {
 	}
 
 	fmt.Printf("\n  Output file:  %s\n", outputPath)
-}
-
-// getGitAuthor retrieves author information from git config
-func getGitAuthor(ctx context.Context) string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		logging.DebugContext(ctx, "Failed to get home directory: %v", err)
-		return ""
-	}
-
-	// Load main git config
-	cfg := loadGitConfig(ctx, home)
-	if cfg == nil {
-		return ""
-	}
-
-	// Extract name and email
-	name, email := extractUserInfo(cfg)
-
-	// Try included configs if needed
-	if name == "" || email == "" {
-		name, email = tryIncludedConfig(ctx, cfg, home, name, email)
-	}
-
-	return formatGitAuthor(name, email)
-}
-
-// loadGitConfig loads the main .gitconfig file
-func loadGitConfig(ctx context.Context, home string) *ini.File {
-	gitconfigPath := filepath.Join(home, ".gitconfig")
-	cfg, err := ini.Load(gitconfigPath)
-	if err != nil {
-		logging.DebugContext(ctx, "Failed to load .gitconfig: %v", err)
-		return nil
-	}
-	return cfg
-}
-
-// extractUserInfo extracts name and email from a git config section
-func extractUserInfo(cfg *ini.File) (name, email string) {
-	userSection := cfg.Section("user")
-	if userSection != nil {
-		name = userSection.Key("name").String()
-		email = userSection.Key("email").String()
-	}
-	return name, email
-}
-
-// tryIncludedConfig tries to load user info from included config files
-func tryIncludedConfig(ctx context.Context, cfg *ini.File, home, currentName, currentEmail string) (name, email string) {
-	name, email = currentName, currentEmail
-
-	includeSection := cfg.Section("include")
-	if includeSection == nil {
-		return name, email
-	}
-
-	includePath := includeSection.Key("path").String()
-	if includePath == "" {
-		return name, email
-	}
-
-	includePath = templates.MustExpandPath(includePath)
-
-	includedCfg, err := ini.Load(includePath)
-	if err != nil {
-		return name, email
-	}
-
-	includedUserSection := includedCfg.Section("user")
-	if includedUserSection == nil {
-		return name, email
-	}
-
-	if name == "" {
-		name = includedUserSection.Key("name").String()
-	}
-	if email == "" {
-		email = includedUserSection.Key("email").String()
-	}
-
-	return name, email
-}
-
-// formatGitAuthor formats name and email as a git author string
-func formatGitAuthor(name, email string) string {
-	switch {
-	case name != "" && email != "":
-		return fmt.Sprintf("%s <%s>", name, email)
-	case name != "":
-		return name
-	case email != "":
-		return email
-	default:
-		return ""
-	}
 }

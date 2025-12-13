@@ -32,7 +32,7 @@ repos:
       - id: go-cyclo
         args: [-over=15]
       - id: golangci-lint
-        args: [--timeout=5m, --enable=unused,deadcode]
+        args: [--timeout=5m, --enable=unused]
       - id: go-critic
       - id: go-build
       - id: go-mod-tidy

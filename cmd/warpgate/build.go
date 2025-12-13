@@ -31,7 +31,6 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/builder/ami"
 	"github.com/cowdogmoo/warpgate/pkg/builder/buildkit"
 	"github.com/cowdogmoo/warpgate/pkg/cli"
-	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/spf13/cobra"
@@ -181,7 +180,28 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 			return err
 		}
 	case "ami":
-		result, err := executeAMIBuildInCmd(ctx, cfg, buildConfig, builderOpts)
+		// Create AMI client configuration
+		amiConfig := ami.ClientConfig{
+			Region:          cfg.AWS.Region,
+			Profile:         cfg.AWS.Profile,
+			AccessKeyID:     cfg.AWS.AccessKeyID,
+			SecretAccessKey: cfg.AWS.SecretAccessKey,
+			SessionToken:    cfg.AWS.SessionToken,
+		}
+
+		// Create AMI builder
+		amiBuilder, err := ami.NewImageBuilder(ctx, amiConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create AMI builder: %w", err)
+		}
+		defer func() {
+			if closeErr := amiBuilder.Close(); closeErr != nil {
+				logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
+			}
+		}()
+
+		// Execute AMI build with service
+		result, err := service.ExecuteAMIBuild(ctx, *buildConfig, builderOpts, amiBuilder)
 		if err != nil {
 			return err
 		}
@@ -198,91 +218,6 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	}
 
 	return nil
-}
-
-// executeAMIBuildInCmd handles AMI builds in the command layer to avoid import cycles.
-func executeAMIBuildInCmd(ctx context.Context, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions) (*builder.BuildResult, error) {
-	logging.InfoContext(ctx, "Executing AMI build")
-
-	var amiTarget *builder.Target
-	for i := range buildConfig.Targets {
-		if buildConfig.Targets[i].Type == "ami" {
-			amiTarget = &buildConfig.Targets[i]
-			break
-		}
-	}
-
-	if amiTarget == nil {
-		return nil, fmt.Errorf("no AMI target found in configuration")
-	}
-
-	region := builderOpts.Region
-	if region == "" {
-		region = amiTarget.Region
-	}
-	if region == "" && cfg != nil {
-		region = cfg.AWS.Region
-	}
-	if region == "" {
-		return nil, fmt.Errorf("AWS region must be specified (use --region flag, set in template, or configure in global config)")
-	}
-
-	amiConfig := struct {
-		Region          string
-		Profile         string
-		AccessKeyID     string
-		SecretAccessKey string
-		SessionToken    string
-	}{
-		Region:          region,
-		Profile:         cfg.AWS.Profile,
-		AccessKeyID:     cfg.AWS.AccessKeyID,
-		SecretAccessKey: cfg.AWS.SecretAccessKey,
-		SessionToken:    cfg.AWS.SessionToken,
-	}
-
-	amiBuilder, err := createAMIBuilder(ctx, amiConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create AMI builder: %w", err)
-	}
-	defer func() {
-		if closeErr := amiBuilder.Close(); closeErr != nil {
-			logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
-		}
-	}()
-
-	result, err := amiBuilder.Build(ctx, *buildConfig)
-	if err != nil {
-		return nil, fmt.Errorf("AMI build failed: %w", err)
-	}
-
-	logging.InfoContext(ctx, "AMI build completed successfully: %s", result.AMIID)
-	return result, nil
-}
-
-// createAMIBuilder creates an AMI builder with the given configuration.
-func createAMIBuilder(ctx context.Context, config interface{}) (builder.AMIBuilder, error) {
-	type clientConfig struct {
-		Region          string
-		Profile         string
-		AccessKeyID     string
-		SecretAccessKey string
-		SessionToken    string
-	}
-
-	cfg, ok := config.(clientConfig)
-	if !ok {
-		return nil, fmt.Errorf("invalid config type: expected clientConfig")
-	}
-	amiCfg := ami.ClientConfig{
-		Region:          cfg.Region,
-		Profile:         cfg.Profile,
-		AccessKeyID:     cfg.AccessKeyID,
-		SecretAccessKey: cfg.SecretAccessKey,
-		SessionToken:    cfg.SessionToken,
-	}
-
-	return ami.NewImageBuilder(ctx, amiCfg)
 }
 
 // buildOptsToCliOpts converts buildOptions to CLI validation options

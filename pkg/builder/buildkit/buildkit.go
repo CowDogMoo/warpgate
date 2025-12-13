@@ -58,8 +58,8 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/errors"
 	"github.com/cowdogmoo/warpgate/pkg/config"
+	"github.com/cowdogmoo/warpgate/pkg/errors"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/cowdogmoo/warpgate/pkg/templates"

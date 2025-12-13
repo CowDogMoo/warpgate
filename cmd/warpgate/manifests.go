@@ -31,6 +31,7 @@ import (
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/builder/buildkit"
+	"github.com/cowdogmoo/warpgate/pkg/cli"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/spf13/cobra"
@@ -230,11 +231,6 @@ func init() {
 func runManifestsCreate(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	// Initialize logging with command-specific options
-	if err := initManifestLogging(); err != nil {
-		return err
-	}
-
 	logging.InfoContext(ctx, "Creating multi-arch manifest for %s", manifestsOpts.name)
 
 	// Discover, validate, and filter digests
@@ -371,13 +367,15 @@ func verifyDigestsInRegistry(ctx context.Context, cmd *cobra.Command, filteredDi
 
 // parseMetadata parses annotations and labels from command line options
 func parseMetadata(ctx context.Context) (map[string]string, map[string]string) {
-	annotations, err := parseKeyValuePairs(manifestsOpts.annotations)
+	parser := cli.NewParser()
+
+	annotations, err := parser.ParseKeyValuePairs(manifestsOpts.annotations)
 	if err != nil {
 		logging.ErrorContext(ctx, "Failed to parse annotations: %v", err)
 		os.Exit(ExitValidationError)
 	}
 
-	labels, err := parseKeyValuePairs(manifestsOpts.labels)
+	labels, err := parser.ParseKeyValuePairs(manifestsOpts.labels)
 	if err != nil {
 		logging.ErrorContext(ctx, "Failed to parse labels: %v", err)
 		os.Exit(ExitValidationError)
@@ -452,29 +450,9 @@ func handleDryRun(ctx context.Context, filteredDigests []manifests.DigestFile) e
 	return nil
 }
 
-// parseKeyValuePairs parses key=value pairs from a string slice
-func parseKeyValuePairs(pairs []string) (map[string]string, error) {
-	result := make(map[string]string)
-	for _, pair := range pairs {
-		parts := strings.SplitN(pair, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid key=value format: %s", pair)
-		}
-		if parts[0] == "" {
-			return nil, fmt.Errorf("key cannot be empty in: %s", pair)
-		}
-		result[parts[0]] = parts[1]
-	}
-	return result, nil
-}
-
 // runManifestsInspect inspects a manifest from the registry
 func runManifestsInspect(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-
-	if err := initManifestLogging(); err != nil {
-		return err
-	}
 
 	// Use first tag
 	tag := "latest"
@@ -507,10 +485,6 @@ func runManifestsInspect(cmd *cobra.Command, args []string) error {
 // runManifestsList lists available manifest tags
 func runManifestsList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-
-	if err := initManifestLogging(); err != nil {
-		return err
-	}
 
 	imageRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, "")
 	logging.InfoContext(ctx, "Listing tags for: %s", strings.TrimSuffix(imageRef, ":"))
@@ -592,19 +566,6 @@ func displayManifestInfo(info *manifests.ManifestInfo) {
 		}
 	}
 	fmt.Println()
-}
-
-// initManifestLogging initializes logging for manifest commands
-func initManifestLogging() error {
-	logLevel := "info"
-	if manifestsOpts.verbose {
-		logLevel = "debug"
-	}
-	if manifestsOpts.quiet {
-		logLevel = "error"
-	}
-
-	return logging.Initialize(logLevel, "color", manifestsOpts.quiet, manifestsOpts.verbose)
 }
 
 // convertDigestFilesToManifestEntries converts DigestFiles to ManifestEntries
