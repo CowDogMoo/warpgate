@@ -21,7 +21,7 @@ THE SOFTWARE.
 */
 
 // Package globalconfig manages the global Warpgate configuration from files and environment variables.
-package globalconfig
+package config
 
 import (
 	"fmt"

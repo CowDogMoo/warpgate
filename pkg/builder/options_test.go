@@ -26,7 +26,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 )
 
 func TestApplyOverrides(t *testing.T) {
@@ -36,7 +36,7 @@ func TestApplyOverrides(t *testing.T) {
 		name      string
 		config    *Config
 		opts      BuildOptions
-		globalCfg *globalconfig.Config
+		globalCfg *config.Config
 		wantErr   bool
 		checkFunc func(*testing.T, *Config)
 	}{
@@ -51,7 +51,7 @@ func TestApplyOverrides(t *testing.T) {
 			opts: BuildOptions{
 				TargetType: "container",
 			},
-			globalCfg: &globalconfig.Config{},
+			globalCfg: &config.Config{},
 			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if len(cfg.Targets) != 1 {
@@ -70,7 +70,7 @@ func TestApplyOverrides(t *testing.T) {
 			opts: BuildOptions{
 				Architectures: []string{"amd64", "arm64"},
 			},
-			globalCfg: &globalconfig.Config{},
+			globalCfg: &config.Config{},
 			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if len(cfg.Architectures) != 2 {
@@ -86,7 +86,7 @@ func TestApplyOverrides(t *testing.T) {
 			opts: BuildOptions{
 				Registry: "ghcr.io/myorg",
 			},
-			globalCfg: &globalconfig.Config{},
+			globalCfg: &config.Config{},
 			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if cfg.Registry != "ghcr.io/myorg" {
@@ -109,7 +109,7 @@ func TestApplyOverrides(t *testing.T) {
 					"GO_VERSION": "1.25",
 				},
 			},
-			globalCfg: &globalconfig.Config{},
+			globalCfg: &config.Config{},
 			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if len(cfg.Labels) != 2 {
@@ -128,7 +128,7 @@ func TestApplyOverrides(t *testing.T) {
 			opts: BuildOptions{
 				NoCache: true,
 			},
-			globalCfg: &globalconfig.Config{},
+			globalCfg: &config.Config{},
 			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if !cfg.NoCache {
@@ -147,7 +147,7 @@ func TestApplyOverrides(t *testing.T) {
 				Region:       "us-west-2",
 				InstanceType: "t3.large",
 			},
-			globalCfg: &globalconfig.Config{},
+			globalCfg: &config.Config{},
 			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if cfg.Targets[0].Region != "us-west-2" {
@@ -248,7 +248,7 @@ func TestApplyArchitectureOverrides(t *testing.T) {
 		name      string
 		config    *Config
 		opts      BuildOptions
-		globalCfg *globalconfig.Config
+		globalCfg *config.Config
 		wantLen   int
 		wantArchs []string
 	}{
@@ -260,7 +260,7 @@ func TestApplyArchitectureOverrides(t *testing.T) {
 			opts: BuildOptions{
 				Architectures: []string{"arm64", "amd64"},
 			},
-			globalCfg: &globalconfig.Config{},
+			globalCfg: &config.Config{},
 			wantLen:   2,
 			wantArchs: []string{"arm64", "amd64"},
 		},
@@ -270,7 +270,7 @@ func TestApplyArchitectureOverrides(t *testing.T) {
 				Architectures: []string{"amd64"},
 			},
 			opts:      BuildOptions{},
-			globalCfg: &globalconfig.Config{},
+			globalCfg: &config.Config{},
 			wantLen:   1,
 			wantArchs: []string{"amd64"},
 		},
@@ -280,8 +280,8 @@ func TestApplyArchitectureOverrides(t *testing.T) {
 				Architectures: []string{},
 			},
 			opts: BuildOptions{},
-			globalCfg: &globalconfig.Config{
-				Build: globalconfig.BuildConfig{
+			globalCfg: &config.Config{
+				Build: config.BuildConfig{
 					DefaultArch: []string{"amd64", "arm64"},
 				},
 			},
@@ -310,7 +310,7 @@ func TestApplyRegistryOverride(t *testing.T) {
 		name         string
 		config       *Config
 		opts         BuildOptions
-		globalCfg    *globalconfig.Config
+		globalCfg    *config.Config
 		wantRegistry string
 	}{
 		{
@@ -319,15 +319,15 @@ func TestApplyRegistryOverride(t *testing.T) {
 			opts: BuildOptions{
 				Registry: "ghcr.io/myorg",
 			},
-			globalCfg:    &globalconfig.Config{},
+			globalCfg:    &config.Config{},
 			wantRegistry: "ghcr.io/myorg",
 		},
 		{
 			name:   "use config registry if set",
 			config: &Config{Registry: "ghcr.io/myorg"},
 			opts:   BuildOptions{},
-			globalCfg: &globalconfig.Config{
-				Registry: globalconfig.RegistryConfig{
+			globalCfg: &config.Config{
+				Registry: config.RegistryConfig{
 					Default: "docker.io",
 				},
 			},
@@ -337,8 +337,8 @@ func TestApplyRegistryOverride(t *testing.T) {
 			name:   "fallback to global config default",
 			config: &Config{Registry: ""},
 			opts:   BuildOptions{},
-			globalCfg: &globalconfig.Config{
-				Registry: globalconfig.RegistryConfig{
+			globalCfg: &config.Config{
+				Registry: config.RegistryConfig{
 					Default: "docker.io",
 				},
 			},

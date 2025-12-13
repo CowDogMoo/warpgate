@@ -29,7 +29,6 @@ import (
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/errors"
-	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
 )
 
 // PathValidator handles template path validation and normalization.
@@ -55,7 +54,7 @@ func (pv *PathValidator) IsLocalPath(path string) bool {
 	}
 
 	if strings.HasPrefix(path, ".") || strings.HasPrefix(path, "~") {
-		expandedPath, err := pathexpand.ExpandPath(path)
+		expandedPath, err := ExpandPath(path)
 		if err != nil {
 			return false
 		}
@@ -68,7 +67,7 @@ func (pv *PathValidator) IsLocalPath(path string) bool {
 
 // NormalizePath normalizes a path for comparison by expanding ~ and converting to absolute path.
 func (pv *PathValidator) NormalizePath(path string) (string, error) {
-	expandedPath, err := pathexpand.ExpandPath(path)
+	expandedPath, err := ExpandPath(path)
 	if err != nil {
 		return "", errors.Wrap("normalize path", path, err)
 	}
@@ -104,7 +103,7 @@ func (pv *PathValidator) ValidateLocalPath(path string) error {
 
 // ExpandPath expands ~ in paths and converts to absolute paths.
 func (pv *PathValidator) ExpandPath(path string) (string, error) {
-	expandedPath, err := pathexpand.ExpandPath(path)
+	expandedPath, err := ExpandPath(path)
 	if err != nil {
 		return "", errors.Wrap("expand path", path, err)
 	}
@@ -163,4 +162,39 @@ func ExtractRepoName(gitURL string) string {
 	}
 
 	return name
+}
+
+// ExpandPath expands environment variables and home directory in a path.
+// It handles both ${VAR} syntax and ~ (tilde) for the home directory.
+//
+// Examples:
+//   - "~/projects" -> "/home/user/projects"
+//   - "${HOME}/work" -> "/home/user/work"
+//   - "~" -> "/home/user"
+//   - "~/path/to/dir" -> "/home/user/path/to/dir"
+func ExpandPath(path string) (string, error) {
+	path = os.ExpandEnv(path)
+
+	if strings.HasPrefix(path, "~/") || path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if path == "~" {
+			return home, nil
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+
+	return path, nil
+}
+
+// MustExpandPath is like ExpandPath but panics on error.
+// Use this only when you're certain the home directory can be determined.
+func MustExpandPath(path string) string {
+	expanded, err := ExpandPath(path)
+	if err != nil {
+		return os.ExpandEnv(path)
+	}
+	return expanded
 }

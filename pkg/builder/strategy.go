@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -44,12 +44,12 @@ const (
 type StrategyDetector struct {
 	hostArch     string
 	hostOS       string
-	globalConfig *globalconfig.Config
+	globalConfig *config.Config
 }
 
 // NewStrategyDetector creates a new build strategy detector
 func NewStrategyDetector() (*StrategyDetector, error) {
-	cfg, err := globalconfig.Load()
+	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}

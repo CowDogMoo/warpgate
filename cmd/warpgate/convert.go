@@ -31,8 +31,9 @@ import (
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/convert"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
-	"github.com/cowdogmoo/warpgate/pkg/pathexpand"
+	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/spf13/cobra"
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
@@ -179,7 +180,7 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 
 // resolveTemplatePath resolves the template directory path to an absolute path
 func resolveTemplatePath(templateDir string) (string, error) {
-	expandedDir, err := pathexpand.ExpandPath(templateDir)
+	expandedDir, err := templates.ExpandPath(templateDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to expand path: %w", err)
 	}
@@ -220,7 +221,7 @@ func determineOutputPath(absTemplateDir string) (string, error) {
 
 	// Ensure output directory exists
 	outputDir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, config.DirPermReadWriteExec); err != nil {
 		return "", fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -326,7 +327,7 @@ func tryIncludedConfig(ctx context.Context, cfg *ini.File, home, currentName, cu
 		return name, email
 	}
 
-	includePath = pathexpand.MustExpandPath(includePath)
+	includePath = templates.MustExpandPath(includePath)
 
 	includedCfg, err := ini.Load(includePath)
 	if err != nil {

@@ -26,7 +26,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/spf13/viper"
 )
@@ -34,12 +34,12 @@ import (
 // Manager handles template source management including adding, removing,
 // and persisting template repositories and local paths.
 type Manager struct {
-	config    *globalconfig.Config
+	config    *config.Config
 	validator *PathValidator
 }
 
 // NewManager creates a new template manager with the given configuration.
-func NewManager(cfg *globalconfig.Config) *Manager {
+func NewManager(cfg *config.Config) *Manager {
 	return &Manager{
 		config:    cfg,
 		validator: NewPathValidator(),
@@ -84,7 +84,7 @@ func (m *Manager) AddGitRepository(ctx context.Context, name, gitURL string) err
 		return err
 	}
 
-	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	configPath, _ := config.ConfigFile("config.yaml")
 	logging.InfoContext(ctx, "Repository added successfully as '%s' to %s", name, configPath)
 	logging.InfoContext(ctx, "Run 'warpgate templates update' to fetch templates")
 
@@ -122,7 +122,7 @@ func (m *Manager) AddLocalPath(ctx context.Context, path string) error {
 		return err
 	}
 
-	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	configPath, _ := config.ConfigFile("config.yaml")
 	logging.InfoContext(ctx, "Template directory added successfully to %s", configPath)
 
 	return nil
@@ -153,7 +153,7 @@ func (m *Manager) RemoveSource(ctx context.Context, pathOrName string) error {
 	}
 
 	// Log results
-	configPath, _ := globalconfig.ConfigFile("config.yaml")
+	configPath, _ := config.ConfigFile("config.yaml")
 	if removedFromPaths {
 		logging.InfoContext(ctx, "Removed from local_paths in %s", configPath)
 	}
@@ -192,7 +192,7 @@ func (m *Manager) removeFromRepositories(name string) bool {
 
 // saveConfigValue saves a single configuration value to the config file.
 func (m *Manager) saveConfigValue(key string, value interface{}) error {
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}
@@ -216,7 +216,7 @@ func (m *Manager) saveConfigValue(key string, value interface{}) error {
 
 // saveTemplatesConfig saves the entire templates configuration to the config file.
 func (m *Manager) saveTemplatesConfig() error {
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}

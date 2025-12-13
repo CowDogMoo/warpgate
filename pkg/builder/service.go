@@ -26,7 +26,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/opencontainers/go-digest"
@@ -36,7 +36,7 @@ import (
 // pushing, and manifest creation. It coordinates between builders, orchestrators,
 // and configuration to execute complex multi-stage builds.
 type BuildService struct {
-	globalConfig *globalconfig.Config
+	globalConfig *config.Config
 
 	// Builder creation function
 	buildKitCreator BuilderCreatorFunc
@@ -44,7 +44,7 @@ type BuildService struct {
 
 // NewBuildService creates a new build service with the given configuration.
 // The creator function initializes BuildKit builders.
-func NewBuildService(cfg *globalconfig.Config, buildKitCreator BuilderCreatorFunc) *BuildService {
+func NewBuildService(cfg *config.Config, buildKitCreator BuilderCreatorFunc) *BuildService {
 	return &BuildService{
 		globalConfig:    cfg,
 		buildKitCreator: buildKitCreator,

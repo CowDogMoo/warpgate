@@ -32,7 +32,6 @@ import (
 	"github.com/cowdogmoo/warpgate/pkg/builder/buildkit"
 	"github.com/cowdogmoo/warpgate/pkg/cli"
 	"github.com/cowdogmoo/warpgate/pkg/config"
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/spf13/cobra"
@@ -202,7 +201,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 }
 
 // executeAMIBuildInCmd handles AMI builds in the command layer to avoid import cycles.
-func executeAMIBuildInCmd(ctx context.Context, cfg *globalconfig.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions) (*builder.BuildResult, error) {
+func executeAMIBuildInCmd(ctx context.Context, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions) (*builder.BuildResult, error) {
 	logging.InfoContext(ctx, "Executing AMI build")
 
 	var amiTarget *builder.Target
@@ -318,7 +317,7 @@ func buildOptsToCliOpts(args []string, opts *buildOptions) cli.BuildCLIOptions {
 
 // loadBuildConfig loads configuration from template, git, or file
 func loadBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*builder.Config, error) {
-	variables, err := config.ParseVariables(opts.vars, opts.varFiles)
+	variables, err := templates.ParseVariables(opts.vars, opts.varFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse variables: %w", err)
 	}
@@ -371,7 +370,7 @@ func enhanceBuildKitError(err error) error {
 
 // loadFromFile loads config from a local file with variable substitution
 func loadFromFile(configPath string, variables map[string]string) (*builder.Config, error) {
-	loader := config.NewLoader()
+	loader := templates.NewLoader()
 	cfg, err := loader.LoadFromFileWithVars(configPath, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)

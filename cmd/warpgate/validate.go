@@ -26,8 +26,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/pkg/templates"
 	"github.com/spf13/cobra"
 )
 
@@ -63,15 +63,15 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load configuration
-	loader := config.NewLoader()
+	loader := templates.NewLoader()
 	cfg, err := loader.LoadFromFileWithVars(configPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Validate configuration
-	validator := config.NewValidator()
-	if err := validator.ValidateWithOptions(cfg, config.ValidationOptions{
+	validator := templates.NewValidator()
+	if err := validator.ValidateWithOptions(cfg, templates.ValidationOptions{
 		SyntaxOnly: syntaxOnly,
 	}); err != nil {
 		logging.ErrorContext(ctx, "Validation failed: %v", err)

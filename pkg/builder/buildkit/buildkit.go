@@ -45,7 +45,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
-	"github.com/cowdogmoo/warpgate/pkg/registryauth"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	digest "github.com/opencontainers/go-digest"
@@ -60,7 +59,7 @@ import (
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/errors"
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/cowdogmoo/warpgate/pkg/manifests"
 	"github.com/cowdogmoo/warpgate/pkg/templates"
@@ -84,10 +83,10 @@ var _ builder.ContainerBuilder = (*BuildKitBuilder)(nil)
 // Supports auto-detect, explicit endpoint (docker-container://, tcp://, unix://), and remote TCP with TLS.
 func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	// Load global configuration
-	cfg, err := globalconfig.Load()
+	cfg, err := config.Load()
 	if err != nil {
 		logging.Warn("Failed to load config, using defaults: %v", err)
-		cfg = &globalconfig.Config{}
+		cfg = &config.Config{}
 	}
 
 	var addr string
@@ -170,7 +169,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 }
 
 // loadTLSConfig creates a TLS configuration from BuildKit config
-func loadTLSConfig(cfg globalconfig.BuildKitConfig) (*tls.Config, error) {
+func loadTLSConfig(cfg config.BuildKitConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 	}
@@ -985,7 +984,7 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 	registryHostname := extractRegistryFromImageRef(fullImageRef)
 	logging.Debug("Using registry hostname for auth: %s", registryHostname)
 
-	registryAuth, err := registryauth.ToDockerSDKAuth(ctx, registryHostname)
+	registryAuth, err := ToDockerSDKAuth(ctx, registryHostname)
 	if err != nil {
 		logging.Warn("Failed to get registry credentials: %v (attempting push anyway)", err)
 		registryAuth = ""

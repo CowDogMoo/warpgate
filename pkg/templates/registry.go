@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"gopkg.in/yaml.v3"
@@ -105,23 +105,16 @@ func isPlaceholderURL(rawURL string) bool {
 // NewTemplateRegistry creates a new template registry
 func NewTemplateRegistry() (*TemplateRegistry, error) {
 	// Load global config to get repositories and local paths
-	cfg, err := globalconfig.Load()
+	cfg, err := config.Load()
 	if err != nil {
 		logging.Warn("Failed to load global config, using defaults: %v", err)
-		cfg = &globalconfig.Config{}
+		cfg = &config.Config{}
 	}
 
-	homeDir, err := os.UserHomeDir()
+	// Get cache directory for registry
+	cacheDir, err := config.GetCacheDir("registry")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	cacheDir := filepath.Join(homeDir, ".warpgate", "cache", "registry")
-	if cfg.Templates.CacheDir != "" {
-		cacheDir = cfg.Templates.CacheDir
-	}
-	if err := os.MkdirAll(cacheDir, globalconfig.DirPermReadWriteExec); err != nil {
-		return nil, fmt.Errorf("failed to create cache directory: %w", err)
+		return nil, err
 	}
 
 	repos := make(map[string]string)
@@ -217,6 +210,34 @@ func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
 	return templates, nil
 }
 
+// tagTemplatesWithRepository tags all templates in the slice with the given repository name.
+func tagTemplatesWithRepository(templates []TemplateInfo, repoName string) {
+	for i := range templates {
+		templates[i].Repository = repoName
+	}
+}
+
+// scanLocalPaths discovers templates from local paths and tags them appropriately.
+func (tr *TemplateRegistry) scanLocalPaths() []TemplateInfo {
+	var templates []TemplateInfo
+
+	for _, localPath := range tr.localPaths {
+		if !tr.pathValidator.IsLocalPath(localPath) {
+			continue
+		}
+		discovered, err := tr.discoverTemplates(localPath)
+		if err != nil {
+			logging.Warn("Failed to scan local path %s: %v", localPath, err)
+			continue
+		}
+		// Tag templates with their source path
+		tagTemplatesWithRepository(discovered, fmt.Sprintf("local:%s", filepath.Base(localPath)))
+		templates = append(templates, discovered...)
+	}
+
+	return templates
+}
+
 // listAll returns all templates from all configured sources (repos and local paths)
 func (tr *TemplateRegistry) listAll() ([]TemplateInfo, error) {
 	var allTemplates []TemplateInfo
@@ -229,28 +250,12 @@ func (tr *TemplateRegistry) listAll() ([]TemplateInfo, error) {
 			continue
 		}
 		// Tag templates with their repository
-		for i := range templates {
-			templates[i].Repository = repoName
-		}
+		tagTemplatesWithRepository(templates, repoName)
 		allTemplates = append(allTemplates, templates...)
 	}
 
 	// Scan additional local paths
-	for _, localPath := range tr.localPaths {
-		if !tr.pathValidator.IsLocalPath(localPath) {
-			continue
-		}
-		templates, err := tr.discoverTemplates(localPath)
-		if err != nil {
-			logging.Warn("Failed to scan local path %s: %v", localPath, err)
-			continue
-		}
-		// Tag templates with their source path
-		for i := range templates {
-			templates[i].Repository = fmt.Sprintf("local:%s", filepath.Base(localPath))
-		}
-		allTemplates = append(allTemplates, templates...)
-	}
+	allTemplates = append(allTemplates, tr.scanLocalPaths()...)
 
 	return allTemplates, nil
 }
@@ -270,28 +275,12 @@ func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
 			continue
 		}
 		// Tag templates with their repository name
-		for i := range templates {
-			templates[i].Repository = repoName
-		}
+		tagTemplatesWithRepository(templates, repoName)
 		allTemplates = append(allTemplates, templates...)
 	}
 
 	// Scan additional local paths from config
-	for _, localPath := range tr.localPaths {
-		if !tr.pathValidator.IsLocalPath(localPath) {
-			continue
-		}
-		templates, err := tr.discoverTemplates(localPath)
-		if err != nil {
-			logging.Warn("Failed to scan local path %s: %v", localPath, err)
-			continue
-		}
-		// Tag templates with their source path
-		for i := range templates {
-			templates[i].Repository = fmt.Sprintf("local:%s", filepath.Base(localPath))
-		}
-		allTemplates = append(allTemplates, templates...)
-	}
+	allTemplates = append(allTemplates, tr.scanLocalPaths()...)
 
 	return allTemplates, nil
 }
@@ -299,7 +288,7 @@ func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
 // discoverTemplates finds all templates in a repository
 func (tr *TemplateRegistry) discoverTemplates(repoPath string) ([]TemplateInfo, error) {
 	templatesDir := filepath.Join(repoPath, "templates")
-	if _, err := os.Stat(templatesDir); os.IsNotExist(err) {
+	if !tr.pathValidator.DirExists(templatesDir) {
 		return nil, fmt.Errorf("templates directory not found in repository")
 	}
 
@@ -318,7 +307,7 @@ func (tr *TemplateRegistry) discoverTemplates(repoPath string) ([]TemplateInfo, 
 
 		// Look for warpgate.yaml in each template directory
 		configPath := filepath.Join(templatesDir, entry.Name(), "warpgate.yaml")
-		if _, err := os.Stat(configPath); err != nil {
+		if !tr.pathValidator.FileExists(configPath) {
 			continue // Skip if no config found
 		}
 
@@ -469,7 +458,7 @@ func (tr *TemplateRegistry) saveCache(repoName string, templates []TemplateInfo)
 		return err
 	}
 
-	return os.WriteFile(cachePath, data, globalconfig.FilePermReadWrite)
+	return os.WriteFile(cachePath, data, config.FilePermReadWrite)
 }
 
 // UpdateCache forces a cache refresh for a repository
@@ -542,7 +531,7 @@ func (tr *TemplateRegistry) LoadRepositories() error {
 	configPath := filepath.Join(tr.cacheDir, "repositories.json")
 
 	// If file doesn't exist, use defaults
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+	if !tr.pathValidator.FileExists(configPath) {
 		return nil
 	}
 
@@ -573,7 +562,7 @@ func (tr *TemplateRegistry) SaveRepositories() error {
 		return fmt.Errorf("failed to marshal repository config: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, globalconfig.FilePermReadWrite); err != nil {
+	if err := os.WriteFile(configPath, data, config.FilePermReadWrite); err != nil {
 		return fmt.Errorf("failed to write repository config: %w", err)
 	}
 

@@ -144,13 +144,11 @@ package templates
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
 	"github.com/cowdogmoo/warpgate/pkg/config"
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -158,7 +156,7 @@ import (
 type TemplateLoader struct {
 	cacheDir      string
 	registry      *TemplateRegistry
-	configLoad    *config.Loader
+	configLoad    *Loader
 	gitOps        *GitOperations
 	variables     map[string]string // Variables for template substitution
 	pathValidator *PathValidator    // path validation utilities
@@ -166,25 +164,10 @@ type TemplateLoader struct {
 
 // NewTemplateLoader creates a new template loader
 func NewTemplateLoader() (*TemplateLoader, error) {
-	// Load global config to get cache directory
-	cfg, err := globalconfig.Load()
+	// Get cache directory for templates
+	cacheDir, err := config.GetCacheDir("templates")
 	if err != nil {
-		logging.Warn("Failed to load global config, using defaults: %v", err)
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	// Use configured cache directory or default
-	cacheDir := filepath.Join(homeDir, ".warpgate", "cache", "templates")
-	if cfg != nil && cfg.Templates.CacheDir != "" {
-		cacheDir = filepath.Join(cfg.Templates.CacheDir, "repos")
-	}
-
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create cache directory: %w", err)
+		return nil, err
 	}
 
 	registry, err := NewTemplateRegistry()
@@ -195,7 +178,7 @@ func NewTemplateLoader() (*TemplateLoader, error) {
 	return &TemplateLoader{
 		cacheDir:      cacheDir,
 		registry:      registry,
-		configLoad:    config.NewLoader(),
+		configLoad:    NewLoader(),
 		gitOps:        NewGitOperations(cacheDir),
 		variables:     make(map[string]string),
 		pathValidator: NewPathValidator(),
@@ -228,7 +211,7 @@ func (tl *TemplateLoader) LoadTemplateWithVars(ref string, vars map[string]strin
 	if filepath.IsAbs(ref) || tl.pathValidator.FileExists(ref) {
 		logging.Debug("Loading template from local file: %s", ref)
 		// If it's a directory, look for warpgate.yaml inside
-		if info, err := os.Stat(ref); err == nil && info.IsDir() {
+		if tl.pathValidator.DirExists(ref) {
 			configPath := filepath.Join(ref, "warpgate.yaml")
 			if tl.pathValidator.FileExists(configPath) {
 				return tl.loadFromFileWithVars(configPath, mergedVars)
@@ -350,7 +333,7 @@ func (tl *TemplateLoader) loadFromFileWithVars(path string, vars map[string]stri
 	}
 
 	// Validate the configuration
-	validator := config.NewValidator()
+	validator := NewValidator()
 	if err := validator.Validate(cfg); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}

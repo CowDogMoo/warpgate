@@ -20,46 +20,41 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-// Package pathexpand provides functionality for expanding paths with tilde and environment variables.
-package pathexpand
+package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
-// ExpandPath expands environment variables and home directory in a path.
-// It handles both ${VAR} syntax and ~ (tilde) for the home directory.
-//
-// Examples:
-//   - "~/projects" -> "/home/user/projects"
-//   - "${HOME}/work" -> "/home/user/work"
-//   - "~" -> "/home/user"
-//   - "~/path/to/dir" -> "/home/user/path/to/dir"
-func ExpandPath(path string) (string, error) {
-	path = os.ExpandEnv(path)
-
-	if strings.HasPrefix(path, "~/") || path == "~" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		if path == "~" {
-			return home, nil
-		}
-		return filepath.Join(home, path[2:]), nil
-	}
-
-	return path, nil
-}
-
-// MustExpandPath is like ExpandPath but panics on error.
-// Use this only when you're certain the home directory can be determined.
-func MustExpandPath(path string) string {
-	expanded, err := ExpandPath(path)
+// GetCacheDir returns the cache directory for a given subdirectory.
+// It respects the configured cache directory or falls back to the default.
+// The directory is created if it doesn't exist.
+func GetCacheDir(subdirectory string) (string, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return os.ExpandEnv(path)
+		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
-	return expanded
+
+	// Try to load config to get custom cache directory
+	cfg, err := Load()
+	var cacheDir string
+	if err != nil || cfg == nil {
+		// Use default if config not available
+		cacheDir = filepath.Join(homeDir, ".warpgate", "cache", subdirectory)
+	} else if cfg.Templates.CacheDir != "" {
+		// Use configured cache directory
+		cacheDir = filepath.Join(cfg.Templates.CacheDir, subdirectory)
+	} else {
+		// Use default
+		cacheDir = filepath.Join(homeDir, ".warpgate", "cache", subdirectory)
+	}
+
+	// Create the directory if it doesn't exist
+	if err := os.MkdirAll(cacheDir, DirPermReadWriteExec); err != nil {
+		return "", fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	return cacheDir, nil
 }

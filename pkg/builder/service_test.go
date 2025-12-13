@@ -28,7 +28,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -87,7 +87,7 @@ func (m *mockContainerBuilder) SupportsMultiArch() bool {
 }
 
 func TestNewBuildService(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
 		return &mockContainerBuilder{}, nil
@@ -239,7 +239,7 @@ func TestCreateManifestEntries_PlatformParsing(t *testing.T) {
 }
 
 func TestBuildService_ExecuteContainerBuild_SingleArch(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 
 	buildCalled := false
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
@@ -282,7 +282,7 @@ func TestBuildService_ExecuteContainerBuild_SingleArch(t *testing.T) {
 }
 
 func TestBuildService_ExecuteContainerBuild_BuildError(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 
 	expectedErr := fmt.Errorf("build failed")
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
@@ -311,7 +311,7 @@ func TestBuildService_ExecuteContainerBuild_BuildError(t *testing.T) {
 }
 
 func TestBuildService_ExecuteContainerBuild_BuilderCreationError(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 
 	expectedErr := fmt.Errorf("builder creation failed")
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
@@ -360,7 +360,7 @@ func TestManifestEntry_DigestParsing(t *testing.T) {
 }
 
 func TestBuildService_SaveDigests(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 
 	service := NewBuildService(cfg, nil)
 
@@ -382,7 +382,7 @@ func TestBuildService_SaveDigests(t *testing.T) {
 }
 
 func TestBuildService_PushSingleArch_WithoutDigest(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 
 	pushCalled := false
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
@@ -431,7 +431,7 @@ func TestBuildService_PushSingleArch_WithoutDigest(t *testing.T) {
 }
 
 func TestBuildService_PushSingleArch_UsesResultArchitecture(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 	ctx := context.Background()
 
 	// Track what architecture was used when saving digest
@@ -494,7 +494,7 @@ func TestBuildService_PushSingleArch_UsesResultArchitecture(t *testing.T) {
 }
 
 func TestBuildService_ApplyOverridesBeforeBuild(t *testing.T) {
-	cfg := &globalconfig.Config{}
+	cfg := &config.Config{}
 
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
 		return &mockContainerBuilder{}, nil

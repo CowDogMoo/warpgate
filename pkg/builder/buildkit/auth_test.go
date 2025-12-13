@@ -1,4 +1,4 @@
-package registryauth
+package buildkit
 
 import (
 	"context"

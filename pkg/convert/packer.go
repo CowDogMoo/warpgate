@@ -30,7 +30,7 @@ import (
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -47,13 +47,13 @@ type PackerConverterOptions struct {
 // PackerConverter converts Packer HCL templates to Warpgate YAML
 type PackerConverter struct {
 	options      PackerConverterOptions
-	globalConfig *globalconfig.Config
+	globalConfig *config.Config
 }
 
 // NewPackerConverter creates a new Packer converter
 func NewPackerConverter(opts PackerConverterOptions) (*PackerConverter, error) {
 	// Load global config
-	globalCfg, err := globalconfig.Load()
+	globalCfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}

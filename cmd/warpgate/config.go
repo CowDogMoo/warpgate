@@ -28,7 +28,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -134,7 +134,7 @@ func init() {
 
 func runConfigInit(cmd *cobra.Command, args []string) error {
 	// Use CLI-specific config directory (~/.config on Unix-like systems)
-	configPath, err := globalconfig.ConfigFile("config.yaml")
+	configPath, err := config.ConfigFile("config.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}
@@ -183,13 +183,13 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 }
 
 func runConfigShow(cmd *cobra.Command, args []string) error {
-	config := configFromContext(cmd)
-	if config == nil {
+	cfg := configFromContext(cmd)
+	if cfg == nil {
 		return fmt.Errorf("config not available in context")
 	}
 
 	// Marshal to YAML for display
-	data, err := yaml.Marshal(config)
+	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -204,8 +204,8 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 
-	// Add config paths (same as globalconfig.Load)
-	configDirs := globalconfig.GetConfigDirs()
+	// Add config paths (same as config.Load)
+	configDirs := config.GetConfigDirs()
 	for _, dir := range configDirs {
 		v.AddConfigPath(dir)
 	}
@@ -227,7 +227,7 @@ func runConfigPath(cmd *cobra.Command, args []string) error {
 	v.SetConfigType("yaml")
 
 	// Add config paths
-	configDirs := globalconfig.GetConfigDirs()
+	configDirs := config.GetConfigDirs()
 	for _, dir := range configDirs {
 		v.AddConfigPath(dir)
 	}
@@ -237,7 +237,7 @@ func runConfigPath(cmd *cobra.Command, args []string) error {
 		fmt.Println(v.ConfigFileUsed())
 	} else {
 		// Show default path (what config init would create)
-		defaultPath, err := globalconfig.ConfigFile("config.yaml")
+		defaultPath, err := config.ConfigFile("config.yaml")
 		if err != nil {
 			return fmt.Errorf("failed to get default config path: %w", err)
 		}
@@ -258,7 +258,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	v.SetConfigType("yaml")
 
 	// Add config paths
-	configDirs := globalconfig.GetConfigDirs()
+	configDirs := config.GetConfigDirs()
 	for _, dir := range configDirs {
 		v.AddConfigPath(dir)
 	}
@@ -276,7 +276,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 			}
 			// Get the path where config init created the file
 			var pathErr error
-			configPath, pathErr = globalconfig.ConfigFile("config.yaml")
+			configPath, pathErr = config.ConfigFile("config.yaml")
 			if pathErr != nil {
 				return fmt.Errorf("failed to get config path: %w", pathErr)
 			}

@@ -1,6 +1,8 @@
-// Package registryauth provides unified authentication for container registries.
+package buildkit
+
+// This file provides unified authentication for container registries.
 //
-// This package serves as a thin adapter layer between go-containerregistry's
+// It serves as a thin adapter layer between go-containerregistry's
 // authn.DefaultKeychain and the Docker SDK authentication format.
 //
 // Authentication is resolved automatically from:
@@ -8,7 +10,6 @@
 //   - Credential helpers (docker-credential-*)
 //   - Environment variables (via credential helpers)
 //   - Falls back to anonymous access if no credentials found
-package registryauth
 
 import (
 	"context"

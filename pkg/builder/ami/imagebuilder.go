@@ -31,7 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
 	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/globalconfig"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/cowdogmoo/warpgate/pkg/logging"
 )
 
@@ -42,22 +42,22 @@ type ImageBuilder struct {
 	pipelineManager *PipelineManager
 	operations      *AMIOperations
 	config          ClientConfig
-	globalConfig    *globalconfig.Config
+	globalConfig    *config.Config
 }
 
 // Verify that ImageBuilder implements builder.AMIBuilder at compile time
 var _ builder.AMIBuilder = (*ImageBuilder)(nil)
 
 // NewImageBuilder creates a new AMI builder
-func NewImageBuilder(ctx context.Context, config ClientConfig) (*ImageBuilder, error) {
+func NewImageBuilder(ctx context.Context, clientConfig ClientConfig) (*ImageBuilder, error) {
 	// Load global config
-	globalCfg, err := globalconfig.Load()
+	globalCfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}
 
 	// Create AWS clients
-	clients, err := NewAWSClients(ctx, config)
+	clients, err := NewAWSClients(ctx, clientConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AWS clients: %w", err)
 	}
@@ -67,7 +67,7 @@ func NewImageBuilder(ctx context.Context, config ClientConfig) (*ImageBuilder, e
 		componentGen:    NewComponentGenerator(clients),
 		pipelineManager: NewPipelineManager(clients),
 		operations:      NewAMIOperations(clients, globalCfg),
-		config:          config,
+		config:          clientConfig,
 		globalConfig:    globalCfg,
 	}, nil
 }

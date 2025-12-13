@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 
 	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/pkg/config"
 	"github.com/invopop/jsonschema"
 )
 
@@ -129,7 +130,7 @@ func run() error {
 
 	// Ensure output directory exists
 	dir := filepath.Dir(*output)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
