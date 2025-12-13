@@ -52,16 +52,16 @@ Warp Gate follows [Semantic Versioning](https://semver.org/):
 
 ### Version Decision Matrix
 
-| Change Type                       | Example                         | Version Type |
-| --------------------------------- | ------------------------------- | ------------ |
-| Remove features/templates         | Deleted legacy Packer templates | **MAJOR**    |
-| Change configuration format       | New template YAML schema        | **MAJOR**    |
-| Breaking API changes              | Renamed CLI commands            | **MAJOR**    |
-| New features/capabilities         | Added new provisioner           | **MINOR**    |
-| Non-breaking enhancements         | Additional template options     | **MINOR**    |
-| Bug fixes                         | Fixed build errors              | **PATCH**    |
-| Documentation updates             | Updated README                  | **PATCH**    |
-| Dependency updates (non-breaking) | Updated Go dependencies         | **PATCH**    |
+| Change Type | Example | Version |
+| --- | --- | --- |
+| Remove features/templates | Deleted legacy Packer templates | **MAJOR** |
+| Change configuration format | New template YAML schema | **MAJOR** |
+| Breaking API changes | Renamed CLI commands | **MAJOR** |
+| New features/capabilities | Added new provisioner | **MINOR** |
+| Non-breaking enhancements | Additional template options | **MINOR** |
+| Bug fixes | Fixed build errors | **PATCH** |
+| Documentation updates | Updated README | **PATCH** |
+| Dependency updates (non-breaking) | Updated Go dependencies | **PATCH** |
 
 ### Checking What Changed
 
@@ -379,11 +379,11 @@ Use this checklist for major releases:
 
 ### Tag Naming Convention
 
-| Release Type      | Tag Format           | Example         | When to Use           |
-| ----------------- | -------------------- | --------------- | --------------------- |
-| Stable            | `vMAJOR.MINOR.PATCH` | `v3.0.0`        | Production releases   |
-| Pre-release       | `vX.Y.Z-beta.N`      | `v3.0.0-beta.1` | Testing before stable |
-| Release Candidate | `vX.Y.Z-rc.N`        | `v3.0.0-rc.1`   | Final testing         |
+| Release Type | Tag Format | Example | When to Use |
+| --- | --- | --- | --- |
+| Stable | `vMAJOR.MINOR.PATCH` | `v3.0.0` | Production releases |
+| Pre-release | `vX.Y.Z-beta.N` | `v3.0.0-beta.1` | Testing before stable |
+| Release Candidate | `vX.Y.Z-rc.N` | `v3.0.0-rc.1` | Final testing |
 
 ### Creating Tags
 
@@ -484,4 +484,5 @@ git shortlog v2.0.1..v3.0.0 -sn
 - [Troubleshooting Guide](./troubleshooting.md) - Common issues
 - [Semantic Versioning](https://semver.org/) - Version numbering standard
 - [GoReleaser Documentation](https://goreleaser.com/) - Release tool docs
-- [Conventional Commits](https://www.conventionalcommits.org/) - Commit message format
+- [Conventional Commits](https://www.conventionalcommits.org/) -
+  Commit message format
