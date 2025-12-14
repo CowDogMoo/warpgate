@@ -23,6 +23,9 @@
     'renovate',
   ],
   platformAutomerge: true,
+  postUpdateOptions: [
+    'gomodTidy',
+  ],
   'pre-commit': {
     enabled: true,
   },
@@ -34,16 +37,6 @@
   },
   gomod: {
     enabled: true,
-    postUpgradeTasks: {
-      commands: [
-        'go mod tidy',
-      ],
-      fileFilters: [
-        'go.mod',
-        'go.sum',
-      ],
-      executionMode: 'branch',
-    },
   },
   packageRules: [
     {
