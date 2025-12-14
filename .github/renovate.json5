@@ -23,29 +23,25 @@
     'renovate',
   ],
   platformAutomerge: true,
+  postUpdateOptions: [
+    'gomodTidy',
+  ],
   'pre-commit': {
     enabled: true,
   },
   'github-actions': {
     enabled: true,
   },
-  golang: {
-    enabled: true,
-  },
   gomod: {
     enabled: true,
-    postUpgradeTasks: {
-      commands: [
-        'go mod tidy',
-      ],
-      fileFilters: [
-        'go.mod',
-        'go.sum',
-      ],
-      executionMode: 'branch',
-    },
   },
   packageRules: [
+    {
+      matchCategories: [
+        'golang',
+      ],
+      enabled: true,
+    },
     {
       description: 'Auto merge GitHub Actions updates',
       matchManagers: [
@@ -95,8 +91,8 @@
     {
       customType: 'regex',
       description: 'Update GO_VERSION environment variable in workflows',
-      fileMatch: [
-        '^\\.github/workflows/[^/]+\\.ya?ml$',
+      managerFilePatterns: [
+        '/^\\.github/workflows/[^/]+\\.ya?ml$/',
       ],
       matchStrings: [
         'GO_VERSION:\\s*(?<currentValue>\\S+)',

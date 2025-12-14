@@ -178,23 +178,34 @@ jobs:
       - name: Build ${{ matrix.arch }} Image
         run: |
           # Build for single architecture only using BuildKit with cache
-          warpgate build warpgate.yaml \
-            --arch ${{ matrix.arch }} \
-            --push \
-            --registry ghcr.io/cowdogmoo \
-            --save-digests \
-            --digest-dir "$GITHUB_WORKSPACE" \
-            --verbose \
-            --cache-from type=registry,ref=ghcr.io/cowdogmoo/warpgate:buildcache-${{ matrix.arch }} \
-            --cache-to type=registry,ref=ghcr.io/cowdogmoo/warpgate:buildcache-${{ matrix.arch }},mode=max
-
-          # Check if the specific digest file exists
-          if [ -f "$GITHUB_WORKSPACE/digest-warpgate-${{ matrix.arch }}.txt" ]; then
-            echo "Digest file found! Contents:"
-            cat "$GITHUB_WORKSPACE/digest-warpgate-${{ matrix.arch }}.txt"
+          # Skip push in merge queue due to token permission restrictions
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            echo "Running in merge queue - building without push"
+            warpgate build warpgate.yaml \
+              --arch ${{ matrix.arch }} \
+              --registry ghcr.io/cowdogmoo \
+              --verbose \
+              --cache-from type=registry,ref=ghcr.io/cowdogmoo/warpgate:buildcache-${{ matrix.arch }}
           else
-            echo "ERROR: Digest file was not created"
-            exit 1
+            echo "Building and pushing to registry"
+            warpgate build warpgate.yaml \
+              --arch ${{ matrix.arch }} \
+              --push \
+              --registry ghcr.io/cowdogmoo \
+              --save-digests \
+              --digest-dir "$GITHUB_WORKSPACE" \
+              --verbose \
+              --cache-from type=registry,ref=ghcr.io/cowdogmoo/warpgate:buildcache-${{ matrix.arch }} \
+              --cache-to type=registry,ref=ghcr.io/cowdogmoo/warpgate:buildcache-${{ matrix.arch }},mode=max
+
+            # Check if the specific digest file exists
+            if [ -f "$GITHUB_WORKSPACE/digest-warpgate-${{ matrix.arch }}.txt" ]; then
+              echo "Digest file found! Contents:"
+              cat "$GITHUB_WORKSPACE/digest-warpgate-${{ matrix.arch }}.txt"
+            else
+              echo "ERROR: Digest file was not created"
+              exit 1
+            fi
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -209,7 +220,7 @@ jobs:
   merge-manifests:
     name: Create multi-arch manifest for warpgate
     needs: build-images
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout git repository
