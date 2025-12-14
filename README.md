@@ -72,6 +72,7 @@ docker images | grep attack-box
 ### Reference
 
 - **[Commands Reference](docs/commands.md)** - Complete CLI documentation
+- **[Release Guide](docs/release-guide.md)** - Version management and release workflows
 - **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
 - **[FAQ](docs/faq.md)** - Frequently asked questions
 
