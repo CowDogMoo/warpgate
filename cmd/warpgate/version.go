@@ -24,6 +24,7 @@ package main
 
 import (
 	"fmt"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 )
@@ -35,6 +36,25 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+func init() {
+	if commit == "none" || date == "unknown" {
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, setting := range info.Settings {
+				switch setting.Key {
+				case "vcs.revision":
+					if commit == "none" && len(setting.Value) > 7 {
+						commit = setting.Value[:7]
+					}
+				case "vcs.time":
+					if date == "unknown" {
+						date = setting.Value
+					}
+				}
+			}
+		}
+	}
+}
 
 var versionCmd = &cobra.Command{
 	Use:   "version",

@@ -1,6 +1,11 @@
 ---
 version: 2
 
+# Snapshot configuration for non-release builds
+# Use git describe format for version strings
+snapshot:
+  version_template: "{{ .Version }}-next"
+
 builds:
   - id: "warpgate"
 
@@ -9,10 +14,11 @@ builds:
     main: ./cmd/warpgate
 
     # Inject version info via ldflags
+    # Use {{.Summary}} to get git describe format (e.g., v3.0.0-1-gc1b0525)
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
+      - -X main.version={{.Summary}}
+      - -X main.commit={{.ShortCommit}}
       - -X main.date={{.Date}}
 
     goos:
