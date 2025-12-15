@@ -28,7 +28,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/pkg/config"
 )
 
 func TestNewManager(t *testing.T) {

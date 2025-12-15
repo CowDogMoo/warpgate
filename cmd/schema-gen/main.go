@@ -31,8 +31,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/config"
 	"github.com/invopop/jsonschema"
 )
 
@@ -63,7 +63,7 @@ func run() error {
 	// Extract type-level doc comments from Go source files
 	// This adds descriptions to type definitions (e.g., "BaseImage specifies...")
 	// Field-level descriptions (e.g., "Image is the base container...") are handled automatically by the reflector
-	if err := reflector.AddGoComments("github.com/cowdogmoo/warpgate", "./"); err != nil {
+	if err := reflector.AddGoComments("github.com/cowdogmoo/warpgate/v3", "./"); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to extract type-level comments: %v\n", err)
 		// Continue anyway - we still have field-level descriptions from inline comments
 	}

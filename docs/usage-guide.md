@@ -15,7 +15,7 @@ Practical examples and common workflows for building images with Warpgate.
 
 ```bash
 # Install warpgate
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
+go install github.com/cowdogmoo/warpgate/v3/cmd/warpgate@latest
 
 # List available templates
 warpgate templates list

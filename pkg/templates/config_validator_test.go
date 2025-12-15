@@ -27,7 +27,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
 )
 
 func TestValidator_HasUnresolvedVariable(t *testing.T) {

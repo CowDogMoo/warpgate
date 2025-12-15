@@ -29,9 +29,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/config"
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 )
 
 // PackerConverterOptions contains options for the Packer converter

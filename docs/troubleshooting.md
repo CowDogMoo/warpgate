@@ -46,10 +46,10 @@ go version
 
 # Clear module cache and retry
 go clean -modcache
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
+go install github.com/cowdogmoo/warpgate/v3/cmd/warpgate@latest
 
 # Or install specific version
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@v1.2.3
+go install github.com/cowdogmoo/warpgate/v3/cmd/warpgate@v1.2.3
 ```
 
 ### Container image pull fails

@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
 )
 
 // Validator validates CLI input before passing to business logic.

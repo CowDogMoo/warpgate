@@ -27,7 +27,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 )
 
 // VersionManager handles template version validation and compatibility checking

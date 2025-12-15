@@ -25,7 +25,7 @@ package ami
 import (
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
 )
 
 func TestValidateConfig(t *testing.T) {

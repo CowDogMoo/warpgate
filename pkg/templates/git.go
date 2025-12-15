@@ -29,7 +29,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 )

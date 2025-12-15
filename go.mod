@@ -1,6 +1,6 @@
-module github.com/cowdogmoo/warpgate
+module github.com/cowdogmoo/warpgate/v3
 
-go 1.25.4
+go 1.25.5
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0

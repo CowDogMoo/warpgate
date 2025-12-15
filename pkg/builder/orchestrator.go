@@ -26,8 +26,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/errors"
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/errors"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 	"golang.org/x/sync/errgroup"
 )
 

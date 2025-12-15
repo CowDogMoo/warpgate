@@ -32,7 +32,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 )
 
 // VerificationOptions contains options for registry verification

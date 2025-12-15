@@ -57,12 +57,12 @@ import (
 	// CRITICAL: This enables docker-container:// protocol
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/config"
-	"github.com/cowdogmoo/warpgate/pkg/errors"
-	"github.com/cowdogmoo/warpgate/pkg/logging"
-	"github.com/cowdogmoo/warpgate/pkg/manifests"
-	"github.com/cowdogmoo/warpgate/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/pkg/errors"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/manifests"
+	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
 )
 
 // BuildKitBuilder implements container image building using Docker BuildKit.

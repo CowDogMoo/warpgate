@@ -32,7 +32,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/opencontainers/go-digest"
 
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 )
 
 // InspectOptions contains options for inspecting manifests

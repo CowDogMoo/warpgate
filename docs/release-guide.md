@@ -369,7 +369,7 @@ Use this checklist for major releases:
 
 ## Post-Release
 
-- [ ] Tested installation (`go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest`)
+- [ ] Tested installation (`go install github.com/cowdogmoo/warpgate/v3/cmd/warpgate@latest`)
 - [ ] Verified binaries work on different platforms
 ```
 

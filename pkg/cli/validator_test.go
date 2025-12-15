@@ -25,7 +25,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
 )
 
 func TestValidateBuildOptions(t *testing.T) {

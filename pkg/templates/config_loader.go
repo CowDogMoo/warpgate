@@ -28,8 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/errors"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 

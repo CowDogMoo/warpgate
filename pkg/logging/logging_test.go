@@ -27,7 +27,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 )
 
 func TestNewCustomLogger(t *testing.T) {

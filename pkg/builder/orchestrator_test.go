@@ -27,7 +27,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

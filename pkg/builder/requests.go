@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 )
 
 // CreateBuildRequests creates build requests for each architecture, applying any arch-specific overrides.

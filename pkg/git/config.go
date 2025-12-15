@@ -29,8 +29,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cowdogmoo/warpgate/pkg/logging"
-	"github.com/cowdogmoo/warpgate/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
 	"gopkg.in/ini.v1"
 )
 

@@ -31,9 +31,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
-	"github.com/cowdogmoo/warpgate/pkg/config"
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"gopkg.in/yaml.v3"
 )

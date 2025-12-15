@@ -28,7 +28,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/pkg/config"
 	"github.com/opencontainers/go-digest"
 )
 

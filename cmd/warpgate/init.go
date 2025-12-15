@@ -23,7 +23,7 @@ THE SOFTWARE.
 package main
 
 import (
-	"github.com/cowdogmoo/warpgate/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
 	"github.com/spf13/cobra"
 )
 

@@ -26,8 +26,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cowdogmoo/warpgate/pkg/logging"
-	"github.com/cowdogmoo/warpgate/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
 	"github.com/spf13/cobra"
 )
 

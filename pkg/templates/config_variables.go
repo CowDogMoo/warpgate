@@ -27,7 +27,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/pkg/errors"
+	"github.com/cowdogmoo/warpgate/v3/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 

@@ -26,7 +26,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/pkg/config"
 )
 
 func TestApplyOverrides(t *testing.T) {

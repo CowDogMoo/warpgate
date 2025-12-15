@@ -30,7 +30,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
 )
 
 func TestNewOutputFormatter(t *testing.T) {

@@ -25,7 +25,7 @@ package buildkit
 import (
 	"testing"
 
-	"github.com/cowdogmoo/warpgate/pkg/builder"
+	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
 )
 
 // TestParsePlatformEdgeCases tests edge cases in platform parsing

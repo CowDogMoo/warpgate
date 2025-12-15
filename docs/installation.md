@@ -32,7 +32,7 @@ Comprehensive installation instructions for Warpgate on all platforms.
 Install the latest release directly from source:
 
 ```bash
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
+go install github.com/cowdogmoo/warpgate/v3/cmd/warpgate@latest
 ```
 
 This installs the `warpgate` binary to `$GOPATH/bin` (usually `~/go/bin`).
@@ -189,7 +189,7 @@ On macOS, use Docker Desktop with either native warpgate or the containerized ve
 
 ```bash
 # Install via Go
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
+go install github.com/cowdogmoo/warpgate/v3/cmd/warpgate@latest
 
 # Ensure Docker Desktop is running
 docker ps
@@ -236,7 +236,7 @@ containerized version.
 
 ```powershell
 # Install via Go
-go install github.com/CowDogMoo/warpgate/cmd/warpgate@latest
+go install github.com/cowdogmoo/warpgate/v3/cmd/warpgate@latest
 
 # Ensure Go bin is in PATH
 $env:Path += ";$env:USERPROFILE\go\bin"

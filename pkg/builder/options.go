@@ -25,8 +25,8 @@ package builder
 import (
 	"context"
 
-	"github.com/cowdogmoo/warpgate/pkg/config"
-	"github.com/cowdogmoo/warpgate/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
 )
 
 // BuildOptions represents build configuration overrides from CLI or API.
