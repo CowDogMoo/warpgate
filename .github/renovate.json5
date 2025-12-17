@@ -73,12 +73,17 @@
       automergeStrategy: 'merge-queue',
     },
     {
-      description: 'Group Go indirect dependencies',
+      description: 'Group Go indirect dependencies (non-major)',
       matchManagers: [
         'gomod',
       ],
       matchDepTypes: [
         'indirect',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+        'digest',
       ],
       groupName: 'go indirect dependencies',
     },
