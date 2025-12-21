@@ -51,7 +51,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/containerd/containerd/api v1.10.0 // indirect
-	github.com/containerd/containerd/v2 v2.2.0 // indirect
+	github.com/containerd/containerd/v2 v2.2.1 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
@@ -102,7 +102,6 @@ require (
 	github.com/moby/sys/signal v0.7.1 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/onsi/gomega v1.38.3 // indirect
-	github.com/opencontainers/selinux v1.13.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pjbgf/sha1cd v0.5.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
