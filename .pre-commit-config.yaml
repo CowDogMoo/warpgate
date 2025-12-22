@@ -118,3 +118,10 @@ repos:
         files: '(pkg/builder/.*\.go|cmd/schema-gen/.*\.go)$'
         pass_filenames: true
         description: "Ensure JSON schema is regenerated when Go structs change"
+
+      - id: goreleaser-check
+        name: Check GoReleaser config
+        entry: goreleaser check
+        language: system
+        files: '\.goreleaser\.ya?ml$'
+        pass_filenames: false

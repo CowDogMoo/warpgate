@@ -89,13 +89,13 @@ jobs:
           go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
 
           # Install golangci-lint
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$(go env GOPATH)/bin"
 
           # Install gocritic
           go install github.com/go-critic/go-critic/cmd/gocritic@latest
 
           # Add Go bin directory to PATH
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Renovate
         uses: renovatebot/github-action@822441559e94f98b67b82d97ab89fe3003b0a247 # v44.2.0

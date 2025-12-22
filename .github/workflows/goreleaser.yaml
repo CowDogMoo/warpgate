@@ -28,7 +28,7 @@ jobs:
           cache-dependency-path: "**/*.sum"
 
       - name: Fix GOPATH
-        run: echo "PATH=$(go env GOPATH)/bin:$PATH" >> $GITHUB_ENV
+        run: echo "PATH=$(go env GOPATH)/bin:$PATH" >> "$GITHUB_ENV"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
