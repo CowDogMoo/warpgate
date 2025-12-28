@@ -28,8 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/v3/pkg/config"
-	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
+	"github.com/cowdogmoo/warpgate/v3/config"
+	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"

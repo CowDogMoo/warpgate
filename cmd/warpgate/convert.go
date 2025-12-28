@@ -29,12 +29,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
-	"github.com/cowdogmoo/warpgate/v3/pkg/config"
-	"github.com/cowdogmoo/warpgate/v3/pkg/convert"
-	"github.com/cowdogmoo/warpgate/v3/pkg/git"
-	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
-	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/cowdogmoo/warpgate/v3/config"
+	"github.com/cowdogmoo/warpgate/v3/convert"
+	"github.com/cowdogmoo/warpgate/v3/git"
+	"github.com/cowdogmoo/warpgate/v3/logging"
+	"github.com/cowdogmoo/warpgate/v3/templates"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

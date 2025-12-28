@@ -29,11 +29,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
-	"github.com/cowdogmoo/warpgate/v3/pkg/builder/buildkit"
-	"github.com/cowdogmoo/warpgate/v3/pkg/cli"
-	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
-	"github.com/cowdogmoo/warpgate/v3/pkg/manifests"
+	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/cowdogmoo/warpgate/v3/builder/buildkit"
+	"github.com/cowdogmoo/warpgate/v3/cli"
+	"github.com/cowdogmoo/warpgate/v3/logging"
+	"github.com/cowdogmoo/warpgate/v3/manifests"
 	"github.com/spf13/cobra"
 )
 
