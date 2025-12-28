@@ -26,10 +26,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
-	"github.com/cowdogmoo/warpgate/v3/pkg/cli"
-	"github.com/cowdogmoo/warpgate/v3/pkg/logging"
-	"github.com/cowdogmoo/warpgate/v3/pkg/templates"
+	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/cowdogmoo/warpgate/v3/cli"
+	"github.com/cowdogmoo/warpgate/v3/logging"
+	"github.com/cowdogmoo/warpgate/v3/templates"
 	"github.com/spf13/cobra"
 )
 

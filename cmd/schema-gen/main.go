@@ -31,8 +31,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cowdogmoo/warpgate/v3/pkg/builder"
-	"github.com/cowdogmoo/warpgate/v3/pkg/config"
+	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/invopop/jsonschema"
 )
 
