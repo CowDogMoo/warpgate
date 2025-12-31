@@ -60,7 +60,7 @@ repos:
 
   # Github actions
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.9
+    rev: v1.7.10
     hooks:
       - id: actionlint
         name: Check Github Actions
