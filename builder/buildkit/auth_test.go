@@ -172,3 +172,17 @@ func getAuthMethod(auth dockerregistry.AuthConfig) string {
 	}
 	return "unknown"
 }
+
+// TestCreateAuthProvider tests the session auth provider creation for BuildKit
+func TestCreateAuthProvider(t *testing.T) {
+	attachables := createAuthProvider()
+
+	if attachables != nil {
+		if len(attachables) != 1 {
+			t.Errorf("createAuthProvider() returned %d attachables, expected 1", len(attachables))
+		}
+		t.Logf("createAuthProvider() successfully created auth provider from Docker config")
+	} else {
+		t.Logf("createAuthProvider() returned nil (no Docker config available)")
+	}
+}

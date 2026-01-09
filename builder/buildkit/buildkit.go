@@ -34,6 +34,7 @@ import (
 	"strings"
 	"time"
 
+	dockerconfig "github.com/docker/cli/cli/config"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
@@ -47,6 +48,8 @@ import (
 
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/auth/authprovider"
 	digest "github.com/opencontainers/go-digest"
 	specsgo "github.com/opencontainers/image-spec/specs-go"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -197,6 +200,24 @@ func loadTLSConfig(cfg config.BuildKitConfig) (*tls.Config, error) {
 	}
 
 	return tlsConfig, nil
+}
+
+// createAuthProvider creates a BuildKit session auth provider from Docker config.
+// This enables authentication for base image pulls from private registries.
+// Returns nil if no Docker config is available (falls back to anonymous access).
+func createAuthProvider() []session.Attachable {
+	dockerCfg, err := dockerconfig.Load(dockerconfig.Dir())
+	if err != nil {
+		logging.Debug("Failed to load Docker config for auth: %v (using anonymous access)", err)
+		return nil
+	}
+
+	ap := authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
+		ConfigFile: dockerCfg,
+	})
+
+	logging.Debug("Created auth provider from Docker config for base image pulls")
+	return []session.Attachable{ap}
 }
 
 // SetCacheOptions configures external cache sources and destinations for BuildKit.
@@ -886,6 +907,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		LocalDirs: map[string]string{
 			"context": contextDir,
 		},
+		Session: createAuthProvider(),
 	}
 
 	b.configureCacheOptions(&solveOpt, cfg)
@@ -1278,6 +1300,7 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 			"context":    buildContext,
 			"dockerfile": filepath.Dir(dockerfilePath),
 		},
+		Session: createAuthProvider(),
 	}
 
 	b.configureCacheOptions(&solveOpt, cfg)
