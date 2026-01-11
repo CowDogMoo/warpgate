@@ -251,25 +251,32 @@ provisioners:
 
 ### PowerShell Provisioner
 
-Run PowerShell scripts (for Windows images):
-
-**Inline commands:**
+Run PowerShell scripts (for Windows images or containers with PowerShell Core):
 
 ```yaml
 provisioners:
-  - type: pwsh
-    inline:
-      - Write-Host "Configuring..."
-      - Install-WindowsFeature -Name Web-Server
+  - type: powershell
+    ps_scripts:
+      - scripts/configure.ps1
+      - scripts/install-features.ps1
 ```
 
-**Script file:**
+**Multiple scripts:**
 
 ```yaml
 provisioners:
-  - type: pwsh
-    script_path: scripts/configure.ps1
+  - type: powershell
+    ps_scripts:
+      - scripts/setup.ps1
+      - scripts/configure.ps1
+      - scripts/finalize.ps1
 ```
+
+**Notes:**
+
+- Scripts execute via `pwsh` (PowerShell Core) in containers
+- For AMI builds, uses EC2 Image Builder's `ExecutePowerShell` action
+- Scripts run in order specified
 
 ### Provisioner Order
 
