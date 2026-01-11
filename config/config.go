@@ -130,6 +130,9 @@ type AMIConfig struct {
 	PollingIntervalSec int    `mapstructure:"polling_interval_sec"`
 	BuildTimeoutMin    int    `mapstructure:"build_timeout_min"`
 	DefaultParentImage string `mapstructure:"default_parent_image"`
+	// InstanceProfileName is the IAM instance profile for EC2 Image Builder
+	// The instance profile grants permissions to the build instance
+	InstanceProfileName string `mapstructure:"instance_profile_name"`
 }
 
 // ContainerConfig holds container build configuration

@@ -300,10 +300,20 @@ func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name stri
 		instanceType = b.globalConfig.AWS.AMI.InstanceType
 	}
 
+	// Determine instance profile (target > globalConfig)
+	instanceProfile := target.InstanceProfileName
+	if instanceProfile == "" {
+		instanceProfile = b.globalConfig.AWS.AMI.InstanceProfileName
+	}
+	if instanceProfile == "" {
+		return "", fmt.Errorf("instance_profile_name must be specified in template config or global config (aws.ami.instance_profile_name)")
+	}
+
 	input := &imagebuilder.CreateInfrastructureConfigurationInput{
-		Name:          aws.String(fmt.Sprintf("%s-infra", name)),
-		InstanceTypes: []string{instanceType},
-		Description:   aws.String(fmt.Sprintf("Infrastructure config for %s", name)),
+		Name:                aws.String(fmt.Sprintf("%s-infra", name)),
+		InstanceTypes:       []string{instanceType},
+		InstanceProfileName: aws.String(instanceProfile),
+		Description:         aws.String(fmt.Sprintf("Infrastructure config for %s", name)),
 		Tags: map[string]string{
 			"warpgate:name": name,
 		},
@@ -312,6 +322,11 @@ func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name stri
 	// Add subnet ID if specified
 	if target.SubnetID != "" {
 		input.SubnetId = aws.String(target.SubnetID)
+	}
+
+	// Add security group IDs if specified
+	if len(target.SecurityGroupIDs) > 0 {
+		input.SecurityGroupIds = target.SecurityGroupIDs
 	}
 
 	result, err := b.clients.ImageBuilder.CreateInfrastructureConfiguration(ctx, input)
@@ -336,13 +351,22 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 		amiName = fmt.Sprintf("%s-{{imagebuilder:buildDate}}", name)
 	}
 
+	amiDistConfig := &types.AmiDistributionConfiguration{
+		Name:        aws.String(amiName),
+		Description: aws.String(fmt.Sprintf("AMI for %s", name)),
+		AmiTags:     target.AMITags,
+	}
+
 	distribution := types.Distribution{
-		Region: aws.String(region),
-		AmiDistributionConfiguration: &types.AmiDistributionConfiguration{
-			Name:        aws.String(amiName),
-			Description: aws.String(fmt.Sprintf("AMI for %s", name)),
-			AmiTags:     target.AMITags,
-		},
+		Region:                       aws.String(region),
+		AmiDistributionConfiguration: amiDistConfig,
+	}
+
+	// Configure Windows Fast Launch if enabled
+	if target.FastLaunchEnabled {
+		fastLaunchConfig := b.buildFastLaunchConfiguration(target)
+		distribution.FastLaunchConfigurations = []types.FastLaunchConfiguration{fastLaunchConfig}
+		logging.Info("Windows Fast Launch enabled with %d target resources", target.FastLaunchTargetResourceCount)
 	}
 
 	input := &imagebuilder.CreateDistributionConfigurationInput{
@@ -360,6 +384,28 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 	}
 
 	return *result.DistributionConfigurationArn, nil
+}
+
+// buildFastLaunchConfiguration creates the Fast Launch configuration for Windows AMIs
+func (b *ImageBuilder) buildFastLaunchConfiguration(target *builder.Target) types.FastLaunchConfiguration {
+	// Set defaults for Fast Launch parameters
+	maxParallelLaunches := target.FastLaunchMaxParallelLaunches
+	if maxParallelLaunches == 0 {
+		maxParallelLaunches = 6 // AWS default
+	}
+
+	targetResourceCount := target.FastLaunchTargetResourceCount
+	if targetResourceCount == 0 {
+		targetResourceCount = 5 // Reasonable default for pre-provisioned snapshots
+	}
+
+	return types.FastLaunchConfiguration{
+		Enabled:             true,
+		MaxParallelLaunches: aws.Int32(int32(maxParallelLaunches)),
+		SnapshotConfiguration: &types.FastLaunchSnapshotConfiguration{
+			TargetResourceCount: aws.Int32(int32(targetResourceCount)),
+		},
+	}
 }
 
 // createImageRecipe creates an image recipe

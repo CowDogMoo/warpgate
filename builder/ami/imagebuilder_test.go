@@ -305,3 +305,110 @@ func TestPowerShellComponent(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildFastLaunchConfiguration(t *testing.T) {
+	tests := []struct {
+		name                        string
+		target                      *builder.Target
+		expectedMaxParallelLaunches int32
+		expectedTargetResourceCount int32
+	}{
+		{
+			name: "default values when not specified",
+			target: &builder.Target{
+				FastLaunchEnabled: true,
+			},
+			expectedMaxParallelLaunches: 6,
+			expectedTargetResourceCount: 5,
+		},
+		{
+			name: "custom max parallel launches",
+			target: &builder.Target{
+				FastLaunchEnabled:             true,
+				FastLaunchMaxParallelLaunches: 10,
+			},
+			expectedMaxParallelLaunches: 10,
+			expectedTargetResourceCount: 5,
+		},
+		{
+			name: "custom target resource count",
+			target: &builder.Target{
+				FastLaunchEnabled:             true,
+				FastLaunchTargetResourceCount: 8,
+			},
+			expectedMaxParallelLaunches: 6,
+			expectedTargetResourceCount: 8,
+		},
+		{
+			name: "all custom values",
+			target: &builder.Target{
+				FastLaunchEnabled:             true,
+				FastLaunchMaxParallelLaunches: 12,
+				FastLaunchTargetResourceCount: 10,
+			},
+			expectedMaxParallelLaunches: 12,
+			expectedTargetResourceCount: 10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ib := &ImageBuilder{}
+			config := ib.buildFastLaunchConfiguration(tt.target)
+
+			if !config.Enabled {
+				t.Errorf("expected Enabled to be true")
+			}
+
+			if *config.MaxParallelLaunches != tt.expectedMaxParallelLaunches {
+				t.Errorf("MaxParallelLaunches = %d, want %d", *config.MaxParallelLaunches, tt.expectedMaxParallelLaunches)
+			}
+
+			if config.SnapshotConfiguration == nil {
+				t.Errorf("expected SnapshotConfiguration to be set")
+			} else if *config.SnapshotConfiguration.TargetResourceCount != tt.expectedTargetResourceCount {
+				t.Errorf("TargetResourceCount = %d, want %d", *config.SnapshotConfiguration.TargetResourceCount, tt.expectedTargetResourceCount)
+			}
+		})
+	}
+}
+
+func TestTargetWithSecurityGroups(t *testing.T) {
+	tests := []struct {
+		name            string
+		target          *builder.Target
+		expectedSGCount int
+	}{
+		{
+			name: "no security groups",
+			target: &builder.Target{
+				Type: "ami",
+			},
+			expectedSGCount: 0,
+		},
+		{
+			name: "single security group",
+			target: &builder.Target{
+				Type:             "ami",
+				SecurityGroupIDs: []string{"sg-12345678"},
+			},
+			expectedSGCount: 1,
+		},
+		{
+			name: "multiple security groups",
+			target: &builder.Target{
+				Type:             "ami",
+				SecurityGroupIDs: []string{"sg-12345678", "sg-87654321", "sg-11111111"},
+			},
+			expectedSGCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.target.SecurityGroupIDs) != tt.expectedSGCount {
+				t.Errorf("SecurityGroupIDs count = %d, want %d", len(tt.target.SecurityGroupIDs), tt.expectedSGCount)
+			}
+		})
+	}
+}

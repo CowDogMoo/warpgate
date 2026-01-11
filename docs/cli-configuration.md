@@ -145,16 +145,61 @@ Default AWS settings for AMI builds:
 ```yaml
 aws:
   region: us-west-2 # Default region
-  profile: myprofile # AWS CLI profile
+  profile: myprofile # AWS CLI profile (for SSO)
   ami:
-    instance_type: t3.medium
-    volume_size: 8 # GB
+    instance_profile_name: AmazonSSMRoleForInstancesQuickSetup # IAM instance profile
+    instance_type: t3.medium # EC2 instance type for builds
+    volume_size: 8 # Root volume size in GB
+    device_name: /dev/sda1 # Root device name
+    volume_type: gp3 # EBS volume type
+    build_timeout_min: 90 # Build timeout in minutes
+    polling_interval_sec: 30 # Status polling interval
 ```
+
+#### IAM Instance Profile
+
+AMI builds require an IAM instance profile with permissions for:
+
+- **EC2 Image Builder** - To download and execute build components
+- **Systems Manager (SSM)** - For EC2 Instance Connect and management
+
+**Quick setup using AWS managed policies:**
+
+```bash
+# Attach ImageBuilder policy to SSM role
+aws iam attach-role-policy \
+  --role-name AmazonSSMRoleForInstancesQuickSetup \
+  --policy-arn arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+```
+
+Then configure in warpgate:
+
+```yaml
+aws:
+  ami:
+    instance_profile_name: AmazonSSMRoleForInstancesQuickSetup
+```
+
+**Region precedence (highest to lowest):**
+
+1. Environment variables (`AWS_REGION`, `AWS_DEFAULT_REGION`)
+2. CLI flag (`--region`)
+3. Template configuration (`targets[].region`)
+4. Config file (`aws.region`)
+5. AWS profile default region
+
+**Note:** Environment variables override all other settings. Use
+`unset AWS_REGION AWS_DEFAULT_REGION` if experiencing unexpected region
+selection.
 
 **Override at build time:**
 
 ```bash
-warpgate build myami --target ami --var AWS_REGION=us-east-1
+# Override region
+warpgate build myami --target ami --region us-east-1
+
+# Override instance type
+warpgate build myami --target ami --instance-type t3.large
 ```
 
 ### Build Defaults
