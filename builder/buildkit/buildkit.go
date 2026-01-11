@@ -368,6 +368,10 @@ func (b *BuildKitBuilder) applyProvisioner(state llb.State, prov builder.Provisi
 		return b.applyFileProvisioner(state, prov)
 	case "ansible":
 		return b.applyAnsibleProvisioner(state, prov)
+	case "script":
+		return b.applyScriptProvisioner(state, prov)
+	case "powershell":
+		return b.applyPowerShellProvisioner(state, prov)
 	default:
 		logging.Warn("Unsupported provisioner type: %s", prov.Type)
 		return state, nil
@@ -463,6 +467,64 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 	if prov.Mode != "" {
 		state = state.Run(
 			llb.Shlexf("chmod %s %s", prov.Mode, prov.Destination),
+		).Root()
+	}
+
+	return state, nil
+}
+
+// applyScriptProvisioner applies script files to LLB state.
+func (b *BuildKitBuilder) applyScriptProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	if len(prov.Scripts) == 0 {
+		return state, nil
+	}
+
+	for _, script := range prov.Scripts {
+		scriptPath, err := b.makeRelativePath(script)
+		if err != nil {
+			return state, fmt.Errorf("failed to resolve script path: %w", err)
+		}
+
+		destPath := fmt.Sprintf("/tmp/%s", filepath.Base(script))
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				scriptPath,
+				destPath,
+			),
+		)
+
+		state = state.Run(
+			llb.Shlexf("chmod +x %s && %s", destPath, destPath),
+		).Root()
+	}
+
+	return state, nil
+}
+
+// applyPowerShellProvisioner applies PowerShell scripts to LLB state.
+func (b *BuildKitBuilder) applyPowerShellProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	if len(prov.PSScripts) == 0 {
+		return state, nil
+	}
+
+	for _, script := range prov.PSScripts {
+		scriptPath, err := b.makeRelativePath(script)
+		if err != nil {
+			return state, fmt.Errorf("failed to resolve PowerShell script path: %w", err)
+		}
+
+		destPath := fmt.Sprintf("/tmp/%s", filepath.Base(script))
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				scriptPath,
+				destPath,
+			),
+		)
+
+		state = state.Run(
+			llb.Shlexf("pwsh -ExecutionPolicy Bypass -File %s", destPath),
 		).Root()
 	}
 
@@ -744,44 +806,11 @@ func extractArchFromPlatform(platform string) string {
 
 // calculateBuildContext finds the common parent directory of all files referenced in the config.
 func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, error) {
-	var paths []string
-
 	pv := templates.NewPathValidator()
 
-	for _, prov := range cfg.Provisioners {
-		switch prov.Type {
-		case "ansible":
-			if prov.PlaybookPath != "" {
-				expanded, err := pv.ExpandPath(prov.PlaybookPath)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand playbook path %s: %w", prov.PlaybookPath, err)
-				}
-				paths = append(paths, expanded)
-			}
-			if prov.GalaxyFile != "" {
-				expanded, err := pv.ExpandPath(prov.GalaxyFile)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand galaxy file path %s: %w", prov.GalaxyFile, err)
-				}
-				paths = append(paths, expanded)
-			}
-		case "file":
-			if prov.Source != "" {
-				expanded, err := pv.ExpandPath(prov.Source)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand file source path %s: %w", prov.Source, err)
-				}
-				paths = append(paths, expanded)
-			}
-		case "script":
-			for _, script := range prov.Scripts {
-				expanded, err := pv.ExpandPath(script)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand script path %s: %w", script, err)
-				}
-				paths = append(paths, expanded)
-			}
-		}
+	paths, err := b.collectProvisionerPaths(cfg.Provisioners, pv)
+	if err != nil {
+		return "", err
 	}
 
 	if len(paths) == 0 {
@@ -795,6 +824,82 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 
 	logging.Info("Calculated build context from %d file(s): %s", len(paths), commonParent)
 	return commonParent, nil
+}
+
+// collectProvisionerPaths extracts all file paths from provisioners.
+func (b *BuildKitBuilder) collectProvisionerPaths(provisioners []builder.Provisioner, pv *templates.PathValidator) ([]string, error) {
+	var paths []string
+
+	for _, prov := range provisioners {
+		provPaths, err := b.getProvisionerPaths(prov, pv)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, provPaths...)
+	}
+
+	return paths, nil
+}
+
+// getProvisionerPaths returns all file paths for a single provisioner.
+func (b *BuildKitBuilder) getProvisionerPaths(prov builder.Provisioner, pv *templates.PathValidator) ([]string, error) {
+	switch prov.Type {
+	case "ansible":
+		return b.getAnsiblePaths(prov, pv)
+	case "file":
+		return b.getFilePaths(prov, pv)
+	case "script":
+		return expandPathList(prov.Scripts, pv, "script")
+	case "powershell":
+		return expandPathList(prov.PSScripts, pv, "PowerShell script")
+	default:
+		return nil, nil
+	}
+}
+
+// getAnsiblePaths returns paths for ansible provisioner.
+func (b *BuildKitBuilder) getAnsiblePaths(prov builder.Provisioner, pv *templates.PathValidator) ([]string, error) {
+	var paths []string
+	if prov.PlaybookPath != "" {
+		expanded, err := pv.ExpandPath(prov.PlaybookPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand playbook path %s: %w", prov.PlaybookPath, err)
+		}
+		paths = append(paths, expanded)
+	}
+	if prov.GalaxyFile != "" {
+		expanded, err := pv.ExpandPath(prov.GalaxyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand galaxy file path %s: %w", prov.GalaxyFile, err)
+		}
+		paths = append(paths, expanded)
+	}
+	return paths, nil
+}
+
+// getFilePaths returns paths for file provisioner.
+func (b *BuildKitBuilder) getFilePaths(prov builder.Provisioner, pv *templates.PathValidator) ([]string, error) {
+	if prov.Source == "" {
+		return nil, nil
+	}
+	expanded, err := pv.ExpandPath(prov.Source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand file source path %s: %w", prov.Source, err)
+	}
+	return []string{expanded}, nil
+}
+
+// expandPathList expands a list of paths using the path validator.
+func expandPathList(scripts []string, pv *templates.PathValidator, pathType string) ([]string, error) {
+	var paths []string
+	for _, script := range scripts {
+		expanded, err := pv.ExpandPath(script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand %s path %s: %w", pathType, script, err)
+		}
+		paths = append(paths, expanded)
+	}
+	return paths, nil
 }
 
 // findCommonParent finds the common parent directory of two paths

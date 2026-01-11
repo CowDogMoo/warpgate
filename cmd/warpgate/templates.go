@@ -386,6 +386,14 @@ func displayProvisionerDetails(prov builder.Provisioner) {
 		if prov.PlaybookPath != "" {
 			fmt.Printf("     Playbook: %s\n", prov.PlaybookPath)
 		}
+	case "powershell":
+		if len(prov.PSScripts) > 0 {
+			fmt.Printf("     PSScripts: %v\n", prov.PSScripts)
+		}
+	case "file":
+		if prov.Source != "" {
+			fmt.Printf("     Source: %s -> %s\n", prov.Source, prov.Destination)
+		}
 	}
 }
 

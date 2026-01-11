@@ -58,10 +58,16 @@ func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner 
 
 	// Create the component in AWS
 	componentName := fmt.Sprintf("%s-%s", name, provisioner.Type)
+
+	platform := types.PlatformLinux
+	if provisioner.Type == "powershell" {
+		platform = types.PlatformWindows
+	}
+
 	input := &imagebuilder.CreateComponentInput{
 		Name:            aws.String(componentName),
 		SemanticVersion: aws.String(version),
-		Platform:        types.PlatformLinux,
+		Platform:        platform,
 		Data:            aws.String(document),
 		Description:     aws.String(fmt.Sprintf("Component for %s provisioner", provisioner.Type)),
 		Tags: map[string]string{
@@ -96,6 +102,8 @@ func (g *ComponentGenerator) createComponentDocument(provisioner builder.Provisi
 		return g.createScriptComponent(provisioner)
 	case "ansible":
 		return g.createAnsibleComponent(provisioner)
+	case "powershell":
+		return g.createPowerShellComponent(provisioner)
 	default:
 		return "", fmt.Errorf("unsupported provisioner type: %s", provisioner.Type)
 	}
@@ -259,6 +267,44 @@ func (g *ComponentGenerator) createAnsibleComponent(provisioner builder.Provisio
 						"action": "ExecuteBash",
 						"inputs": map[string]interface{}{
 							"commands": commands,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return marshalComponentDocument(doc)
+}
+
+// createPowerShellComponent creates a component document for PowerShell provisioner
+func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provisioner) (string, error) {
+	if len(provisioner.PSScripts) == 0 {
+		return "", fmt.Errorf("powershell provisioner has no scripts")
+	}
+
+	var scriptContents []string
+	for _, scriptPath := range provisioner.PSScripts {
+		content, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read PowerShell script %s: %w", scriptPath, err)
+		}
+		scriptContents = append(scriptContents, string(content))
+	}
+
+	doc := map[string]interface{}{
+		"schemaVersion": 1.0,
+		"name":          "PowerShellProvisioner",
+		"description":   "PowerShell provisioner component",
+		"phases": []map[string]interface{}{
+			{
+				"name": "build",
+				"steps": []map[string]interface{}{
+					{
+						"name":   "ExecutePowerShellScripts",
+						"action": "ExecutePowerShell",
+						"inputs": map[string]interface{}{
+							"commands": scriptContents,
 						},
 					},
 				},
