@@ -324,15 +324,17 @@ func setupAWSEnvVars(t *testing.T) func() {
 	// Save existing env vars
 	originalProfile := os.Getenv("AWS_PROFILE")
 	originalRegion := os.Getenv("AWS_REGION")
+	originalDefaultRegion := os.Getenv("AWS_DEFAULT_REGION")
 
 	// Set AWS credentials via environment variables
 	setEnvOrFatal(t, "AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE")
 	setEnvOrFatal(t, "AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
 	setEnvOrFatal(t, "AWS_SESSION_TOKEN", "FwoGZXIvYXdzEBYaDEXAMPLE")
 
-	// Unset AWS_PROFILE and AWS_REGION to let config file values take precedence
+	// Unset AWS_PROFILE, AWS_REGION, and AWS_DEFAULT_REGION to let config file values take precedence
 	unsetEnvSafe(t, "AWS_PROFILE")
 	unsetEnvSafe(t, "AWS_REGION")
+	unsetEnvSafe(t, "AWS_DEFAULT_REGION")
 
 	return func() {
 		unsetEnvSafe(t, "AWS_ACCESS_KEY_ID")
@@ -342,6 +344,7 @@ func setupAWSEnvVars(t *testing.T) func() {
 		// Restore original env vars
 		restoreEnvVar(t, "AWS_PROFILE", originalProfile)
 		restoreEnvVar(t, "AWS_REGION", originalRegion)
+		restoreEnvVar(t, "AWS_DEFAULT_REGION", originalDefaultRegion)
 	}
 }
 
@@ -431,15 +434,19 @@ aws:
 }
 
 // clearAllCredentialEnvVars unsets all credential-related environment variables
+// and region variables that could override config file values
 func clearAllCredentialEnvVars(t *testing.T) {
 	t.Helper()
-	credentialEnvVars := []string{
+	awsEnvVars := []string{
 		"AWS_ACCESS_KEY_ID",
 		"AWS_SECRET_ACCESS_KEY",
 		"AWS_SESSION_TOKEN",
+		"AWS_REGION",
+		"AWS_DEFAULT_REGION",
+		"AWS_PROFILE",
 	}
 
-	for _, envVar := range credentialEnvVars {
+	for _, envVar := range awsEnvVars {
 		unsetEnvSafe(t, envVar)
 	}
 }
