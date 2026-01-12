@@ -101,41 +101,111 @@ import (
 
 // BuilderCreatorFunc creates a ContainerBuilder instance.
 // The context can be used for initialization and resource cleanup.
+// This function type enables dependency injection of builder implementations
+// without creating import cycles between the service layer and concrete builders.
 type BuilderCreatorFunc func(ctx context.Context) (ContainerBuilder, error)
 
-// Builder is the main interface for image builders
+// Builder is the base interface for all image builders (containers and AMIs).
+// It provides the common operations shared across all builder types.
+//
+// Implementations must be safe for concurrent use from multiple goroutines.
+// The Build method should respect context cancellation for graceful shutdown.
+//
+// Resource Management:
+// Callers must call Close() when done with the builder to release resources.
+// Using defer is recommended:
+//
+//	builder, err := createBuilder(ctx)
+//	if err != nil {
+//	    return err
+//	}
+//	defer func() {
+//	    if err := builder.Close(); err != nil {
+//	        log.Warn("Failed to close builder: %v", err)
+//	    }
+//	}()
 type Builder interface {
-	// Build creates an image from the given configuration
+	// Build creates an image from the given configuration.
+	// It returns a BuildResult containing the image reference and digest on success.
+	// The context should be used for cancellation; long-running builds should
+	// periodically check ctx.Done() and return ctx.Err() if cancelled.
 	Build(ctx context.Context, config Config) (*BuildResult, error)
 
-	// Close cleans up any resources used by the builder
+	// Close releases any resources held by the builder.
+	// This includes network connections, temporary files, and cleanup of
+	// any intermediate build artifacts. Close should be idempotent.
 	Close() error
 }
 
-// ContainerBuilder builds container images
+// ContainerBuilder extends Builder with container-specific operations.
+// It provides a complete interface for building, tagging, pushing, and
+// managing container images.
+//
+// Implementations:
+//   - buildkit.BuildKitBuilder: Uses Docker BuildKit for efficient builds
+//
+// Example usage:
+//
+//	builder, _ := buildkit.NewBuildKitBuilder(ctx)
+//	defer builder.Close()
+//
+//	result, err := builder.Build(ctx, config)
+//	if err != nil {
+//	    return err
+//	}
+//
+//	digest, err := builder.Push(ctx, result.ImageRef, "ghcr.io/myorg")
 type ContainerBuilder interface {
 	Builder
 
-	// Push pushes the built image to a registry and returns the digest
+	// Push pushes the built image to a registry and returns the digest.
+	// The imageRef should be a fully qualified image reference (e.g., "myimage:latest").
+	// The registry parameter specifies the target registry (e.g., "ghcr.io/myorg").
+	// Returns the pushed image digest (e.g., "sha256:abc123...") on success.
 	Push(ctx context.Context, imageRef, registry string) (string, error)
 
-	// Tag adds additional tags to an image
+	// Tag adds an additional tag to an existing image.
+	// Both imageRef and newTag should be valid image references.
 	Tag(ctx context.Context, imageRef, newTag string) error
 
-	// Remove removes an image from local storage
+	// Remove removes an image from local storage.
+	// This does not affect images that have been pushed to a registry.
 	Remove(ctx context.Context, imageRef string) error
 }
 
-// AMIBuilder builds AWS AMIs
+// AMIBuilder extends Builder with AWS AMI-specific operations.
+// It provides operations for building, sharing, copying, and managing
+// Amazon Machine Images (AMIs).
+//
+// Implementations:
+//   - ami.ImageBuilder: Uses AWS EC2 Image Builder for AMI creation
+//
+// Example usage:
+//
+//	builder, _ := ami.NewImageBuilder(ctx, clientConfig)
+//	defer builder.Close()
+//
+//	result, err := builder.Build(ctx, config)
+//	if err != nil {
+//	    return err
+//	}
+//
+//	// Share with another AWS account
+//	err = builder.Share(ctx, result.ImageRef, []string{"123456789012"})
 type AMIBuilder interface {
 	Builder
 
-	// Share shares the AMI with other AWS accounts
+	// Share shares the AMI with other AWS accounts by modifying launch permissions.
+	// The amiID should be a valid AMI ID (e.g., "ami-12345678").
+	// The accountIDs are 12-digit AWS account IDs to share with.
 	Share(ctx context.Context, amiID string, accountIDs []string) error
 
-	// Copy copies an AMI to another region
+	// Copy copies an AMI to another AWS region.
+	// Returns the new AMI ID in the destination region.
+	// The source AMI must exist in sourceRegion.
 	Copy(ctx context.Context, amiID, sourceRegion, destRegion string) (string, error)
 
-	// Deregister deregisters an AMI
+	// Deregister deregisters an AMI, making it unavailable for launching new instances.
+	// This does not delete associated snapshots; those must be cleaned up separately.
 	Deregister(ctx context.Context, amiID, region string) error
 }

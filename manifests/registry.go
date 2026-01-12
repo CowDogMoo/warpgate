@@ -67,6 +67,10 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 	for _, df := range digestFiles {
 		df := df // Capture loop variable
 		g.Go(func() error {
+			// Check context before starting work
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			// Build digest-based reference
 			// Format: registry/namespace/image@sha256:digest
 			imageRef := BuildManifestReference(opts.Registry, opts.Namespace, df.ImageName, "")

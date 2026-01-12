@@ -39,6 +39,9 @@ type dockerClientAdapter struct {
 	*dockerclient.Client
 }
 
+// Verify that dockerClientAdapter implements DockerClient at compile time
+var _ DockerClient = (*dockerClientAdapter)(nil)
+
 // ImageInspect adapts the Docker SDK's variadic signature to our fixed interface.
 func (a *dockerClientAdapter) ImageInspect(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
 	return a.Client.ImageInspect(ctx, imageID)

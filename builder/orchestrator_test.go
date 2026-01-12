@@ -283,10 +283,10 @@ func TestPushMultiArch(t *testing.T) {
 			},
 			registry: "ghcr.io/test",
 			mockPushSetup: func(m *MockContainerBuilder, results []builder.BuildResult) {
-				// First push succeeds
-				m.On("Push", mock.Anything, results[0].ImageRef, mock.Anything).Return("sha256:1234567890abcdef", nil).Once()
-				// Second push fails
-				m.On("Push", mock.Anything, results[1].ImageRef, mock.Anything).Return("", fmt.Errorf("push failed")).Once()
+				// With context cancellation on failure, not all pushes may be attempted.
+				// Use Maybe() since goroutine execution order is non-deterministic.
+				m.On("Push", mock.Anything, results[0].ImageRef, mock.Anything).Return("sha256:1234567890abcdef", nil).Maybe()
+				m.On("Push", mock.Anything, results[1].ImageRef, mock.Anything).Return("", fmt.Errorf("push failed")).Maybe()
 			},
 			expectError:   true,
 			errorContains: "failed to complete multi-arch push",

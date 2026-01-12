@@ -71,6 +71,10 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 	for i, req := range requests {
 		i, req := i, req // Capture loop variables
 		g.Go(func() error {
+			// Check context before starting work
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			logging.Info("Building %s for %s", req.Config.Name, req.Architecture)
 
 			configCopy := req.Config
@@ -109,6 +113,10 @@ func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildR
 		i := i // Capture loop index
 		result := results[i]
 		g.Go(func() error {
+			// Check context before starting work
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			logging.Info("Pushing %s to %s", result.ImageRef, registry)
 
 			digest, err := builder.Push(ctx, result.ImageRef, registry)
