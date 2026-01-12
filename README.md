@@ -1,7 +1,7 @@
 # Warp Gate
 
 <p align="center">
-  <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="400">
+  <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
 </p>
 
 **Build container images and AWS AMIs with speed, simplicity, and security.**

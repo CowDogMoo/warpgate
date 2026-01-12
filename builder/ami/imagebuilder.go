@@ -426,8 +426,9 @@ func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name stri
 		return "", fmt.Errorf("instance_profile_name must be specified in template config or global config (aws.ami.instance_profile_name)")
 	}
 
+	infraName := fmt.Sprintf("%s-infra", name)
 	input := &imagebuilder.CreateInfrastructureConfigurationInput{
-		Name:                aws.String(fmt.Sprintf("%s-infra", name)),
+		Name:                aws.String(infraName),
 		InstanceTypes:       []string{instanceType},
 		InstanceProfileName: aws.String(instanceProfile),
 		Description:         aws.String(fmt.Sprintf("Infrastructure config for %s", name)),
@@ -448,6 +449,19 @@ func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name stri
 
 	result, err := b.clients.ImageBuilder.CreateInfrastructureConfiguration(ctx, input)
 	if err != nil {
+		// If resource already exists, try to retrieve it instead
+		if IsResourceExistsError(err) {
+			logging.Info("Infrastructure configuration already exists, retrieving: %s", infraName)
+			existing, getErr := b.resourceManager.GetInfrastructureConfig(ctx, infraName)
+			if getErr != nil {
+				return "", fmt.Errorf("failed to create infrastructure config (already exists) and failed to retrieve: %w", err)
+			}
+			if existing != nil && existing.Arn != nil {
+				logging.Info("Reusing existing infrastructure configuration: %s", *existing.Arn)
+				return *existing.Arn, nil
+			}
+			return "", fmt.Errorf("failed to create infrastructure config (already exists) but could not retrieve: %w", err)
+		}
 		return "", fmt.Errorf("failed to create infrastructure config: %w", err)
 	}
 
@@ -486,8 +500,9 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 		logging.Info("Windows Fast Launch enabled with %d target resources", target.FastLaunchTargetResourceCount)
 	}
 
+	distName := fmt.Sprintf("%s-dist", name)
 	input := &imagebuilder.CreateDistributionConfigurationInput{
-		Name:          aws.String(fmt.Sprintf("%s-dist", name)),
+		Name:          aws.String(distName),
 		Description:   aws.String(fmt.Sprintf("Distribution config for %s", name)),
 		Distributions: []types.Distribution{distribution},
 		Tags: map[string]string{
@@ -497,6 +512,19 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 
 	result, err := b.clients.ImageBuilder.CreateDistributionConfiguration(ctx, input)
 	if err != nil {
+		// If resource already exists, try to retrieve it instead
+		if IsResourceExistsError(err) {
+			logging.Info("Distribution configuration already exists, retrieving: %s", distName)
+			existing, getErr := b.resourceManager.GetDistributionConfig(ctx, distName)
+			if getErr != nil {
+				return "", fmt.Errorf("failed to create distribution config (already exists) and failed to retrieve: %w", err)
+			}
+			if existing != nil && existing.Arn != nil {
+				logging.Info("Reusing existing distribution configuration: %s", *existing.Arn)
+				return *existing.Arn, nil
+			}
+			return "", fmt.Errorf("failed to create distribution config (already exists) but could not retrieve: %w", err)
+		}
 		return "", fmt.Errorf("failed to create distribution config: %w", err)
 	}
 
@@ -578,8 +606,9 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 		volumeType = types.EbsVolumeTypeGp3 // Fallback to gp3
 	}
 
+	recipeName := fmt.Sprintf("%s-recipe", config.Name)
 	input := &imagebuilder.CreateImageRecipeInput{
-		Name:            aws.String(fmt.Sprintf("%s-recipe", config.Name)),
+		Name:            aws.String(recipeName),
 		SemanticVersion: aws.String(config.Version),
 		ParentImage:     aws.String(parentImage),
 		Components:      components,
@@ -602,6 +631,19 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 
 	result, err := b.clients.ImageBuilder.CreateImageRecipe(ctx, input)
 	if err != nil {
+		// If resource already exists, try to retrieve it instead
+		if IsResourceExistsError(err) {
+			logging.Info("Image recipe already exists, retrieving: %s", recipeName)
+			existing, getErr := b.resourceManager.GetImageRecipe(ctx, recipeName, config.Version)
+			if getErr != nil {
+				return "", fmt.Errorf("failed to create image recipe (already exists) and failed to retrieve: %w", err)
+			}
+			if existing != nil && existing.Arn != nil {
+				logging.Info("Reusing existing image recipe: %s", *existing.Arn)
+				return *existing.Arn, nil
+			}
+			return "", fmt.Errorf("failed to create image recipe (already exists) but could not retrieve: %w", err)
+		}
 		return "", fmt.Errorf("failed to create image recipe: %w", err)
 	}
 
@@ -765,6 +807,19 @@ func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.C
 
 	pipelineARN, err := b.pipelineManager.CreatePipeline(ctx, pipelineConfig)
 	if err != nil {
+		// If resource already exists, try to retrieve it instead
+		if IsResourceExistsError(err) {
+			logging.Info("Pipeline already exists, retrieving: %s", pipelineName)
+			existingPipeline, getErr := b.resourceManager.GetImagePipeline(ctx, pipelineName)
+			if getErr != nil {
+				return "", fmt.Errorf("failed to create pipeline (already exists) and failed to retrieve: %w", err)
+			}
+			if existingPipeline != nil && existingPipeline.Arn != nil {
+				logging.Info("Reusing existing pipeline: %s", *existingPipeline.Arn)
+				return *existingPipeline.Arn, nil
+			}
+			return "", fmt.Errorf("failed to create pipeline (already exists) but could not retrieve: %w", err)
+		}
 		return "", fmt.Errorf("failed to create pipeline: %w", err)
 	}
 

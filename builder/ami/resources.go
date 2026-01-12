@@ -58,7 +58,7 @@ func (e *ResourceExistsError) Error() string {
 
 // GetInfrastructureConfig retrieves an infrastructure configuration by name
 func (m *ResourceManager) GetInfrastructureConfig(ctx context.Context, name string) (*types.InfrastructureConfiguration, error) {
-	// List infrastructure configurations and filter by name
+	// List infrastructure configurations and filter by name with pagination
 	input := &imagebuilder.ListInfrastructureConfigurationsInput{
 		Filters: []types.Filter{
 			{
@@ -68,24 +68,32 @@ func (m *ResourceManager) GetInfrastructureConfig(ctx context.Context, name stri
 		},
 	}
 
-	result, err := m.clients.ImageBuilder.ListInfrastructureConfigurations(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list infrastructure configurations: %w", err)
-	}
-
-	// Find exact match
-	for _, summary := range result.InfrastructureConfigurationSummaryList {
-		if summary.Name != nil && *summary.Name == name {
-			// Get full configuration
-			getInput := &imagebuilder.GetInfrastructureConfigurationInput{
-				InfrastructureConfigurationArn: summary.Arn,
-			}
-			getResult, err := m.clients.ImageBuilder.GetInfrastructureConfiguration(ctx, getInput)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get infrastructure configuration: %w", err)
-			}
-			return getResult.InfrastructureConfiguration, nil
+	for {
+		result, err := m.clients.ImageBuilder.ListInfrastructureConfigurations(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list infrastructure configurations: %w", err)
 		}
+
+		// Find exact match
+		for _, summary := range result.InfrastructureConfigurationSummaryList {
+			if summary.Name != nil && *summary.Name == name {
+				// Get full configuration
+				getInput := &imagebuilder.GetInfrastructureConfigurationInput{
+					InfrastructureConfigurationArn: summary.Arn,
+				}
+				getResult, err := m.clients.ImageBuilder.GetInfrastructureConfiguration(ctx, getInput)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get infrastructure configuration: %w", err)
+				}
+				return getResult.InfrastructureConfiguration, nil
+			}
+		}
+
+		// Check for more pages
+		if result.NextToken == nil {
+			break
+		}
+		input.NextToken = result.NextToken
 	}
 
 	return nil, nil
@@ -102,22 +110,30 @@ func (m *ResourceManager) GetDistributionConfig(ctx context.Context, name string
 		},
 	}
 
-	result, err := m.clients.ImageBuilder.ListDistributionConfigurations(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list distribution configurations: %w", err)
-	}
-
-	for _, summary := range result.DistributionConfigurationSummaryList {
-		if summary.Name != nil && *summary.Name == name {
-			getInput := &imagebuilder.GetDistributionConfigurationInput{
-				DistributionConfigurationArn: summary.Arn,
-			}
-			getResult, err := m.clients.ImageBuilder.GetDistributionConfiguration(ctx, getInput)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get distribution configuration: %w", err)
-			}
-			return getResult.DistributionConfiguration, nil
+	for {
+		result, err := m.clients.ImageBuilder.ListDistributionConfigurations(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list distribution configurations: %w", err)
 		}
+
+		for _, summary := range result.DistributionConfigurationSummaryList {
+			if summary.Name != nil && *summary.Name == name {
+				getInput := &imagebuilder.GetDistributionConfigurationInput{
+					DistributionConfigurationArn: summary.Arn,
+				}
+				getResult, err := m.clients.ImageBuilder.GetDistributionConfiguration(ctx, getInput)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get distribution configuration: %w", err)
+				}
+				return getResult.DistributionConfiguration, nil
+			}
+		}
+
+		// Check for more pages
+		if result.NextToken == nil {
+			break
+		}
+		input.NextToken = result.NextToken
 	}
 
 	return nil, nil
@@ -134,22 +150,30 @@ func (m *ResourceManager) GetImageRecipe(ctx context.Context, name, version stri
 		},
 	}
 
-	result, err := m.clients.ImageBuilder.ListImageRecipes(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list image recipes: %w", err)
-	}
-
-	for _, summary := range result.ImageRecipeSummaryList {
-		if summary.Name != nil && *summary.Name == name {
-			getInput := &imagebuilder.GetImageRecipeInput{
-				ImageRecipeArn: summary.Arn,
-			}
-			getResult, err := m.clients.ImageBuilder.GetImageRecipe(ctx, getInput)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get image recipe: %w", err)
-			}
-			return getResult.ImageRecipe, nil
+	for {
+		result, err := m.clients.ImageBuilder.ListImageRecipes(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list image recipes: %w", err)
 		}
+
+		for _, summary := range result.ImageRecipeSummaryList {
+			if summary.Name != nil && *summary.Name == name {
+				getInput := &imagebuilder.GetImageRecipeInput{
+					ImageRecipeArn: summary.Arn,
+				}
+				getResult, err := m.clients.ImageBuilder.GetImageRecipe(ctx, getInput)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get image recipe: %w", err)
+				}
+				return getResult.ImageRecipe, nil
+			}
+		}
+
+		// Check for more pages
+		if result.NextToken == nil {
+			break
+		}
+		input.NextToken = result.NextToken
 	}
 
 	return nil, nil
@@ -166,15 +190,23 @@ func (m *ResourceManager) GetImagePipeline(ctx context.Context, name string) (*t
 		},
 	}
 
-	result, err := m.clients.ImageBuilder.ListImagePipelines(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list image pipelines: %w", err)
-	}
-
-	for _, summary := range result.ImagePipelineList {
-		if summary.Name != nil && *summary.Name == name {
-			return &summary, nil
+	for {
+		result, err := m.clients.ImageBuilder.ListImagePipelines(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list image pipelines: %w", err)
 		}
+
+		for _, summary := range result.ImagePipelineList {
+			if summary.Name != nil && *summary.Name == name {
+				return &summary, nil
+			}
+		}
+
+		// Check for more pages
+		if result.NextToken == nil {
+			break
+		}
+		input.NextToken = result.NextToken
 	}
 
 	return nil, nil
