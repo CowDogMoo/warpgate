@@ -553,6 +553,23 @@ func (b *ImageBuilder) buildFastLaunchConfiguration(target *builder.Target) type
 	}
 }
 
+// parseVolumeType converts a volume type string to the AWS EbsVolumeType enum.
+func parseVolumeType(volumeTypeStr string) types.EbsVolumeType {
+	volumeTypes := map[string]types.EbsVolumeType{
+		"gp2":      types.EbsVolumeTypeGp2,
+		"gp3":      types.EbsVolumeTypeGp3,
+		"io1":      types.EbsVolumeTypeIo1,
+		"io2":      types.EbsVolumeTypeIo2,
+		"sc1":      types.EbsVolumeTypeSc1,
+		"st1":      types.EbsVolumeTypeSt1,
+		"standard": types.EbsVolumeTypeStandard,
+	}
+	if vt, ok := volumeTypes[volumeTypeStr]; ok {
+		return vt
+	}
+	return types.EbsVolumeTypeGp3
+}
+
 // createImageRecipe creates an image recipe
 func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Config, componentARNs []string, target *builder.Target) (string, error) {
 	logging.Info("Creating image recipe")
@@ -581,31 +598,6 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 		volumeSize = int32(b.globalConfig.AWS.AMI.VolumeSize)
 	}
 
-	// Get device name and volume type from config
-	deviceName := b.globalConfig.AWS.AMI.DeviceName
-	volumeTypeStr := b.globalConfig.AWS.AMI.VolumeType
-
-	// Convert string volume type to AWS enum
-	var volumeType types.EbsVolumeType
-	switch volumeTypeStr {
-	case "gp2":
-		volumeType = types.EbsVolumeTypeGp2
-	case "gp3":
-		volumeType = types.EbsVolumeTypeGp3
-	case "io1":
-		volumeType = types.EbsVolumeTypeIo1
-	case "io2":
-		volumeType = types.EbsVolumeTypeIo2
-	case "sc1":
-		volumeType = types.EbsVolumeTypeSc1
-	case "st1":
-		volumeType = types.EbsVolumeTypeSt1
-	case "standard":
-		volumeType = types.EbsVolumeTypeStandard
-	default:
-		volumeType = types.EbsVolumeTypeGp3 // Fallback to gp3
-	}
-
 	recipeName := fmt.Sprintf("%s-recipe", config.Name)
 	input := &imagebuilder.CreateImageRecipeInput{
 		Name:            aws.String(recipeName),
@@ -615,10 +607,10 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 		Description:     aws.String(fmt.Sprintf("Image recipe for %s", config.Name)),
 		BlockDeviceMappings: []types.InstanceBlockDeviceMapping{
 			{
-				DeviceName: aws.String(deviceName),
+				DeviceName: aws.String(b.globalConfig.AWS.AMI.DeviceName),
 				Ebs: &types.EbsInstanceBlockDeviceSpecification{
 					VolumeSize:          aws.Int32(volumeSize),
-					VolumeType:          volumeType,
+					VolumeType:          parseVolumeType(b.globalConfig.AWS.AMI.VolumeType),
 					DeleteOnTermination: aws.Bool(true),
 				},
 			},
