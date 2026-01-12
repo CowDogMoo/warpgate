@@ -120,61 +120,15 @@ func (c *ResourceCleaner) ListResourcesForBuild(ctx context.Context, buildName s
 
 // DeleteResources deletes the specified resources in the correct order
 func (c *ResourceCleaner) DeleteResources(ctx context.Context, resources []ResourceInfo) error {
-	// Group resources by type for ordered deletion
-	var pipelines, recipes, distConfigs, infraConfigs, components []ResourceInfo
-
-	for _, r := range resources {
-		switch r.Type {
-		case "ImagePipeline":
-			pipelines = append(pipelines, r)
-		case "ImageRecipe":
-			recipes = append(recipes, r)
-		case "DistributionConfiguration":
-			distConfigs = append(distConfigs, r)
-		case "InfrastructureConfiguration":
-			infraConfigs = append(infraConfigs, r)
-		case "Component":
-			components = append(components, r)
-		}
-	}
-
+	grouped := c.groupResourcesByType(resources)
 	var deleteErrors []string
 
 	// Delete in dependency order: pipelines -> recipes -> configs -> components
-	for _, p := range pipelines {
-		logging.Info("Deleting pipeline: %s", p.Name)
-		if err := c.deletePipeline(ctx, p.ARN); err != nil {
-			deleteErrors = append(deleteErrors, fmt.Sprintf("pipeline %s: %v", p.Name, err))
-		}
-	}
-
-	for _, r := range recipes {
-		logging.Info("Deleting recipe: %s", r.Name)
-		if err := c.deleteRecipe(ctx, r.ARN); err != nil {
-			deleteErrors = append(deleteErrors, fmt.Sprintf("recipe %s: %v", r.Name, err))
-		}
-	}
-
-	for _, d := range distConfigs {
-		logging.Info("Deleting distribution config: %s", d.Name)
-		if err := c.deleteDistributionConfig(ctx, d.ARN); err != nil {
-			deleteErrors = append(deleteErrors, fmt.Sprintf("distribution config %s: %v", d.Name, err))
-		}
-	}
-
-	for _, i := range infraConfigs {
-		logging.Info("Deleting infrastructure config: %s", i.Name)
-		if err := c.deleteInfrastructureConfig(ctx, i.ARN); err != nil {
-			deleteErrors = append(deleteErrors, fmt.Sprintf("infrastructure config %s: %v", i.Name, err))
-		}
-	}
-
-	for _, comp := range components {
-		logging.Info("Deleting component: %s", comp.Name)
-		if err := c.deleteComponent(ctx, comp.ARN); err != nil {
-			deleteErrors = append(deleteErrors, fmt.Sprintf("component %s: %v", comp.Name, err))
-		}
-	}
+	deleteErrors = c.deleteResourceGroup(ctx, grouped["ImagePipeline"], "pipeline", c.deletePipeline, deleteErrors)
+	deleteErrors = c.deleteResourceGroup(ctx, grouped["ImageRecipe"], "recipe", c.deleteRecipe, deleteErrors)
+	deleteErrors = c.deleteResourceGroup(ctx, grouped["DistributionConfiguration"], "distribution config", c.deleteDistributionConfig, deleteErrors)
+	deleteErrors = c.deleteResourceGroup(ctx, grouped["InfrastructureConfiguration"], "infrastructure config", c.deleteInfrastructureConfig, deleteErrors)
+	deleteErrors = c.deleteResourceGroup(ctx, grouped["Component"], "component", c.deleteComponent, deleteErrors)
 
 	if len(deleteErrors) > 0 {
 		return fmt.Errorf("some resources failed to delete:\n  - %s", strings.Join(deleteErrors, "\n  - "))
@@ -182,6 +136,26 @@ func (c *ResourceCleaner) DeleteResources(ctx context.Context, resources []Resou
 
 	logging.Info("Successfully deleted %d resources", len(resources))
 	return nil
+}
+
+// groupResourcesByType groups resources by their type
+func (c *ResourceCleaner) groupResourcesByType(resources []ResourceInfo) map[string][]ResourceInfo {
+	grouped := make(map[string][]ResourceInfo)
+	for _, r := range resources {
+		grouped[r.Type] = append(grouped[r.Type], r)
+	}
+	return grouped
+}
+
+// deleteResourceGroup deletes a group of resources using the provided delete function
+func (c *ResourceCleaner) deleteResourceGroup(ctx context.Context, resources []ResourceInfo, typeName string, deleteFn func(context.Context, string) error, errors []string) []string {
+	for _, r := range resources {
+		logging.Info("Deleting %s: %s", typeName, r.Name)
+		if err := deleteFn(ctx, r.ARN); err != nil {
+			errors = append(errors, fmt.Sprintf("%s %s: %v", typeName, r.Name, err))
+		}
+	}
+	return errors
 }
 
 // listPipelines lists all Image Builder pipelines with warpgate tags

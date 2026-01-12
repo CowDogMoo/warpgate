@@ -359,58 +359,32 @@ func processPowerShellScript(content []byte) string {
 
 // validatePowerShellSyntax performs basic PowerShell syntax validation
 func validatePowerShellSyntax(script string) error {
-	// Check for unbalanced braces
-	braceCount := 0
+	if err := checkCharacterBalance(script, '{', '}', "braces"); err != nil {
+		return err
+	}
+	if err := checkCharacterBalance(script, '(', ')', "parentheses"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkCharacterBalance verifies that opening and closing characters are balanced
+func checkCharacterBalance(script string, open, close rune, name string) error {
+	count := 0
 	for _, char := range script {
 		switch char {
-		case '{':
-			braceCount++
-		case '}':
-			braceCount--
-			if braceCount < 0 {
-				return fmt.Errorf("unbalanced braces: unexpected '}'")
+		case open:
+			count++
+		case close:
+			count--
+			if count < 0 {
+				return fmt.Errorf("unbalanced %s: unexpected '%c'", name, close)
 			}
 		}
 	}
-	if braceCount != 0 {
-		return fmt.Errorf("unbalanced braces: %d unclosed '{'", braceCount)
+	if count != 0 {
+		return fmt.Errorf("unbalanced %s: %d unclosed '%c'", name, count, open)
 	}
-
-	// Check for unbalanced parentheses
-	parenCount := 0
-	for _, char := range script {
-		switch char {
-		case '(':
-			parenCount++
-		case ')':
-			parenCount--
-			if parenCount < 0 {
-				return fmt.Errorf("unbalanced parentheses: unexpected ')'")
-			}
-		}
-	}
-	if parenCount != 0 {
-		return fmt.Errorf("unbalanced parentheses: %d unclosed '('", parenCount)
-	}
-
-	// Check for common PowerShell syntax issues
-	lines := strings.Split(script, "\n")
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Skip empty lines and comments
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		// Check for unclosed strings on a single line (basic check)
-		if strings.Count(trimmed, "\"")%2 != 0 && !strings.HasSuffix(trimmed, "`") {
-			// Could be a multi-line string, so just warn
-			// This is a heuristic and may have false positives
-			_ = i // Suppress unused variable warning
-		}
-	}
-
 	return nil
 }
 

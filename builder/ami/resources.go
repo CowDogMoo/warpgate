@@ -317,52 +317,76 @@ func (m *ResourceManager) GetNextComponentVersion(ctx context.Context, name, bas
 func (m *ResourceManager) CleanupResourcesForBuild(ctx context.Context, buildName string, force bool) error {
 	logging.Info("Cleaning up existing resources for build: %s", buildName)
 
-	// Delete pipeline first (depends on other resources)
-	pipelineName := buildName + "-pipeline"
-	if pipeline, err := m.GetImagePipeline(ctx, pipelineName); err == nil && pipeline != nil {
-		if err := m.DeleteImagePipeline(ctx, *pipeline.Arn); err != nil {
-			if !force {
-				return fmt.Errorf("failed to delete pipeline %s: %w", pipelineName, err)
-			}
-			logging.Warn("Failed to delete pipeline (continuing): %v", err)
-		}
+	// Define cleanup operations in dependency order
+	cleanupOps := []struct {
+		suffix   string
+		typeName string
+		getARN   func() (string, error)
+		deleteFn func(context.Context, string) error
+	}{
+		{"pipeline", "pipeline", func() (string, error) { return m.getPipelineARN(ctx, buildName+"-pipeline") }, m.DeleteImagePipeline},
+		{"recipe", "image recipe", func() (string, error) { return m.getRecipeARN(ctx, buildName+"-recipe") }, m.DeleteImageRecipe},
+		{"dist", "distribution config", func() (string, error) { return m.getDistConfigARN(ctx, buildName+"-dist") }, m.DeleteDistributionConfig},
+		{"infra", "infrastructure config", func() (string, error) { return m.getInfraConfigARN(ctx, buildName+"-infra") }, m.DeleteInfrastructureConfig},
 	}
 
-	// Delete image recipe
-	recipeName := buildName + "-recipe"
-	if recipe, err := m.GetImageRecipe(ctx, recipeName, ""); err == nil && recipe != nil {
-		if err := m.DeleteImageRecipe(ctx, *recipe.Arn); err != nil {
-			if !force {
-				return fmt.Errorf("failed to delete image recipe %s: %w", recipeName, err)
-			}
-			logging.Warn("Failed to delete image recipe (continuing): %v", err)
-		}
-	}
-
-	// Delete distribution configuration
-	distName := buildName + "-dist"
-	if dist, err := m.GetDistributionConfig(ctx, distName); err == nil && dist != nil {
-		if err := m.DeleteDistributionConfig(ctx, *dist.Arn); err != nil {
-			if !force {
-				return fmt.Errorf("failed to delete distribution config %s: %w", distName, err)
-			}
-			logging.Warn("Failed to delete distribution config (continuing): %v", err)
-		}
-	}
-
-	// Delete infrastructure configuration
-	infraName := buildName + "-infra"
-	if infra, err := m.GetInfrastructureConfig(ctx, infraName); err == nil && infra != nil {
-		if err := m.DeleteInfrastructureConfig(ctx, *infra.Arn); err != nil {
-			if !force {
-				return fmt.Errorf("failed to delete infrastructure config %s: %w", infraName, err)
-			}
-			logging.Warn("Failed to delete infrastructure config (continuing): %v", err)
+	for _, op := range cleanupOps {
+		if err := m.cleanupResource(ctx, op.typeName, op.getARN, op.deleteFn, force); err != nil {
+			return err
 		}
 	}
 
 	logging.Info("Resource cleanup completed for: %s", buildName)
 	return nil
+}
+
+// cleanupResource handles the get/delete pattern for a single resource type
+func (m *ResourceManager) cleanupResource(ctx context.Context, typeName string, getARN func() (string, error), deleteFn func(context.Context, string) error, force bool) error {
+	arn, err := getARN()
+	if err != nil || arn == "" {
+		return nil // Resource doesn't exist, nothing to delete
+	}
+
+	if err := deleteFn(ctx, arn); err != nil {
+		if !force {
+			return fmt.Errorf("failed to delete %s: %w", typeName, err)
+		}
+		logging.Warn("Failed to delete %s (continuing): %v", typeName, err)
+	}
+	return nil
+}
+
+// Helper functions to get ARNs
+func (m *ResourceManager) getPipelineARN(ctx context.Context, name string) (string, error) {
+	pipeline, err := m.GetImagePipeline(ctx, name)
+	if err != nil || pipeline == nil {
+		return "", err
+	}
+	return aws.ToString(pipeline.Arn), nil
+}
+
+func (m *ResourceManager) getRecipeARN(ctx context.Context, name string) (string, error) {
+	recipe, err := m.GetImageRecipe(ctx, name, "")
+	if err != nil || recipe == nil {
+		return "", err
+	}
+	return aws.ToString(recipe.Arn), nil
+}
+
+func (m *ResourceManager) getDistConfigARN(ctx context.Context, name string) (string, error) {
+	dist, err := m.GetDistributionConfig(ctx, name)
+	if err != nil || dist == nil {
+		return "", err
+	}
+	return aws.ToString(dist.Arn), nil
+}
+
+func (m *ResourceManager) getInfraConfigARN(ctx context.Context, name string) (string, error) {
+	infra, err := m.GetInfrastructureConfig(ctx, name)
+	if err != nil || infra == nil {
+		return "", err
+	}
+	return aws.ToString(infra.Arn), nil
 }
 
 // IsResourceExistsError checks if an error is due to a resource already existing

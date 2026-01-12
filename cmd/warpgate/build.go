@@ -23,11 +23,13 @@ THE SOFTWARE.
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
 	"github.com/cowdogmoo/warpgate/v3/cli"
+	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/spf13/cobra"
 )
@@ -173,60 +175,12 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	targetType := builder.DetermineTargetType(buildConfig, builderOpts)
 
-	var results []builder.BuildResult
-	switch targetType {
-	case "container":
-		results, err = service.ExecuteContainerBuild(ctx, *buildConfig, builderOpts)
-		if err != nil {
-			return fmt.Errorf("container build failed: %w", err)
-		}
-	case "ami":
-		// Create AMI client configuration
-		amiConfig := ami.ClientConfig{
-			Region:          cfg.AWS.Region,
-			Profile:         cfg.AWS.Profile,
-			AccessKeyID:     cfg.AWS.AccessKeyID,
-			SecretAccessKey: cfg.AWS.SecretAccessKey,
-			SessionToken:    cfg.AWS.SessionToken,
-		}
-
-		// Create AMI builder with force recreate option
-		amiBuilder, err := ami.NewImageBuilderWithOptions(ctx, amiConfig, opts.forceRecreate)
-		if err != nil {
-			return fmt.Errorf("failed to create AMI builder: %w", err)
-		}
-		defer func() {
-			if closeErr := amiBuilder.Close(); closeErr != nil {
-				logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
-			}
-		}()
-
-		// Handle dry-run mode
-		if opts.dryRun {
-			logging.InfoContext(ctx, "Running dry-run validation...")
-			validationResult, err := amiBuilder.DryRun(ctx, *buildConfig)
-			if err != nil {
-				return fmt.Errorf("dry-run validation failed: %w", err)
-			}
-
-			// Display validation results
-			fmt.Println(validationResult.String())
-
-			if !validationResult.Valid {
-				return fmt.Errorf("dry-run validation failed with %d errors", len(validationResult.Errors))
-			}
-			logging.InfoContext(ctx, "Dry-run validation completed successfully")
-			return nil
-		}
-
-		// Execute AMI build with service
-		result, err := service.ExecuteAMIBuild(ctx, *buildConfig, builderOpts, amiBuilder)
-		if err != nil {
-			return fmt.Errorf("AMI build failed: %w", err)
-		}
-		results = []builder.BuildResult{*result}
-	default:
-		return fmt.Errorf("unsupported target type: %s", targetType)
+	results, err := executeBuild(ctx, targetType, service, cfg, buildConfig, builderOpts, opts)
+	if err != nil {
+		return err
+	}
+	if results == nil {
+		return nil // dry-run completed successfully
 	}
 
 	formatter := cli.NewOutputFormatter("text")
@@ -237,4 +191,68 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	}
 
 	return nil
+}
+
+// executeBuild dispatches to the appropriate build handler based on target type
+func executeBuild(ctx context.Context, targetType string, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
+	switch targetType {
+	case "container":
+		results, err := service.ExecuteContainerBuild(ctx, *buildConfig, builderOpts)
+		if err != nil {
+			return nil, fmt.Errorf("container build failed: %w", err)
+		}
+		return results, nil
+	case "ami":
+		return executeAMIBuildTarget(ctx, service, cfg, buildConfig, builderOpts, opts)
+	default:
+		return nil, fmt.Errorf("unsupported target type: %s", targetType)
+	}
+}
+
+// executeAMIBuildTarget handles the AMI-specific build logic
+func executeAMIBuildTarget(ctx context.Context, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
+	amiConfig := ami.ClientConfig{
+		Region:          cfg.AWS.Region,
+		Profile:         cfg.AWS.Profile,
+		AccessKeyID:     cfg.AWS.AccessKeyID,
+		SecretAccessKey: cfg.AWS.SecretAccessKey,
+		SessionToken:    cfg.AWS.SessionToken,
+	}
+
+	amiBuilder, err := ami.NewImageBuilderWithOptions(ctx, amiConfig, opts.forceRecreate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AMI builder: %w", err)
+	}
+	defer func() {
+		if closeErr := amiBuilder.Close(); closeErr != nil {
+			logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
+		}
+	}()
+
+	if opts.dryRun {
+		return handleAMIDryRun(ctx, amiBuilder, buildConfig)
+	}
+
+	result, err := service.ExecuteAMIBuild(ctx, *buildConfig, builderOpts, amiBuilder)
+	if err != nil {
+		return nil, fmt.Errorf("AMI build failed: %w", err)
+	}
+	return []builder.BuildResult{*result}, nil
+}
+
+// handleAMIDryRun performs dry-run validation for AMI builds
+func handleAMIDryRun(ctx context.Context, amiBuilder *ami.ImageBuilder, buildConfig *builder.Config) ([]builder.BuildResult, error) {
+	logging.InfoContext(ctx, "Running dry-run validation...")
+	validationResult, err := amiBuilder.DryRun(ctx, *buildConfig)
+	if err != nil {
+		return nil, fmt.Errorf("dry-run validation failed: %w", err)
+	}
+
+	fmt.Println(validationResult.String())
+
+	if !validationResult.Valid {
+		return nil, fmt.Errorf("dry-run validation failed with %d errors", len(validationResult.Errors))
+	}
+	logging.InfoContext(ctx, "Dry-run validation completed successfully")
+	return nil, nil
 }
