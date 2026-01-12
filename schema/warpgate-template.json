@@ -490,7 +490,7 @@
         },
         "fast_launch_enabled": {
           "type": "boolean",
-          "description": "FastLaunchEnabled enables EC2 Fast Launch for Windows AMIs\nWhen enabled, pre-provisioned snapshots are created for faster instance launches (up to 65% faster)"
+          "description": "FastLaunchEnabled enables EC2 Fast Launch for Windows AMIs\nWhen enabled, pre-provisioned snapshots are created for faster instance launches"
         },
         "fast_launch_max_parallel_launches": {
           "type": "integer",
