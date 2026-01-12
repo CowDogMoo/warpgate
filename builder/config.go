@@ -389,6 +389,28 @@ type Target struct {
 
 	// VolumeSize is the root volume size in GB for the AMI
 	VolumeSize int `yaml:"volume_size,omitempty" json:"volume_size,omitempty"`
+
+	// InstanceProfileName is the IAM instance profile for the EC2 build instance
+	// The instance profile grants permissions for SSM, S3, etc.
+	InstanceProfileName string `yaml:"instance_profile_name,omitempty" json:"instance_profile_name,omitempty"`
+
+	// Windows Fast Launch configuration (reduces Windows instance launch times by up to 65%)
+
+	// FastLaunchEnabled enables EC2 Fast Launch for Windows AMIs
+	// When enabled, pre-provisioned snapshots are created for faster instance launches
+	FastLaunchEnabled bool `yaml:"fast_launch_enabled,omitempty" json:"fast_launch_enabled,omitempty"`
+
+	// FastLaunchMaxParallelLaunches is the maximum number of parallel instances to launch
+	// for creating pre-provisioned snapshots (default: 6, max: 40 per region across all AMIs)
+	FastLaunchMaxParallelLaunches int `yaml:"fast_launch_max_parallel_launches,omitempty" json:"fast_launch_max_parallel_launches,omitempty"`
+
+	// FastLaunchTargetResourceCount is the number of pre-provisioned snapshots to maintain
+	// for faster Windows instance launches (default: 5)
+	FastLaunchTargetResourceCount int `yaml:"fast_launch_target_resource_count,omitempty" json:"fast_launch_target_resource_count,omitempty"`
+
+	// SecurityGroupIDs specifies the security groups for the build instance
+	// If not specified, uses the default security group for the VPC
+	SecurityGroupIDs []string `yaml:"security_group_ids,omitempty" json:"security_group_ids,omitempty"`
 }
 
 // BuildResult represents the result of a build operation

@@ -168,7 +168,8 @@ func TestBuildMultiArch(t *testing.T) {
 				},
 			},
 			mockBuildSetup: func(m *MockContainerBuilder, requests []builder.BuildRequest) {
-				// First build succeeds
+				// With context cancellation on failure, not all builds may be attempted.
+				// Use Maybe() since goroutine execution order is non-deterministic.
 				m.On("Build", mock.Anything, mock.MatchedBy(func(cfg builder.Config) bool {
 					return cfg.Name == requests[0].Config.Name && cfg.Version == requests[0].Architecture
 				})).Return(&builder.BuildResult{
@@ -176,12 +177,11 @@ func TestBuildMultiArch(t *testing.T) {
 					Architecture: "amd64",
 					Platform:     "linux/amd64",
 					Duration:     "1s",
-				}, nil).Once()
+				}, nil).Maybe()
 
-				// Second build fails
 				m.On("Build", mock.Anything, mock.MatchedBy(func(cfg builder.Config) bool {
 					return cfg.Name == requests[1].Config.Name && cfg.Version == requests[1].Architecture
-				})).Return(nil, fmt.Errorf("build failed")).Once()
+				})).Return(nil, fmt.Errorf("build failed")).Maybe()
 			},
 			expectError:   true,
 			errorContains: "failed to complete multi-arch build",
@@ -283,10 +283,10 @@ func TestPushMultiArch(t *testing.T) {
 			},
 			registry: "ghcr.io/test",
 			mockPushSetup: func(m *MockContainerBuilder, results []builder.BuildResult) {
-				// First push succeeds
-				m.On("Push", mock.Anything, results[0].ImageRef, mock.Anything).Return("sha256:1234567890abcdef", nil).Once()
-				// Second push fails
-				m.On("Push", mock.Anything, results[1].ImageRef, mock.Anything).Return("", fmt.Errorf("push failed")).Once()
+				// With context cancellation on failure, not all pushes may be attempted.
+				// Use Maybe() since goroutine execution order is non-deterministic.
+				m.On("Push", mock.Anything, results[0].ImageRef, mock.Anything).Return("sha256:1234567890abcdef", nil).Maybe()
+				m.On("Push", mock.Anything, results[1].ImageRef, mock.Anything).Return("", fmt.Errorf("push failed")).Maybe()
 			},
 			expectError:   true,
 			errorContains: "failed to complete multi-arch push",

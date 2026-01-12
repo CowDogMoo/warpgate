@@ -25,37 +25,37 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
-	"github.com/cowdogmoo/warpgate/v3/builder/buildkit"
 	"github.com/cowdogmoo/warpgate/v3/cli"
+	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
-	"github.com/cowdogmoo/warpgate/v3/templates"
 	"github.com/spf13/cobra"
 )
 
 // buildOptions holds command-line options for the build command
 type buildOptions struct {
-	template     string
-	fromGit      string
-	targetType   string
-	push         bool
-	registry     string
-	arch         []string
-	tags         []string
-	saveDigests  bool
-	digestDir    string
-	region       string
-	instanceType string
-	vars         []string
-	varFiles     []string
-	cacheFrom    []string
-	cacheTo      []string
-	labels       []string
-	buildArgs    []string
-	noCache      bool
+	template      string
+	fromGit       string
+	targetType    string
+	push          bool
+	registry      string
+	arch          []string
+	tags          []string
+	saveDigests   bool
+	digestDir     string
+	region        string
+	instanceType  string
+	vars          []string
+	varFiles      []string
+	cacheFrom     []string
+	cacheTo       []string
+	labels        []string
+	buildArgs     []string
+	noCache       bool
+	forceRecreate bool
+	dryRun        bool
 }
 
 var buildCmd *cobra.Command
@@ -119,6 +119,8 @@ Examples:
 	buildCmd.Flags().StringArrayVar(&opts.labels, "label", []string{}, "Set image labels (key=value)")
 	buildCmd.Flags().StringArrayVar(&opts.buildArgs, "build-arg", []string{}, "Set build arguments (key=value)")
 	buildCmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Disable all caching")
+	buildCmd.Flags().BoolVar(&opts.forceRecreate, "force", false, "Force recreation of existing AWS resources (AMI builds only)")
+	buildCmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Validate configuration without creating resources (AMI builds only)")
 }
 
 func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
@@ -148,7 +150,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	buildConfig, err := loadBuildConfig(ctx, args, opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load build configuration: %w", err)
 	}
 
 	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc)
@@ -168,46 +170,17 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 		Push:          opts.push,
 		SaveDigests:   opts.saveDigests,
 		DigestDir:     opts.digestDir,
+		ForceRecreate: opts.forceRecreate,
 	}
 
 	targetType := builder.DetermineTargetType(buildConfig, builderOpts)
 
-	var results []builder.BuildResult
-	switch targetType {
-	case "container":
-		results, err = service.ExecuteContainerBuild(ctx, *buildConfig, builderOpts)
-		if err != nil {
-			return err
-		}
-	case "ami":
-		// Create AMI client configuration
-		amiConfig := ami.ClientConfig{
-			Region:          cfg.AWS.Region,
-			Profile:         cfg.AWS.Profile,
-			AccessKeyID:     cfg.AWS.AccessKeyID,
-			SecretAccessKey: cfg.AWS.SecretAccessKey,
-			SessionToken:    cfg.AWS.SessionToken,
-		}
-
-		// Create AMI builder
-		amiBuilder, err := ami.NewImageBuilder(ctx, amiConfig)
-		if err != nil {
-			return fmt.Errorf("failed to create AMI builder: %w", err)
-		}
-		defer func() {
-			if closeErr := amiBuilder.Close(); closeErr != nil {
-				logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
-			}
-		}()
-
-		// Execute AMI build with service
-		result, err := service.ExecuteAMIBuild(ctx, *buildConfig, builderOpts, amiBuilder)
-		if err != nil {
-			return err
-		}
-		results = []builder.BuildResult{*result}
-	default:
-		return fmt.Errorf("unsupported target type: %s", targetType)
+	results, err := executeBuild(ctx, targetType, service, cfg, buildConfig, builderOpts, opts)
+	if err != nil {
+		return err
+	}
+	if results == nil {
+		return nil // dry-run completed successfully
 	}
 
 	formatter := cli.NewOutputFormatter("text")
@@ -220,128 +193,66 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	return nil
 }
 
-// buildOptsToCliOpts converts buildOptions to CLI validation options
-func buildOptsToCliOpts(args []string, opts *buildOptions) cli.BuildCLIOptions {
-	configFile := ""
-	if len(args) > 0 {
-		configFile = args[0]
-	}
-
-	return cli.BuildCLIOptions{
-		ConfigFile:    configFile,
-		Template:      opts.template,
-		FromGit:       opts.fromGit,
-		TargetType:    opts.targetType,
-		Architectures: opts.arch,
-		Registry:      opts.registry,
-		Tags:          opts.tags,
-		Region:        opts.region,
-		InstanceType:  opts.instanceType,
-		Labels:        opts.labels,
-		BuildArgs:     opts.buildArgs,
-		Variables:     opts.vars,
-		VarFiles:      opts.varFiles,
-		CacheFrom:     opts.cacheFrom,
-		CacheTo:       opts.cacheTo,
-		NoCache:       opts.noCache,
-		Push:          opts.push,
-		SaveDigests:   opts.saveDigests,
-		DigestDir:     opts.digestDir,
+// executeBuild dispatches to the appropriate build handler based on target type
+func executeBuild(ctx context.Context, targetType string, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
+	switch targetType {
+	case "container":
+		results, err := service.ExecuteContainerBuild(ctx, *buildConfig, builderOpts)
+		if err != nil {
+			return nil, fmt.Errorf("container build failed: %w", err)
+		}
+		return results, nil
+	case "ami":
+		return executeAMIBuildTarget(ctx, service, cfg, buildConfig, builderOpts, opts)
+	default:
+		return nil, fmt.Errorf("unsupported target type: %s", targetType)
 	}
 }
 
-// loadBuildConfig loads configuration from template, git, or file
-func loadBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*builder.Config, error) {
-	variables, err := templates.ParseVariables(opts.vars, opts.varFiles)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse variables: %w", err)
+// executeAMIBuildTarget handles the AMI-specific build logic
+func executeAMIBuildTarget(ctx context.Context, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
+	amiConfig := ami.ClientConfig{
+		Region:          cfg.AWS.Region,
+		Profile:         cfg.AWS.Profile,
+		AccessKeyID:     cfg.AWS.AccessKeyID,
+		SecretAccessKey: cfg.AWS.SecretAccessKey,
+		SessionToken:    cfg.AWS.SessionToken,
 	}
 
-	if opts.template != "" {
-		logging.InfoContext(ctx, "Building from template: %s", opts.template)
-		return loadFromTemplate(opts.template, variables)
+	amiBuilder, err := ami.NewImageBuilderWithOptions(ctx, amiConfig, opts.forceRecreate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AMI builder: %w", err)
 	}
-	if opts.fromGit != "" {
-		logging.InfoContext(ctx, "Building from git: %s", opts.fromGit)
-		return loadFromGit(opts.fromGit, variables)
+	defer func() {
+		if closeErr := amiBuilder.Close(); closeErr != nil {
+			logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
+		}
+	}()
+
+	if opts.dryRun {
+		return handleAMIDryRun(ctx, amiBuilder, buildConfig)
 	}
-	if len(args) > 0 {
-		logging.InfoContext(ctx, "Building from config file: %s", args[0])
-		return loadFromFile(args[0], variables)
+
+	result, err := service.ExecuteAMIBuild(ctx, *buildConfig, builderOpts, amiBuilder)
+	if err != nil {
+		return nil, fmt.Errorf("AMI build failed: %w", err)
 	}
-	return nil, fmt.Errorf("specify config file, --template, or --from-git")
+	return []builder.BuildResult{*result}, nil
 }
 
-// newBuildKitBuilderFunc creates a new BuildKit builder
-func newBuildKitBuilderFunc(ctx context.Context) (builder.ContainerBuilder, error) {
-	logging.Info("Creating BuildKit builder")
-	bldr, err := buildkit.NewBuildKitBuilder(ctx)
+// handleAMIDryRun performs dry-run validation for AMI builds
+func handleAMIDryRun(ctx context.Context, amiBuilder *ami.ImageBuilder, buildConfig *builder.Config) ([]builder.BuildResult, error) {
+	logging.InfoContext(ctx, "Running dry-run validation...")
+	validationResult, err := amiBuilder.DryRun(ctx, *buildConfig)
 	if err != nil {
-		return nil, enhanceBuildKitError(err)
-	}
-	return bldr, nil
-}
-
-// enhanceBuildKitError provides better error messages for BuildKit-related errors
-func enhanceBuildKitError(err error) error {
-	errMsg := err.Error()
-
-	if strings.Contains(errMsg, "no active buildx builder") {
-		return fmt.Errorf("BuildKit builder not available: %w\n\nTo fix this, create a buildx builder:\n  docker buildx create --name warpgate --driver docker-container --bootstrap", err)
+		return nil, fmt.Errorf("dry-run validation failed: %w", err)
 	}
 
-	if strings.Contains(errMsg, "Cannot connect to the Docker daemon") ||
-		strings.Contains(errMsg, "docker daemon") ||
-		strings.Contains(errMsg, "connection refused") {
-		return fmt.Errorf("docker is not running: %w\n\nPlease start Docker Desktop or the Docker daemon before building", err)
+	fmt.Println(validationResult.String())
+
+	if !validationResult.Valid {
+		return nil, fmt.Errorf("dry-run validation failed with %d errors", len(validationResult.Errors))
 	}
-
-	if strings.Contains(errMsg, "docker buildx") {
-		return fmt.Errorf("docker buildx not available: %w\n\nBuildKit requires docker buildx. Please ensure Docker Desktop is installed and up to date", err)
-	}
-
-	return err
-}
-
-// loadFromFile loads config from a local file with variable substitution
-func loadFromFile(configPath string, variables map[string]string) (*builder.Config, error) {
-	loader := templates.NewLoader()
-	cfg, err := loader.LoadFromFileWithVars(configPath, variables)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-
-	cfg.IsLocalTemplate = true
-
-	return cfg, nil
-}
-
-// loadFromTemplate loads config from a template (official registry or cached) with variable substitution
-func loadFromTemplate(templateName string, variables map[string]string) (*builder.Config, error) {
-	loader, err := templates.NewTemplateLoader()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize template loader: %w", err)
-	}
-
-	cfg, err := loader.LoadTemplateWithVars(templateName, variables)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load template: %w", err)
-	}
-
-	return cfg, nil
-}
-
-// loadFromGit loads config from a git repository with variable substitution
-func loadFromGit(gitURL string, variables map[string]string) (*builder.Config, error) {
-	loader, err := templates.NewTemplateLoader()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize template loader: %w", err)
-	}
-
-	cfg, err := loader.LoadTemplateWithVars(gitURL, variables)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load template from git: %w", err)
-	}
-
-	return cfg, nil
+	logging.InfoContext(ctx, "Dry-run validation completed successfully")
+	return nil, nil
 }

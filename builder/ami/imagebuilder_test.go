@@ -23,6 +23,9 @@ THE SOFTWARE.
 package ami
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
@@ -198,6 +201,14 @@ func TestComponentDocument(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "powershell provisioner without scripts",
+			provisioner: builder.Provisioner{
+				Type:      "powershell",
+				PSScripts: []string{},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -241,6 +252,162 @@ func TestClientConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.config.Region == "" && tt.config.Profile == "" && tt.config.AccessKeyID == "" {
 				t.Errorf("invalid test case - config should have at least one field set")
+			}
+		})
+	}
+}
+
+func TestPowerShellComponent(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "test.ps1")
+	if err := os.WriteFile(scriptPath, []byte("Write-Host 'Hello World'"), 0644); err != nil {
+		t.Fatalf("failed to create test script: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		provisioner builder.Provisioner
+		wantErr     bool
+		checkDoc    func(string) bool
+	}{
+		{
+			name: "valid powershell provisioner",
+			provisioner: builder.Provisioner{
+				Type:      "powershell",
+				PSScripts: []string{scriptPath},
+			},
+			wantErr: false,
+			checkDoc: func(doc string) bool {
+				return strings.Contains(doc, "ExecutePowerShell") &&
+					strings.Contains(doc, "PowerShellProvisioner")
+			},
+		},
+		{
+			name: "powershell with nonexistent script",
+			provisioner: builder.Provisioner{
+				Type:      "powershell",
+				PSScripts: []string{"/nonexistent/script.ps1"},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gen := &ComponentGenerator{}
+			doc, err := gen.createComponentDocument(tt.provisioner)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createComponentDocument() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && tt.checkDoc != nil && !tt.checkDoc(doc) {
+				t.Errorf("document validation failed: %s", doc)
+			}
+		})
+	}
+}
+
+func TestBuildFastLaunchConfiguration(t *testing.T) {
+	tests := []struct {
+		name                        string
+		target                      *builder.Target
+		expectedMaxParallelLaunches int32
+		expectedTargetResourceCount int32
+	}{
+		{
+			name: "default values when not specified",
+			target: &builder.Target{
+				FastLaunchEnabled: true,
+			},
+			expectedMaxParallelLaunches: 6,
+			expectedTargetResourceCount: 5,
+		},
+		{
+			name: "custom max parallel launches",
+			target: &builder.Target{
+				FastLaunchEnabled:             true,
+				FastLaunchMaxParallelLaunches: 10,
+			},
+			expectedMaxParallelLaunches: 10,
+			expectedTargetResourceCount: 5,
+		},
+		{
+			name: "custom target resource count",
+			target: &builder.Target{
+				FastLaunchEnabled:             true,
+				FastLaunchTargetResourceCount: 8,
+			},
+			expectedMaxParallelLaunches: 6,
+			expectedTargetResourceCount: 8,
+		},
+		{
+			name: "all custom values",
+			target: &builder.Target{
+				FastLaunchEnabled:             true,
+				FastLaunchMaxParallelLaunches: 12,
+				FastLaunchTargetResourceCount: 10,
+			},
+			expectedMaxParallelLaunches: 12,
+			expectedTargetResourceCount: 10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ib := &ImageBuilder{}
+			config := ib.buildFastLaunchConfiguration(tt.target)
+
+			if !config.Enabled {
+				t.Errorf("expected Enabled to be true")
+			}
+
+			if *config.MaxParallelLaunches != tt.expectedMaxParallelLaunches {
+				t.Errorf("MaxParallelLaunches = %d, want %d", *config.MaxParallelLaunches, tt.expectedMaxParallelLaunches)
+			}
+
+			if config.SnapshotConfiguration == nil {
+				t.Errorf("expected SnapshotConfiguration to be set")
+			} else if *config.SnapshotConfiguration.TargetResourceCount != tt.expectedTargetResourceCount {
+				t.Errorf("TargetResourceCount = %d, want %d", *config.SnapshotConfiguration.TargetResourceCount, tt.expectedTargetResourceCount)
+			}
+		})
+	}
+}
+
+func TestTargetWithSecurityGroups(t *testing.T) {
+	tests := []struct {
+		name            string
+		target          *builder.Target
+		expectedSGCount int
+	}{
+		{
+			name: "no security groups",
+			target: &builder.Target{
+				Type: "ami",
+			},
+			expectedSGCount: 0,
+		},
+		{
+			name: "single security group",
+			target: &builder.Target{
+				Type:             "ami",
+				SecurityGroupIDs: []string{"sg-12345678"},
+			},
+			expectedSGCount: 1,
+		},
+		{
+			name: "multiple security groups",
+			target: &builder.Target{
+				Type:             "ami",
+				SecurityGroupIDs: []string{"sg-12345678", "sg-87654321", "sg-11111111"},
+			},
+			expectedSGCount: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(tt.target.SecurityGroupIDs) != tt.expectedSGCount {
+				t.Errorf("SecurityGroupIDs count = %d, want %d", len(tt.target.SecurityGroupIDs), tt.expectedSGCount)
 			}
 		})
 	}

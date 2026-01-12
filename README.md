@@ -36,11 +36,34 @@ building for multiple architectures simultaneously.
 - Platform teams standardizing environments
 - Collaboration on infrastructure deployments across teams
 
+## Prerequisites
+
+Before using Warp Gate, ensure you have the following installed:
+
+| Requirement        | Version | Notes                                     |
+| ------------------ | ------- | ----------------------------------------- |
+| **Go**             | 1.25+   | Required for `go install`                 |
+| **Docker**         | 20.10+  | Required for container builds             |
+| **Docker Buildx**  | 0.8+    | Required for multi-arch builds            |
+| **AWS CLI** (opt.) | 2.x     | Required for AMI builds                   |
+| **Ansible** (opt.) | 2.9+    | Required for Ansible provisioner          |
+
+```bash
+# Verify Docker Buildx is available
+docker buildx version
+
+# Create a buildx builder (if not exists)
+docker buildx create --use --name warpgate-builder
+```
+
 ## Quick Start
 
 ```bash
 # Install warpgate
 go install github.com/cowdogmoo/warpgate/v3/cmd/warpgate@latest
+
+# Initialize configuration (optional)
+warpgate config init
 
 # List available templates
 warpgate templates list
@@ -99,6 +122,70 @@ docker images | grep attack-box
 | **Packer Conversion**      | Convert Packer to Warpgate       |
 | **Registry Push**          | Push images to registries        |
 | **Multi-arch Manifests**   | Create/push multi-arch images    |
+
+## Environment Variables
+
+Warp Gate supports the following environment variables:
+
+| Variable             | Description                    | Default     |
+| -------------------- | ------------------------------ | ----------- |
+| `WARPGATE_LOG_LEVEL` | Log verbosity (debug/info/etc) | `info`      |
+| `WARPGATE_LOG_FORMAT`| Log format (text, json)        | `text`      |
+| `WARPGATE_REGISTRY`  | Default container registry     | -           |
+| `AWS_REGION`         | AWS region for AMI builds      | `us-east-1` |
+| `AWS_PROFILE`        | AWS credentials profile        | `default`   |
+| `DOCKER_CONFIG`      | Docker config directory        | `~/.docker` |
+
+## Example Configuration
+
+Create `~/.config/warpgate/config.yaml`:
+
+```yaml
+# Logging configuration
+log:
+  level: info
+  format: text
+
+# Default registry for container images
+registry:
+  default: ghcr.io/myorg
+
+# Build settings
+build:
+  default_arch:
+    - amd64
+    - arm64
+  parallelism_limit: 2
+
+# AWS settings for AMI builds
+aws:
+  region: us-west-2
+
+# Template sources
+templates:
+  repositories:
+    official: https://github.com/CowDogMoo/warpgate-templates
+  local_paths:
+    - ~/my-templates
+```
+
+## Testing
+
+Run the test suite:
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Run specific package tests
+go test ./builder/...
+
+# Run with verbose output
+go test -v ./...
+```
 
 ## How to Contribute
 

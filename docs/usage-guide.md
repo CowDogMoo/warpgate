@@ -146,13 +146,16 @@ warpgate build myimage \
 
 ## AWS AMIs
 
-### Build an AMI
+Warpgate uses AWS EC2 Image Builder service to create AMIs, which handles
+the EC2 orchestration, cleanup, and AMI creation automatically.
 
-**Prerequisites:**
+### Prerequisites
+
+#### 1. AWS Credentials
+
+Configure AWS credentials (choose one method):
 
 ```bash
-# Configure AWS credentials (choose one method)
-
 # Option 1: AWS SSO (recommended)
 aws configure sso
 aws sso login --profile myawsprofile
@@ -167,33 +170,268 @@ export AWS_REGION=us-west-2
 # No configuration needed
 ```
 
-**Build AMI:**
+#### 2. IAM Instance Profile
+
+AMI builds require an IAM instance profile with permissions for:
+
+- **SSM** - EC2 Instance Connect and Systems Manager access
+- **ImageBuilder** - Downloading and executing build components
+
+**Quick Setup - Use existing AWS managed profile:**
+
+```bash
+# Use the AmazonSSMRoleForInstancesQuickSetup role and attach ImageBuilder policy
+aws iam attach-role-policy \
+  --role-name AmazonSSMRoleForInstancesQuickSetup \
+  --policy-arn arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+```
+
+**Or create a custom instance profile:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "imagebuilder:GetComponent",
+        "imagebuilder:GetContainerRecipe",
+        "imagebuilder:GetImage",
+        "imagebuilder:GetImageRecipe"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateTags",
+        "ec2:DescribeImages"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeAssociation",
+        "ssm:GetDeployablePatchSnapshotForInstance",
+        "ssm:GetDocument",
+        "ssm:DescribeDocument",
+        "ssm:GetManifest",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:ListAssociations",
+        "ssm:ListInstanceAssociations",
+        "ssm:PutInventory",
+        "ssm:PutComplianceItems",
+        "ssm:PutConfigurePackageResult",
+        "ssm:UpdateAssociationStatus",
+        "ssm:UpdateInstanceAssociationStatus",
+        "ssm:UpdateInstanceInformation"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssmmessages:CreateControlChannel",
+        "ssmmessages:CreateDataChannel",
+        "ssmmessages:OpenControlChannel",
+        "ssmmessages:OpenDataChannel"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2messages:AcknowledgeMessage",
+        "ec2messages:DeleteMessage",
+        "ec2messages:FailMessage",
+        "ec2messages:GetEndpoint",
+        "ec2messages:GetMessages",
+        "ec2messages:SendReply"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::ec2imagebuilder*"
+    }
+  ]
+}
+```
+
+**Configure in warpgate:**
+
+```yaml
+# ~/.config/warpgate/config.yaml
+aws:
+  region: us-west-2
+  profile: myawsprofile
+  ami:
+    instance_profile_name: AmazonSSMRoleForInstancesQuickSetup  # Or your custom profile
+    instance_type: t3.medium
+    volume_size: 8
+```
+
+#### 3. Region Configuration
+
+**Important:** AWS region precedence (highest to lowest):
+
+1. Environment variables (`AWS_REGION`, `AWS_DEFAULT_REGION`)
+2. CLI flags (`--region`)
+3. Template configuration (`targets[].region`)
+4. Warpgate config file (`aws.region`)
+5. AWS profile default region
+
+To avoid confusion, either:
+
+- Set region consistently across all methods
+- Or use environment variables to override everything
+
+### Build an AMI
+
+**Basic build:**
 
 ```bash
 # Build with default settings
 warpgate build my-ami-template --target ami
 
-# Specify region and instance type
+# Specify region explicitly
+warpgate build my-ami-template --target ami --region us-west-2
+```
+
+**With customization:**
+
+```bash
+# Custom instance type and volume size
 warpgate build my-ami-template \
   --target ami \
-  --var AWS_REGION=us-west-2 \
-  --var INSTANCE_TYPE=t3.large
+  --instance-type t3.large \
+  --var VERSION=1.0.0
 
-# Name the AMI
+# Custom AMI name
 warpgate build my-ami-template \
   --target ami \
   --var AMI_NAME="my-custom-ami-$(date +%Y%m%d)"
 ```
 
-**Template configuration:**
+**Build time expectations:**
+
+- Linux AMIs: 10-20 minutes
+- Windows AMIs: 30-60 minutes (depends on Windows Updates and software installation)
+
+### AMI Template Configuration
+
+**Linux AMI example:**
 
 ```yaml
+metadata:
+  name: linux-base
+  version: 1.0.0
+
+name: linux-base
+base:
+  image: "ami-0abcdef1234567890"  # Or use SSM parameter
+
+provisioners:
+  - type: shell
+    inline:
+      - apt-get update
+      - apt-get install -y docker.io
+
 targets:
   - type: ami
     region: us-west-2
     instance_type: t3.medium
     volume_size: 20
-    ami_name: "my-image-${VERSION}"
+    ami_name: "linux-base-{{imagebuilder:buildDate}}"
+    ami_tags:
+      Name: linux-base
+      ManagedBy: warpgate
+```
+
+**Windows AMI example with PowerShell:**
+
+```yaml
+metadata:
+  name: windows-server-base
+  version: 1.0.0
+
+name: windows-server-base
+base:
+  image: "ssm:/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base"
+
+provisioners:
+  - type: powershell
+    ps_scripts:
+      - scripts/install-features.ps1
+      - scripts/configure.ps1
+      - scripts/windows-updates.ps1
+
+targets:
+  - type: ami
+    region: us-west-2
+    instance_type: t3.medium
+    volume_size: 100
+    ami_name: "windows-server-base-{{imagebuilder:buildDate}}"
+    ami_tags:
+      Name: windows-server-base
+      OS: WindowsServer2019
+      ManagedBy: warpgate
+```
+
+**AMI target options:**
+
+- `region` - AWS region for AMI creation
+- `instance_type` - EC2 instance type for build (default: `t3.medium`)
+- `volume_size` - Root volume size in GB
+- `ami_name` - Name for resulting AMI (supports variables and ImageBuilder macros)
+- `ami_description` - AMI description
+- `ami_tags` - Tags to apply to the AMI
+- `instance_profile_name` - IAM instance profile (overrides config file)
+- `subnet_id` - VPC subnet ID for build instance
+- `security_group_ids` - Security groups for build instance
+
+**ImageBuilder macros in ami_name:**
+
+- `{{imagebuilder:buildDate}}` - Build timestamp (e.g., `2026-01-11T22-23-07.730Z`)
+- Use these for unique AMI names
+
+### Troubleshooting
+
+**Permission errors:**
+
+```text
+Error: User is not authorized to perform: imagebuilder:GetComponent
+```
+
+**Solution:** Ensure the instance profile has
+`EC2InstanceProfileForImageBuilder` policy attached.
+
+**Build failures:**
+
+Check AWS ImageBuilder console for detailed logs:
+
+```bash
+# Get the image ARN from warpgate output
+aws imagebuilder get-image --image-build-version-arn <arn>
+```
+
+**Wrong region:**
+
+If AMI appears in wrong region, check:
+
+```bash
+# Check environment variables
+echo $AWS_REGION
+echo $AWS_DEFAULT_REGION
+
+# These override all other settings - unset if needed
+unset AWS_REGION AWS_DEFAULT_REGION
 ```
 
 ### Multi-Target Builds

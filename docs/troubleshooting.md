@@ -505,6 +505,172 @@ Check security group allows outbound traffic for:
 - Git clone operations
 - External APIs
 
+### Instance profile permission errors
+
+**Symptoms:**
+
+```text
+Error: pipeline failed with reason: failed to download the EC2 Image
+Builder Component Error - User:
+arn:aws:sts::123456789012:assumed-role/MyRole/i-1234567890abcdef0
+is not authorized to perform: imagebuilder:GetComponent
+```
+
+**Cause:** The IAM instance profile used by the build EC2 instance lacks
+ImageBuilder permissions.
+
+**Solution:**
+
+The instance profile needs both SSM and ImageBuilder permissions. Attach the
+AWS managed `EC2InstanceProfileForImageBuilder` policy:
+
+```bash
+# Find your instance profile role name
+aws iam get-instance-profile --instance-profile-name YourInstanceProfile \
+  --query 'InstanceProfile.Roles[0].RoleName' --output text
+
+# Attach ImageBuilder policy
+aws iam attach-role-policy \
+  --role-name YourRoleName \
+  --policy-arn arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+
+# Verify policies are attached
+aws iam list-attached-role-policies --role-name YourRoleName
+```
+
+**Quick fix using AWS managed profile:**
+
+```bash
+# Use AmazonSSMRoleForInstancesQuickSetup and add ImageBuilder permissions
+aws iam attach-role-policy \
+  --role-name AmazonSSMRoleForInstancesQuickSetup \
+  --policy-arn arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+```
+
+Then update your config:
+
+```yaml
+# ~/.config/warpgate/config.yaml
+aws:
+  ami:
+    instance_profile_name: AmazonSSMRoleForInstancesQuickSetup
+```
+
+### AMI created in wrong region
+
+**Symptoms:** AMI appears in a different region than specified in template or config.
+
+**Cause:** AWS region configuration precedence. Environment variables
+override all other settings.
+
+**Solution:**
+
+Check your environment:
+
+```bash
+# Check environment variables (these override everything)
+echo $AWS_REGION
+echo $AWS_DEFAULT_REGION
+
+# If set, unset them to use config file settings
+unset AWS_REGION
+unset AWS_DEFAULT_REGION
+
+# Or explicitly override with CLI flag
+warpgate build myami --target ami --region us-west-2
+```
+
+**Region precedence (highest to lowest):**
+
+1. Environment variables (`AWS_REGION`, `AWS_DEFAULT_REGION`)
+2. CLI flag (`--region`)
+3. Template configuration (`targets[].region`)
+4. Config file (`aws.region`)
+5. AWS profile default region
+
+### ResourceAlreadyExistsException errors
+
+**Symptoms:**
+
+```text
+Error: The following resource 'InfrastructureConfiguration' already exists
+Error: The following resource 'ImageRecipe' already exists
+```
+
+**Cause:** Previous build failed and left ImageBuilder resources behind.
+
+**Solution:**
+
+Clean up leftover ImageBuilder resources:
+
+```bash
+# List and delete image pipelines
+aws imagebuilder list-image-pipelines \
+  --query 'imagePipelineList[?contains(name, `mytemplate`)].arn' \
+  --output text | xargs -I {} aws imagebuilder delete-image-pipeline --image-pipeline-arn {}
+
+# List and delete image recipes
+aws imagebuilder list-image-recipes \
+  --query 'imageRecipeSummaryList[?contains(name, `mytemplate`)].arn' \
+  --output text | xargs -I {} aws imagebuilder delete-image-recipe --image-recipe-arn {}
+
+# List and delete infrastructure configurations
+aws imagebuilder list-infrastructure-configurations \
+  --query 'infrastructureConfigurationSummaryList[?contains(name, `mytemplate`)].arn' \
+  --output text | xargs -I {} aws imagebuilder delete-infrastructure-configuration --infrastructure-configuration-arn {}
+
+# Then retry the build
+warpgate build mytemplate --target ami
+```
+
+**Or clean up specific resources:**
+
+```bash
+# Find pipeline ARN from error message or list command
+PIPELINE_ARN="arn:aws:imagebuilder:us-west-1:123456789012:image-pipeline/mytemplate-pipeline"
+
+# Delete in order: pipeline -> recipe -> infrastructure config
+aws imagebuilder delete-image-pipeline --image-pipeline-arn $PIPELINE_ARN
+aws imagebuilder delete-image-recipe --image-recipe-arn <recipe-arn>
+aws imagebuilder delete-infrastructure-configuration --infrastructure-configuration-arn <infra-arn>
+```
+
+### Windows AMI builds take very long
+
+**Symptoms:** Windows AMI builds taking 45-90 minutes.
+
+**Cause:** This is expected. Windows Updates and software installation
+(MSSQL, IIS) are time-consuming.
+
+**Typical build times:**
+
+- Linux AMI: 10-20 minutes
+- Windows Server base: 30-45 minutes
+- Windows Server with MSSQL: 45-90 minutes
+
+**Optimization tips:**
+
+1. **Pre-bake base AMIs** - Create layered AMIs:
+   - Base: Windows + Updates (build monthly)
+   - App: Base AMI + Application (build as needed)
+
+2. **Reduce update scope** - Only install critical updates:
+
+   ```powershell
+   # In PowerShell provisioner script
+   Install-WindowsUpdate -NotCategory "Drivers" -AcceptAll -AutoReboot
+   ```
+
+3. **Use larger instance types** for builds:
+
+   ```yaml
+   targets:
+     - type: ami
+       instance_type: t3.large  # More CPU = faster builds
+   ```
+
+4. **Parallel provisioning** - Split independent tasks into separate provisioners
+
 ## Platform-Specific Issues
 
 ### macOS: Build fails with BuildKit errors

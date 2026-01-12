@@ -23,10 +23,17 @@ THE SOFTWARE.
 package buildkit
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/moby/buildkit/client/llb"
 )
+
+func llbState() llb.State {
+	return llb.Scratch()
+}
 
 // TestParsePlatformEdgeCases tests edge cases in platform parsing
 func TestParsePlatformEdgeCases(t *testing.T) {
@@ -244,5 +251,80 @@ func TestGetPlatformStringLogic(t *testing.T) {
 				t.Errorf("expected %q, got %q", tt.expected, result)
 			}
 		})
+	}
+}
+
+func TestApplyProvisionerTypes(t *testing.T) {
+	tests := []struct {
+		name        string
+		provisioner builder.Provisioner
+		expectWarn  bool
+	}{
+		{
+			name: "shell provisioner",
+			provisioner: builder.Provisioner{
+				Type:   "shell",
+				Inline: []string{"echo hello"},
+			},
+			expectWarn: false,
+		},
+		{
+			name: "script provisioner empty",
+			provisioner: builder.Provisioner{
+				Type:    "script",
+				Scripts: []string{},
+			},
+			expectWarn: false,
+		},
+		{
+			name: "powershell provisioner empty",
+			provisioner: builder.Provisioner{
+				Type:      "powershell",
+				PSScripts: []string{},
+			},
+			expectWarn: false,
+		},
+		{
+			name: "unknown provisioner",
+			provisioner: builder.Provisioner{
+				Type: "unknown",
+			},
+			expectWarn: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &BuildKitBuilder{contextDir: t.TempDir()}
+			// We can't easily test LLB state, but we can verify no panics occur
+			_, _ = b.applyProvisioner(llbState(), tt.provisioner, builder.Config{})
+		})
+	}
+}
+
+func TestCalculateBuildContextWithPowerShell(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "test.ps1")
+	if err := os.WriteFile(scriptPath, []byte("Write-Host 'test'"), 0644); err != nil {
+		t.Fatalf("failed to create test script: %v", err)
+	}
+
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{
+				Type:      "powershell",
+				PSScripts: []string{scriptPath},
+			},
+		},
+	}
+
+	b := &BuildKitBuilder{}
+	ctx, err := b.calculateBuildContext(cfg)
+	if err != nil {
+		t.Fatalf("calculateBuildContext() error = %v", err)
+	}
+
+	if ctx == "" {
+		t.Error("expected non-empty context path")
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"os"
@@ -171,7 +172,16 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	}, nil
 }
 
-// loadTLSConfig creates a TLS configuration from BuildKit config
+// loadTLSConfig creates a TLS configuration for secure BuildKit connections.
+// This is used when connecting to remote BuildKit instances over TCP with TLS.
+//
+// The function configures:
+//   - TLS 1.3 minimum version for security
+//   - Optional CA certificate for server verification (cfg.TLSCACert)
+//   - Optional client certificate for mutual TLS (cfg.TLSCert + cfg.TLSKey)
+//
+// Certificate files should be PEM-encoded. Returns an error if any specified
+// certificate file cannot be read or parsed.
 func loadTLSConfig(cfg config.BuildKitConfig) (*tls.Config, error) {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS13,
@@ -255,13 +265,26 @@ func parseCacheAttrs(cacheSpec string) map[string]string {
 }
 
 // detectBuildxBuilder detects the active buildx builder using Docker SDK.
+// It scans running containers for buildx builder instances (containers with
+// names prefixed "buildx_buildkit_") and returns the builder name and container name.
+//
+// This function creates a temporary Docker client connection which is properly
+// closed before returning. The context is used for the Docker API calls and
+// should have an appropriate timeout for container listing operations.
+//
+// Returns:
+//   - builderName: The name of the buildx builder (e.g., "default")
+//   - containerName: The full container name (e.g., "buildx_buildkit_default0")
+//   - error: Non-nil if no builder found or Docker communication fails
 func detectBuildxBuilder(ctx context.Context) (string, string, error) {
 	dockerCli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create Docker client: %w\n\nPlease install Docker Desktop or Docker Engine", err)
 	}
 	defer func() {
-		_ = dockerCli.Close()
+		if err := dockerCli.Close(); err != nil {
+			logging.Warn("Failed to close Docker client: %v", err)
+		}
 	}()
 
 	_, err = dockerCli.Ping(ctx)
@@ -368,6 +391,10 @@ func (b *BuildKitBuilder) applyProvisioner(state llb.State, prov builder.Provisi
 		return b.applyFileProvisioner(state, prov)
 	case "ansible":
 		return b.applyAnsibleProvisioner(state, prov)
+	case "script":
+		return b.applyScriptProvisioner(state, prov)
+	case "powershell":
+		return b.applyPowerShellProvisioner(state, prov)
 	default:
 		logging.Warn("Unsupported provisioner type: %s", prov.Type)
 		return state, nil
@@ -463,6 +490,64 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 	if prov.Mode != "" {
 		state = state.Run(
 			llb.Shlexf("chmod %s %s", prov.Mode, prov.Destination),
+		).Root()
+	}
+
+	return state, nil
+}
+
+// applyScriptProvisioner applies script files to LLB state.
+func (b *BuildKitBuilder) applyScriptProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	if len(prov.Scripts) == 0 {
+		return state, nil
+	}
+
+	for _, script := range prov.Scripts {
+		scriptPath, err := b.makeRelativePath(script)
+		if err != nil {
+			return state, fmt.Errorf("failed to resolve script path: %w", err)
+		}
+
+		destPath := fmt.Sprintf("/tmp/%s", filepath.Base(script))
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				scriptPath,
+				destPath,
+			),
+		)
+
+		state = state.Run(
+			llb.Shlexf("chmod +x %s && %s", destPath, destPath),
+		).Root()
+	}
+
+	return state, nil
+}
+
+// applyPowerShellProvisioner applies PowerShell scripts to LLB state.
+func (b *BuildKitBuilder) applyPowerShellProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	if len(prov.PSScripts) == 0 {
+		return state, nil
+	}
+
+	for _, script := range prov.PSScripts {
+		scriptPath, err := b.makeRelativePath(script)
+		if err != nil {
+			return state, fmt.Errorf("failed to resolve PowerShell script path: %w", err)
+		}
+
+		destPath := fmt.Sprintf("/tmp/%s", filepath.Base(script))
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				scriptPath,
+				destPath,
+			),
+		)
+
+		state = state.Run(
+			llb.Shlexf("pwsh -ExecutionPolicy Bypass -File %s", destPath),
 		).Root()
 	}
 
@@ -699,7 +784,9 @@ func (b *BuildKitBuilder) loadAndTagImage(ctx context.Context, imageTarPath, ima
 		return fmt.Errorf("failed to open image tar: %w", err)
 	}
 	defer func() {
-		_ = imageFile.Close()
+		if err := imageFile.Close(); err != nil {
+			logging.Warn("Failed to close image file: %v", err)
+		}
 	}()
 
 	resp, err := b.dockerClient.ImageLoad(ctx, imageFile)
@@ -707,7 +794,9 @@ func (b *BuildKitBuilder) loadAndTagImage(ctx context.Context, imageTarPath, ima
 		return fmt.Errorf("failed to load image into Docker: %w", err)
 	}
 	defer func() {
-		_ = resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			logging.Warn("Failed to close response body: %v", err)
+		}
 	}()
 
 	buf := new(strings.Builder)
@@ -744,44 +833,11 @@ func extractArchFromPlatform(platform string) string {
 
 // calculateBuildContext finds the common parent directory of all files referenced in the config.
 func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, error) {
-	var paths []string
-
 	pv := templates.NewPathValidator()
 
-	for _, prov := range cfg.Provisioners {
-		switch prov.Type {
-		case "ansible":
-			if prov.PlaybookPath != "" {
-				expanded, err := pv.ExpandPath(prov.PlaybookPath)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand playbook path %s: %w", prov.PlaybookPath, err)
-				}
-				paths = append(paths, expanded)
-			}
-			if prov.GalaxyFile != "" {
-				expanded, err := pv.ExpandPath(prov.GalaxyFile)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand galaxy file path %s: %w", prov.GalaxyFile, err)
-				}
-				paths = append(paths, expanded)
-			}
-		case "file":
-			if prov.Source != "" {
-				expanded, err := pv.ExpandPath(prov.Source)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand file source path %s: %w", prov.Source, err)
-				}
-				paths = append(paths, expanded)
-			}
-		case "script":
-			for _, script := range prov.Scripts {
-				expanded, err := pv.ExpandPath(script)
-				if err != nil {
-					return "", fmt.Errorf("failed to expand script path %s: %w", script, err)
-				}
-				paths = append(paths, expanded)
-			}
-		}
+	paths, err := b.collectProvisionerPaths(cfg.Provisioners, pv)
+	if err != nil {
+		return "", err
 	}
 
 	if len(paths) == 0 {
@@ -795,6 +851,82 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 
 	logging.Info("Calculated build context from %d file(s): %s", len(paths), commonParent)
 	return commonParent, nil
+}
+
+// collectProvisionerPaths extracts all file paths from provisioners.
+func (b *BuildKitBuilder) collectProvisionerPaths(provisioners []builder.Provisioner, pv *templates.PathValidator) ([]string, error) {
+	var paths []string
+
+	for _, prov := range provisioners {
+		provPaths, err := b.getProvisionerPaths(prov, pv)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, provPaths...)
+	}
+
+	return paths, nil
+}
+
+// getProvisionerPaths returns all file paths for a single provisioner.
+func (b *BuildKitBuilder) getProvisionerPaths(prov builder.Provisioner, pv *templates.PathValidator) ([]string, error) {
+	switch prov.Type {
+	case "ansible":
+		return b.getAnsiblePaths(prov, pv)
+	case "file":
+		return b.getFilePaths(prov, pv)
+	case "script":
+		return expandPathList(prov.Scripts, pv, "script")
+	case "powershell":
+		return expandPathList(prov.PSScripts, pv, "PowerShell script")
+	default:
+		return nil, nil
+	}
+}
+
+// getAnsiblePaths returns paths for ansible provisioner.
+func (b *BuildKitBuilder) getAnsiblePaths(prov builder.Provisioner, pv *templates.PathValidator) ([]string, error) {
+	var paths []string
+	if prov.PlaybookPath != "" {
+		expanded, err := pv.ExpandPath(prov.PlaybookPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand playbook path %s: %w", prov.PlaybookPath, err)
+		}
+		paths = append(paths, expanded)
+	}
+	if prov.GalaxyFile != "" {
+		expanded, err := pv.ExpandPath(prov.GalaxyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand galaxy file path %s: %w", prov.GalaxyFile, err)
+		}
+		paths = append(paths, expanded)
+	}
+	return paths, nil
+}
+
+// getFilePaths returns paths for file provisioner.
+func (b *BuildKitBuilder) getFilePaths(prov builder.Provisioner, pv *templates.PathValidator) ([]string, error) {
+	if prov.Source == "" {
+		return nil, nil
+	}
+	expanded, err := pv.ExpandPath(prov.Source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand file source path %s: %w", prov.Source, err)
+	}
+	return []string{expanded}, nil
+}
+
+// expandPathList expands a list of paths using the path validator.
+func expandPathList(scripts []string, pv *templates.PathValidator, pathType string) ([]string, error) {
+	var paths []string
+	for _, script := range scripts {
+		expanded, err := pv.ExpandPath(script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand %s path %s: %w", pathType, script, err)
+		}
+		paths = append(paths, expanded)
+	}
+	return paths, nil
 }
 
 // findCommonParent finds the common parent directory of two paths
@@ -943,7 +1075,15 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 	}, nil
 }
 
-// fixedWriteCloser returns a WriteCloser that exports to a file
+// fixedWriteCloser returns a factory function for creating file-based WriteClosers.
+// This is used by BuildKit's solve options for exporting build outputs to files.
+//
+// The returned function ignores the metadata map parameter and creates a new file
+// at the specified path. The caller is responsible for closing the returned
+// WriteCloser to ensure the file is properly flushed and closed.
+//
+// Resource Management: The created file handle must be closed by the caller.
+// BuildKit typically handles this automatically when the solve operation completes.
 func fixedWriteCloser(filepath string) func(map[string]string) (io.WriteCloser, error) {
 	return func(m map[string]string) (io.WriteCloser, error) {
 		f, err := os.Create(filepath)
@@ -954,7 +1094,16 @@ func fixedWriteCloser(filepath string) func(map[string]string) (io.WriteCloser, 
 	}
 }
 
-// displayProgress displays build progress
+// displayProgress consumes BuildKit solve status updates and displays build progress.
+// This function runs in a goroutine during the build process.
+//
+// Concurrency: This function should be run as a goroutine. It reads from the
+// status channel until it's closed, then signals completion via the done channel.
+// The done channel MUST be closed by this function to signal build completion.
+//
+// Parameters:
+//   - ch: Channel of solve status updates from BuildKit (closed when build completes)
+//   - done: Channel to signal when progress display is complete (closed by this function)
 func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done chan<- struct{}) {
 	defer close(done)
 
@@ -1022,7 +1171,9 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		return "", fmt.Errorf("failed to push %s: %w", fullImageRef, err)
 	}
 	defer func() {
-		_ = resp.Close()
+		if err := resp.Close(); err != nil {
+			logging.Warn("Failed to close response: %v", err)
+		}
 	}()
 
 	buf := new(strings.Builder)
@@ -1352,7 +1503,7 @@ func (b *BuildKitBuilder) Close() error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("close errors: %v", errs)
+		return stderrors.Join(errs...)
 	}
 
 	return nil

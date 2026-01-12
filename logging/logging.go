@@ -194,23 +194,33 @@ func (l *CustomLogger) Debug(format string, args ...interface{}) {
 	l.log(DebugLevel, format, args...)
 }
 
-// Error logs an error message.
+// Error logs an error message. It accepts either an error, a format string,
+// or any other value as the first argument.
 func (l *CustomLogger) Error(firstArg interface{}, args ...interface{}) {
-	var format string
 	switch v := firstArg.(type) {
 	case error:
 		if len(args) == 0 {
-			format = v.Error()
+			l.log(ErrorLevel, "%s", v.Error())
 		} else {
-			format = fmt.Sprintf(v.Error(), args...)
+			l.log(ErrorLevel, v.Error(), args...)
 		}
 	case string:
-		format = v
+		l.log(ErrorLevel, v, args...)
 	default:
-		format = fmt.Sprintf("%v", v)
+		l.log(ErrorLevel, "%v", v)
 	}
+}
 
+// Errorf logs a formatted error message with type-safe format string.
+func (l *CustomLogger) Errorf(format string, args ...interface{}) {
 	l.log(ErrorLevel, format, args...)
+}
+
+// ErrorErr logs an error value directly without formatting.
+func (l *CustomLogger) ErrorErr(err error) {
+	if err != nil {
+		l.log(ErrorLevel, "%s", err.Error())
+	}
 }
 
 // DetermineLogLevel converts a string to slog.Level
@@ -311,7 +321,8 @@ func Warn(message string, args ...interface{}) {
 	logGlobal(WarnLevel, message, args...)
 }
 
-// Error logs an error message using the global logger.
+// Error logs an error message using the global logger. It accepts either an error,
+// a format string, or any other value as the first argument.
 func Error(firstArg interface{}, args ...interface{}) {
 	if err := ensureLogger(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
@@ -321,6 +332,30 @@ func Error(firstArg interface{}, args ...interface{}) {
 	loggerMu.RLock()
 	defer loggerMu.RUnlock()
 	logger.Error(firstArg, args...)
+}
+
+// Errorf logs a formatted error message using the global logger.
+func Errorf(format string, args ...interface{}) {
+	if err := ensureLogger(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		return
+	}
+
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
+	logger.Errorf(format, args...)
+}
+
+// ErrorErr logs an error value using the global logger.
+func ErrorErr(err error) {
+	if initErr := ensureLogger(); initErr != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", initErr)
+		return
+	}
+
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
+	logger.ErrorErr(err)
 }
 
 // Debug logs a debug message using the global logger.
@@ -419,9 +454,20 @@ func DebugContext(ctx context.Context, message string, args ...interface{}) {
 	FromContext(ctx).Debug(message, args...)
 }
 
-// ErrorContext logs an error message using the logger from context.
+// ErrorContext logs an error message using the logger from context. It accepts either
+// an error, a format string, or any other value as the first argument.
 func ErrorContext(ctx context.Context, firstArg interface{}, args ...interface{}) {
 	FromContext(ctx).Error(firstArg, args...)
+}
+
+// ErrorfContext logs a formatted error message using the logger from context.
+func ErrorfContext(ctx context.Context, format string, args ...interface{}) {
+	FromContext(ctx).Errorf(format, args...)
+}
+
+// ErrorErrContext logs an error value using the logger from context.
+func ErrorErrContext(ctx context.Context, err error) {
+	FromContext(ctx).ErrorErr(err)
 }
 
 // OutputContext sends data to stdout using the logger from context.

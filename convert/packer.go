@@ -20,6 +20,45 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+// Package convert provides utilities for converting Packer HCL templates to Warpgate YAML format.
+//
+// This package enables migration from HashiCorp Packer workflows to Warpgate by parsing
+// Packer HCL configuration files (*.pkr.hcl) and generating equivalent Warpgate YAML
+// configurations.
+//
+// # Supported Packer Features
+//
+// The converter handles the following Packer constructs:
+//   - Source blocks (docker, amazon-ebs)
+//   - Build blocks with provisioners and post-processors
+//   - Variable definitions and references
+//   - Shell, file, and Ansible provisioners
+//   - Docker and manifest post-processors
+//
+// # Usage
+//
+//	converter, err := convert.NewPackerConverter(convert.PackerConverterOptions{
+//	    TemplateDir: "/path/to/packer/template",
+//	    Author:      "Your Name",
+//	})
+//	if err != nil {
+//	    return err
+//	}
+//
+//	config, err := converter.Convert()
+//	if err != nil {
+//	    return err
+//	}
+//
+// # Limitations
+//
+// Some Packer features are not directly convertible:
+//   - Complex HCL expressions and functions
+//   - Dynamic blocks and for_each loops
+//   - External data sources
+//   - Some provisioner-specific options
+//
+// The converter makes best-effort conversions and logs warnings for unsupported features.
 package convert
 
 import (
@@ -34,23 +73,45 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
 
-// PackerConverterOptions contains options for the Packer converter
+// PackerConverterOptions contains options for the Packer converter.
+// These options control how the conversion is performed and what metadata
+// is included in the generated Warpgate configuration.
 type PackerConverterOptions struct {
+	// TemplateDir is the path to the directory containing Packer HCL files.
+	// This directory should contain docker.pkr.hcl, ami.pkr.hcl, or similar files.
 	TemplateDir string
-	Author      string
-	License     string
-	Version     string
-	BaseImage   string
-	IncludeAMI  bool
+
+	// Author is the author name to include in the generated config metadata.
+	Author string
+
+	// License is the license identifier (e.g., "MIT", "Apache-2.0") for the config.
+	License string
+
+	// Version is the semantic version for the generated config.
+	Version string
+
+	// BaseImage overrides the base image extracted from Packer source blocks.
+	// If empty, the base image is extracted from the Packer configuration.
+	BaseImage string
+
+	// IncludeAMI indicates whether to include AMI target configuration.
+	// Set to true if the Packer template includes amazon-ebs sources.
+	IncludeAMI bool
 }
 
-// PackerConverter converts Packer HCL templates to Warpgate YAML
+// PackerConverter converts Packer HCL templates to Warpgate YAML format.
+// It parses Packer configuration files and generates equivalent Warpgate
+// builder.Config structures that can be serialized to YAML.
 type PackerConverter struct {
 	options      PackerConverterOptions
 	globalConfig *config.Config
 }
 
-// NewPackerConverter creates a new Packer converter
+// NewPackerConverter creates a new Packer converter with the given options.
+// It loads the global Warpgate configuration to apply default values for
+// fields like version and license if not specified in options.
+//
+// Returns an error if the global configuration cannot be loaded.
 func NewPackerConverter(opts PackerConverterOptions) (*PackerConverter, error) {
 	// Load global config
 	globalCfg, err := config.Load()

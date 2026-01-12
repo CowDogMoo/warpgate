@@ -483,6 +483,29 @@
         "volume_size": {
           "type": "integer",
           "description": "VolumeSize is the root volume size in GB for the AMI"
+        },
+        "instance_profile_name": {
+          "type": "string",
+          "description": "InstanceProfileName is the IAM instance profile for the EC2 build instance\nThe instance profile grants permissions for SSM, S3, etc."
+        },
+        "fast_launch_enabled": {
+          "type": "boolean",
+          "description": "FastLaunchEnabled enables EC2 Fast Launch for Windows AMIs\nWhen enabled, pre-provisioned snapshots are created for faster instance launches"
+        },
+        "fast_launch_max_parallel_launches": {
+          "type": "integer",
+          "description": "FastLaunchMaxParallelLaunches is the maximum number of parallel instances to launch\nfor creating pre-provisioned snapshots (default: 6, max: 40 per region across all AMIs)"
+        },
+        "fast_launch_target_resource_count": {
+          "type": "integer",
+          "description": "FastLaunchTargetResourceCount is the number of pre-provisioned snapshots to maintain\nfor faster Windows instance launches (default: 5)"
+        },
+        "security_group_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "SecurityGroupIDs specifies the security groups for the build instance\nIf not specified, uses the default security group for the VPC"
         }
       },
       "additionalProperties": false,

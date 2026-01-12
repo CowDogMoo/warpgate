@@ -251,25 +251,32 @@ provisioners:
 
 ### PowerShell Provisioner
 
-Run PowerShell scripts (for Windows images):
-
-**Inline commands:**
+Run PowerShell scripts (for Windows images or containers with PowerShell Core):
 
 ```yaml
 provisioners:
-  - type: pwsh
-    inline:
-      - Write-Host "Configuring..."
-      - Install-WindowsFeature -Name Web-Server
+  - type: powershell
+    ps_scripts:
+      - scripts/configure.ps1
+      - scripts/install-features.ps1
 ```
 
-**Script file:**
+**Multiple scripts:**
 
 ```yaml
 provisioners:
-  - type: pwsh
-    script_path: scripts/configure.ps1
+  - type: powershell
+    ps_scripts:
+      - scripts/setup.ps1
+      - scripts/configure.ps1
+      - scripts/finalize.ps1
 ```
+
+**Notes:**
+
+- Scripts execute via `pwsh` (PowerShell Core) in containers
+- For AMI builds, uses EC2 Image Builder's `ExecutePowerShell` action
+- Scripts run in order specified
 
 ### Provisioner Order
 
@@ -327,7 +334,7 @@ targets:
 
 ### AMI Target
 
-Build AWS AMIs:
+Build AWS AMIs using EC2 Image Builder service:
 
 ```yaml
 targets:
@@ -335,15 +342,115 @@ targets:
     region: us-west-2
     instance_type: t3.medium
     volume_size: 20
-    ami_name: "my-image-${VERSION}"
+    ami_name: "my-image-{{imagebuilder:buildDate}}"
+    ami_description: "Custom AMI built with warpgate"
+    ami_tags:
+      Name: my-image
+      ManagedBy: warpgate
+      Environment: production
 ```
 
-**Options:**
+**How it works:**
 
-- `region` - AWS region (or use AWS_REGION env var)
-- `instance_type` - EC2 instance type for build
+Warpgate uses AWS EC2 Image Builder as its backend for AMI builds:
+
+1. Creates Image Builder components from your provisioners
+2. Creates an Image Builder pipeline
+3. Launches an EC2 instance
+4. Executes provisioners (shell scripts, PowerShell scripts, Ansible playbooks)
+5. Creates and tags the AMI
+6. Cleans up resources
+
+**Prerequisites:**
+
+- AWS credentials configured (see [CLI Configuration](cli-configuration.md))
+- IAM instance profile with `EC2InstanceProfileForImageBuilder` policy
+- Sufficient EC2 and Image Builder permissions
+
+**Required Options:**
+
+- `region` - AWS region for AMI creation (or use `AWS_REGION` env var)
+- `instance_type` - EC2 instance type for build (default: `t3.medium`)
 - `volume_size` - Root volume size in GB
-- `ami_name` - Name for resulting AMI (variables supported)
+- `ami_name` - Name for resulting AMI
+
+**Optional:**
+
+- `ami_description` - Description for the AMI
+- `ami_tags` - Map of tags to apply to the AMI (key: value pairs)
+- `subnet_id` - VPC subnet ID for the build instance
+- `instance_profile_name` - IAM instance profile (overrides config file setting)
+- `security_group_ids` - List of security group IDs for the build instance
+- `device_name` - Root device name
+  (default: `/dev/sda1` for Linux, `/dev/xvda` for Windows)
+- `volume_type` - EBS volume type: `gp2`, `gp3`, `io1`, `io2` (default: `gp3`)
+
+**AMI naming:**
+
+Use ImageBuilder macros for dynamic AMI names:
+
+- `{{imagebuilder:buildDate}}` - Timestamp (e.g., `2026-01-11T22-23-07.730Z`)
+
+```yaml
+ami_name: "my-app-{{imagebuilder:buildDate}}"
+# Results in: my-app-2026-01-11T22-23-07.730Z
+```
+
+You can also use template variables:
+
+```yaml
+variables:
+  VERSION: "1.0.0"
+
+targets:
+  - type: ami
+    ami_name: "my-app-v${VERSION}-{{imagebuilder:buildDate}}"
+# Results in: my-app-v1.0.0-2026-01-11T22-23-07.730Z
+```
+
+**Build time:**
+
+- Linux AMIs: 10-20 minutes
+- Windows AMIs: 30-60 minutes (depends on Windows Updates and software)
+
+### Windows AMI with Fast Launch
+
+For Windows AMIs, enable Fast Launch to reduce instance launch times by up to 65%:
+
+```yaml
+targets:
+  - type: ami
+    region: us-west-2
+    instance_type: t3.large
+    volume_size: 50
+    ami_name: "windows-server-${VERSION}"
+    # Enable Windows Fast Launch for faster instance starts
+    fast_launch_enabled: true
+    fast_launch_max_parallel_launches: 6
+    fast_launch_target_resource_count: 5
+```
+
+**Windows Fast Launch Options:**
+
+- `fast_launch_enabled` - Enable EC2 Fast Launch (creates pre-provisioned
+  snapshots)
+- `fast_launch_max_parallel_launches` - Max parallel instances for snapshot
+  creation (default: 6, max: 40/region)
+- `fast_launch_target_resource_count` - Number of pre-provisioned snapshots
+  to maintain (default: 5)
+
+**How Fast Launch Works:**
+
+When enabled, EC2 creates pre-provisioned snapshots after the AMI is built.
+When you launch instances from the AMI, they start from these pre-provisioned
+snapshots instead of going through the full Windows initialization process.
+This reduces launch times from ~10 minutes to ~3 minutes.
+
+**Notes:**
+
+- Fast Launch incurs additional costs for snapshot storage and temporary t3 instances
+- The default quota is 40 max parallel launches per region across all AMIs
+- Only applicable to Windows AMIs (Linux AMIs already launch quickly)
 
 ### Multiple Targets
 

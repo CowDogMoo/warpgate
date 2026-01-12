@@ -58,10 +58,16 @@ func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner 
 
 	// Create the component in AWS
 	componentName := fmt.Sprintf("%s-%s", name, provisioner.Type)
+
+	platform := types.PlatformLinux
+	if provisioner.Type == "powershell" {
+		platform = types.PlatformWindows
+	}
+
 	input := &imagebuilder.CreateComponentInput{
 		Name:            aws.String(componentName),
 		SemanticVersion: aws.String(version),
-		Platform:        types.PlatformLinux,
+		Platform:        platform,
 		Data:            aws.String(document),
 		Description:     aws.String(fmt.Sprintf("Component for %s provisioner", provisioner.Type)),
 		Tags: map[string]string{
@@ -96,6 +102,8 @@ func (g *ComponentGenerator) createComponentDocument(provisioner builder.Provisi
 		return g.createScriptComponent(provisioner)
 	case "ansible":
 		return g.createAnsibleComponent(provisioner)
+	case "powershell":
+		return g.createPowerShellComponent(provisioner)
 	default:
 		return "", fmt.Errorf("unsupported provisioner type: %s", provisioner.Type)
 	}
@@ -267,6 +275,152 @@ func (g *ComponentGenerator) createAnsibleComponent(provisioner builder.Provisio
 	}
 
 	return marshalComponentDocument(doc)
+}
+
+// createPowerShellComponent creates a component document for PowerShell provisioner
+func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provisioner) (string, error) {
+	if len(provisioner.PSScripts) == 0 {
+		return "", fmt.Errorf("powershell provisioner has no scripts")
+	}
+
+	var scriptContents []string
+	for _, scriptPath := range provisioner.PSScripts {
+		content, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to read PowerShell script %s: %w", scriptPath, err)
+		}
+
+		// Process the script content for Windows compatibility
+		scriptContent := processPowerShellScript(content)
+
+		// Validate basic PowerShell syntax
+		if err := validatePowerShellSyntax(scriptContent); err != nil {
+			return "", fmt.Errorf("PowerShell script %s has syntax issues: %w", scriptPath, err)
+		}
+
+		scriptContents = append(scriptContents, scriptContent)
+	}
+
+	// Build the component steps
+	steps := []map[string]interface{}{}
+
+	// Add error handling wrapper for better debugging
+	for i, script := range scriptContents {
+		stepName := fmt.Sprintf("ExecutePowerShellScript_%d", i)
+
+		// Wrap script with error handling for better diagnostics
+		wrappedScript := wrapPowerShellWithErrorHandling(script)
+
+		steps = append(steps, map[string]interface{}{
+			"name":   stepName,
+			"action": "ExecutePowerShell",
+			"inputs": map[string]interface{}{
+				"commands": []string{wrappedScript},
+			},
+		})
+
+		// Add optional reboot step if script requests it
+		if needsReboot(script) {
+			steps = append(steps, map[string]interface{}{
+				"name":   fmt.Sprintf("RebootAfterScript_%d", i),
+				"action": "Reboot",
+			})
+		}
+	}
+
+	doc := map[string]interface{}{
+		"schemaVersion": 1.0,
+		"name":          "PowerShellProvisioner",
+		"description":   "PowerShell provisioner component",
+		"phases": []map[string]interface{}{
+			{
+				"name":  "build",
+				"steps": steps,
+			},
+		},
+	}
+
+	return marshalComponentDocument(doc)
+}
+
+// processPowerShellScript handles encoding and formatting for Windows compatibility
+func processPowerShellScript(content []byte) string {
+	// Remove UTF-8 BOM if present (Windows sometimes adds this)
+	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
+		content = content[3:]
+	}
+
+	// Convert Windows line endings to Unix and back to ensure consistency
+	script := string(content)
+	script = strings.ReplaceAll(script, "\r\n", "\n")
+
+	return script
+}
+
+// validatePowerShellSyntax performs basic PowerShell syntax validation
+func validatePowerShellSyntax(script string) error {
+	if err := checkCharacterBalance(script, '{', '}', "braces"); err != nil {
+		return err
+	}
+	if err := checkCharacterBalance(script, '(', ')', "parentheses"); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkCharacterBalance verifies that opening and closing characters are balanced
+func checkCharacterBalance(script string, open, close rune, name string) error {
+	count := 0
+	for _, char := range script {
+		switch char {
+		case open:
+			count++
+		case close:
+			count--
+			if count < 0 {
+				return fmt.Errorf("unbalanced %s: unexpected '%c'", name, close)
+			}
+		}
+	}
+	if count != 0 {
+		return fmt.Errorf("unbalanced %s: %d unclosed '%c'", name, count, open)
+	}
+	return nil
+}
+
+// wrapPowerShellWithErrorHandling adds error handling wrapper for better diagnostics
+func wrapPowerShellWithErrorHandling(script string) string {
+	// Add error preference and try-catch wrapper for better error reporting
+	wrapper := `$ErrorActionPreference = 'Stop'
+$VerbosePreference = 'Continue'
+
+try {
+%s
+} catch {
+    Write-Error "Script failed with error: $_"
+    Write-Error "Stack trace: $($_.ScriptStackTrace)"
+    exit 1
+}`
+	return fmt.Sprintf(wrapper, script)
+}
+
+// needsReboot checks if the script contains reboot indicators
+func needsReboot(script string) bool {
+	rebootIndicators := []string{
+		"Restart-Computer",
+		"shutdown /r",
+		"shutdown -r",
+		"#REQUIRES_REBOOT",
+		"# REQUIRES_REBOOT",
+	}
+
+	scriptLower := strings.ToLower(script)
+	for _, indicator := range rebootIndicators {
+		if strings.Contains(scriptLower, strings.ToLower(indicator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // marshalComponentDocument converts a component document to YAML string
