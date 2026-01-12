@@ -68,22 +68,17 @@ func NewImageBuilderWithOptions(ctx context.Context, clientConfig ClientConfig, 
 
 // NewImageBuilderWithAllOptions creates a new AMI builder with all options including monitoring
 func NewImageBuilderWithAllOptions(ctx context.Context, clientConfig ClientConfig, forceRecreate bool, monitorConfig MonitorConfig) (*ImageBuilder, error) {
-	// Load global config
 	globalCfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}
 
-	// Create AWS clients
 	clients, err := NewAWSClients(ctx, clientConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AWS clients: %w", err)
 	}
 
-	// Generate unique build ID
 	buildID := generateBuildID()
-
-	// Create pipeline manager with monitor config
 	pipelineManager := NewPipelineManagerWithMonitor(clients, monitorConfig)
 
 	return &ImageBuilder{
@@ -132,7 +127,6 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 	startTime := time.Now()
 	logging.Info("Starting AMI build: %s (version: %s)", config.Name, config.Version)
 
-	// Setup and validate configuration
 	amiTarget, err := b.setupBuild(config)
 	if err != nil {
 		return nil, err
@@ -149,7 +143,6 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 	// Track created resources for cleanup on failure
 	createdResources := &CreatedResources{}
 
-	// Create AWS Image Builder resources
 	resources, err := b.createBuildResources(ctx, config, amiTarget, createdResources)
 	if err != nil {
 		// Clean up any resources that were created before the failure
@@ -157,7 +150,6 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 		return nil, err
 	}
 
-	// Execute the build pipeline
 	amiID, err := b.executePipeline(ctx, resources, config.Name)
 	if err != nil {
 		// Clean up resources on pipeline failure
@@ -213,31 +205,26 @@ func (b *ImageBuilder) setupBuild(config builder.Config) (*builder.Target, error
 
 // createBuildResources creates all necessary AWS resources for the build
 func (b *ImageBuilder) createBuildResources(ctx context.Context, config builder.Config, amiTarget *builder.Target, created *CreatedResources) (*buildResources, error) {
-	// Create components from provisioners
 	componentARNs, err := b.createComponents(ctx, config, created)
 	if err != nil {
 		return nil, WrapWithRemediation(err, "failed to create components")
 	}
 
-	// Create or get infrastructure configuration
 	infraARN, err := b.getOrCreateInfrastructureConfig(ctx, config.Name, amiTarget, created)
 	if err != nil {
 		return nil, WrapWithRemediation(err, "failed to create infrastructure config")
 	}
 
-	// Create or get distribution configuration
 	distARN, err := b.getOrCreateDistributionConfig(ctx, config.Name, amiTarget, created)
 	if err != nil {
 		return nil, WrapWithRemediation(err, "failed to create distribution config")
 	}
 
-	// Create or get image recipe
 	recipeARN, err := b.getOrCreateImageRecipe(ctx, config, componentARNs, amiTarget, created)
 	if err != nil {
 		return nil, WrapWithRemediation(err, "failed to create image recipe")
 	}
 
-	// Create or get pipeline
 	pipelineARN, err := b.getOrCreatePipeline(ctx, config, recipeARN, infraARN, distARN, created)
 	if err != nil {
 		return nil, WrapWithRemediation(err, "failed to create pipeline")
@@ -254,19 +241,16 @@ func (b *ImageBuilder) createBuildResources(ctx context.Context, config builder.
 
 // executePipeline runs the Image Builder pipeline and waits for completion
 func (b *ImageBuilder) executePipeline(ctx context.Context, resources *buildResources, imageName string) (string, error) {
-	// Start pipeline execution
 	imageARN, err := b.pipelineManager.StartPipeline(ctx, resources.PipelineARN)
 	if err != nil {
 		return "", fmt.Errorf("failed to start pipeline: %w", err)
 	}
 
-	// Wait for pipeline completion with monitoring if enabled
 	image, err := b.pipelineManager.WaitForPipelineCompletionWithImageName(ctx, *imageARN, 30*time.Second, imageName)
 	if err != nil {
 		return "", fmt.Errorf("pipeline execution failed: %w", err)
 	}
 
-	// Extract AMI ID from image output
 	amiID, err := b.extractAMIID(image)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract AMI ID: %w", err)

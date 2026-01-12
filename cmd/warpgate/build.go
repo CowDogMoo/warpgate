@@ -116,7 +116,6 @@ Examples:
 		},
 	}
 
-	// Build command flags - bind to local opts
 	buildCmd.Flags().StringVar(&opts.template, "template", "", "Use named template from registry")
 	buildCmd.Flags().StringVar(&opts.fromGit, "from-git", "", "Load template from git URL")
 	buildCmd.Flags().StringVar(&opts.targetType, "target", "", "Override target type (container, ami)")
@@ -235,7 +234,6 @@ func executeAMIBuildTarget(ctx context.Context, service *builder.BuildService, c
 	// Determine regions to build in
 	regions := determineTargetRegions(cfg, opts)
 
-	// Handle multi-region builds
 	if len(regions) > 1 {
 		return executeMultiRegionAMIBuild(ctx, service, cfg, buildConfig, builderOpts, opts, regions)
 	}
@@ -283,7 +281,6 @@ func executeAMIBuildTarget(ctx context.Context, service *builder.BuildService, c
 
 	results := []builder.BuildResult{*result}
 
-	// Handle cross-region copy if specified
 	if len(opts.copyToRegions) > 0 {
 		copyResults, err := copyAMIToRegions(ctx, cfg, result.AMIID, region, opts.copyToRegions)
 		if err != nil {
@@ -362,7 +359,6 @@ func executeSequentialRegionBuilds(ctx context.Context, service *builder.BuildSe
 			continue
 		}
 
-		// Update builder options for this region
 		regionOpts := builderOpts
 		regionOpts.Region = region
 
@@ -434,7 +430,6 @@ func executeParallelRegionBuilds(ctx context.Context, service *builder.BuildServ
 				return nil
 			}
 
-			// Update builder options for this region
 			regionOpts := builderOpts
 			regionOpts.Region = region
 
@@ -482,7 +477,6 @@ func copyAMIToRegions(ctx context.Context, cfg *config.Config, amiID, sourceRegi
 
 		logging.InfoContext(ctx, "Copying AMI to region: %s", targetRegion)
 
-		// Create client for target region
 		targetConfig := ami.ClientConfig{
 			Region:          targetRegion,
 			Profile:         cfg.AWS.Profile,

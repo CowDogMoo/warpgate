@@ -71,7 +71,6 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 	for i, req := range requests {
 		i, req := i, req // Capture loop variables
 		g.Go(func() error {
-			// Check context before starting work
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -113,7 +112,6 @@ func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildR
 		i := i // Capture loop index
 		result := results[i]
 		g.Go(func() error {
-			// Check context before starting work
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -125,7 +123,6 @@ func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildR
 				return errors.Wrap("push image", result.ImageRef, err)
 			}
 
-			// Update the digest in the result if we got one from the push
 			if digest != "" {
 				results[i].Digest = digest
 				logging.Info("Successfully pushed %s with digest %s", result.ImageRef, digest)

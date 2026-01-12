@@ -126,7 +126,6 @@ func createEvalContext() *hcl.EvalContext {
 	return &hcl.EvalContext{
 		Variables: map[string]cty.Value{
 			"var": cty.ObjectVal(map[string]cty.Value{}),
-			// Add path object with root and cwd properties
 			"path": cty.ObjectVal(map[string]cty.Value{
 				"root": cty.StringVal("${TEMPLATE_DIR}"),
 				"cwd":  cty.StringVal("${TEMPLATE_DIR}"),
@@ -165,7 +164,6 @@ func (p *HCLParser) ParseVariablesFile(path string) error {
 				Name: varName,
 			}
 
-			// Extract default value
 			if attr, exists := block.Body.Attributes["default"]; exists {
 				val, diags := attr.Expr.Value(p.evalCtx)
 				if !diags.HasErrors() && val.Type() == cty.String {
@@ -173,7 +171,6 @@ func (p *HCLParser) ParseVariablesFile(path string) error {
 				}
 			}
 
-			// Extract type
 			if attr, exists := block.Body.Attributes["type"]; exists {
 				// Type is typically an expression like `string`, `number`, etc.
 				variable.Type = string(attr.Expr.Range().SliceBytes(content))
@@ -183,7 +180,6 @@ func (p *HCLParser) ParseVariablesFile(path string) error {
 		}
 	}
 
-	// Update eval context with parsed variables
 	varValues := make(map[string]cty.Value)
 	for name, v := range p.variables {
 		if v.Default != "" {
@@ -234,11 +230,8 @@ func (p *HCLParser) ParseBuildFile(path string) ([]PackerBuild, error) {
 func (p *HCLParser) parseBuildBlock(block *hclsyntax.Block, content []byte) (PackerBuild, error) {
 	build := PackerBuild{}
 
-	// Extract name and sources
 	p.extractBuildName(block, &build)
 	p.extractBuildSources(block, &build)
-
-	// Extract provisioners and post-processors
 	p.extractBuildBlocks(block, content, &build)
 
 	return build, nil
@@ -309,11 +302,9 @@ func (p *HCLParser) parseProvisionerBlock(block *hclsyntax.Block, content []byte
 		Type: block.Labels[0],
 	}
 
-	// Extract only/except conditionals using helper function
 	provisioner.Only = p.getStringListAttribute(block, "only")
 	provisioner.Except = p.getStringListAttribute(block, "except")
 
-	// Parse based on type
 	switch provisioner.Type {
 	case "shell":
 		p.parseShellProvisionerHCL(block, &provisioner)
@@ -368,7 +359,6 @@ func (p *HCLParser) parseAnsibleProvisionerHCL(block *hclsyntax.Block, provision
 	provisioner.AnsibleEnvVars = p.getStringListAttribute(block, "ansible_env_vars")
 	provisioner.User = p.getStringAttribute(block, "user")
 
-	// Extract use_proxy boolean
 	if attr, exists := block.Body.Attributes["use_proxy"]; exists {
 		val, diags := attr.Expr.Value(p.evalCtx)
 		if !diags.HasErrors() && val.Type() == cty.Bool {
@@ -387,15 +377,12 @@ func (p *HCLParser) parsePostProcessorBlock(block *hclsyntax.Block, content []by
 		Type: block.Labels[0],
 	}
 
-	// Extract only/except conditionals
 	postProc.Only = p.getStringListAttribute(block, "only")
 	postProc.Except = p.getStringListAttribute(block, "except")
 
-	// Extract fields based on type
 	switch postProc.Type {
 	case "manifest":
 		postProc.Output = p.getStringAttribute(block, "output")
-		// Extract strip_path boolean
 		if attr, exists := block.Body.Attributes["strip_path"]; exists {
 			val, diags := attr.Expr.Value(p.evalCtx)
 			if !diags.HasErrors() && val.Type() == cty.Bool {
@@ -405,7 +392,6 @@ func (p *HCLParser) parsePostProcessorBlock(block *hclsyntax.Block, content []by
 	case "docker-tag":
 		postProc.Repository = p.getStringAttribute(block, "repository")
 		postProc.Tags = p.getStringListAttribute(block, "tags")
-		// Extract force boolean
 		if attr, exists := block.Body.Attributes["force"]; exists {
 			val, diags := attr.Expr.Value(p.evalCtx)
 			if !diags.HasErrors() && val.Type() == cty.Bool {
@@ -502,13 +488,8 @@ func (p *HCLParser) parseDockerSourceBlock(block *hclsyntax.Block, content []byt
 		}
 	}
 
-	// Extract volumes map
 	source.Volumes = p.getMapAttribute(block, "volumes")
-
-	// Extract run_command array
 	source.RunCommand = p.getStringListAttribute(block, "run_command")
-
-	// Extract changes array
 	source.Changes = p.getStringListAttribute(block, "changes")
 
 	return source, nil
@@ -525,7 +506,6 @@ func (p *HCLParser) parseAMISourceBlock(block *hclsyntax.Block, content []byte) 
 	source.AMIName = p.getStringAttribute(block, "ami_name")
 	source.SubnetID = p.getStringAttribute(block, "subnet_id")
 
-	// Extract volume_size from launch_block_device_mappings
 	for _, nestedBlock := range block.Body.Blocks {
 		if nestedBlock.Type == "launch_block_device_mappings" {
 			if attr, exists := nestedBlock.Body.Attributes["volume_size"]; exists {
