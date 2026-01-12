@@ -24,6 +24,8 @@ package ami
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -33,6 +35,7 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
+	"golang.org/x/sync/errgroup"
 )
 
 // ImageBuilder implements the AMIBuilder interface
@@ -41,8 +44,12 @@ type ImageBuilder struct {
 	componentGen    *ComponentGenerator
 	pipelineManager *PipelineManager
 	operations      *AMIOperations
+	resourceManager *ResourceManager
 	config          ClientConfig
 	globalConfig    *config.Config
+	forceRecreate   bool
+	buildID         string // Unique identifier for this build
+	namingPrefix    string // Optional prefix for resource naming
 }
 
 // Verify that ImageBuilder implements builder.AMIBuilder at compile time
@@ -50,6 +57,11 @@ var _ builder.AMIBuilder = (*ImageBuilder)(nil)
 
 // NewImageBuilder creates a new AMI builder
 func NewImageBuilder(ctx context.Context, clientConfig ClientConfig) (*ImageBuilder, error) {
+	return NewImageBuilderWithOptions(ctx, clientConfig, false)
+}
+
+// NewImageBuilderWithOptions creates a new AMI builder with additional options
+func NewImageBuilderWithOptions(ctx context.Context, clientConfig ClientConfig, forceRecreate bool) (*ImageBuilder, error) {
 	// Load global config
 	globalCfg, err := config.Load()
 	if err != nil {
@@ -62,14 +74,41 @@ func NewImageBuilder(ctx context.Context, clientConfig ClientConfig) (*ImageBuil
 		return nil, fmt.Errorf("failed to create AWS clients: %w", err)
 	}
 
+	// Generate unique build ID
+	buildID := generateBuildID()
+
 	return &ImageBuilder{
 		clients:         clients,
 		componentGen:    NewComponentGenerator(clients),
 		pipelineManager: NewPipelineManager(clients),
 		operations:      NewAMIOperations(clients, globalCfg),
+		resourceManager: NewResourceManager(clients),
 		config:          clientConfig,
 		globalConfig:    globalCfg,
+		forceRecreate:   forceRecreate,
+		buildID:         buildID,
 	}, nil
+}
+
+// generateBuildID creates a unique identifier for this build
+func generateBuildID() string {
+	timestamp := time.Now().Format("20060102-150405")
+	randomBytes := make([]byte, 4)
+	if _, err := rand.Read(randomBytes); err != nil {
+		// Fallback to timestamp only if random fails
+		return timestamp
+	}
+	return fmt.Sprintf("%s-%s", timestamp, hex.EncodeToString(randomBytes))
+}
+
+// SetNamingPrefix sets a custom prefix for resource naming
+func (b *ImageBuilder) SetNamingPrefix(prefix string) {
+	b.namingPrefix = prefix
+}
+
+// GetBuildID returns the unique build identifier
+func (b *ImageBuilder) GetBuildID() string {
+	return b.buildID
 }
 
 // Build implements the Builder interface for AMI builds
@@ -83,15 +122,30 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 		return nil, err
 	}
 
+	// If force recreate is enabled, clean up existing resources first
+	if b.forceRecreate {
+		logging.Info("Force recreate enabled, cleaning up existing resources")
+		if err := b.resourceManager.CleanupResourcesForBuild(ctx, config.Name, true); err != nil {
+			logging.Warn("Force cleanup encountered errors (continuing): %v", err)
+		}
+	}
+
+	// Track created resources for cleanup on failure
+	createdResources := &CreatedResources{}
+
 	// Create AWS Image Builder resources
-	resources, err := b.createBuildResources(ctx, config, amiTarget)
+	resources, err := b.createBuildResources(ctx, config, amiTarget, createdResources)
 	if err != nil {
+		// Clean up any resources that were created before the failure
+		createdResources.Cleanup(ctx, b.resourceManager)
 		return nil, err
 	}
 
 	// Execute the build pipeline
 	amiID, err := b.executePipeline(ctx, resources)
 	if err != nil {
+		// Clean up resources on pipeline failure
+		createdResources.Cleanup(ctx, b.resourceManager)
 		return nil, err
 	}
 
@@ -142,48 +196,35 @@ func (b *ImageBuilder) setupBuild(config builder.Config) (*builder.Target, error
 }
 
 // createBuildResources creates all necessary AWS resources for the build
-func (b *ImageBuilder) createBuildResources(ctx context.Context, config builder.Config, amiTarget *builder.Target) (*buildResources, error) {
+func (b *ImageBuilder) createBuildResources(ctx context.Context, config builder.Config, amiTarget *builder.Target, created *CreatedResources) (*buildResources, error) {
 	// Create components from provisioners
-	componentARNs, err := b.createComponents(ctx, config)
+	componentARNs, err := b.createComponents(ctx, config, created)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create components: %w", err)
+		return nil, WrapWithRemediation(err, "failed to create components")
 	}
 
-	// Create infrastructure configuration
-	infraARN, err := b.createInfrastructureConfig(ctx, config.Name, amiTarget)
+	// Create or get infrastructure configuration
+	infraARN, err := b.getOrCreateInfrastructureConfig(ctx, config.Name, amiTarget, created)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create infrastructure config: %w", err)
+		return nil, WrapWithRemediation(err, "failed to create infrastructure config")
 	}
 
-	// Create distribution configuration
-	distARN, err := b.createDistributionConfig(ctx, config.Name, amiTarget)
+	// Create or get distribution configuration
+	distARN, err := b.getOrCreateDistributionConfig(ctx, config.Name, amiTarget, created)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create distribution config: %w", err)
+		return nil, WrapWithRemediation(err, "failed to create distribution config")
 	}
 
-	// Create image recipe
-	recipeARN, err := b.createImageRecipe(ctx, config, componentARNs, amiTarget)
+	// Create or get image recipe
+	recipeARN, err := b.getOrCreateImageRecipe(ctx, config, componentARNs, amiTarget, created)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create image recipe: %w", err)
+		return nil, WrapWithRemediation(err, "failed to create image recipe")
 	}
 
-	// Create pipeline
-	pipelineConfig := PipelineConfig{
-		Name:             fmt.Sprintf("%s-pipeline", config.Name),
-		Description:      fmt.Sprintf("Pipeline for %s", config.Name),
-		ImageRecipeARN:   recipeARN,
-		InfraConfigARN:   infraARN,
-		DistConfigARN:    distARN,
-		EnhancedMetadata: true,
-		Tags: map[string]string{
-			"warpgate:name":    config.Name,
-			"warpgate:version": config.Version,
-		},
-	}
-
-	pipelineARN, err := b.pipelineManager.CreatePipeline(ctx, pipelineConfig)
+	// Create or get pipeline
+	pipelineARN, err := b.getOrCreatePipeline(ctx, config, recipeARN, infraARN, distARN, created)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pipeline: %w", err)
+		return nil, WrapWithRemediation(err, "failed to create pipeline")
 	}
 
 	return &buildResources{
@@ -191,7 +232,7 @@ func (b *ImageBuilder) createBuildResources(ctx context.Context, config builder.
 		InfraARN:      infraARN,
 		DistARN:       distARN,
 		RecipeARN:     recipeARN,
-		PipelineARN:   *pipelineARN,
+		PipelineARN:   pipelineARN,
 	}, nil
 }
 
@@ -267,26 +308,78 @@ func (b *ImageBuilder) Close() error {
 	return nil
 }
 
-// createComponents creates Image Builder components from provisioners
-func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Config) ([]string, error) {
-	var componentARNs []string
-
-	for i, provisioner := range config.Provisioners {
-		logging.Info("Creating component: %s (index: %d)", provisioner.Type, i)
-
-		arn, err := b.componentGen.GenerateComponent(
-			ctx,
-			provisioner,
-			fmt.Sprintf("%s-%d", config.Name, i),
-			config.Version,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create component %d: %w", i, err)
-		}
-
-		componentARNs = append(componentARNs, *arn)
+// createComponents creates Image Builder components from provisioners in parallel using errgroup
+func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Config, created *CreatedResources) ([]string, error) {
+	numProvisioners := len(config.Provisioners)
+	if numProvisioners == 0 {
+		return nil, nil
 	}
 
+	logging.Info("Creating %d components in parallel", numProvisioners)
+
+	// Pre-allocate results slice - each goroutine writes to its own index (safe)
+	componentARNs := make([]string, numProvisioners)
+
+	// Use errgroup for cleaner goroutine management with automatic context cancellation
+	g, ctx := errgroup.WithContext(ctx)
+
+	// Create components in parallel
+	for i, provisioner := range config.Provisioners {
+		index := i
+		prov := provisioner
+
+		g.Go(func() error {
+			// Check context cancellation before starting work
+			if err := ctx.Err(); err != nil {
+				return fmt.Errorf("context cancelled before creating component %d: %w", index, err)
+			}
+
+			componentName := config.Name + "-" + fmt.Sprint(index)
+			logging.Info("Creating component: %s (index: %d)", prov.Type, index)
+
+			// Determine the version to use - try auto-incrementing if conflicts
+			version := config.Version
+			if b.forceRecreate {
+				// With force, try to get the next available version
+				nextVersion, err := b.resourceManager.GetNextComponentVersion(ctx, componentName+"-"+prov.Type, config.Version)
+				if err == nil && nextVersion != config.Version {
+					logging.Info("Component version conflict detected, using next version: %s", nextVersion)
+					version = nextVersion
+				}
+			}
+
+			arn, err := b.componentGen.GenerateComponent(ctx, prov, componentName, version)
+			if err != nil {
+				return fmt.Errorf("failed to create component %d (%s): %w", index, prov.Type, err)
+			}
+
+			componentARNs[index] = *arn
+			return nil
+		})
+	}
+
+	// Wait for all goroutines to complete
+	if err := g.Wait(); err != nil {
+		// Track any components that were created before the failure for cleanup
+		for _, arn := range componentARNs {
+			if arn != "" {
+				created.ComponentARNs = append(created.ComponentARNs, arn)
+			}
+		}
+		return nil, err
+	}
+
+	// Track all created components for cleanup
+	created.ComponentARNs = append(created.ComponentARNs, componentARNs...)
+
+	// Verify all components were created
+	for i, arn := range componentARNs {
+		if arn == "" {
+			return nil, fmt.Errorf("component %d was not created", i)
+		}
+	}
+
+	logging.Info("Successfully created %d components", numProvisioners)
 	return componentARNs, nil
 }
 
@@ -512,4 +605,150 @@ func (b *ImageBuilder) validateConfig(target *builder.Target) error {
 	}
 
 	return nil
+}
+
+// getOrCreateInfrastructureConfig creates or retrieves an infrastructure configuration
+func (b *ImageBuilder) getOrCreateInfrastructureConfig(ctx context.Context, name string, target *builder.Target, created *CreatedResources) (string, error) {
+	infraName := fmt.Sprintf("%s-infra", name)
+
+	// Check if infrastructure config already exists
+	existing, err := b.resourceManager.GetInfrastructureConfig(ctx, infraName)
+	if err != nil {
+		return "", fmt.Errorf("failed to check for existing infrastructure config: %w", err)
+	}
+
+	if existing != nil {
+		if b.forceRecreate {
+			logging.Info("Force recreate enabled, deleting existing infrastructure config: %s", *existing.Arn)
+			if err := b.resourceManager.DeleteInfrastructureConfig(ctx, *existing.Arn); err != nil {
+				return "", fmt.Errorf("failed to delete existing infrastructure config: %w", err)
+			}
+		} else {
+			logging.Info("Reusing existing infrastructure configuration: %s", *existing.Arn)
+			return *existing.Arn, nil
+		}
+	}
+
+	// Create new infrastructure configuration
+	arn, err := b.createInfrastructureConfig(ctx, name, target)
+	if err != nil {
+		return "", err
+	}
+
+	created.InfraARN = arn
+	return arn, nil
+}
+
+// getOrCreateDistributionConfig creates or retrieves a distribution configuration
+func (b *ImageBuilder) getOrCreateDistributionConfig(ctx context.Context, name string, target *builder.Target, created *CreatedResources) (string, error) {
+	distName := fmt.Sprintf("%s-dist", name)
+
+	// Check if distribution config already exists
+	existing, err := b.resourceManager.GetDistributionConfig(ctx, distName)
+	if err != nil {
+		return "", fmt.Errorf("failed to check for existing distribution config: %w", err)
+	}
+
+	if existing != nil {
+		if b.forceRecreate {
+			logging.Info("Force recreate enabled, deleting existing distribution config: %s", *existing.Arn)
+			if err := b.resourceManager.DeleteDistributionConfig(ctx, *existing.Arn); err != nil {
+				return "", fmt.Errorf("failed to delete existing distribution config: %w", err)
+			}
+		} else {
+			logging.Info("Reusing existing distribution configuration: %s", *existing.Arn)
+			return *existing.Arn, nil
+		}
+	}
+
+	// Create new distribution configuration
+	arn, err := b.createDistributionConfig(ctx, name, target)
+	if err != nil {
+		return "", err
+	}
+
+	created.DistARN = arn
+	return arn, nil
+}
+
+// getOrCreateImageRecipe creates or retrieves an image recipe
+func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builder.Config, componentARNs []string, target *builder.Target, created *CreatedResources) (string, error) {
+	recipeName := fmt.Sprintf("%s-recipe", config.Name)
+
+	// Check if recipe already exists
+	existing, err := b.resourceManager.GetImageRecipe(ctx, recipeName, config.Version)
+	if err != nil {
+		return "", fmt.Errorf("failed to check for existing image recipe: %w", err)
+	}
+
+	if existing != nil {
+		if b.forceRecreate {
+			logging.Info("Force recreate enabled, deleting existing image recipe: %s", *existing.Arn)
+			if err := b.resourceManager.DeleteImageRecipe(ctx, *existing.Arn); err != nil {
+				return "", fmt.Errorf("failed to delete existing image recipe: %w", err)
+			}
+		} else {
+			logging.Info("Reusing existing image recipe: %s", *existing.Arn)
+			return *existing.Arn, nil
+		}
+	}
+
+	// Create new image recipe
+	arn, err := b.createImageRecipe(ctx, config, componentARNs, target)
+	if err != nil {
+		return "", err
+	}
+
+	created.RecipeARN = arn
+	return arn, nil
+}
+
+// getOrCreatePipeline creates or retrieves an image pipeline
+func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.Config, recipeARN, infraARN, distARN string, created *CreatedResources) (string, error) {
+	pipelineName := fmt.Sprintf("%s-pipeline", config.Name)
+
+	// Check if pipeline already exists
+	existing, err := b.resourceManager.GetImagePipeline(ctx, pipelineName)
+	if err != nil {
+		return "", fmt.Errorf("failed to check for existing pipeline: %w", err)
+	}
+
+	if existing != nil {
+		if b.forceRecreate {
+			logging.Info("Force recreate enabled, deleting existing pipeline: %s", *existing.Arn)
+			if err := b.resourceManager.DeleteImagePipeline(ctx, *existing.Arn); err != nil {
+				return "", fmt.Errorf("failed to delete existing pipeline: %w", err)
+			}
+		} else {
+			logging.Info("Reusing existing pipeline: %s", *existing.Arn)
+			return *existing.Arn, nil
+		}
+	}
+
+	// Create new pipeline
+	pipelineConfig := PipelineConfig{
+		Name:             pipelineName,
+		Description:      fmt.Sprintf("Pipeline for %s", config.Name),
+		ImageRecipeARN:   recipeARN,
+		InfraConfigARN:   infraARN,
+		DistConfigARN:    distARN,
+		EnhancedMetadata: true,
+		Tags: map[string]string{
+			"warpgate:name":    config.Name,
+			"warpgate:version": config.Version,
+		},
+	}
+
+	pipelineARN, err := b.pipelineManager.CreatePipeline(ctx, pipelineConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create pipeline: %w", err)
+	}
+
+	created.PipelineARN = *pipelineARN
+	return *pipelineARN, nil
+}
+
+// SetForceRecreate sets whether to force recreation of existing resources
+func (b *ImageBuilder) SetForceRecreate(force bool) {
+	b.forceRecreate = force
 }

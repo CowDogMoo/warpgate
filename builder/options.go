@@ -76,6 +76,9 @@ type BuildOptions struct {
 
 	// DigestDir specifies directory for saving digests
 	DigestDir string
+
+	// ForceRecreate deletes existing AWS resources before creating new ones (AMI builds only)
+	ForceRecreate bool
 }
 
 // ApplyOverrides applies CLI/API overrides to a build configuration.

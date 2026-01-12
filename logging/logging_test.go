@@ -297,3 +297,30 @@ func TestDetermineLogLevel(t *testing.T) {
 		})
 	}
 }
+
+func TestCustomLogger_Errorf(t *testing.T) {
+	logger := logging.NewCustomLogger(slog.LevelError)
+	// Ensure it doesn't panic with various format strings
+	logger.Errorf("simple error message")
+	logger.Errorf("error with arg: %s", "test")
+	logger.Errorf("error with multiple args: %s %d", "test", 42)
+}
+
+func TestCustomLogger_ErrorErr(t *testing.T) {
+	logger := logging.NewCustomLogger(slog.LevelError)
+	// Ensure it doesn't panic with error values
+	logger.ErrorErr(errors.New("test error"))
+	logger.ErrorErr(nil) // Should handle nil gracefully
+}
+
+func TestGlobalErrorf(t *testing.T) {
+	// Ensure global Errorf doesn't panic
+	logging.Errorf("global error: %s", "test")
+	logging.Errorf("simple global error")
+}
+
+func TestGlobalErrorErr(t *testing.T) {
+	// Ensure global ErrorErr doesn't panic
+	logging.ErrorErr(errors.New("test error"))
+	logging.ErrorErr(nil)
+}

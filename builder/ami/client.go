@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
 )
 
@@ -37,6 +38,7 @@ import (
 type AWSClients struct {
 	EC2          *ec2.Client
 	ImageBuilder *imagebuilder.Client
+	IAM          *iam.Client
 	Config       aws.Config
 }
 
@@ -88,6 +90,7 @@ func NewAWSClients(ctx context.Context, cfg ClientConfig) (*AWSClients, error) {
 	clients := &AWSClients{
 		EC2:          ec2.NewFromConfig(awsCfg),
 		ImageBuilder: imagebuilder.NewFromConfig(awsCfg),
+		IAM:          iam.NewFromConfig(awsCfg),
 		Config:       awsCfg,
 	}
 

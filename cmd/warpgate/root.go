@@ -72,6 +72,7 @@ func init() {
 	rootCmd.AddCommand(manifestsCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(completionCmd)
+	rootCmd.AddCommand(cleanupCmd)
 }
 
 // configFromContext retrieves the config from the command context.

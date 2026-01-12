@@ -25,6 +25,7 @@ package ami
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -36,6 +37,71 @@ import (
 // PipelineManager manages EC2 Image Builder pipelines
 type PipelineManager struct {
 	clients *AWSClients
+}
+
+// BuildFailureError represents a detailed build failure with root cause analysis
+type BuildFailureError struct {
+	Status      string
+	Duration    string
+	Details     *FailureDetails
+	Remediation string
+}
+
+// FailureDetails contains detailed information about a build failure
+type FailureDetails struct {
+	Reason           string
+	FailedStep       string
+	FailedComponent  string
+	ErrorMessage     string
+	LogsURL          string
+	WorkflowStepLogs []WorkflowStepLog
+}
+
+// WorkflowStepLog represents a single workflow step execution log
+type WorkflowStepLog struct {
+	StepName  string
+	Status    string
+	Message   string
+	StartTime string
+	EndTime   string
+}
+
+func (e *BuildFailureError) Error() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Build failed with status %s after %s\n", e.Status, e.Duration))
+
+	if e.Details != nil {
+		if e.Details.Reason != "" {
+			sb.WriteString(fmt.Sprintf("\nReason: %s\n", e.Details.Reason))
+		}
+		if e.Details.FailedStep != "" {
+			sb.WriteString(fmt.Sprintf("Failed Step: %s\n", e.Details.FailedStep))
+		}
+		if e.Details.FailedComponent != "" {
+			sb.WriteString(fmt.Sprintf("Failed Component: %s\n", e.Details.FailedComponent))
+		}
+		if e.Details.ErrorMessage != "" {
+			sb.WriteString(fmt.Sprintf("Error Message: %s\n", e.Details.ErrorMessage))
+		}
+		if len(e.Details.WorkflowStepLogs) > 0 {
+			sb.WriteString("\nWorkflow Step Details:\n")
+			for _, step := range e.Details.WorkflowStepLogs {
+				sb.WriteString(fmt.Sprintf("  - %s: %s\n", step.StepName, step.Status))
+				if step.Message != "" {
+					sb.WriteString(fmt.Sprintf("    Message: %s\n", step.Message))
+				}
+			}
+		}
+		if e.Details.LogsURL != "" {
+			sb.WriteString(fmt.Sprintf("\nView full logs: %s\n", e.Details.LogsURL))
+		}
+	}
+
+	if e.Remediation != "" {
+		sb.WriteString(fmt.Sprintf("\nRemediation: %s\n", e.Remediation))
+	}
+
+	return sb.String()
 }
 
 // PipelineConfig contains configuration for creating a pipeline
@@ -104,6 +170,9 @@ func (m *PipelineManager) WaitForPipelineCompletion(ctx context.Context, imageAR
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
+	startTime := time.Now()
+	var lastStatus types.ImageStatus
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -115,18 +184,28 @@ func (m *PipelineManager) WaitForPipelineCompletion(ctx context.Context, imageAR
 			}
 
 			status := image.State.Status
-			logging.Debug("Pipeline status: %s (image: %s)", status, imageARN)
+			elapsed := time.Since(startTime).Round(time.Second)
+
+			// Log status change or periodic update
+			if status != lastStatus {
+				logging.Info("Build stage: %s (elapsed: %s)", m.formatBuildStage(status), elapsed)
+				lastStatus = status
+			} else {
+				logging.Debug("Build status: %s (elapsed: %s)", status, elapsed)
+			}
 
 			switch status {
 			case types.ImageStatusAvailable:
-				logging.Info("Pipeline completed successfully: %s", imageARN)
+				logging.Info("Pipeline completed successfully in %s", elapsed)
 				return image, nil
 			case types.ImageStatusFailed, types.ImageStatusCancelled, types.ImageStatusDeprecated:
-				reason := "unknown"
-				if image.State.Reason != nil {
-					reason = *image.State.Reason
+				// Get detailed failure information
+				failureDetails := m.getFailureDetails(ctx, image, imageARN)
+				return nil, &BuildFailureError{
+					Status:   string(status),
+					Duration: elapsed.String(),
+					Details:  failureDetails,
 				}
-				return nil, fmt.Errorf("pipeline failed with status %s: %s", status, reason)
 			case types.ImageStatusBuilding, types.ImageStatusCreating, types.ImageStatusPending, types.ImageStatusTesting, types.ImageStatusDistributing, types.ImageStatusIntegrating:
 				// Continue waiting
 				continue
@@ -134,6 +213,32 @@ func (m *PipelineManager) WaitForPipelineCompletion(ctx context.Context, imageAR
 				return nil, fmt.Errorf("unexpected pipeline status: %s", status)
 			}
 		}
+	}
+}
+
+// formatBuildStage returns a human-readable description of the build stage
+func (m *PipelineManager) formatBuildStage(status types.ImageStatus) string {
+	switch status {
+	case types.ImageStatusPending:
+		return "PENDING - Waiting for resources"
+	case types.ImageStatusCreating:
+		return "CREATING - Initializing build environment"
+	case types.ImageStatusBuilding:
+		return "BUILDING - Running provisioners on EC2 instance"
+	case types.ImageStatusTesting:
+		return "TESTING - Running image tests"
+	case types.ImageStatusDistributing:
+		return "DISTRIBUTING - Creating AMI in target regions"
+	case types.ImageStatusIntegrating:
+		return "INTEGRATING - Finalizing image configuration"
+	case types.ImageStatusAvailable:
+		return "AVAILABLE - Build complete"
+	case types.ImageStatusFailed:
+		return "FAILED - Build failed"
+	case types.ImageStatusCancelled:
+		return "CANCELLED - Build was cancelled"
+	default:
+		return string(status)
 	}
 }
 
@@ -238,4 +343,182 @@ func (m *PipelineManager) deleteDistributionConfig(ctx context.Context, distARN 
 
 	_, err := m.clients.ImageBuilder.DeleteDistributionConfiguration(ctx, input)
 	return err
+}
+
+// getFailureDetails extracts detailed failure information from an image build
+func (m *PipelineManager) getFailureDetails(ctx context.Context, image *types.Image, imageARN string) *FailureDetails {
+	details := &FailureDetails{}
+
+	// Get the basic reason from the image state
+	if image.State != nil && image.State.Reason != nil {
+		details.Reason = *image.State.Reason
+	}
+
+	// Try to get workflow execution details
+	workflowLogs := m.getWorkflowExecutionLogs(ctx, imageARN)
+	if len(workflowLogs) > 0 {
+		details.WorkflowStepLogs = workflowLogs
+
+		// Find the failed step
+		for _, log := range workflowLogs {
+			if log.Status == "FAILED" || log.Status == "ERROR" {
+				details.FailedStep = log.StepName
+				details.ErrorMessage = log.Message
+				break
+			}
+		}
+	}
+
+	// Extract component information if available
+	if image.ImageRecipe != nil && image.ImageRecipe.Components != nil {
+		for _, comp := range image.ImageRecipe.Components {
+			if comp.ComponentArn != nil {
+				// Store the last component as potentially the failed one
+				// (Image Builder processes components in order)
+				parts := strings.Split(*comp.ComponentArn, "/")
+				if len(parts) > 0 {
+					details.FailedComponent = parts[len(parts)-1]
+				}
+			}
+		}
+	}
+
+	// Generate CloudWatch Logs URL if we can determine the log group
+	// Format: /aws/imagebuilder/{imageName}
+	if image.Name != nil {
+		region := m.clients.GetRegion()
+		logGroup := fmt.Sprintf("/aws/imagebuilder/%s", *image.Name)
+		details.LogsURL = fmt.Sprintf(
+			"https://%s.console.aws.amazon.com/cloudwatch/home?region=%s#logsV2:log-groups/log-group/%s",
+			region, region, strings.ReplaceAll(logGroup, "/", "$252F"),
+		)
+	}
+
+	// Add remediation hints based on the error
+	details = m.addRemediationHints(details)
+
+	return details
+}
+
+// getWorkflowExecutionLogs retrieves workflow execution logs
+func (m *PipelineManager) getWorkflowExecutionLogs(ctx context.Context, imageARN string) []WorkflowStepLog {
+	var logs []WorkflowStepLog
+
+	// List workflow executions for this image
+	listExecInput := &imagebuilder.ListWorkflowExecutionsInput{
+		ImageBuildVersionArn: aws.String(imageARN),
+	}
+
+	listExecResult, err := m.clients.ImageBuilder.ListWorkflowExecutions(ctx, listExecInput)
+	if err != nil {
+		logging.Debug("Failed to get workflow executions: %v", err)
+		return logs
+	}
+
+	// Get step details for each workflow execution
+	for _, exec := range listExecResult.WorkflowExecutions {
+		if exec.WorkflowExecutionId == nil {
+			continue
+		}
+
+		// Add the workflow execution as a log entry
+		log := WorkflowStepLog{
+			StepName: aws.ToString(exec.WorkflowBuildVersionArn),
+			Status:   string(exec.Status),
+			Message:  aws.ToString(exec.Message),
+		}
+
+		if exec.StartTime != nil {
+			log.StartTime = *exec.StartTime
+		}
+		if exec.EndTime != nil {
+			log.EndTime = *exec.EndTime
+		}
+
+		logs = append(logs, log)
+
+		// If this execution failed, try to get step details
+		if exec.Status == "FAILED" {
+			stepInput := &imagebuilder.ListWorkflowStepExecutionsInput{
+				WorkflowExecutionId: exec.WorkflowExecutionId,
+			}
+
+			stepResult, stepErr := m.clients.ImageBuilder.ListWorkflowStepExecutions(ctx, stepInput)
+			if stepErr != nil {
+				logging.Debug("Failed to get workflow step executions: %v", stepErr)
+				continue
+			}
+
+			for _, step := range stepResult.Steps {
+				stepLog := WorkflowStepLog{
+					StepName: aws.ToString(step.Name),
+					Status:   string(step.Status),
+					Message:  aws.ToString(step.Message),
+				}
+
+				if step.StartTime != nil {
+					stepLog.StartTime = *step.StartTime
+				}
+				if step.EndTime != nil {
+					stepLog.EndTime = *step.EndTime
+				}
+
+				logs = append(logs, stepLog)
+			}
+		}
+	}
+
+	return logs
+}
+
+// addRemediationHints analyzes the failure details and adds remediation suggestions
+func (m *PipelineManager) addRemediationHints(details *FailureDetails) *FailureDetails {
+	reason := strings.ToLower(details.Reason + " " + details.ErrorMessage)
+
+	// Check for common failure patterns and add remediation hints
+	switch {
+	case strings.Contains(reason, "timeout"):
+		details.ErrorMessage += "\n\nRemediation: The build timed out. Consider:\n" +
+			"  - Using a larger instance type for faster builds\n" +
+			"  - Reducing the number of provisioners\n" +
+			"  - Checking if provisioners are waiting for user input"
+
+	case strings.Contains(reason, "script") && strings.Contains(reason, "failed"):
+		details.ErrorMessage += "\n\nRemediation: A provisioner script failed. Check:\n" +
+			"  - Script syntax errors (run locally first)\n" +
+			"  - Missing dependencies or packages\n" +
+			"  - Network connectivity from the build instance\n" +
+			"  - CloudWatch logs for detailed output"
+
+	case strings.Contains(reason, "network") || strings.Contains(reason, "connection"):
+		details.ErrorMessage += "\n\nRemediation: Network connectivity issue. Check:\n" +
+			"  - Security group allows outbound traffic\n" +
+			"  - Subnet has internet access (NAT gateway or internet gateway)\n" +
+			"  - VPC endpoints if using private subnets"
+
+	case strings.Contains(reason, "permission") || strings.Contains(reason, "access denied"):
+		details.ErrorMessage += "\n\nRemediation: Permission denied. Check:\n" +
+			"  - Instance profile has required permissions\n" +
+			"  - IAM role trust policy allows EC2 Image Builder\n" +
+			"  - S3 bucket policies if uploading/downloading files"
+
+	case strings.Contains(reason, "disk") || strings.Contains(reason, "space"):
+		details.ErrorMessage += "\n\nRemediation: Disk space issue. Consider:\n" +
+			"  - Increasing volume_size in target configuration\n" +
+			"  - Cleaning up temporary files in provisioner scripts"
+
+	case strings.Contains(reason, "ami") && strings.Contains(reason, "not found"):
+		details.ErrorMessage += "\n\nRemediation: AMI not found. Check:\n" +
+			"  - Base AMI ID exists in the target region\n" +
+			"  - Base AMI is not deprecated or deregistered\n" +
+			"  - You have permission to use the AMI"
+
+	case strings.Contains(reason, "component"):
+		details.ErrorMessage += "\n\nRemediation: Component execution failed. Check:\n" +
+			"  - Component script syntax\n" +
+			"  - Required packages are available\n" +
+			"  - CloudWatch logs for detailed component output"
+	}
+
+	return details
 }

@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.1
+	github.com/aws/aws-sdk-go-v2/service/iam v1.53.2
 	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.50.4
 	github.com/docker/cli v29.1.4+incompatible
 	github.com/docker/docker v28.5.2+incompatible

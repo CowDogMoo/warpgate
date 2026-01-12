@@ -71,19 +71,19 @@ func loadBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*b
 		return nil, fmt.Errorf("failed to parse variables: %w", err)
 	}
 
-	if opts.template != "" {
+	switch {
+	case opts.template != "":
 		logging.InfoContext(ctx, "Building from template: %s", opts.template)
 		return loadFromTemplate(opts.template, variables)
-	}
-	if opts.fromGit != "" {
+	case opts.fromGit != "":
 		logging.InfoContext(ctx, "Building from git: %s", opts.fromGit)
 		return loadFromGit(opts.fromGit, variables)
-	}
-	if len(args) > 0 {
+	case len(args) > 0:
 		logging.InfoContext(ctx, "Building from config file: %s", args[0])
 		return loadFromFile(args[0], variables)
+	default:
+		return nil, fmt.Errorf("specify config file, --template, or --from-git")
 	}
-	return nil, fmt.Errorf("specify config file, --template, or --from-git")
 }
 
 // newBuildKitBuilderFunc creates a new BuildKit builder
@@ -100,21 +100,18 @@ func newBuildKitBuilderFunc(ctx context.Context) (builder.ContainerBuilder, erro
 func enhanceBuildKitError(err error) error {
 	errMsg := err.Error()
 
-	if strings.Contains(errMsg, "no active buildx builder") {
+	switch {
+	case strings.Contains(errMsg, "no active buildx builder"):
 		return fmt.Errorf("BuildKit builder not available: %w\n\nTo fix this, create a buildx builder:\n  docker buildx create --name warpgate --driver docker-container --bootstrap", err)
-	}
-
-	if strings.Contains(errMsg, "Cannot connect to the Docker daemon") ||
-		strings.Contains(errMsg, "docker daemon") ||
-		strings.Contains(errMsg, "connection refused") {
+	case strings.Contains(errMsg, "Cannot connect to the Docker daemon"),
+		strings.Contains(errMsg, "docker daemon"),
+		strings.Contains(errMsg, "connection refused"):
 		return fmt.Errorf("docker is not running: %w\n\nPlease start Docker Desktop or the Docker daemon before building", err)
-	}
-
-	if strings.Contains(errMsg, "docker buildx") {
+	case strings.Contains(errMsg, "docker buildx"):
 		return fmt.Errorf("docker buildx not available: %w\n\nBuildKit requires docker buildx. Please ensure Docker Desktop is installed and up to date", err)
+	default:
+		return fmt.Errorf("BuildKit error: %w", err)
 	}
-
-	return err
 }
 
 // loadFromFile loads config from a local file with variable substitution

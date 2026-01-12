@@ -289,7 +289,43 @@ func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provi
 		if err != nil {
 			return "", fmt.Errorf("failed to read PowerShell script %s: %w", scriptPath, err)
 		}
-		scriptContents = append(scriptContents, string(content))
+
+		// Process the script content for Windows compatibility
+		scriptContent := processPowerShellScript(content)
+
+		// Validate basic PowerShell syntax
+		if err := validatePowerShellSyntax(scriptContent); err != nil {
+			return "", fmt.Errorf("PowerShell script %s has syntax issues: %w", scriptPath, err)
+		}
+
+		scriptContents = append(scriptContents, scriptContent)
+	}
+
+	// Build the component steps
+	steps := []map[string]interface{}{}
+
+	// Add error handling wrapper for better debugging
+	for i, script := range scriptContents {
+		stepName := fmt.Sprintf("ExecutePowerShellScript_%d", i)
+
+		// Wrap script with error handling for better diagnostics
+		wrappedScript := wrapPowerShellWithErrorHandling(script)
+
+		steps = append(steps, map[string]interface{}{
+			"name":   stepName,
+			"action": "ExecutePowerShell",
+			"inputs": map[string]interface{}{
+				"commands": []string{wrappedScript},
+			},
+		})
+
+		// Add optional reboot step if script requests it
+		if needsReboot(script) {
+			steps = append(steps, map[string]interface{}{
+				"name":   fmt.Sprintf("RebootAfterScript_%d", i),
+				"action": "Reboot",
+			})
+		}
 	}
 
 	doc := map[string]interface{}{
@@ -298,21 +334,119 @@ func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provi
 		"description":   "PowerShell provisioner component",
 		"phases": []map[string]interface{}{
 			{
-				"name": "build",
-				"steps": []map[string]interface{}{
-					{
-						"name":   "ExecutePowerShellScripts",
-						"action": "ExecutePowerShell",
-						"inputs": map[string]interface{}{
-							"commands": scriptContents,
-						},
-					},
-				},
+				"name":  "build",
+				"steps": steps,
 			},
 		},
 	}
 
 	return marshalComponentDocument(doc)
+}
+
+// processPowerShellScript handles encoding and formatting for Windows compatibility
+func processPowerShellScript(content []byte) string {
+	// Remove UTF-8 BOM if present (Windows sometimes adds this)
+	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
+		content = content[3:]
+	}
+
+	// Convert Windows line endings to Unix and back to ensure consistency
+	script := string(content)
+	script = strings.ReplaceAll(script, "\r\n", "\n")
+
+	return script
+}
+
+// validatePowerShellSyntax performs basic PowerShell syntax validation
+func validatePowerShellSyntax(script string) error {
+	// Check for unbalanced braces
+	braceCount := 0
+	for _, char := range script {
+		switch char {
+		case '{':
+			braceCount++
+		case '}':
+			braceCount--
+			if braceCount < 0 {
+				return fmt.Errorf("unbalanced braces: unexpected '}'")
+			}
+		}
+	}
+	if braceCount != 0 {
+		return fmt.Errorf("unbalanced braces: %d unclosed '{'", braceCount)
+	}
+
+	// Check for unbalanced parentheses
+	parenCount := 0
+	for _, char := range script {
+		switch char {
+		case '(':
+			parenCount++
+		case ')':
+			parenCount--
+			if parenCount < 0 {
+				return fmt.Errorf("unbalanced parentheses: unexpected ')'")
+			}
+		}
+	}
+	if parenCount != 0 {
+		return fmt.Errorf("unbalanced parentheses: %d unclosed '('", parenCount)
+	}
+
+	// Check for common PowerShell syntax issues
+	lines := strings.Split(script, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Skip empty lines and comments
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// Check for unclosed strings on a single line (basic check)
+		if strings.Count(trimmed, "\"")%2 != 0 && !strings.HasSuffix(trimmed, "`") {
+			// Could be a multi-line string, so just warn
+			// This is a heuristic and may have false positives
+			_ = i // Suppress unused variable warning
+		}
+	}
+
+	return nil
+}
+
+// wrapPowerShellWithErrorHandling adds error handling wrapper for better diagnostics
+func wrapPowerShellWithErrorHandling(script string) string {
+	// Add error preference and try-catch wrapper for better error reporting
+	wrapper := `$ErrorActionPreference = 'Stop'
+$VerbosePreference = 'Continue'
+
+try {
+%s
+} catch {
+    Write-Error "Script failed with error: $_"
+    Write-Error "Stack trace: $($_.ScriptStackTrace)"
+    exit 1
+}`
+	return fmt.Sprintf(wrapper, script)
+}
+
+// needsReboot checks if the script contains reboot indicators
+func needsReboot(script string) bool {
+	rebootIndicators := []string{
+		"Restart-Computer",
+		"shutdown /r",
+		"shutdown -r",
+		"#REQUIRES_REBOOT",
+		"# REQUIRES_REBOOT",
+	}
+
+	scriptLower := strings.ToLower(script)
+	for _, indicator := range rebootIndicators {
+		if strings.Contains(scriptLower, strings.ToLower(indicator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // marshalComponentDocument converts a component document to YAML string

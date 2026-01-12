@@ -343,6 +343,69 @@ if err := builder.Run(command); err != nil {
 }
 ```
 
+### Concurrency Patterns
+
+When writing concurrent code, follow these guidelines:
+
+**Use `errgroup` instead of manual `sync.WaitGroup` + channels:**
+
+```go
+// Good: Use errgroup for cleaner goroutine management
+import "golang.org/x/sync/errgroup"
+
+func processItems(ctx context.Context, items []Item) error {
+    g, ctx := errgroup.WithContext(ctx)
+
+    for _, item := range items {
+        item := item // Capture loop variable
+        g.Go(func() error {
+            if err := ctx.Err(); err != nil {
+                return err // Check for context cancellation
+            }
+            return processItem(ctx, item)
+        })
+    }
+
+    return g.Wait()
+}
+
+// Avoid: Manual WaitGroup + channel patterns are error-prone
+func processItemsBad(items []Item) error {
+    var wg sync.WaitGroup
+    errCh := make(chan error, len(items))
+
+    for _, item := range items {
+        wg.Add(1)
+        go func(i Item) {
+            defer wg.Done()
+            if err := processItem(i); err != nil {
+                errCh <- err
+            }
+        }(item)
+    }
+
+    // Risk: channel might not be closed, goroutines might leak
+    wg.Wait()
+    close(errCh)
+    // ...
+}
+```
+
+**Benefits of `errgroup`:**
+
+- Automatic context cancellation on first error
+- No manual channel management
+- Cleaner error handling
+- Optional concurrency limits with `g.SetLimit(n)`
+- Prevents goroutine leaks
+
+**Best practices:**
+
+- Always check `ctx.Err()` before starting work in a goroutine
+- Capture loop variables when launching goroutines
+- Use `errgroup.WithContext()` to get automatic cancellation
+- Consider `g.SetLimit()` for bounded parallelism
+
 ### Testing
 
 - **Write table-driven tests** - For multiple test cases

@@ -34,24 +34,26 @@ import (
 
 // buildOptions holds command-line options for the build command
 type buildOptions struct {
-	template     string
-	fromGit      string
-	targetType   string
-	push         bool
-	registry     string
-	arch         []string
-	tags         []string
-	saveDigests  bool
-	digestDir    string
-	region       string
-	instanceType string
-	vars         []string
-	varFiles     []string
-	cacheFrom    []string
-	cacheTo      []string
-	labels       []string
-	buildArgs    []string
-	noCache      bool
+	template      string
+	fromGit       string
+	targetType    string
+	push          bool
+	registry      string
+	arch          []string
+	tags          []string
+	saveDigests   bool
+	digestDir     string
+	region        string
+	instanceType  string
+	vars          []string
+	varFiles      []string
+	cacheFrom     []string
+	cacheTo       []string
+	labels        []string
+	buildArgs     []string
+	noCache       bool
+	forceRecreate bool
+	dryRun        bool
 }
 
 var buildCmd *cobra.Command
@@ -115,6 +117,8 @@ Examples:
 	buildCmd.Flags().StringArrayVar(&opts.labels, "label", []string{}, "Set image labels (key=value)")
 	buildCmd.Flags().StringArrayVar(&opts.buildArgs, "build-arg", []string{}, "Set build arguments (key=value)")
 	buildCmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Disable all caching")
+	buildCmd.Flags().BoolVar(&opts.forceRecreate, "force", false, "Force recreation of existing AWS resources (AMI builds only)")
+	buildCmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Validate configuration without creating resources (AMI builds only)")
 }
 
 func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
@@ -144,7 +148,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	buildConfig, err := loadBuildConfig(ctx, args, opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load build configuration: %w", err)
 	}
 
 	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc)
@@ -164,6 +168,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 		Push:          opts.push,
 		SaveDigests:   opts.saveDigests,
 		DigestDir:     opts.digestDir,
+		ForceRecreate: opts.forceRecreate,
 	}
 
 	targetType := builder.DetermineTargetType(buildConfig, builderOpts)
@@ -173,7 +178,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	case "container":
 		results, err = service.ExecuteContainerBuild(ctx, *buildConfig, builderOpts)
 		if err != nil {
-			return err
+			return fmt.Errorf("container build failed: %w", err)
 		}
 	case "ami":
 		// Create AMI client configuration
@@ -185,8 +190,8 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 			SessionToken:    cfg.AWS.SessionToken,
 		}
 
-		// Create AMI builder
-		amiBuilder, err := ami.NewImageBuilder(ctx, amiConfig)
+		// Create AMI builder with force recreate option
+		amiBuilder, err := ami.NewImageBuilderWithOptions(ctx, amiConfig, opts.forceRecreate)
 		if err != nil {
 			return fmt.Errorf("failed to create AMI builder: %w", err)
 		}
@@ -196,10 +201,28 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 			}
 		}()
 
+		// Handle dry-run mode
+		if opts.dryRun {
+			logging.InfoContext(ctx, "Running dry-run validation...")
+			validationResult, err := amiBuilder.DryRun(ctx, *buildConfig)
+			if err != nil {
+				return fmt.Errorf("dry-run validation failed: %w", err)
+			}
+
+			// Display validation results
+			fmt.Println(validationResult.String())
+
+			if !validationResult.Valid {
+				return fmt.Errorf("dry-run validation failed with %d errors", len(validationResult.Errors))
+			}
+			logging.InfoContext(ctx, "Dry-run validation completed successfully")
+			return nil
+		}
+
 		// Execute AMI build with service
 		result, err := service.ExecuteAMIBuild(ctx, *buildConfig, builderOpts, amiBuilder)
 		if err != nil {
-			return err
+			return fmt.Errorf("AMI build failed: %w", err)
 		}
 		results = []builder.BuildResult{*result}
 	default:
