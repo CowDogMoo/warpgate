@@ -282,6 +282,16 @@ type Provisioner struct {
 	// PSScripts is a list of PowerShell script file paths to execute
 	PSScripts []string `yaml:"ps_scripts,omitempty" json:"ps_scripts,omitempty"`
 
+	// ExecutionPolicy sets the PowerShell execution policy (e.g., "Bypass", "RemoteSigned", "Unrestricted")
+	// Default is "Bypass" for maximum compatibility in build environments
+	ExecutionPolicy string `yaml:"execution_policy,omitempty" json:"execution_policy,omitempty"`
+
+	// AMI Component fields
+
+	// ComponentVersion specifies the semantic version for this provisioner's Image Builder component
+	// If not specified, defaults to "1.0.0" with auto-incrementing on conflicts when --force is used
+	ComponentVersion string `yaml:"component_version,omitempty" json:"component_version,omitempty"`
+
 	// Common fields
 
 	// WorkingDir sets the working directory for provisioner execution

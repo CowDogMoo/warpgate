@@ -132,14 +132,16 @@ func (v *Validator) validateBasicConfig(result *ValidationResult, config builder
 	// Check template name
 	if config.Name == "" {
 		result.AddError("Template name is required")
-	} else {
+	}
+	if config.Name != "" {
 		result.AddInfo("Template name: %s", config.Name)
 	}
 
 	// Check version
 	if config.Version == "" {
 		result.AddError("Template version is required")
-	} else {
+	}
+	if config.Version != "" {
 		result.AddInfo("Template version: %s", config.Version)
 	}
 
@@ -150,28 +152,32 @@ func (v *Validator) validateBasicConfig(result *ValidationResult, config builder
 	}
 	if region == "" {
 		result.AddError("AWS region must be specified (--region flag, template config, or global config)")
-	} else {
+	}
+	if region != "" {
 		result.AddInfo("Target region: %s", region)
 	}
 
 	// Check base image
 	if config.Base.Image == "" {
 		result.AddError("Base image (parent AMI) must be specified in template config (base.image)")
-	} else {
+	}
+	if config.Base.Image != "" {
 		result.AddInfo("Base image: %s", config.Base.Image)
 	}
 
 	// Check instance type
 	if target.InstanceType == "" {
 		result.AddWarning("Instance type not specified, will use default from global config")
-	} else {
+	}
+	if target.InstanceType != "" {
 		result.AddInfo("Instance type: %s", target.InstanceType)
 	}
 
 	// Check instance profile
 	if target.InstanceProfileName == "" {
 		result.AddWarning("Instance profile not specified in template, will use global config value")
-	} else {
+	}
+	if target.InstanceProfileName != "" {
 		result.AddInfo("Instance profile: %s", target.InstanceProfileName)
 	}
 }
@@ -181,6 +187,11 @@ func (v *Validator) validateAWSResources(ctx context.Context, result *Validation
 	// Validate base AMI exists
 	if config.Base.Image != "" && strings.HasPrefix(config.Base.Image, "ami-") {
 		v.validateAMI(ctx, result, config.Base.Image)
+	}
+
+	// Validate instance type is available in the region
+	if target.InstanceType != "" {
+		v.validateInstanceType(ctx, result, target.InstanceType)
 	}
 
 	// Validate instance profile exists
@@ -232,12 +243,101 @@ func (v *Validator) validateAMI(ctx context.Context, result *ValidationResult, a
 	}
 	result.AddInfo("Base AMI validated: %s (%s)", amiID, name)
 
-	// Check platform
+	// Check platform - use early return pattern
 	if image.Platform == ec2types.PlatformValuesWindows {
 		result.AddInfo("Base AMI platform: Windows")
-	} else {
-		result.AddInfo("Base AMI platform: Linux")
+		return
 	}
+	result.AddInfo("Base AMI platform: Linux")
+}
+
+// validateInstanceType checks if an instance type is available in the current region
+func (v *Validator) validateInstanceType(ctx context.Context, result *ValidationResult, instanceType string) {
+	input := &ec2.DescribeInstanceTypesInput{
+		InstanceTypes: []ec2types.InstanceType{ec2types.InstanceType(instanceType)},
+	}
+
+	output, err := v.clients.EC2.DescribeInstanceTypes(ctx, input)
+	if err != nil {
+		// Check if it's a "not found" type error
+		if strings.Contains(err.Error(), "InvalidInstanceType") {
+			result.AddError("Instance type '%s' does not exist", instanceType)
+			result.AddWarning("Common instance types: t3.micro, t3.small, t3.medium, m5.large, c5.large")
+			return
+		}
+		result.AddWarning("Could not validate instance type '%s': %v", instanceType, err)
+		return
+	}
+
+	if len(output.InstanceTypes) == 0 {
+		result.AddError("Instance type '%s' not available in region %s", instanceType, v.clients.GetRegion())
+		return
+	}
+
+	info := output.InstanceTypes[0]
+
+	// Add info about the instance type
+	vcpus := int32(0)
+	memory := int64(0)
+	if info.VCpuInfo != nil && info.VCpuInfo.DefaultVCpus != nil {
+		vcpus = *info.VCpuInfo.DefaultVCpus
+	}
+	if info.MemoryInfo != nil && info.MemoryInfo.SizeInMiB != nil {
+		memory = *info.MemoryInfo.SizeInMiB
+	}
+
+	result.AddInfo("Instance type validated: %s (%d vCPUs, %d MiB RAM)", instanceType, vcpus, memory)
+
+	// Check for supported architectures
+	if info.ProcessorInfo != nil && len(info.ProcessorInfo.SupportedArchitectures) > 0 {
+		archStrs := make([]string, len(info.ProcessorInfo.SupportedArchitectures))
+		for i, arch := range info.ProcessorInfo.SupportedArchitectures {
+			archStrs[i] = string(arch)
+		}
+		result.AddInfo("Supported architectures: %s", strings.Join(archStrs, ", "))
+	}
+
+	// Check if it's a burstable instance type
+	if info.BurstablePerformanceSupported != nil && *info.BurstablePerformanceSupported {
+		result.AddInfo("Instance type supports burstable performance")
+	}
+
+	// Check availability zone offerings
+	v.validateInstanceTypeAvailability(ctx, result, instanceType)
+}
+
+// validateInstanceTypeAvailability checks if the instance type is offered in available zones
+func (v *Validator) validateInstanceTypeAvailability(ctx context.Context, result *ValidationResult, instanceType string) {
+	input := &ec2.DescribeInstanceTypeOfferingsInput{
+		LocationType: ec2types.LocationTypeAvailabilityZone,
+		Filters: []ec2types.Filter{
+			{
+				Name:   aws.String("instance-type"),
+				Values: []string{instanceType},
+			},
+		},
+	}
+
+	output, err := v.clients.EC2.DescribeInstanceTypeOfferings(ctx, input)
+	if err != nil {
+		result.AddWarning("Could not check instance type availability zones: %v", err)
+		return
+	}
+
+	if len(output.InstanceTypeOfferings) == 0 {
+		result.AddError("Instance type '%s' is not offered in any availability zone in region %s", instanceType, v.clients.GetRegion())
+		return
+	}
+
+	// List the availability zones where this instance type is available
+	zones := make([]string, 0, len(output.InstanceTypeOfferings))
+	for _, offering := range output.InstanceTypeOfferings {
+		if offering.Location != nil {
+			zones = append(zones, *offering.Location)
+		}
+	}
+
+	result.AddInfo("Instance type available in %d availability zones: %s", len(zones), strings.Join(zones, ", "))
 }
 
 // validateInstanceProfile checks if an IAM instance profile exists and has the required permissions

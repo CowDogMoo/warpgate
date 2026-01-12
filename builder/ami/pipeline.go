@@ -36,7 +36,9 @@ import (
 
 // PipelineManager manages EC2 Image Builder pipelines
 type PipelineManager struct {
-	clients *AWSClients
+	clients       *AWSClients
+	monitor       *BuildMonitor
+	monitorConfig MonitorConfig
 }
 
 // BuildFailureError represents a detailed build failure with root cause analysis
@@ -122,6 +124,19 @@ func NewPipelineManager(clients *AWSClients) *PipelineManager {
 	}
 }
 
+// NewPipelineManagerWithMonitor creates a new pipeline manager with monitoring enabled
+func NewPipelineManagerWithMonitor(clients *AWSClients, config MonitorConfig) *PipelineManager {
+	return &PipelineManager{
+		clients:       clients,
+		monitorConfig: config,
+	}
+}
+
+// SetMonitorConfig sets the monitor configuration
+func (m *PipelineManager) SetMonitorConfig(config MonitorConfig) {
+	m.monitorConfig = config
+}
+
 // CreatePipeline creates an Image Builder pipeline
 func (m *PipelineManager) CreatePipeline(ctx context.Context, config PipelineConfig) (*string, error) {
 	logging.Info("Creating Image Builder pipeline: %s", config.Name)
@@ -165,55 +180,183 @@ func (m *PipelineManager) StartPipeline(ctx context.Context, pipelineARN string)
 
 // WaitForPipelineCompletion waits for a pipeline execution to complete
 func (m *PipelineManager) WaitForPipelineCompletion(ctx context.Context, imageARN string, pollInterval time.Duration) (*types.Image, error) {
+	return m.WaitForPipelineCompletionWithImageName(ctx, imageARN, pollInterval, "")
+}
+
+// WaitForPipelineCompletionWithImageName waits for completion with optional monitoring
+func (m *PipelineManager) WaitForPipelineCompletionWithImageName(ctx context.Context, imageARN string, pollInterval time.Duration, imageName string) (*types.Image, error) {
 	logging.Info("Waiting for pipeline completion: %s", imageARN)
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
-	startTime := time.Now()
-	var lastStatus types.ImageStatus
+	state := &pipelineWaitState{
+		startTime:       time.Now(),
+		stageStartTimes: make(map[types.ImageStatus]time.Time),
+	}
+
+	m.initMonitorIfEnabled(imageName)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("context cancelled while waiting for pipeline: %w", ctx.Err())
 		case <-ticker.C:
-			image, err := m.getImageStatus(ctx, imageARN)
+			result, err := m.processPipelineTick(ctx, imageARN, state)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get image status: %w", err)
+				return nil, err
 			}
-
-			status := image.State.Status
-			elapsed := time.Since(startTime).Round(time.Second)
-
-			// Log status change or periodic update
-			if status != lastStatus {
-				logging.Info("Build stage: %s (elapsed: %s)", m.formatBuildStage(status), elapsed)
-				lastStatus = status
-			} else {
-				logging.Debug("Build status: %s (elapsed: %s)", status, elapsed)
-			}
-
-			switch status {
-			case types.ImageStatusAvailable:
-				logging.Info("Pipeline completed successfully in %s", elapsed)
-				return image, nil
-			case types.ImageStatusFailed, types.ImageStatusCancelled, types.ImageStatusDeprecated:
-				// Get detailed failure information
-				failureDetails := m.getFailureDetails(ctx, image, imageARN)
-				return nil, &BuildFailureError{
-					Status:   string(status),
-					Duration: elapsed.String(),
-					Details:  failureDetails,
-				}
-			case types.ImageStatusBuilding, types.ImageStatusCreating, types.ImageStatusPending, types.ImageStatusTesting, types.ImageStatusDistributing, types.ImageStatusIntegrating:
-				// Continue waiting
-				continue
-			default:
-				return nil, fmt.Errorf("unexpected pipeline status: %s", status)
+			if result != nil {
+				return result, nil
 			}
 		}
 	}
+}
+
+// pipelineWaitState holds state during pipeline wait loop
+type pipelineWaitState struct {
+	startTime       time.Time
+	lastStatus      types.ImageStatus
+	stageStartTimes map[types.ImageStatus]time.Time
+}
+
+// initMonitorIfEnabled initializes the build monitor if monitoring is configured
+func (m *PipelineManager) initMonitorIfEnabled(imageName string) {
+	if (m.monitorConfig.StreamLogs || m.monitorConfig.ShowEC2Status) && imageName != "" {
+		m.monitor = NewBuildMonitor(m.clients, imageName, m.monitorConfig)
+		logging.Info("Build monitoring enabled (logs: %v, EC2 status: %v)",
+			m.monitorConfig.StreamLogs, m.monitorConfig.ShowEC2Status)
+	}
+}
+
+// processPipelineTick handles a single poll iteration, returns image if complete or nil to continue
+func (m *PipelineManager) processPipelineTick(ctx context.Context, imageARN string, state *pipelineWaitState) (*types.Image, error) {
+	image, err := m.getImageStatus(ctx, imageARN)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image status: %w", err)
+	}
+
+	status := image.State.Status
+	elapsed := time.Since(state.startTime).Round(time.Second)
+
+	if _, exists := state.stageStartTimes[status]; !exists {
+		state.stageStartTimes[status] = time.Now()
+	}
+
+	m.logBuildProgress(status, elapsed, status != state.lastStatus)
+	state.lastStatus = status
+
+	if m.monitor != nil && (status == types.ImageStatusBuilding || status == types.ImageStatusCreating) {
+		m.monitor.PollAndDisplay(ctx)
+	}
+
+	return m.handlePipelineStatus(ctx, image, imageARN, status, elapsed)
+}
+
+// logBuildProgress logs build stage or periodic progress updates
+func (m *PipelineManager) logBuildProgress(status types.ImageStatus, elapsed time.Duration, statusChanged bool) {
+	estimatedRemaining := m.estimateRemainingTime(status, elapsed)
+
+	if statusChanged {
+		stageInfo := m.formatBuildStage(status)
+		if estimatedRemaining > 0 {
+			logging.Info("Build stage: %s (elapsed: %s, estimated remaining: ~%s)",
+				stageInfo, elapsed, estimatedRemaining.Round(time.Minute))
+		} else {
+			logging.Info("Build stage: %s (elapsed: %s)", stageInfo, elapsed)
+		}
+	} else {
+		if estimatedRemaining > 0 {
+			logging.Debug("Build status: %s (elapsed: %s, ~%s remaining)",
+				status, elapsed, estimatedRemaining.Round(time.Minute))
+		} else {
+			logging.Debug("Build status: %s (elapsed: %s)", status, elapsed)
+		}
+	}
+}
+
+// handlePipelineStatus processes the current pipeline status and returns result or nil to continue
+func (m *PipelineManager) handlePipelineStatus(ctx context.Context, image *types.Image, imageARN string, status types.ImageStatus, elapsed time.Duration) (*types.Image, error) {
+	switch status {
+	case types.ImageStatusAvailable:
+		logging.Info("Pipeline completed successfully in %s", elapsed)
+		return image, nil
+	case types.ImageStatusFailed, types.ImageStatusCancelled, types.ImageStatusDeprecated:
+		failureDetails := m.getFailureDetails(ctx, image, imageARN)
+		return nil, &BuildFailureError{
+			Status:   string(status),
+			Duration: elapsed.String(),
+			Details:  failureDetails,
+		}
+	case types.ImageStatusBuilding, types.ImageStatusCreating, types.ImageStatusPending, types.ImageStatusTesting, types.ImageStatusDistributing, types.ImageStatusIntegrating:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unexpected pipeline status: %s", status)
+	}
+}
+
+// estimateRemainingTime estimates the remaining build time based on current stage and elapsed time
+// These are typical times based on common AMI build patterns
+func (m *PipelineManager) estimateRemainingTime(currentStatus types.ImageStatus, elapsed time.Duration) time.Duration {
+	// Typical durations for each stage (based on general AMI build patterns)
+	// These are estimates and actual times vary based on instance type, provisioners, etc.
+	typicalStageDurations := map[types.ImageStatus]time.Duration{
+		types.ImageStatusPending:      2 * time.Minute,  // Waiting for resources
+		types.ImageStatusCreating:     5 * time.Minute,  // Initializing EC2 instance
+		types.ImageStatusBuilding:     20 * time.Minute, // Running provisioners (highly variable)
+		types.ImageStatusTesting:      5 * time.Minute,  // Running image tests
+		types.ImageStatusDistributing: 10 * time.Minute, // Creating AMI snapshot
+		types.ImageStatusIntegrating:  2 * time.Minute,  // Finalizing
+	}
+
+	// Order of stages
+	stageOrder := []types.ImageStatus{
+		types.ImageStatusPending,
+		types.ImageStatusCreating,
+		types.ImageStatusBuilding,
+		types.ImageStatusTesting,
+		types.ImageStatusDistributing,
+		types.ImageStatusIntegrating,
+		types.ImageStatusAvailable,
+	}
+
+	// Find current stage index
+	currentIndex := -1
+	for i, stage := range stageOrder {
+		if stage == currentStatus {
+			currentIndex = i
+			break
+		}
+	}
+
+	if currentIndex < 0 {
+		return 0 // Unknown stage
+	}
+
+	// Estimate remaining time based on elapsed time in current stage and future stages
+	var remaining time.Duration
+
+	// Estimate time remaining in current stage (assume we're halfway through if no better info)
+	if typicalDuration, ok := typicalStageDurations[currentStatus]; ok {
+		// Use a simple heuristic: if we've been in this stage for less than typical,
+		// estimate we have the difference remaining; otherwise, add a buffer
+		elapsedInStage := elapsed
+		if elapsedInStage < typicalDuration {
+			remaining += typicalDuration - elapsedInStage
+		} else {
+			// We're over the typical time, add a small buffer
+			remaining += 2 * time.Minute
+		}
+	}
+
+	// Add typical times for remaining stages
+	for i := currentIndex + 1; i < len(stageOrder)-1; i++ { // -1 to exclude AVAILABLE
+		if duration, ok := typicalStageDurations[stageOrder[i]]; ok {
+			remaining += duration
+		}
+	}
+
+	return remaining
 }
 
 // formatBuildStage returns a human-readable description of the build stage

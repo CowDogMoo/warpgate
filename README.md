@@ -108,20 +108,75 @@ docker images | grep attack-box
 
 ### Core Capabilities
 
-| Feature                    | Description                      |
-| -------------------------- | -------------------------------- |
-| **Container Images**       | Build OCI images with BuildKit   |
-| **Dockerfile Support**     | Native Dockerfile builds         |
-| **AWS AMIs**               | Create EC2 AMIs                  |
-| **Multi-arch Builds**      | Build amd64/arm64 simultaneously |
-| **Template Discovery**     | Git/local template repo mgmt     |
-| **Ansible Provisioner**    | Run Ansible playbooks            |
-| **Shell Provisioner**      | Execute shell scripts            |
-| **PowerShell Provisioner** | Run PowerShell (Windows AMIs)    |
-| **Variable Substitution**  | CLI flags/files/env vars         |
-| **Packer Conversion**      | Convert Packer to Warpgate       |
-| **Registry Push**          | Push images to registries        |
-| **Multi-arch Manifests**   | Create/push multi-arch images    |
+| Feature                      | Description                            |
+| ---------------------------- | -------------------------------------- |
+| **Container Images**         | Build OCI images with BuildKit         |
+| **Dockerfile Support**       | Native Dockerfile builds               |
+| **AWS AMIs**                 | Create EC2 AMIs                        |
+| **Multi-arch Builds**        | Build amd64/arm64 simultaneously       |
+| **Multi-region AMI Builds**  | Build AMIs across multiple AWS regions |
+| **Parallel Region Builds**   | Build in all regions simultaneously    |
+| **Cross-region AMI Copy**    | Copy AMIs to additional regions        |
+| **Build Monitoring**         | Stream logs and EC2 status             |
+| **Template Discovery**       | Git/local template repo mgmt           |
+| **Ansible Provisioner**      | Run Ansible playbooks                  |
+| **Shell Provisioner**        | Execute shell scripts                  |
+| **PowerShell Provisioner**   | Run PowerShell (Windows AMIs)          |
+| **Variable Substitution**    | CLI flags/files/env vars               |
+| **Packer Conversion**        | Convert Packer to Warpgate             |
+| **Registry Push**            | Push images to registries              |
+| **Multi-arch Manifests**     | Create/push multi-arch images          |
+
+### AMI Build Features
+
+Warp Gate provides advanced AMI building capabilities:
+
+```bash
+# Build AMI in a specific region
+warpgate build --template attack-box --target ami --region us-west-2
+
+# Build AMI in multiple regions (sequential)
+warpgate build --template attack-box --target ami --regions us-east-1,us-west-2,eu-west-1
+
+# Build AMI in multiple regions (parallel)
+warpgate build --template attack-box --target ami --regions us-east-1,us-west-2 --parallel-regions
+
+# Build AMI and copy to additional regions
+warpgate build --template attack-box --target ami --region us-east-1 --copy-to-regions us-west-2,eu-west-1
+
+# Stream build logs in real-time
+warpgate build --template attack-box --target ami --stream-logs
+
+# Show EC2 instance status during build
+warpgate build --template attack-box --target ami --show-ec2-status
+
+# Dry-run validation without creating resources
+warpgate build --template attack-box --target ami --dry-run
+
+# Force recreation of existing AWS resources
+warpgate build --template attack-box --target ami --force
+```
+
+### Resource Cleanup
+
+Clean up AWS Image Builder resources:
+
+```bash
+# Clean up resources for a specific build
+warpgate cleanup my-template
+
+# Dry-run to see what would be deleted
+warpgate cleanup my-template --dry-run
+
+# Non-interactive mode (skip confirmation prompts)
+warpgate cleanup my-template --yes
+
+# Clean up old component versions, keeping 3 most recent
+warpgate cleanup my-template --versions --keep 3
+
+# Clean up all warpgate-created resources
+warpgate cleanup --all --dry-run
+```
 
 ## Environment Variables
 

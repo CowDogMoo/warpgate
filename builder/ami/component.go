@@ -301,6 +301,12 @@ func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provi
 		scriptContents = append(scriptContents, scriptContent)
 	}
 
+	// Determine execution policy (default to Bypass for build environments)
+	executionPolicy := provisioner.ExecutionPolicy
+	if executionPolicy == "" {
+		executionPolicy = "Bypass"
+	}
+
 	// Build the component steps
 	steps := []map[string]interface{}{}
 
@@ -308,8 +314,8 @@ func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provi
 	for i, script := range scriptContents {
 		stepName := fmt.Sprintf("ExecutePowerShellScript_%d", i)
 
-		// Wrap script with error handling for better diagnostics
-		wrappedScript := wrapPowerShellWithErrorHandling(script)
+		// Wrap script with error handling and execution policy
+		wrappedScript := wrapPowerShellWithErrorHandling(script, executionPolicy)
 
 		steps = append(steps, map[string]interface{}{
 			"name":   stepName,
@@ -389,9 +395,12 @@ func checkCharacterBalance(script string, open, close rune, name string) error {
 }
 
 // wrapPowerShellWithErrorHandling adds error handling wrapper for better diagnostics
-func wrapPowerShellWithErrorHandling(script string) string {
-	// Add error preference and try-catch wrapper for better error reporting
-	wrapper := `$ErrorActionPreference = 'Stop'
+func wrapPowerShellWithErrorHandling(script string, executionPolicy string) string {
+	// Add execution policy, error preference and try-catch wrapper for better error reporting
+	wrapper := `# Set execution policy for this session
+Set-ExecutionPolicy -ExecutionPolicy %s -Scope Process -Force
+
+$ErrorActionPreference = 'Stop'
 $VerbosePreference = 'Continue'
 
 try {
@@ -401,7 +410,7 @@ try {
     Write-Error "Stack trace: $($_.ScriptStackTrace)"
     exit 1
 }`
-	return fmt.Sprintf(wrapper, script)
+	return fmt.Sprintf(wrapper, executionPolicy, script)
 }
 
 // needsReboot checks if the script contains reboot indicators

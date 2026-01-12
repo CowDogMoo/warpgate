@@ -313,6 +313,94 @@ func (m *ResourceManager) GetNextComponentVersion(ctx context.Context, name, bas
 	return baseVersion, nil
 }
 
+// CleanupOldComponentVersions deletes old versions of a component, keeping only the specified number of most recent versions
+func (m *ResourceManager) CleanupOldComponentVersions(ctx context.Context, name string, keepCount int) ([]string, error) {
+	if keepCount < 1 {
+		keepCount = 1 // Always keep at least one version
+	}
+
+	versions, err := m.GetComponentVersions(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list component versions: %w", err)
+	}
+
+	if len(versions) <= keepCount {
+		logging.Info("Component %s has %d versions, keeping all (threshold: %d)", name, len(versions), keepCount)
+		return nil, nil
+	}
+
+	// Sort versions by semantic version (descending) to keep the latest
+	sortedVersions := SortComponentVersions(versions)
+
+	// Determine versions to delete (all except the keepCount newest)
+	versionsToDelete := sortedVersions[keepCount:]
+
+	deletedARNs := []string{}
+	for _, v := range versionsToDelete {
+		if v.Arn == nil {
+			continue
+		}
+
+		// Get all build versions for this component version to delete them
+		buildVersions, err := m.getComponentBuildVersions(ctx, *v.Arn)
+		if err != nil {
+			logging.Warn("Failed to get build versions for %s: %v", *v.Arn, err)
+			continue
+		}
+
+		for _, buildARN := range buildVersions {
+			if err := m.DeleteComponent(ctx, buildARN); err != nil {
+				logging.Warn("Failed to delete component version %s: %v", buildARN, err)
+			} else {
+				deletedARNs = append(deletedARNs, buildARN)
+			}
+		}
+	}
+
+	logging.Info("Cleaned up %d old component versions for %s", len(deletedARNs), name)
+	return deletedARNs, nil
+}
+
+// getComponentBuildVersions retrieves all build versions for a component version ARN
+func (m *ResourceManager) getComponentBuildVersions(ctx context.Context, componentVersionARN string) ([]string, error) {
+	input := &imagebuilder.ListComponentBuildVersionsInput{
+		ComponentVersionArn: aws.String(componentVersionARN),
+	}
+
+	result, err := m.clients.ImageBuilder.ListComponentBuildVersions(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list component build versions: %w", err)
+	}
+
+	arns := make([]string, 0, len(result.ComponentSummaryList))
+	for _, summary := range result.ComponentSummaryList {
+		if summary.Arn != nil {
+			arns = append(arns, *summary.Arn)
+		}
+	}
+
+	return arns, nil
+}
+
+// ListComponentsByPrefix lists all components matching a name prefix
+func (m *ResourceManager) ListComponentsByPrefix(ctx context.Context, prefix string) ([]types.ComponentVersion, error) {
+	input := &imagebuilder.ListComponentsInput{}
+
+	result, err := m.clients.ImageBuilder.ListComponents(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list components: %w", err)
+	}
+
+	matching := []types.ComponentVersion{}
+	for _, v := range result.ComponentVersionList {
+		if v.Name != nil && strings.HasPrefix(*v.Name, prefix) {
+			matching = append(matching, v)
+		}
+	}
+
+	return matching, nil
+}
+
 // CleanupResourcesForBuild deletes all resources associated with a build name
 func (m *ResourceManager) CleanupResourcesForBuild(ctx context.Context, buildName string, force bool) error {
 	logging.Info("Cleaning up existing resources for build: %s", buildName)

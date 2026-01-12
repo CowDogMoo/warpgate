@@ -48,8 +48,9 @@ type ImageBuilder struct {
 	config          ClientConfig
 	globalConfig    *config.Config
 	forceRecreate   bool
-	buildID         string // Unique identifier for this build
-	namingPrefix    string // Optional prefix for resource naming
+	buildID         string        // Unique identifier for this build
+	namingPrefix    string        // Optional prefix for resource naming
+	monitorConfig   MonitorConfig // Configuration for build monitoring
 }
 
 // Verify that ImageBuilder implements builder.AMIBuilder at compile time
@@ -62,6 +63,11 @@ func NewImageBuilder(ctx context.Context, clientConfig ClientConfig) (*ImageBuil
 
 // NewImageBuilderWithOptions creates a new AMI builder with additional options
 func NewImageBuilderWithOptions(ctx context.Context, clientConfig ClientConfig, forceRecreate bool) (*ImageBuilder, error) {
+	return NewImageBuilderWithAllOptions(ctx, clientConfig, forceRecreate, MonitorConfig{})
+}
+
+// NewImageBuilderWithAllOptions creates a new AMI builder with all options including monitoring
+func NewImageBuilderWithAllOptions(ctx context.Context, clientConfig ClientConfig, forceRecreate bool, monitorConfig MonitorConfig) (*ImageBuilder, error) {
 	// Load global config
 	globalCfg, err := config.Load()
 	if err != nil {
@@ -77,17 +83,27 @@ func NewImageBuilderWithOptions(ctx context.Context, clientConfig ClientConfig, 
 	// Generate unique build ID
 	buildID := generateBuildID()
 
+	// Create pipeline manager with monitor config
+	pipelineManager := NewPipelineManagerWithMonitor(clients, monitorConfig)
+
 	return &ImageBuilder{
 		clients:         clients,
 		componentGen:    NewComponentGenerator(clients),
-		pipelineManager: NewPipelineManager(clients),
+		pipelineManager: pipelineManager,
 		operations:      NewAMIOperations(clients, globalCfg),
 		resourceManager: NewResourceManager(clients),
 		config:          clientConfig,
 		globalConfig:    globalCfg,
 		forceRecreate:   forceRecreate,
 		buildID:         buildID,
+		monitorConfig:   monitorConfig,
 	}, nil
+}
+
+// SetMonitorConfig sets the monitor configuration
+func (b *ImageBuilder) SetMonitorConfig(config MonitorConfig) {
+	b.monitorConfig = config
+	b.pipelineManager.SetMonitorConfig(config)
 }
 
 // generateBuildID creates a unique identifier for this build
@@ -142,7 +158,7 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 	}
 
 	// Execute the build pipeline
-	amiID, err := b.executePipeline(ctx, resources)
+	amiID, err := b.executePipeline(ctx, resources, config.Name)
 	if err != nil {
 		// Clean up resources on pipeline failure
 		createdResources.Cleanup(ctx, b.resourceManager)
@@ -237,15 +253,15 @@ func (b *ImageBuilder) createBuildResources(ctx context.Context, config builder.
 }
 
 // executePipeline runs the Image Builder pipeline and waits for completion
-func (b *ImageBuilder) executePipeline(ctx context.Context, resources *buildResources) (string, error) {
+func (b *ImageBuilder) executePipeline(ctx context.Context, resources *buildResources, imageName string) (string, error) {
 	// Start pipeline execution
 	imageARN, err := b.pipelineManager.StartPipeline(ctx, resources.PipelineARN)
 	if err != nil {
 		return "", fmt.Errorf("failed to start pipeline: %w", err)
 	}
 
-	// Wait for pipeline completion
-	image, err := b.pipelineManager.WaitForPipelineCompletion(ctx, *imageARN, 30*time.Second)
+	// Wait for pipeline completion with monitoring if enabled
+	image, err := b.pipelineManager.WaitForPipelineCompletionWithImageName(ctx, *imageARN, 30*time.Second, imageName)
 	if err != nil {
 		return "", fmt.Errorf("pipeline execution failed: %w", err)
 	}
@@ -337,12 +353,20 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 			componentName := config.Name + "-" + fmt.Sprint(index)
 			logging.Info("Creating component: %s (index: %d)", prov.Type, index)
 
-			// Determine the version to use - try auto-incrementing if conflicts
+			// Determine the version to use:
+			// 1. Use provisioner's ComponentVersion if specified
+			// 2. Fall back to config.Version
+			// 3. Auto-increment if forceRecreate and conflicts exist
 			version := config.Version
+			if prov.ComponentVersion != "" {
+				version = prov.ComponentVersion
+				logging.Info("Using provisioner-specified component version: %s", version)
+			}
+
 			if b.forceRecreate {
 				// With force, try to get the next available version
-				nextVersion, err := b.resourceManager.GetNextComponentVersion(ctx, componentName+"-"+prov.Type, config.Version)
-				if err == nil && nextVersion != config.Version {
+				nextVersion, err := b.resourceManager.GetNextComponentVersion(ctx, componentName+"-"+prov.Type, version)
+				if err == nil && nextVersion != version {
 					logging.Info("Component version conflict detected, using next version: %s", nextVersion)
 					version = nextVersion
 				}
