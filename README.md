@@ -1,9 +1,5 @@
 # Warp Gate
 
-<p align="center">
-  <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
-</p>
-
 **Build container images and AWS AMIs with speed, simplicity, and security.**
 
 [![License](https://img.shields.io/github/license/CowDogMoo/warpgate?label=License&style=flat&color=blue&logo=github)](https://github.com/CowDogMoo/warpgate/blob/main/LICENSE)
@@ -13,6 +9,10 @@
 [![🚨 Semgrep](https://github.com/CowDogMoo/warpgate/actions/workflows/semgrep.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/semgrep.yaml)
 [![Pre-Commit](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml)
 [![Renovate](https://github.com/CowDogMoo/warpgate/actions/workflows/renovate.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/renovate.yaml)
+
+<p align="center">
+  <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
+</p>
 
 ---
 
