@@ -37,10 +37,8 @@ func CreateBuildRequests(buildConfig *Config) []BuildRequest {
 		platform := fmt.Sprintf("linux/%s", arch)
 		tag := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
 
-		// Create a copy of the config for this architecture
 		archConfig := *buildConfig
 
-		// Apply architecture-specific overrides if they exist
 		if override, ok := buildConfig.ArchOverrides[arch]; ok {
 			ApplyArchOverrides(&archConfig, override, arch)
 		}
@@ -90,7 +88,6 @@ func ExtractArchitecturesFromTargets(buildConfig *Config) []string {
 		}
 	}
 
-	// Convert map to slice
 	archs := make([]string, 0, len(archMap))
 	for arch := range archMap {
 		archs = append(archs, arch)

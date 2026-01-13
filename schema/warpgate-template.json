@@ -399,6 +399,14 @@
           "type": "array",
           "description": "PSScripts is a list of PowerShell script file paths to execute"
         },
+        "execution_policy": {
+          "type": "string",
+          "description": "ExecutionPolicy sets the PowerShell execution policy (e.g., \"Bypass\", \"RemoteSigned\", \"Unrestricted\")\nDefault is \"Bypass\" for maximum compatibility in build environments"
+        },
+        "component_version": {
+          "type": "string",
+          "description": "ComponentVersion specifies the semantic version for this provisioner's Image Builder component\nIf not specified, defaults to \"1.0.0\" with auto-incrementing on conflicts when --force is used"
+        },
         "working_dir": {
           "type": "string",
           "description": "WorkingDir sets the working directory for provisioner execution"

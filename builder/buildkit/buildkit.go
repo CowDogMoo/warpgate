@@ -111,10 +111,8 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		logging.Info("Auto-detected BuildKit builder: %s", containerName)
 	}
 
-	// Connect to BuildKit with appropriate options
 	clientOpts := []client.ClientOpt{}
 
-	// Add TLS configuration for tcp:// connections
 	if strings.HasPrefix(addr, "tcp://") && cfg.BuildKit.TLSEnabled {
 		tlsConfig, err := loadTLSConfig(cfg.BuildKit)
 		if err != nil {
@@ -132,13 +130,11 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		logging.Warn("Connecting to BuildKit without TLS (insecure)")
 	}
 
-	// Create client connection
 	c, err := client.New(ctx, addr, clientOpts...)
 	if err != nil {
 		return nil, errors.Wrap("connect to BuildKit", "", err)
 	}
 
-	// Verify connection
 	info, err := c.Info(ctx)
 	if err != nil {
 		_ = c.Close()
@@ -147,14 +143,12 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 
 	logging.Info("BuildKit client connected (version %s)", info.BuildkitVersion.Version)
 
-	// Create Docker client for image operations
 	dockerCli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		_ = c.Close()
 		return nil, errors.Wrap("create Docker client", "", err)
 	}
 
-	// Verify Docker connection
 	_, err = dockerCli.Ping(ctx)
 	if err != nil {
 		_ = c.Close()

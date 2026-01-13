@@ -24,6 +24,7 @@ package ami
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -32,6 +33,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
+
+// ErrNotFound is returned when a requested resource does not exist.
+// Use errors.Is(err, ami.ErrNotFound) to check for this error.
+var ErrNotFound = errors.New("resource not found")
 
 // ResourceManager handles idempotent creation and management of Image Builder resources
 type ResourceManager struct {
@@ -58,7 +63,7 @@ func (e *ResourceExistsError) Error() string {
 
 // GetInfrastructureConfig retrieves an infrastructure configuration by name
 func (m *ResourceManager) GetInfrastructureConfig(ctx context.Context, name string) (*types.InfrastructureConfiguration, error) {
-	// List infrastructure configurations and filter by name
+	// List infrastructure configurations and filter by name with pagination
 	input := &imagebuilder.ListInfrastructureConfigurationsInput{
 		Filters: []types.Filter{
 			{
@@ -68,27 +73,34 @@ func (m *ResourceManager) GetInfrastructureConfig(ctx context.Context, name stri
 		},
 	}
 
-	result, err := m.clients.ImageBuilder.ListInfrastructureConfigurations(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list infrastructure configurations: %w", err)
-	}
-
-	// Find exact match
-	for _, summary := range result.InfrastructureConfigurationSummaryList {
-		if summary.Name != nil && *summary.Name == name {
-			// Get full configuration
-			getInput := &imagebuilder.GetInfrastructureConfigurationInput{
-				InfrastructureConfigurationArn: summary.Arn,
-			}
-			getResult, err := m.clients.ImageBuilder.GetInfrastructureConfiguration(ctx, getInput)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get infrastructure configuration: %w", err)
-			}
-			return getResult.InfrastructureConfiguration, nil
+	for {
+		result, err := m.clients.ImageBuilder.ListInfrastructureConfigurations(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list infrastructure configurations: %w", err)
 		}
+
+		// Find exact match
+		for _, summary := range result.InfrastructureConfigurationSummaryList {
+			if summary.Name != nil && *summary.Name == name {
+				// Get full configuration
+				getInput := &imagebuilder.GetInfrastructureConfigurationInput{
+					InfrastructureConfigurationArn: summary.Arn,
+				}
+				getResult, err := m.clients.ImageBuilder.GetInfrastructureConfiguration(ctx, getInput)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get infrastructure configuration: %w", err)
+				}
+				return getResult.InfrastructureConfiguration, nil
+			}
+		}
+
+		if result.NextToken == nil {
+			break
+		}
+		input.NextToken = result.NextToken
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("infrastructure configuration %q: %w", name, ErrNotFound)
 }
 
 // GetDistributionConfig retrieves a distribution configuration by name
@@ -102,25 +114,32 @@ func (m *ResourceManager) GetDistributionConfig(ctx context.Context, name string
 		},
 	}
 
-	result, err := m.clients.ImageBuilder.ListDistributionConfigurations(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list distribution configurations: %w", err)
-	}
-
-	for _, summary := range result.DistributionConfigurationSummaryList {
-		if summary.Name != nil && *summary.Name == name {
-			getInput := &imagebuilder.GetDistributionConfigurationInput{
-				DistributionConfigurationArn: summary.Arn,
-			}
-			getResult, err := m.clients.ImageBuilder.GetDistributionConfiguration(ctx, getInput)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get distribution configuration: %w", err)
-			}
-			return getResult.DistributionConfiguration, nil
+	for {
+		result, err := m.clients.ImageBuilder.ListDistributionConfigurations(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list distribution configurations: %w", err)
 		}
+
+		for _, summary := range result.DistributionConfigurationSummaryList {
+			if summary.Name != nil && *summary.Name == name {
+				getInput := &imagebuilder.GetDistributionConfigurationInput{
+					DistributionConfigurationArn: summary.Arn,
+				}
+				getResult, err := m.clients.ImageBuilder.GetDistributionConfiguration(ctx, getInput)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get distribution configuration: %w", err)
+				}
+				return getResult.DistributionConfiguration, nil
+			}
+		}
+
+		if result.NextToken == nil {
+			break
+		}
+		input.NextToken = result.NextToken
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("distribution configuration %q: %w", name, ErrNotFound)
 }
 
 // GetImageRecipe retrieves an image recipe by name and version
@@ -134,25 +153,32 @@ func (m *ResourceManager) GetImageRecipe(ctx context.Context, name, version stri
 		},
 	}
 
-	result, err := m.clients.ImageBuilder.ListImageRecipes(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list image recipes: %w", err)
-	}
-
-	for _, summary := range result.ImageRecipeSummaryList {
-		if summary.Name != nil && *summary.Name == name {
-			getInput := &imagebuilder.GetImageRecipeInput{
-				ImageRecipeArn: summary.Arn,
-			}
-			getResult, err := m.clients.ImageBuilder.GetImageRecipe(ctx, getInput)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get image recipe: %w", err)
-			}
-			return getResult.ImageRecipe, nil
+	for {
+		result, err := m.clients.ImageBuilder.ListImageRecipes(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list image recipes: %w", err)
 		}
+
+		for _, summary := range result.ImageRecipeSummaryList {
+			if summary.Name != nil && *summary.Name == name {
+				getInput := &imagebuilder.GetImageRecipeInput{
+					ImageRecipeArn: summary.Arn,
+				}
+				getResult, err := m.clients.ImageBuilder.GetImageRecipe(ctx, getInput)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get image recipe: %w", err)
+				}
+				return getResult.ImageRecipe, nil
+			}
+		}
+
+		if result.NextToken == nil {
+			break
+		}
+		input.NextToken = result.NextToken
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("image recipe %q: %w", name, ErrNotFound)
 }
 
 // GetImagePipeline retrieves an image pipeline by name
@@ -166,18 +192,25 @@ func (m *ResourceManager) GetImagePipeline(ctx context.Context, name string) (*t
 		},
 	}
 
-	result, err := m.clients.ImageBuilder.ListImagePipelines(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list image pipelines: %w", err)
-	}
-
-	for _, summary := range result.ImagePipelineList {
-		if summary.Name != nil && *summary.Name == name {
-			return &summary, nil
+	for {
+		result, err := m.clients.ImageBuilder.ListImagePipelines(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list image pipelines: %w", err)
 		}
+
+		for _, summary := range result.ImagePipelineList {
+			if summary.Name != nil && *summary.Name == name {
+				return &summary, nil
+			}
+		}
+
+		if result.NextToken == nil {
+			break
+		}
+		input.NextToken = result.NextToken
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("image pipeline %q: %w", name, ErrNotFound)
 }
 
 // DeleteInfrastructureConfig deletes an infrastructure configuration
@@ -313,6 +346,94 @@ func (m *ResourceManager) GetNextComponentVersion(ctx context.Context, name, bas
 	return baseVersion, nil
 }
 
+// CleanupOldComponentVersions deletes old versions of a component, keeping only the specified number of most recent versions
+func (m *ResourceManager) CleanupOldComponentVersions(ctx context.Context, name string, keepCount int) ([]string, error) {
+	if keepCount < 1 {
+		keepCount = 1 // Always keep at least one version
+	}
+
+	versions, err := m.GetComponentVersions(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list component versions: %w", err)
+	}
+
+	if len(versions) <= keepCount {
+		logging.Info("Component %s has %d versions, keeping all (threshold: %d)", name, len(versions), keepCount)
+		return nil, nil
+	}
+
+	// Sort versions by semantic version (descending) to keep the latest
+	sortedVersions := SortComponentVersions(versions)
+
+	// Determine versions to delete (all except the keepCount newest)
+	versionsToDelete := sortedVersions[keepCount:]
+
+	deletedARNs := []string{}
+	for _, v := range versionsToDelete {
+		if v.Arn == nil {
+			continue
+		}
+
+		// Get all build versions for this component version to delete them
+		buildVersions, err := m.getComponentBuildVersions(ctx, *v.Arn)
+		if err != nil {
+			logging.Warn("Failed to get build versions for %s: %v", *v.Arn, err)
+			continue
+		}
+
+		for _, buildARN := range buildVersions {
+			if err := m.DeleteComponent(ctx, buildARN); err != nil {
+				logging.Warn("Failed to delete component version %s: %v", buildARN, err)
+			} else {
+				deletedARNs = append(deletedARNs, buildARN)
+			}
+		}
+	}
+
+	logging.Info("Cleaned up %d old component versions for %s", len(deletedARNs), name)
+	return deletedARNs, nil
+}
+
+// getComponentBuildVersions retrieves all build versions for a component version ARN
+func (m *ResourceManager) getComponentBuildVersions(ctx context.Context, componentVersionARN string) ([]string, error) {
+	input := &imagebuilder.ListComponentBuildVersionsInput{
+		ComponentVersionArn: aws.String(componentVersionARN),
+	}
+
+	result, err := m.clients.ImageBuilder.ListComponentBuildVersions(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list component build versions: %w", err)
+	}
+
+	arns := make([]string, 0, len(result.ComponentSummaryList))
+	for _, summary := range result.ComponentSummaryList {
+		if summary.Arn != nil {
+			arns = append(arns, *summary.Arn)
+		}
+	}
+
+	return arns, nil
+}
+
+// ListComponentsByPrefix lists all components matching a name prefix
+func (m *ResourceManager) ListComponentsByPrefix(ctx context.Context, prefix string) ([]types.ComponentVersion, error) {
+	input := &imagebuilder.ListComponentsInput{}
+
+	result, err := m.clients.ImageBuilder.ListComponents(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list components: %w", err)
+	}
+
+	matching := []types.ComponentVersion{}
+	for _, v := range result.ComponentVersionList {
+		if v.Name != nil && strings.HasPrefix(*v.Name, prefix) {
+			matching = append(matching, v)
+		}
+	}
+
+	return matching, nil
+}
+
 // CleanupResourcesForBuild deletes all resources associated with a build name
 func (m *ResourceManager) CleanupResourcesForBuild(ctx context.Context, buildName string, force bool) error {
 	logging.Info("Cleaning up existing resources for build: %s", buildName)
@@ -359,7 +480,10 @@ func (m *ResourceManager) cleanupResource(ctx context.Context, typeName string, 
 // Helper functions to get ARNs
 func (m *ResourceManager) getPipelineARN(ctx context.Context, name string) (string, error) {
 	pipeline, err := m.GetImagePipeline(ctx, name)
-	if err != nil || pipeline == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(pipeline.Arn), nil
@@ -367,7 +491,10 @@ func (m *ResourceManager) getPipelineARN(ctx context.Context, name string) (stri
 
 func (m *ResourceManager) getRecipeARN(ctx context.Context, name string) (string, error) {
 	recipe, err := m.GetImageRecipe(ctx, name, "")
-	if err != nil || recipe == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(recipe.Arn), nil
@@ -375,7 +502,10 @@ func (m *ResourceManager) getRecipeARN(ctx context.Context, name string) (string
 
 func (m *ResourceManager) getDistConfigARN(ctx context.Context, name string) (string, error) {
 	dist, err := m.GetDistributionConfig(ctx, name)
-	if err != nil || dist == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(dist.Arn), nil
@@ -383,7 +513,10 @@ func (m *ResourceManager) getDistConfigARN(ctx context.Context, name string) (st
 
 func (m *ResourceManager) getInfraConfigARN(ctx context.Context, name string) (string, error) {
 	infra, err := m.GetInfrastructureConfig(ctx, name)
-	if err != nil || infra == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(infra.Arn), nil

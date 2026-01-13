@@ -60,7 +60,6 @@ func (s *BuildService) ExecuteContainerBuild(ctx context.Context, config Config,
 		return nil, fmt.Errorf("failed to apply overrides: %w", err)
 	}
 
-	// Create builder
 	bldr, err := s.buildKitCreator(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create builder: %w", err)
@@ -116,10 +115,8 @@ func (s *BuildService) ExecuteAMIBuild(ctx context.Context, config Config, opts 
 		return nil, fmt.Errorf("AWS region must be specified (use --region flag, set in template, or configure in global config)")
 	}
 
-	// Update options with resolved region
 	opts.Region = region
 
-	// Execute the build
 	result, err := amiBuilder.Build(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("AMI build failed: %w", err)
@@ -136,7 +133,6 @@ func (s *BuildService) Push(ctx context.Context, config Config, results []BuildR
 		return fmt.Errorf("registry must be specified for push")
 	}
 
-	// Create builder for push operation
 	bldr, err := s.buildKitCreator(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create builder for push: %w", err)
@@ -163,7 +159,6 @@ func DetermineTargetType(config *Config, opts BuildOptions) string {
 		return opts.TargetType
 	}
 
-	// Check config targets
 	if len(config.Targets) > 0 {
 		return config.Targets[0].Type
 	}
@@ -174,7 +169,6 @@ func DetermineTargetType(config *Config, opts BuildOptions) string {
 
 // executeSingleArchBuild executes a single-architecture build
 func (s *BuildService) executeSingleArchBuild(ctx context.Context, config *Config, bldr ContainerBuilder, opts BuildOptions) (*BuildResult, error) {
-	// Set platform if not already set
 	if config.Base.Platform == "" && len(config.Architectures) > 0 {
 		config.Base.Platform = fmt.Sprintf("linux/%s", config.Architectures[0])
 	}
@@ -197,13 +191,8 @@ func (s *BuildService) executeMultiArchBuild(ctx context.Context, config *Config
 		concurrency = s.globalConfig.Build.Concurrency
 	}
 
-	// Create build orchestrator
 	orchestrator := NewBuildOrchestrator(concurrency)
-
-	// Create build requests for each architecture
 	requests := CreateBuildRequests(config)
-
-	// Build all architectures in parallel
 	results, err := orchestrator.BuildMultiArch(ctx, requests, bldr)
 	if err != nil {
 		return nil, fmt.Errorf("multi-arch build failed: %w", err)
@@ -226,7 +215,6 @@ func (s *BuildService) pushSingleArch(ctx context.Context, config *Config, resul
 		digest = result.Digest
 	}
 
-	// Save digest if requested
 	if opts.SaveDigests && digest != "" {
 		arch := result.Architecture
 		if arch == "" {
@@ -256,7 +244,6 @@ func (s *BuildService) pushMultiArch(ctx context.Context, config *Config, result
 		concurrency = s.globalConfig.Build.Concurrency
 	}
 
-	// Create orchestrator for parallel push
 	orchestrator := NewBuildOrchestrator(concurrency)
 
 	// Push individual architecture images
@@ -295,7 +282,6 @@ func (s *BuildService) saveDigests(ctx context.Context, imageName string, result
 func CreateManifestEntries(results []BuildResult) ([]manifests.ManifestEntry, error) {
 	entries := make([]manifests.ManifestEntry, 0, len(results))
 	for _, result := range results {
-		// Parse digest
 		var imageDigest digest.Digest
 		if result.Digest != "" {
 			var err error
@@ -306,7 +292,6 @@ func CreateManifestEntries(results []BuildResult) ([]manifests.ManifestEntry, er
 			}
 		}
 
-		// Parse platform information using the consolidated utility
 		platformInfo := manifests.ParsePlatform(result.Platform)
 
 		entries = append(entries, manifests.ManifestEntry{

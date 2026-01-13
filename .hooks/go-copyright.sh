@@ -2,7 +2,7 @@
 set -ex
 
 copyright_header='/*
-Copyright © 2025 Jayson Grace <jayson.e.grace@gmail.com>
+Copyright © 2026 Jayson Grace <jayson.e.grace@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -46,7 +46,7 @@ fi
 
 for file in $staged_files; do
     echo "Checking file: $file"
-    if grep -qF "Copyright © 2025 Jayson Grace" "$file"; then
+    if grep -qF "Copyright © 2026 Jayson Grace" "$file"; then
         echo "Current copyright header is up-to-date in $file"
     else
         echo "Updating copyright header in $file"

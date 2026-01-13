@@ -25,6 +25,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
@@ -32,30 +33,36 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // buildOptions holds command-line options for the build command
 type buildOptions struct {
-	template      string
-	fromGit       string
-	targetType    string
-	push          bool
-	registry      string
-	arch          []string
-	tags          []string
-	saveDigests   bool
-	digestDir     string
-	region        string
-	instanceType  string
-	vars          []string
-	varFiles      []string
-	cacheFrom     []string
-	cacheTo       []string
-	labels        []string
-	buildArgs     []string
-	noCache       bool
-	forceRecreate bool
-	dryRun        bool
+	template        string
+	fromGit         string
+	targetType      string
+	push            bool
+	registry        string
+	arch            []string
+	tags            []string
+	saveDigests     bool
+	digestDir       string
+	region          string
+	regions         []string // Multi-region AMI builds
+	instanceType    string
+	vars            []string
+	varFiles        []string
+	cacheFrom       []string
+	cacheTo         []string
+	labels          []string
+	buildArgs       []string
+	noCache         bool
+	forceRecreate   bool
+	dryRun          bool
+	parallelRegions bool     // Build in all regions in parallel
+	copyToRegions   []string // Copy built AMI to additional regions
+	streamLogs      bool     // Stream CloudWatch/SSM logs during build
+	showEC2Status   bool     // Show EC2 instance status during build
 }
 
 var buildCmd *cobra.Command
@@ -94,13 +101,21 @@ Examples:
   warpgate build --template attack-box --arch amd64,arm64 --push
 
   # Build AMI in different region with custom instance type
-  warpgate build --template attack-box --target ami --region us-west-2 --instance-type t3.large`,
+  warpgate build --template attack-box --target ami --region us-west-2 --instance-type t3.large
+
+  # Build AMI in multiple regions
+  warpgate build --template attack-box --target ami --regions us-east-1,us-west-2,eu-west-1
+
+  # Build AMI in multiple regions in parallel
+  warpgate build --template attack-box --target ami --regions us-east-1,us-west-2 --parallel-regions
+
+  # Build AMI and copy to additional regions
+  warpgate build --template attack-box --target ami --region us-east-1 --copy-to-regions us-west-2,eu-west-1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBuild(cmd, args, opts)
 		},
 	}
 
-	// Build command flags - bind to local opts
 	buildCmd.Flags().StringVar(&opts.template, "template", "", "Use named template from registry")
 	buildCmd.Flags().StringVar(&opts.fromGit, "from-git", "", "Load template from git URL")
 	buildCmd.Flags().StringVar(&opts.targetType, "target", "", "Override target type (container, ami)")
@@ -121,6 +136,11 @@ Examples:
 	buildCmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Disable all caching")
 	buildCmd.Flags().BoolVar(&opts.forceRecreate, "force", false, "Force recreation of existing AWS resources (AMI builds only)")
 	buildCmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Validate configuration without creating resources (AMI builds only)")
+	buildCmd.Flags().StringSliceVar(&opts.regions, "regions", nil, "Build AMI in multiple regions (comma-separated)")
+	buildCmd.Flags().BoolVar(&opts.parallelRegions, "parallel-regions", false, "Build in all regions in parallel (default: sequential)")
+	buildCmd.Flags().StringSliceVar(&opts.copyToRegions, "copy-to-regions", nil, "Copy AMI to additional regions after build (comma-separated)")
+	buildCmd.Flags().BoolVar(&opts.streamLogs, "stream-logs", false, "Stream CloudWatch/SSM logs from build instance (AMI builds only)")
+	buildCmd.Flags().BoolVar(&opts.showEC2Status, "show-ec2-status", false, "Show EC2 instance status during build (AMI builds only)")
 }
 
 func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
@@ -211,15 +231,36 @@ func executeBuild(ctx context.Context, targetType string, service *builder.Build
 
 // executeAMIBuildTarget handles the AMI-specific build logic
 func executeAMIBuildTarget(ctx context.Context, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
+	// Determine regions to build in
+	regions := determineTargetRegions(cfg, opts)
+
+	if len(regions) > 1 {
+		return executeMultiRegionAMIBuild(ctx, service, cfg, buildConfig, builderOpts, opts, regions)
+	}
+
+	// Single region build
+	region := cfg.AWS.Region
+	if opts.region != "" {
+		region = opts.region
+	}
+	if len(regions) == 1 {
+		region = regions[0]
+	}
+
 	amiConfig := ami.ClientConfig{
-		Region:          cfg.AWS.Region,
+		Region:          region,
 		Profile:         cfg.AWS.Profile,
 		AccessKeyID:     cfg.AWS.AccessKeyID,
 		SecretAccessKey: cfg.AWS.SecretAccessKey,
 		SessionToken:    cfg.AWS.SessionToken,
 	}
 
-	amiBuilder, err := ami.NewImageBuilderWithOptions(ctx, amiConfig, opts.forceRecreate)
+	monitorConfig := ami.MonitorConfig{
+		StreamLogs:    opts.streamLogs,
+		ShowEC2Status: opts.showEC2Status,
+	}
+
+	amiBuilder, err := ami.NewImageBuilderWithAllOptions(ctx, amiConfig, opts.forceRecreate, monitorConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AMI builder: %w", err)
 	}
@@ -237,7 +278,241 @@ func executeAMIBuildTarget(ctx context.Context, service *builder.BuildService, c
 	if err != nil {
 		return nil, fmt.Errorf("AMI build failed: %w", err)
 	}
-	return []builder.BuildResult{*result}, nil
+
+	results := []builder.BuildResult{*result}
+
+	if len(opts.copyToRegions) > 0 {
+		copyResults, err := copyAMIToRegions(ctx, cfg, result.AMIID, region, opts.copyToRegions)
+		if err != nil {
+			logging.WarnContext(ctx, "Some cross-region copies failed: %v", err)
+		}
+		results = append(results, copyResults...)
+	}
+
+	return results, nil
+}
+
+// determineTargetRegions determines which regions to build in
+func determineTargetRegions(cfg *config.Config, opts *buildOptions) []string {
+	// Priority: --regions > --region > config
+	if len(opts.regions) > 0 {
+		return opts.regions
+	}
+	if opts.region != "" {
+		return []string{opts.region}
+	}
+	if cfg.AWS.Region != "" {
+		return []string{cfg.AWS.Region}
+	}
+	return []string{}
+}
+
+// executeMultiRegionAMIBuild builds AMIs in multiple regions
+func executeMultiRegionAMIBuild(ctx context.Context, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions, regions []string) ([]builder.BuildResult, error) {
+	logging.InfoContext(ctx, "Building AMI in %d regions: %v", len(regions), regions)
+
+	if opts.parallelRegions {
+		return executeParallelRegionBuilds(ctx, service, cfg, buildConfig, builderOpts, opts, regions)
+	}
+
+	return executeSequentialRegionBuilds(ctx, service, cfg, buildConfig, builderOpts, opts, regions)
+}
+
+// executeSequentialRegionBuilds builds AMIs in regions one at a time
+func executeSequentialRegionBuilds(ctx context.Context, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions, regions []string) ([]builder.BuildResult, error) {
+	var allResults []builder.BuildResult
+
+	for i, region := range regions {
+		logging.InfoContext(ctx, "Building in region %d/%d: %s", i+1, len(regions), region)
+
+		amiConfig := ami.ClientConfig{
+			Region:          region,
+			Profile:         cfg.AWS.Profile,
+			AccessKeyID:     cfg.AWS.AccessKeyID,
+			SecretAccessKey: cfg.AWS.SecretAccessKey,
+			SessionToken:    cfg.AWS.SessionToken,
+		}
+
+		monitorConfig := ami.MonitorConfig{
+			StreamLogs:    opts.streamLogs,
+			ShowEC2Status: opts.showEC2Status,
+		}
+
+		amiBuilder, err := ami.NewImageBuilderWithAllOptions(ctx, amiConfig, opts.forceRecreate, monitorConfig)
+		if err != nil {
+			logging.ErrorContext(ctx, "Failed to create AMI builder for region %s: %v", region, err)
+			continue
+		}
+
+		if opts.dryRun {
+			dryRunResult, err := handleAMIDryRun(ctx, amiBuilder, buildConfig)
+			if closeErr := amiBuilder.Close(); closeErr != nil {
+				logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
+			}
+			if err != nil {
+				logging.ErrorContext(ctx, "Dry-run failed for region %s: %v", region, err)
+				continue
+			}
+			if dryRunResult != nil {
+				allResults = append(allResults, dryRunResult...)
+			}
+			continue
+		}
+
+		regionOpts := builderOpts
+		regionOpts.Region = region
+
+		result, err := service.ExecuteAMIBuild(ctx, *buildConfig, regionOpts, amiBuilder)
+		if closeErr := amiBuilder.Close(); closeErr != nil {
+			logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
+		}
+		if err != nil {
+			logging.ErrorContext(ctx, "Build failed in region %s: %v", region, err)
+			continue
+		}
+
+		logging.InfoContext(ctx, "Built AMI in %s: %s", region, result.AMIID)
+		allResults = append(allResults, *result)
+	}
+
+	if len(allResults) == 0 {
+		return nil, fmt.Errorf("all regional builds failed")
+	}
+
+	logging.InfoContext(ctx, "Successfully built AMIs in %d/%d regions", len(allResults), len(regions))
+	return allResults, nil
+}
+
+// executeParallelRegionBuilds builds AMIs in all regions simultaneously
+func executeParallelRegionBuilds(ctx context.Context, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions, regions []string) ([]builder.BuildResult, error) {
+	logging.InfoContext(ctx, "Building in parallel across %d regions", len(regions))
+
+	// Pre-allocate results slice with mutex for thread-safe access
+	var mu sync.Mutex
+	allResults := make([]builder.BuildResult, 0, len(regions))
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	for _, region := range regions {
+		region := region // Capture loop variable
+
+		g.Go(func() error {
+			logging.InfoContext(ctx, "Starting build in region: %s", region)
+
+			amiConfig := ami.ClientConfig{
+				Region:          region,
+				Profile:         cfg.AWS.Profile,
+				AccessKeyID:     cfg.AWS.AccessKeyID,
+				SecretAccessKey: cfg.AWS.SecretAccessKey,
+				SessionToken:    cfg.AWS.SessionToken,
+			}
+
+			monitorConfig := ami.MonitorConfig{
+				StreamLogs:    opts.streamLogs,
+				ShowEC2Status: opts.showEC2Status,
+			}
+
+			amiBuilder, err := ami.NewImageBuilderWithAllOptions(ctx, amiConfig, opts.forceRecreate, monitorConfig)
+			if err != nil {
+				return fmt.Errorf("region %s: failed to create AMI builder: %w", region, err)
+			}
+			defer func() {
+				if closeErr := amiBuilder.Close(); closeErr != nil {
+					logging.WarnContext(ctx, "Failed to close AMI builder for %s: %v", region, closeErr)
+				}
+			}()
+
+			if opts.dryRun {
+				_, err := handleAMIDryRun(ctx, amiBuilder, buildConfig)
+				if err != nil {
+					return fmt.Errorf("region %s: dry-run failed: %w", region, err)
+				}
+				return nil
+			}
+
+			regionOpts := builderOpts
+			regionOpts.Region = region
+
+			result, err := service.ExecuteAMIBuild(ctx, *buildConfig, regionOpts, amiBuilder)
+			if err != nil {
+				return fmt.Errorf("region %s: build failed: %w", region, err)
+			}
+
+			mu.Lock()
+			allResults = append(allResults, *result)
+			mu.Unlock()
+
+			logging.InfoContext(ctx, "Completed build in %s: %s", region, result.AMIID)
+			return nil
+		})
+	}
+
+	// Wait for all builds to complete
+	if err := g.Wait(); err != nil {
+		logging.WarnContext(ctx, "Some parallel builds failed: %v", err)
+		// Return partial results if we have any
+		if len(allResults) > 0 {
+			logging.InfoContext(ctx, "Successfully built AMIs in %d/%d regions", len(allResults), len(regions))
+			return allResults, nil
+		}
+		return nil, err
+	}
+
+	logging.InfoContext(ctx, "Successfully built AMIs in all %d regions", len(regions))
+	return allResults, nil
+}
+
+// copyAMIToRegions copies an AMI to multiple target regions
+func copyAMIToRegions(ctx context.Context, cfg *config.Config, amiID, sourceRegion string, targetRegions []string) ([]builder.BuildResult, error) {
+	logging.InfoContext(ctx, "Copying AMI %s from %s to %d regions", amiID, sourceRegion, len(targetRegions))
+
+	var results []builder.BuildResult
+	var copyErrors []error
+
+	for _, targetRegion := range targetRegions {
+		if targetRegion == sourceRegion {
+			logging.InfoContext(ctx, "Skipping copy to source region %s", targetRegion)
+			continue
+		}
+
+		logging.InfoContext(ctx, "Copying AMI to region: %s", targetRegion)
+
+		targetConfig := ami.ClientConfig{
+			Region:          targetRegion,
+			Profile:         cfg.AWS.Profile,
+			AccessKeyID:     cfg.AWS.AccessKeyID,
+			SecretAccessKey: cfg.AWS.SecretAccessKey,
+			SessionToken:    cfg.AWS.SessionToken,
+		}
+
+		amiBuilder, err := ami.NewImageBuilder(ctx, targetConfig)
+		if err != nil {
+			copyErrors = append(copyErrors, fmt.Errorf("region %s: failed to create client: %w", targetRegion, err))
+			continue
+		}
+
+		copiedAMIID, err := amiBuilder.Copy(ctx, amiID, sourceRegion, targetRegion)
+		if closeErr := amiBuilder.Close(); closeErr != nil {
+			logging.WarnContext(ctx, "Failed to close AMI builder for %s: %v", targetRegion, closeErr)
+		}
+		if err != nil {
+			copyErrors = append(copyErrors, fmt.Errorf("region %s: copy failed: %w", targetRegion, err))
+			continue
+		}
+
+		logging.InfoContext(ctx, "Copied AMI to %s: %s", targetRegion, copiedAMIID)
+		results = append(results, builder.BuildResult{
+			AMIID:  copiedAMIID,
+			Region: targetRegion,
+			Notes:  []string{fmt.Sprintf("Copied from %s:%s", sourceRegion, amiID)},
+		})
+	}
+
+	if len(copyErrors) > 0 {
+		return results, fmt.Errorf("some copies failed: %v", copyErrors)
+	}
+
+	return results, nil
 }
 
 // handleAMIDryRun performs dry-run validation for AMI builds

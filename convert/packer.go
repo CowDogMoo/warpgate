@@ -113,7 +113,6 @@ type PackerConverter struct {
 //
 // Returns an error if the global configuration cannot be loaded.
 func NewPackerConverter(opts PackerConverterOptions) (*PackerConverter, error) {
-	// Load global config
 	globalCfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
@@ -129,33 +128,23 @@ func NewPackerConverter(opts PackerConverterOptions) (*PackerConverter, error) {
 func (c *PackerConverter) Convert() (*builder.Config, error) {
 	logging.Info("Starting Packer template conversion for: %s", c.options.TemplateDir)
 
-	// Extract template name from directory
 	templateName := filepath.Base(c.options.TemplateDir)
-
-	// Parse README for description
 	description := c.extractDescription()
-
-	// Create HCL parser
 	hclParser := NewHCLParser()
-
-	// Parse variables file for base image info
 	baseImage, baseVersion := c.extractBaseImageHCL(hclParser)
 	if c.options.BaseImage != "" {
 		baseImage = c.options.BaseImage
 		baseVersion = "latest"
 	}
 
-	// Parse docker.pkr.hcl for source blocks and provisioners
 	dockerPath := filepath.Join(c.options.TemplateDir, "docker.pkr.hcl")
 	_ = hclParser.ParseSourceBlocks(dockerPath)
 	dockerProvisioners := c.parseDockerProvisionersHCL(hclParser)
 
-	// Parse ami.pkr.hcl for AMI-specific source blocks and provisioners
 	amiPath := filepath.Join(c.options.TemplateDir, "ami.pkr.hcl")
 	_ = hclParser.ParseSourceBlocks(amiPath)
 	amiProvisioners := c.parseAMIProvisionersHCL(hclParser)
 
-	// Parse post-processors from both docker and AMI builds
 	dockerBuilds, _ := hclParser.ParseBuildFile(dockerPath)
 	amiBuilds, _ := hclParser.ParseBuildFile(amiPath)
 	allBuilds := dockerBuilds
@@ -191,7 +180,6 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 		license = c.globalConfig.Convert.DefaultLicense
 	}
 
-	// Build base image configuration with Docker-specific settings
 	base := builder.BaseImage{
 		Image: fmt.Sprintf("%s:%s", baseImage, baseVersion),
 		Pull:  true,
@@ -205,7 +193,6 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 		base.Changes = dockerSrc.Changes
 	}
 
-	// Build config
 	config := &builder.Config{
 		Metadata: builder.Metadata{
 			Name:        templateName,
@@ -258,7 +245,6 @@ func (c *PackerConverter) extractDescription() string {
 			continue
 		}
 
-		// Get the first non-empty paragraph after the header
 		if foundFirstHeader && line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "-") {
 			description = line
 			break
@@ -276,15 +262,12 @@ func (c *PackerConverter) extractDescription() string {
 func (c *PackerConverter) buildTargets(hclParser *HCLParser) []builder.Target {
 	var targets []builder.Target
 
-	// Add container target with platforms from config
 	targets = append(targets, builder.Target{
 		Type:      "container",
 		Platforms: c.globalConfig.Container.DefaultPlatforms,
 	})
 
-	// Add AMI target if requested
 	if c.options.IncludeAMI {
-		// Start with config defaults
 		instanceType := c.globalConfig.Convert.AMIInstanceType
 		if instanceType == "" {
 			instanceType = c.globalConfig.AWS.AMI.InstanceType
@@ -402,7 +385,6 @@ func (c *PackerConverter) convertHCLProvisioners(builds []PackerBuild) []builder
 		for _, hclProv := range build.Provisioners {
 			var prov builder.Provisioner
 
-			// Set common fields
 			prov.Type = hclProv.Type
 			prov.Only = hclProv.Only
 			prov.Except = hclProv.Except
@@ -424,8 +406,6 @@ func (c *PackerConverter) convertHCLProvisioners(builds []PackerBuild) []builder
 				prov.AnsibleEnvVars = hclProv.AnsibleEnvVars
 				prov.CollectionsPath = hclProv.CollectionsPath
 				prov.UseProxy = hclProv.UseProxy
-
-				// Parse extra_arguments into ExtraVars
 				prov.ExtraVars = c.parseAnsibleExtraArgs(hclProv.ExtraArguments)
 			}
 
@@ -474,7 +454,6 @@ func (c *PackerConverter) parseAnsibleExtraArgs(args []string) map[string]string
 		if args[i] == "-e" || args[i] == "--extra-vars" {
 			if i+1 < len(args) {
 				i++
-				// Parse key=value format
 				if parts := strings.SplitN(args[i], "=", 2); len(parts) == 2 {
 					extraVars[parts[0]] = parts[1]
 				}
