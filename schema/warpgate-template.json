@@ -139,6 +139,59 @@
       "type": "object",
       "description": "DockerfileConfig specifies Dockerfile-based build configuration"
     },
+    "GitAuth": {
+      "properties": {
+        "ssh_key": {
+          "type": "string",
+          "description": "SSHKey is the SSH private key content for SSH-based authentication\nUse environment variable expansion for security: ${SSH_PRIVATE_KEY}"
+        },
+        "ssh_key_file": {
+          "type": "string",
+          "description": "SSHKeyFile is the path to an SSH private key file"
+        },
+        "token": {
+          "type": "string",
+          "description": "Token is the access token for HTTPS-based authentication\nWorks with GitHub PAT, GitLab tokens, etc.\nUse environment variable expansion for security: ${GITHUB_TOKEN}"
+        },
+        "username": {
+          "type": "string",
+          "description": "Username is the username for HTTPS basic authentication\nUsually not needed when using tokens (most providers accept any username with token as password)"
+        },
+        "password": {
+          "type": "string",
+          "description": "Password is the password for HTTPS basic authentication\nPrefer using Token instead for better security"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "GitAuth contains authentication information for git repositories"
+    },
+    "GitSource": {
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "Repository is the git repository URL (HTTPS or SSH format)\nExamples: \"https://github.com/org/repo.git\", \"git@github.com:org/repo.git\""
+        },
+        "ref": {
+          "type": "string",
+          "description": "Ref is the git reference to checkout (branch, tag, or commit SHA)\nDefaults to the repository's default branch if not specified"
+        },
+        "depth": {
+          "type": "integer",
+          "description": "Depth specifies the clone depth for shallow clones\nUse 1 for fastest clone when only latest commit is needed\nUse 0 or omit for full clone with complete history"
+        },
+        "auth": {
+          "$ref": "#/$defs/GitAuth",
+          "description": "Auth provides authentication for private repositories"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "repository"
+      ],
+      "description": "GitSource defines a git repository to clone"
+    },
     "ImageAuth": {
       "properties": {
         "username": {
@@ -437,6 +490,24 @@
       ],
       "description": "Requirements specifies version requirements"
     },
+    "Source": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name is a unique identifier for this source, used to reference it in provisioners\nReference sources in provisioners using ${sources.\u003cname\u003e}"
+        },
+        "git": {
+          "$ref": "#/$defs/GitSource",
+          "description": "Git specifies a git repository to clone"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "description": "Source defines an external source to fetch before the build starts Sources are fetched to a temporary directory and can be referenced by provisioners"
+    },
     "Target": {
       "properties": {
         "type": {
@@ -579,6 +650,13 @@
       },
       "type": "object",
       "description": "ArchOverrides allows specifying different configurations per architecture"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/Source"
+      },
+      "type": "array",
+      "description": "Sources defines external sources to fetch before the build starts\nThese can be referenced by provisioners using ${sources.\u003cname\u003e}"
     }
   },
   "additionalProperties": false,

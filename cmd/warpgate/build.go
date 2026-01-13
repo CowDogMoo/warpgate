@@ -31,6 +31,7 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
 	"github.com/cowdogmoo/warpgate/v3/cli"
 	"github.com/cowdogmoo/warpgate/v3/config"
+	wgit "github.com/cowdogmoo/warpgate/v3/git"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -171,6 +172,22 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	buildConfig, err := loadBuildConfig(ctx, args, opts)
 	if err != nil {
 		return fmt.Errorf("failed to load build configuration: %w", err)
+	}
+
+	// Fetch external sources if defined
+	var sourceFetcher *wgit.SourceFetcher
+	if len(buildConfig.Sources) > 0 {
+		sourceFetcher, err = fetchSources(ctx, buildConfig)
+		if err != nil {
+			return fmt.Errorf("failed to fetch sources: %w", err)
+		}
+		defer func() {
+			if sourceFetcher != nil {
+				if cleanupErr := sourceFetcher.Cleanup(); cleanupErr != nil {
+					logging.WarnContext(ctx, "Failed to cleanup fetched sources: %v", cleanupErr)
+				}
+			}
+		}()
 	}
 
 	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc)
@@ -530,4 +547,55 @@ func handleAMIDryRun(ctx context.Context, amiBuilder *ami.ImageBuilder, buildCon
 	}
 	logging.InfoContext(ctx, "Dry-run validation completed successfully")
 	return nil, nil
+}
+
+// fetchSources fetches external sources defined in the config
+// It returns the fetcher for cleanup purposes
+func fetchSources(ctx context.Context, buildConfig *builder.Config) (*wgit.SourceFetcher, error) {
+	logging.InfoContext(ctx, "Fetching %d external sources", len(buildConfig.Sources))
+
+	fetcher, err := wgit.NewSourceFetcher("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create source fetcher: %w", err)
+	}
+
+	if err := fetcher.FetchSources(ctx, buildConfig.Sources); err != nil {
+		// Cleanup on error
+		_ = fetcher.Cleanup()
+		return nil, err
+	}
+
+	// Update provisioner source paths to use fetched sources
+	updateProvisionerSourcePaths(buildConfig)
+
+	logging.InfoContext(ctx, "Successfully fetched all sources to %s", fetcher.BaseDir)
+	return fetcher, nil
+}
+
+// updateProvisionerSourcePaths updates file provisioner source paths
+// to use fetched sources when they reference ${sources.<name>}
+func updateProvisionerSourcePaths(config *builder.Config) {
+	sourceMap := make(map[string]string)
+	for _, src := range config.Sources {
+		sourceMap[src.Name] = src.Path
+	}
+
+	for i := range config.Provisioners {
+		prov := &config.Provisioners[i]
+		if prov.Type == "file" && prov.Source != "" {
+			prov.Source = resolveSourceReference(prov.Source, sourceMap)
+		}
+	}
+}
+
+// resolveSourceReference resolves ${sources.<name>} references to actual paths
+func resolveSourceReference(source string, sourceMap map[string]string) string {
+	// Check for ${sources.<name>} pattern
+	if len(source) > 11 && source[:10] == "${sources." && source[len(source)-1] == '}' {
+		name := source[10 : len(source)-1]
+		if path, ok := sourceMap[name]; ok {
+			return path
+		}
+	}
+	return source
 }
