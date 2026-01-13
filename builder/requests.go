@@ -88,7 +88,6 @@ func ExtractArchitecturesFromTargets(buildConfig *Config) []string {
 		}
 	}
 
-	// Convert map to slice
 	archs := make([]string, 0, len(archMap))
 	for arch := range archMap {
 		archs = append(archs, arch)

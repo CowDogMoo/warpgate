@@ -24,6 +24,7 @@ package ami
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,19 +51,14 @@ func NewComponentGenerator(clients *AWSClients) *ComponentGenerator {
 
 // GenerateComponent creates an Image Builder component from a provisioner
 func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner builder.Provisioner, name, version string) (*string, error) {
-	// Generate component document based on provisioner type
 	document, err := g.createComponentDocument(provisioner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create component document: %w", err)
 	}
 
-	// Create the component in AWS
 	componentName := fmt.Sprintf("%s-%s", name, provisioner.Type)
 
-	platform := types.PlatformLinux
-	if provisioner.Type == "powershell" {
-		platform = types.PlatformWindows
-	}
+	platform := determinePlatform(provisioner)
 
 	input := &imagebuilder.CreateComponentInput{
 		Name:            aws.String(componentName),
@@ -78,9 +74,7 @@ func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner 
 
 	result, err := g.clients.ImageBuilder.CreateComponent(ctx, input)
 	if err != nil {
-		// Check if component already exists
 		if strings.Contains(err.Error(), "already exists") {
-			// Get existing component ARN
 			arn, getErr := g.getComponentARN(ctx, componentName, version)
 			if getErr != nil {
 				return nil, fmt.Errorf("component exists but failed to get ARN: %w", getErr)
@@ -115,10 +109,8 @@ func (g *ComponentGenerator) createShellComponent(provisioner builder.Provisione
 		return "", fmt.Errorf("shell provisioner has no inline commands")
 	}
 
-	// Build the shell script
 	commands := append([]string{}, provisioner.Inline...)
 
-	// Create component document
 	doc := map[string]interface{}{
 		"schemaVersion": 1.0,
 		"name":          "ShellProvisioner",
@@ -139,13 +131,11 @@ func (g *ComponentGenerator) createShellComponent(provisioner builder.Provisione
 		},
 	}
 
-	// Add environment variables if present
 	if len(provisioner.Environment) > 0 {
 		envVars := make([]string, 0, len(provisioner.Environment))
 		for key, value := range provisioner.Environment {
 			envVars = append(envVars, fmt.Sprintf("export %s=%s", key, value))
 		}
-		// Prepend environment variables to commands
 		doc["phases"].([]map[string]interface{})[0]["steps"].([]map[string]interface{})[0]["inputs"].(map[string]interface{})["commands"] = append(envVars, commands...)
 	}
 
@@ -158,7 +148,6 @@ func (g *ComponentGenerator) createScriptComponent(provisioner builder.Provision
 		return "", fmt.Errorf("script provisioner has no scripts")
 	}
 
-	// Read and combine all scripts
 	var scriptContents []string
 	for _, scriptPath := range provisioner.Scripts {
 		content, err := os.ReadFile(scriptPath)
@@ -168,7 +157,6 @@ func (g *ComponentGenerator) createScriptComponent(provisioner builder.Provision
 		scriptContents = append(scriptContents, string(content))
 	}
 
-	// Create component document
 	doc := map[string]interface{}{
 		"schemaVersion": 1.0,
 		"name":          "ScriptProvisioner",
@@ -198,13 +186,20 @@ func (g *ComponentGenerator) createAnsibleComponent(provisioner builder.Provisio
 		return "", fmt.Errorf("ansible provisioner has no playbook path")
 	}
 
-	// Read playbook content
+	platform := determinePlatform(provisioner)
+	if platform == types.PlatformWindows {
+		return g.createWindowsAnsibleComponent(provisioner)
+	}
+
+	return g.createLinuxAnsibleComponent(provisioner)
+}
+
+func (g *ComponentGenerator) createLinuxAnsibleComponent(provisioner builder.Provisioner) (string, error) {
 	playbookContent, err := os.ReadFile(provisioner.PlaybookPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read playbook %s: %w", provisioner.PlaybookPath, err)
 	}
 
-	// Build commands to install Ansible and run playbook
 	commands := []string{
 		"# Install Ansible",
 		"if ! command -v ansible-playbook &> /dev/null; then",
@@ -212,30 +207,27 @@ func (g *ComponentGenerator) createAnsibleComponent(provisioner builder.Provisio
 		"fi",
 	}
 
-	// Install Galaxy collections if specified
+	// Use base64 encoding to avoid AWS Image Builder interpreting Jinja2/Ansible template syntax
 	if provisioner.GalaxyFile != "" {
 		galaxyContent, err := os.ReadFile(provisioner.GalaxyFile)
 		if err != nil {
 			return "", fmt.Errorf("failed to read galaxy file %s: %w", provisioner.GalaxyFile, err)
 		}
+		galaxyBase64 := base64.StdEncoding.EncodeToString(galaxyContent)
 		commands = append(commands,
-			"# Install Galaxy requirements",
-			fmt.Sprintf("cat > /tmp/requirements.yml << 'EOF'\n%s\nEOF", string(galaxyContent)),
+			fmt.Sprintf("echo '%s' | base64 -d > /tmp/requirements.yml", galaxyBase64),
 			"ansible-galaxy install -r /tmp/requirements.yml",
 		)
 	}
 
-	// Create playbook file
 	playbookName := filepath.Base(provisioner.PlaybookPath)
+	playbookBase64 := base64.StdEncoding.EncodeToString(playbookContent)
 	commands = append(commands,
-		"# Create playbook",
-		fmt.Sprintf("cat > /tmp/%s << 'EOF'\n%s\nEOF", playbookName, string(playbookContent)),
+		fmt.Sprintf("echo '%s' | base64 -d > /tmp/%s", playbookBase64, playbookName),
 	)
 
-	// Build ansible-playbook command
 	ansibleCmd := fmt.Sprintf("ansible-playbook /tmp/%s", playbookName)
 
-	// Add extra vars if present
 	if len(provisioner.ExtraVars) > 0 {
 		var extraVars []string
 		for key, value := range provisioner.ExtraVars {
@@ -244,7 +236,6 @@ func (g *ComponentGenerator) createAnsibleComponent(provisioner builder.Provisio
 		ansibleCmd += fmt.Sprintf(" -e '%s'", strings.Join(extraVars, " "))
 	}
 
-	// Add inventory if present
 	if provisioner.Inventory != "" {
 		ansibleCmd += fmt.Sprintf(" -i %s", provisioner.Inventory)
 	} else {
@@ -253,7 +244,6 @@ func (g *ComponentGenerator) createAnsibleComponent(provisioner builder.Provisio
 
 	commands = append(commands, ansibleCmd)
 
-	// Create component document
 	doc := map[string]interface{}{
 		"schemaVersion": 1.0,
 		"name":          "AnsibleProvisioner",
@@ -265,6 +255,107 @@ func (g *ComponentGenerator) createAnsibleComponent(provisioner builder.Provisio
 					{
 						"name":   "ExecuteAnsible",
 						"action": "ExecuteBash",
+						"inputs": map[string]interface{}{
+							"commands": commands,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return marshalComponentDocument(doc)
+}
+
+func (g *ComponentGenerator) createWindowsAnsibleComponent(provisioner builder.Provisioner) (string, error) {
+	playbookContent, err := os.ReadFile(provisioner.PlaybookPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read playbook %s: %w", provisioner.PlaybookPath, err)
+	}
+
+	commands := []string{
+		"$ErrorActionPreference = 'Stop'",
+		"$ProgressPreference = 'SilentlyContinue'",
+		"",
+		"# Use Chocolatey for compatibility with older Windows versions (Server 2016)",
+		"if (-not (Get-Command python -ErrorAction SilentlyContinue)) {",
+		"    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {",
+		"        Set-ExecutionPolicy Bypass -Scope Process -Force",
+		"        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072",
+		"        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))",
+		"    }",
+		"    choco install python311 -y --no-progress",
+		"    $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')",
+		"    refreshenv",
+		"}",
+		"",
+		"python -m pip install --upgrade pip",
+		"python -m pip install ansible pywinrm",
+		"",
+	}
+
+	commands = append(commands,
+		"New-Item -ItemType Directory -Force -Path 'C:\\temp' | Out-Null",
+		"",
+	)
+
+	if provisioner.GalaxyFile != "" {
+		galaxyContent, err := os.ReadFile(provisioner.GalaxyFile)
+		if err != nil {
+			return "", fmt.Errorf("failed to read galaxy file %s: %w", provisioner.GalaxyFile, err)
+		}
+		galaxyBase64 := base64.StdEncoding.EncodeToString(galaxyContent)
+		commands = append(commands,
+			fmt.Sprintf("$requirementsBase64 = '%s'", galaxyBase64),
+			"[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($requirementsBase64)) | Out-File -FilePath 'C:\\temp\\requirements.yml' -Encoding UTF8",
+			"ansible-galaxy install -r C:\\temp\\requirements.yml",
+			"",
+		)
+	}
+
+	playbookName := filepath.Base(provisioner.PlaybookPath)
+	playbookBase64 := base64.StdEncoding.EncodeToString(playbookContent)
+	commands = append(commands,
+		fmt.Sprintf("$playbookBase64 = '%s'", playbookBase64),
+		fmt.Sprintf("[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($playbookBase64)) | Out-File -FilePath 'C:\\temp\\%s' -Encoding UTF8", playbookName),
+		"",
+	)
+
+	ansibleCmd := fmt.Sprintf("ansible-playbook 'C:\\temp\\%s'", playbookName)
+
+	if len(provisioner.ExtraVars) > 0 {
+		var extraVars []string
+		for key, value := range provisioner.ExtraVars {
+			// Skip ansible connection vars for local execution
+			if key == "ansible_connection" || key == "ansible_shell_type" ||
+				key == "ansible_aws_ssm_bucket_name" || key == "ansible_aws_ssm_region" {
+				continue
+			}
+			extraVars = append(extraVars, fmt.Sprintf("%s=%s", key, value))
+		}
+		if len(extraVars) > 0 {
+			ansibleCmd += fmt.Sprintf(" -e '%s'", strings.Join(extraVars, " "))
+		}
+	}
+
+	// Force local connection for Windows AMI builds
+	ansibleCmd += " --connection=local -i 'localhost,'"
+
+	commands = append(commands,
+		ansibleCmd,
+	)
+
+	doc := map[string]interface{}{
+		"schemaVersion": 1.0,
+		"name":          "AnsibleProvisioner",
+		"description":   "Ansible provisioner component for Windows",
+		"phases": []map[string]interface{}{
+			{
+				"name": "build",
+				"steps": []map[string]interface{}{
+					{
+						"name":   "ExecuteAnsible",
+						"action": "ExecutePowerShell",
 						"inputs": map[string]interface{}{
 							"commands": commands,
 						},
@@ -290,10 +381,8 @@ func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provi
 			return "", fmt.Errorf("failed to read PowerShell script %s: %w", scriptPath, err)
 		}
 
-		// Process the script content for Windows compatibility
 		scriptContent := processPowerShellScript(content)
 
-		// Validate basic PowerShell syntax
 		if err := validatePowerShellSyntax(scriptContent); err != nil {
 			return "", fmt.Errorf("PowerShell script %s has syntax issues: %w", scriptPath, err)
 		}
@@ -301,20 +390,15 @@ func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provi
 		scriptContents = append(scriptContents, scriptContent)
 	}
 
-	// Determine execution policy (default to Bypass for build environments)
 	executionPolicy := provisioner.ExecutionPolicy
 	if executionPolicy == "" {
 		executionPolicy = "Bypass"
 	}
 
-	// Build the component steps
 	steps := []map[string]interface{}{}
 
-	// Add error handling wrapper for better debugging
 	for i, script := range scriptContents {
 		stepName := fmt.Sprintf("ExecutePowerShellScript_%d", i)
-
-		// Wrap script with error handling and execution policy
 		wrappedScript := wrapPowerShellWithErrorHandling(script, executionPolicy)
 
 		steps = append(steps, map[string]interface{}{
@@ -325,7 +409,6 @@ func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provi
 			},
 		})
 
-		// Add optional reboot step if script requests it
 		if needsReboot(script) {
 			steps = append(steps, map[string]interface{}{
 				"name":   fmt.Sprintf("RebootAfterScript_%d", i),
@@ -349,14 +432,11 @@ func (g *ComponentGenerator) createPowerShellComponent(provisioner builder.Provi
 	return marshalComponentDocument(doc)
 }
 
-// processPowerShellScript handles encoding and formatting for Windows compatibility
 func processPowerShellScript(content []byte) string {
-	// Remove UTF-8 BOM if present (Windows sometimes adds this)
 	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
 		content = content[3:]
 	}
 
-	// Convert Windows line endings to Unix and back to ensure consistency
 	script := string(content)
 	script = strings.ReplaceAll(script, "\r\n", "\n")
 
@@ -394,9 +474,7 @@ func checkCharacterBalance(script string, open, close rune, name string) error {
 	return nil
 }
 
-// wrapPowerShellWithErrorHandling adds error handling wrapper for better diagnostics
 func wrapPowerShellWithErrorHandling(script string, executionPolicy string) string {
-	// Add execution policy, error preference and try-catch wrapper for better error reporting
 	wrapper := `# Set execution policy for this session
 Set-ExecutionPolicy -ExecutionPolicy %s -Scope Process -Force
 

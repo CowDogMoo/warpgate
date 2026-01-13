@@ -1,5 +1,5 @@
 /*
-Copyright © 2025 Jayson Grace <jayson.e.grace@gmail.com>
+Copyright © 2026 Jayson Grace <jayson.e.grace@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -116,87 +116,4 @@ func FormatSemanticVersion(major, minor, patch int) string {
 func IncrementPatchVersion(version string) string {
 	major, minor, patch := ParseSemanticVersion(version)
 	return FormatSemanticVersion(major, minor, patch+1)
-}
-
-// Generic utility functions using Go 1.18+ generics
-
-// SortBy sorts a slice using a custom comparison function.
-// The compare function should return true if a should come before b.
-// This function modifies the slice in place and returns it for convenience.
-func SortBy[T any](slice []T, compare func(a, b T) bool) []T {
-	// Simple bubble sort - suitable for small slices
-	for i := 0; i < len(slice)-1; i++ {
-		for j := 0; j < len(slice)-i-1; j++ {
-			if !compare(slice[j], slice[j+1]) {
-				slice[j], slice[j+1] = slice[j+1], slice[j]
-			}
-		}
-	}
-	return slice
-}
-
-// Filter returns a new slice containing only elements that satisfy the predicate.
-func Filter[T any](slice []T, predicate func(T) bool) []T {
-	result := make([]T, 0)
-	for _, v := range slice {
-		if predicate(v) {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
-// Map transforms each element in a slice using the provided function.
-func Map[T any, U any](slice []T, transform func(T) U) []U {
-	result := make([]U, len(slice))
-	for i, v := range slice {
-		result[i] = transform(v)
-	}
-	return result
-}
-
-// Contains checks if a slice contains an element that satisfies the predicate.
-func Contains[T any](slice []T, predicate func(T) bool) bool {
-	for _, v := range slice {
-		if predicate(v) {
-			return true
-		}
-	}
-	return false
-}
-
-// First returns the first element that satisfies the predicate, or the zero value if none found.
-func First[T any](slice []T, predicate func(T) bool) (T, bool) {
-	for _, v := range slice {
-		if predicate(v) {
-			return v, true
-		}
-	}
-	var zero T
-	return zero, false
-}
-
-// Unique returns a new slice with duplicate elements removed.
-// The key function extracts the comparison key from each element.
-func Unique[T any, K comparable](slice []T, key func(T) K) []T {
-	seen := make(map[K]bool)
-	result := make([]T, 0)
-	for _, v := range slice {
-		k := key(v)
-		if !seen[k] {
-			seen[k] = true
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
-// GroupBy groups elements by a key extracted from each element.
-func GroupBy[T any, K comparable](slice []T, key func(T) K) map[K][]T {
-	result := make(map[K][]T)
-	for _, v := range slice {
-		k := key(v)
-		result[k] = append(result[k], v)
-	}
-	return result
 }

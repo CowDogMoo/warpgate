@@ -132,7 +132,6 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 		return nil, err
 	}
 
-	// If force recreate is enabled, clean up existing resources first
 	if b.forceRecreate {
 		logging.Info("Force recreate enabled, cleaning up existing resources")
 		if err := b.resourceManager.CleanupResourcesForBuild(ctx, config.Name, true); err != nil {
@@ -140,24 +139,20 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 		}
 	}
 
-	// Track created resources for cleanup on failure
 	createdResources := &CreatedResources{}
 
 	resources, err := b.createBuildResources(ctx, config, amiTarget, createdResources)
 	if err != nil {
-		// Clean up any resources that were created before the failure
 		createdResources.Cleanup(ctx, b.resourceManager)
 		return nil, err
 	}
 
 	amiID, err := b.executePipeline(ctx, resources, config.Name)
 	if err != nil {
-		// Clean up resources on pipeline failure
 		createdResources.Cleanup(ctx, b.resourceManager)
 		return nil, err
 	}
 
-	// Finalize the build
 	b.finalizeBuild(ctx, amiID, amiTarget, resources.PipelineARN)
 
 	duration := time.Since(startTime)
@@ -317,19 +312,14 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 
 	logging.Info("Creating %d components in parallel", numProvisioners)
 
-	// Pre-allocate results slice - each goroutine writes to its own index (safe)
 	componentARNs := make([]string, numProvisioners)
-
-	// Use errgroup for cleaner goroutine management with automatic context cancellation
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Create components in parallel
 	for i, provisioner := range config.Provisioners {
 		index := i
 		prov := provisioner
 
 		g.Go(func() error {
-			// Check context cancellation before starting work
 			if err := ctx.Err(); err != nil {
 				return fmt.Errorf("context cancelled before creating component %d: %w", index, err)
 			}
@@ -340,15 +330,15 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 			// Determine the version to use:
 			// 1. Use provisioner's ComponentVersion if specified
 			// 2. Fall back to config.Version
-			// 3. Auto-increment if forceRecreate and conflicts exist
-			version := config.Version
+			// 3. Normalize to valid semantic version (AWS requires X.Y.Z format)
+			// 4. Auto-increment if forceRecreate and conflicts exist
+			version := NormalizeSemanticVersion(config.Version)
 			if prov.ComponentVersion != "" {
-				version = prov.ComponentVersion
+				version = NormalizeSemanticVersion(prov.ComponentVersion)
 				logging.Info("Using provisioner-specified component version: %s", version)
 			}
 
 			if b.forceRecreate {
-				// With force, try to get the next available version
 				nextVersion, err := b.resourceManager.GetNextComponentVersion(ctx, componentName+"-"+prov.Type, version)
 				if err == nil && nextVersion != version {
 					logging.Info("Component version conflict detected, using next version: %s", nextVersion)
@@ -366,9 +356,7 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 		})
 	}
 
-	// Wait for all goroutines to complete
 	if err := g.Wait(); err != nil {
-		// Track any components that were created before the failure for cleanup
 		for _, arn := range componentARNs {
 			if arn != "" {
 				created.ComponentARNs = append(created.ComponentARNs, arn)
@@ -377,10 +365,8 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 		return nil, err
 	}
 
-	// Track all created components for cleanup
 	created.ComponentARNs = append(created.ComponentARNs, componentARNs...)
 
-	// Verify all components were created
 	for i, arn := range componentARNs {
 		if arn == "" {
 			return nil, fmt.Errorf("component %d was not created", i)
@@ -395,13 +381,11 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name string, target *builder.Target) (string, error) {
 	logging.Info("Creating infrastructure configuration")
 
-	// Determine instance type (target > globalConfig > default)
 	instanceType := target.InstanceType
 	if instanceType == "" {
 		instanceType = b.globalConfig.AWS.AMI.InstanceType
 	}
 
-	// Determine instance profile (target > globalConfig)
 	instanceProfile := target.InstanceProfileName
 	if instanceProfile == "" {
 		instanceProfile = b.globalConfig.AWS.AMI.InstanceProfileName
@@ -421,19 +405,16 @@ func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name stri
 		},
 	}
 
-	// Add subnet ID if specified
 	if target.SubnetID != "" {
 		input.SubnetId = aws.String(target.SubnetID)
 	}
 
-	// Add security group IDs if specified
 	if len(target.SecurityGroupIDs) > 0 {
 		input.SecurityGroupIds = target.SecurityGroupIDs
 	}
 
 	result, err := b.clients.ImageBuilder.CreateInfrastructureConfiguration(ctx, input)
 	if err != nil {
-		// If resource already exists, try to retrieve it instead
 		if IsResourceExistsError(err) {
 			logging.Info("Infrastructure configuration already exists, retrieving: %s", infraName)
 			existing, getErr := b.resourceManager.GetInfrastructureConfig(ctx, infraName)
@@ -461,10 +442,7 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 		region = b.clients.GetRegion()
 	}
 
-	amiName := target.AMIName
-	if amiName == "" {
-		amiName = fmt.Sprintf("%s-{{imagebuilder:buildDate}}", name)
-	}
+	amiName := normalizeAMIName(target.AMIName, name)
 
 	amiDistConfig := &types.AmiDistributionConfiguration{
 		Name:        aws.String(amiName),
@@ -481,7 +459,6 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 	if target.FastLaunchEnabled {
 		fastLaunchConfig := b.buildFastLaunchConfiguration(target)
 		distribution.FastLaunchConfigurations = []types.FastLaunchConfiguration{fastLaunchConfig}
-		logging.Info("Windows Fast Launch enabled with %d target resources", target.FastLaunchTargetResourceCount)
 	}
 
 	distName := fmt.Sprintf("%s-dist", name)
@@ -496,7 +473,6 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 
 	result, err := b.clients.ImageBuilder.CreateDistributionConfiguration(ctx, input)
 	if err != nil {
-		// If resource already exists, try to retrieve it instead
 		if IsResourceExistsError(err) {
 			logging.Info("Distribution configuration already exists, retrieving: %s", distName)
 			existing, getErr := b.resourceManager.GetDistributionConfig(ctx, distName)
@@ -515,9 +491,7 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 	return *result.DistributionConfigurationArn, nil
 }
 
-// buildFastLaunchConfiguration creates the Fast Launch configuration for Windows AMIs
 func (b *ImageBuilder) buildFastLaunchConfiguration(target *builder.Target) types.FastLaunchConfiguration {
-	// Set defaults for Fast Launch parameters
 	maxParallelLaunches := target.FastLaunchMaxParallelLaunches
 	if maxParallelLaunches == 0 {
 		maxParallelLaunches = 6 // AWS default
@@ -525,7 +499,7 @@ func (b *ImageBuilder) buildFastLaunchConfiguration(target *builder.Target) type
 
 	targetResourceCount := target.FastLaunchTargetResourceCount
 	if targetResourceCount == 0 {
-		targetResourceCount = 5 // Reasonable default for pre-provisioned snapshots
+		targetResourceCount = 5
 	}
 
 	return types.FastLaunchConfiguration{
@@ -554,12 +528,9 @@ func parseVolumeType(volumeTypeStr string) types.EbsVolumeType {
 	return types.EbsVolumeTypeGp3
 }
 
-// createImageRecipe creates an image recipe
 func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Config, componentARNs []string, target *builder.Target) (string, error) {
 	logging.Info("Creating image recipe")
 
-	// Determine parent image (base AMI)
-	// Priority: config.Base.Image > globalConfig > error (no default)
 	parentImage := config.Base.Image
 	if parentImage == "" {
 		parentImage = b.globalConfig.AWS.AMI.DefaultParentImage
@@ -568,7 +539,6 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 		}
 	}
 
-	// Create component configurations
 	components := make([]types.ComponentConfiguration, 0, len(componentARNs))
 	for _, arn := range componentARNs {
 		components = append(components, types.ComponentConfiguration{
@@ -576,16 +546,16 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 		})
 	}
 
-	// Determine volume size (target > globalConfig > default)
 	volumeSize := int32(target.VolumeSize)
 	if volumeSize == 0 {
 		volumeSize = int32(b.globalConfig.AWS.AMI.VolumeSize)
 	}
 
 	recipeName := fmt.Sprintf("%s-recipe", config.Name)
+	normalizedVersion := NormalizeSemanticVersion(config.Version)
 	input := &imagebuilder.CreateImageRecipeInput{
 		Name:            aws.String(recipeName),
-		SemanticVersion: aws.String(config.Version),
+		SemanticVersion: aws.String(normalizedVersion),
 		ParentImage:     aws.String(parentImage),
 		Components:      components,
 		Description:     aws.String(fmt.Sprintf("Image recipe for %s", config.Name)),
@@ -607,7 +577,6 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 
 	result, err := b.clients.ImageBuilder.CreateImageRecipe(ctx, input)
 	if err != nil {
-		// If resource already exists, try to retrieve it instead
 		if IsResourceExistsError(err) {
 			logging.Info("Image recipe already exists, retrieving: %s", recipeName)
 			existing, getErr := b.resourceManager.GetImageRecipe(ctx, recipeName, config.Version)
@@ -649,11 +618,9 @@ func (b *ImageBuilder) validateConfig(target *builder.Target) error {
 	return nil
 }
 
-// getOrCreateInfrastructureConfig creates or retrieves an infrastructure configuration
 func (b *ImageBuilder) getOrCreateInfrastructureConfig(ctx context.Context, name string, target *builder.Target, created *CreatedResources) (string, error) {
 	infraName := fmt.Sprintf("%s-infra", name)
 
-	// Check if infrastructure config already exists
 	existing, err := b.resourceManager.GetInfrastructureConfig(ctx, infraName)
 	if err != nil {
 		return "", fmt.Errorf("failed to check for existing infrastructure config: %w", err)
@@ -671,7 +638,6 @@ func (b *ImageBuilder) getOrCreateInfrastructureConfig(ctx context.Context, name
 		}
 	}
 
-	// Create new infrastructure configuration
 	arn, err := b.createInfrastructureConfig(ctx, name, target)
 	if err != nil {
 		return "", err
@@ -681,11 +647,9 @@ func (b *ImageBuilder) getOrCreateInfrastructureConfig(ctx context.Context, name
 	return arn, nil
 }
 
-// getOrCreateDistributionConfig creates or retrieves a distribution configuration
 func (b *ImageBuilder) getOrCreateDistributionConfig(ctx context.Context, name string, target *builder.Target, created *CreatedResources) (string, error) {
 	distName := fmt.Sprintf("%s-dist", name)
 
-	// Check if distribution config already exists
 	existing, err := b.resourceManager.GetDistributionConfig(ctx, distName)
 	if err != nil {
 		return "", fmt.Errorf("failed to check for existing distribution config: %w", err)
@@ -703,7 +667,6 @@ func (b *ImageBuilder) getOrCreateDistributionConfig(ctx context.Context, name s
 		}
 	}
 
-	// Create new distribution configuration
 	arn, err := b.createDistributionConfig(ctx, name, target)
 	if err != nil {
 		return "", err
@@ -713,12 +676,11 @@ func (b *ImageBuilder) getOrCreateDistributionConfig(ctx context.Context, name s
 	return arn, nil
 }
 
-// getOrCreateImageRecipe creates or retrieves an image recipe
 func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builder.Config, componentARNs []string, target *builder.Target, created *CreatedResources) (string, error) {
 	recipeName := fmt.Sprintf("%s-recipe", config.Name)
+	normalizedVersion := NormalizeSemanticVersion(config.Version)
 
-	// Check if recipe already exists
-	existing, err := b.resourceManager.GetImageRecipe(ctx, recipeName, config.Version)
+	existing, err := b.resourceManager.GetImageRecipe(ctx, recipeName, normalizedVersion)
 	if err != nil {
 		return "", fmt.Errorf("failed to check for existing image recipe: %w", err)
 	}
@@ -735,7 +697,6 @@ func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builde
 		}
 	}
 
-	// Create new image recipe
 	arn, err := b.createImageRecipe(ctx, config, componentARNs, target)
 	if err != nil {
 		return "", err
@@ -745,11 +706,9 @@ func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builde
 	return arn, nil
 }
 
-// getOrCreatePipeline creates or retrieves an image pipeline
 func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.Config, recipeARN, infraARN, distARN string, created *CreatedResources) (string, error) {
 	pipelineName := fmt.Sprintf("%s-pipeline", config.Name)
 
-	// Check if pipeline already exists
 	existing, err := b.resourceManager.GetImagePipeline(ctx, pipelineName)
 	if err != nil {
 		return "", fmt.Errorf("failed to check for existing pipeline: %w", err)
@@ -767,7 +726,6 @@ func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.C
 		}
 	}
 
-	// Create new pipeline
 	pipelineConfig := PipelineConfig{
 		Name:             pipelineName,
 		Description:      fmt.Sprintf("Pipeline for %s", config.Name),
@@ -783,7 +741,6 @@ func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.C
 
 	pipelineARN, err := b.pipelineManager.CreatePipeline(ctx, pipelineConfig)
 	if err != nil {
-		// If resource already exists, try to retrieve it instead
 		if IsResourceExistsError(err) {
 			logging.Info("Pipeline already exists, retrieving: %s", pipelineName)
 			existingPipeline, getErr := b.resourceManager.GetImagePipeline(ctx, pipelineName)
