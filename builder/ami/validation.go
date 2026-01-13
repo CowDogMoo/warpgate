@@ -243,7 +243,6 @@ func (v *Validator) validateAMI(ctx context.Context, result *ValidationResult, a
 	}
 	result.AddInfo("Base AMI validated: %s (%s)", amiID, name)
 
-	// Check platform - use early return pattern
 	if image.Platform == ec2types.PlatformValuesWindows {
 		result.AddInfo("Base AMI platform: Windows")
 		return

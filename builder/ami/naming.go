@@ -35,7 +35,6 @@ func normalizeAMIName(amiName, defaultName string) string {
 		return fmt.Sprintf("%s-{{ imagebuilder:buildDate }}", defaultName)
 	}
 
-	// Replace common timestamp placeholders with AWS Image Builder format
 	replacements := []struct {
 		old string
 		new string

@@ -20,6 +20,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+// Package ami provides semantic version utilities for Image Builder components.
+//
+// This file implements version parsing, comparison, and sorting functions
+// for AWS Image Builder component versions. Versions follow semantic versioning
+// (major.minor.patch) format.
+//
+// Key functions:
+//   - ParseSemanticVersion: Parse version strings into components
+//   - CompareSemanticVersions: Compare two versions with nil handling
+//   - SortComponentVersions: Sort versions in descending order
+//   - IncrementPatchVersion: Bump the patch version number
 package ami
 
 import (

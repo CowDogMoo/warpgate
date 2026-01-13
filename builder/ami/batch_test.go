@@ -24,6 +24,7 @@ package ami
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -181,5 +182,71 @@ func TestResourceCheck(t *testing.T) {
 				t.Errorf("ResourceCheck.Name = %v, want %v", tt.check.Name, tt.wantName)
 			}
 		})
+	}
+}
+
+func TestBatchDeleteComponents_CancelledContext(t *testing.T) {
+	bo := NewBatchOperations(&AWSClients{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	err := bo.BatchDeleteComponents(ctx, []string{"arn:aws:imagebuilder:us-east-1:123456789012:component/test/1.0.0/1"})
+	if err == nil {
+		t.Error("BatchDeleteComponents() with cancelled context should return error")
+	}
+}
+
+func TestBatchGetComponentVersions_CancelledContext(t *testing.T) {
+	bo := NewBatchOperations(&AWSClients{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := bo.BatchGetComponentVersions(ctx, []string{"test-component"})
+	if err == nil {
+		t.Error("BatchGetComponentVersions() with cancelled context should return error")
+	}
+}
+
+func TestBatchCheckResourceExistence_CancelledContext(t *testing.T) {
+	bo := NewBatchOperations(&AWSClients{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	checks := []ResourceCheck{
+		{Type: "pipeline", Name: "test"},
+	}
+
+	// Should return empty results since context is cancelled
+	results := bo.BatchCheckResourceExistence(ctx, checks)
+	if results == nil {
+		t.Error("BatchCheckResourceExistence() should return non-nil map")
+	}
+}
+
+func TestBatchOpsInterfaceCompliance(t *testing.T) {
+	// Compile-time check that BatchOperations implements BatchOps
+	var _ BatchOps = (*BatchOperations)(nil)
+
+	// Runtime check - verify assignment works (will fail to compile if interface not satisfied)
+	bo := NewBatchOperations(nil)
+	var ops BatchOps = bo
+	_ = ops // Use the variable to avoid unused warning
+}
+
+func TestErrNotFound(t *testing.T) {
+	// Test that ErrNotFound can be wrapped and unwrapped correctly
+	wrappedErr := errors.New("resource 'test': " + ErrNotFound.Error())
+	if errors.Is(wrappedErr, ErrNotFound) {
+		// This should not match because we used string concatenation
+		t.Error("String concatenation should not create wrapped error")
+	}
+
+	// Test proper wrapping
+	properlyWrapped := errors.Join(errors.New("context"), ErrNotFound)
+	if !errors.Is(properlyWrapped, ErrNotFound) {
+		t.Error("errors.Join should preserve ErrNotFound for errors.Is")
 	}
 }

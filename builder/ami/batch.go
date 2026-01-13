@@ -20,6 +20,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+// Package ami provides batch operations for AWS EC2 Image Builder resources.
+//
+// This file implements BatchOperations which provides optimized, concurrent
+// AWS API operations with rate limiting. All batch methods are safe for
+// concurrent use and employ a semaphore pattern to limit concurrent AWS
+// API requests to 5, avoiding rate limiting errors.
+//
+// Key features:
+//   - Concurrent operations with configurable rate limiting
+//   - Context cancellation support for graceful shutdown
+//   - Error aggregation for batch operations
+//   - Resource existence checking
 package ami
 
 import (
@@ -37,6 +49,19 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// BatchOps defines the interface for batch AWS API operations.
+// This interface enables testing with mock implementations.
+type BatchOps interface {
+	BatchTagResources(ctx context.Context, resourceIDs []string, tags map[string]string) error
+	BatchDeleteComponents(ctx context.Context, componentARNs []string) error
+	BatchDescribeImages(ctx context.Context, imageIDs []string) ([]ec2types.Image, error)
+	BatchGetComponentVersions(ctx context.Context, componentNames []string) (map[string][]string, error)
+	BatchCheckResourceExistence(ctx context.Context, checks []ResourceCheck) map[string]bool
+}
+
+// Compile-time check that BatchOperations implements BatchOps
+var _ BatchOps = (*BatchOperations)(nil)
+
 // BatchOperations provides optimized batch AWS API operations
 type BatchOperations struct {
 	clients *AWSClients
@@ -51,6 +76,8 @@ func NewBatchOperations(clients *AWSClients) *BatchOperations {
 
 // BatchTagResources tags multiple resources in a single API call where possible.
 // EC2 CreateTags supports multiple resources in one call.
+//
+// BatchTagResources is safe for concurrent use.
 func (bo *BatchOperations) BatchTagResources(ctx context.Context, resourceIDs []string, tags map[string]string) error {
 	if len(resourceIDs) == 0 || len(tags) == 0 {
 		return nil
@@ -65,7 +92,6 @@ func (bo *BatchOperations) BatchTagResources(ctx context.Context, resourceIDs []
 		})
 	}
 
-	// EC2 CreateTags supports multiple resources in one call
 	input := &ec2.CreateTagsInput{
 		Resources: resourceIDs,
 		Tags:      ec2Tags,
@@ -82,6 +108,13 @@ func (bo *BatchOperations) BatchTagResources(ctx context.Context, resourceIDs []
 
 // BatchDeleteComponents deletes multiple components concurrently.
 // Returns a combined error using errors.Join if any deletions failed.
+//
+// This method deliberately continues processing remaining components even when
+// individual deletions fail, returning all errors at the end. This "best effort"
+// approach is appropriate for cleanup operations where partial success is
+// preferable to failing fast.
+//
+// BatchDeleteComponents is safe for concurrent use.
 func (bo *BatchOperations) BatchDeleteComponents(ctx context.Context, componentARNs []string) error {
 	if len(componentARNs) == 0 {
 		return nil
@@ -91,11 +124,17 @@ func (bo *BatchOperations) BatchDeleteComponents(ctx context.Context, componentA
 	var errs []error
 
 	g, ctx := errgroup.WithContext(ctx)
-	// Limit concurrency to avoid rate limiting
+	// Limit to 5 concurrent AWS API requests to avoid rate limiting
 	semaphore := make(chan struct{}, 5)
 
 	for _, arn := range componentARNs {
+		arn := arn // capture loop variable
 		g.Go(func() error {
+			// Check for context cancellation before starting work
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
@@ -109,7 +148,7 @@ func (bo *BatchOperations) BatchDeleteComponents(ctx context.Context, componentA
 				errs = append(errs, fmt.Errorf("failed to delete component %s: %w", arn, err))
 				mu.Unlock()
 			}
-			return nil // Don't fail the whole batch on individual errors
+			return nil // Continue processing remaining components on individual errors
 		})
 	}
 
@@ -129,13 +168,13 @@ func (bo *BatchOperations) BatchDeleteComponents(ctx context.Context, componentA
 
 // BatchDescribeImages describes multiple AMIs in a single API call.
 // EC2 DescribeImages supports up to 1000 image IDs; this method handles batching automatically.
+//
+// BatchDescribeImages is safe for concurrent use.
 func (bo *BatchOperations) BatchDescribeImages(ctx context.Context, imageIDs []string) ([]ec2types.Image, error) {
 	if len(imageIDs) == 0 {
 		return nil, nil
 	}
 
-	// EC2 DescribeImages supports multiple image IDs in one call (up to 1000)
-	// Split into batches if needed
 	const maxBatchSize = 100
 	var allImages []ec2types.Image
 
@@ -163,6 +202,8 @@ func (bo *BatchOperations) BatchDescribeImages(ctx context.Context, imageIDs []s
 
 // BatchGetComponentVersions fetches versions for multiple components concurrently.
 // Uses errgroup for parallel fetching with rate limiting.
+//
+// BatchGetComponentVersions is safe for concurrent use.
 func (bo *BatchOperations) BatchGetComponentVersions(ctx context.Context, componentNames []string) (map[string][]string, error) {
 	if len(componentNames) == 0 {
 		return nil, nil
@@ -172,11 +213,17 @@ func (bo *BatchOperations) BatchGetComponentVersions(ctx context.Context, compon
 	results := make(map[string][]string)
 
 	g, ctx := errgroup.WithContext(ctx)
-	// Limit concurrency to avoid rate limiting
+	// Limit to 5 concurrent AWS API requests to avoid rate limiting
 	semaphore := make(chan struct{}, 5)
 
 	for _, name := range componentNames {
+		name := name // capture loop variable
 		g.Go(func() error {
+			// Check for context cancellation before starting work
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
@@ -218,18 +265,27 @@ func (bo *BatchOperations) BatchGetComponentVersions(ctx context.Context, compon
 
 // BatchCheckResourceExistence checks if multiple resources exist concurrently.
 // Returns a map of resource names to their existence status.
-// Uses sync.WaitGroup since existence checks don't return errors.
+//
+// BatchCheckResourceExistence is safe for concurrent use.
 func (bo *BatchOperations) BatchCheckResourceExistence(ctx context.Context, checks []ResourceCheck) map[string]bool {
 	results := make(map[string]bool)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
+	// Limit to 5 concurrent AWS API requests to avoid rate limiting
 	semaphore := make(chan struct{}, 5)
 
 	for _, check := range checks {
+		check := check // capture loop variable
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+
+			// Check for context cancellation before starting work
+			if ctx.Err() != nil {
+				return
+			}
+
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
@@ -257,17 +313,17 @@ func (bo *BatchOperations) checkResourceExists(ctx context.Context, check Resour
 
 	switch check.Type {
 	case "pipeline":
-		pipeline, _ := resourceManager.GetImagePipeline(ctx, check.Name)
-		return pipeline != nil
+		pipeline, err := resourceManager.GetImagePipeline(ctx, check.Name)
+		return pipeline != nil && !errors.Is(err, ErrNotFound)
 	case "recipe":
-		recipe, _ := resourceManager.GetImageRecipe(ctx, check.Name, "")
-		return recipe != nil
+		recipe, err := resourceManager.GetImageRecipe(ctx, check.Name, "")
+		return recipe != nil && !errors.Is(err, ErrNotFound)
 	case "infra":
-		infra, _ := resourceManager.GetInfrastructureConfig(ctx, check.Name)
-		return infra != nil
+		infra, err := resourceManager.GetInfrastructureConfig(ctx, check.Name)
+		return infra != nil && !errors.Is(err, ErrNotFound)
 	case "dist":
-		dist, _ := resourceManager.GetDistributionConfig(ctx, check.Name)
-		return dist != nil
+		dist, err := resourceManager.GetDistributionConfig(ctx, check.Name)
+		return dist != nil && !errors.Is(err, ErrNotFound)
 	default:
 		return false
 	}
@@ -343,7 +399,10 @@ func (bo *BatchOperations) OptimizedResourceCleanup(ctx context.Context, buildNa
 func (bo *BatchOperations) getRecipeARN(ctx context.Context, name string) (string, error) {
 	resourceManager := NewResourceManager(bo.clients)
 	recipe, err := resourceManager.GetImageRecipe(ctx, name, "")
-	if err != nil || recipe == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(recipe.Arn), nil
@@ -353,7 +412,10 @@ func (bo *BatchOperations) getRecipeARN(ctx context.Context, name string) (strin
 func (bo *BatchOperations) getDistARN(ctx context.Context, name string) (string, error) {
 	resourceManager := NewResourceManager(bo.clients)
 	dist, err := resourceManager.GetDistributionConfig(ctx, name)
-	if err != nil || dist == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(dist.Arn), nil
@@ -363,7 +425,10 @@ func (bo *BatchOperations) getDistARN(ctx context.Context, name string) (string,
 func (bo *BatchOperations) getInfraARN(ctx context.Context, name string) (string, error) {
 	resourceManager := NewResourceManager(bo.clients)
 	infra, err := resourceManager.GetInfrastructureConfig(ctx, name)
-	if err != nil || infra == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(infra.Arn), nil

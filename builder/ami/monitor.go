@@ -20,6 +20,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+// Package ami provides monitoring capabilities for EC2 Image Builder builds.
+//
+// This file implements BuildMonitor which tracks EC2 instance status and
+// streams build logs in real-time from CloudWatch and SSM. Use MonitorConfig
+// to enable specific monitoring features like log streaming and EC2 status display.
+//
+// Key features:
+//   - Real-time EC2 instance status tracking
+//   - CloudWatch log streaming
+//   - SSM command output retrieval
+//   - Build instance discovery by tags
 package ami
 
 import (
@@ -238,7 +249,6 @@ func (m *BuildMonitor) GetEC2InstanceStatus(ctx context.Context) (*EC2InstanceSt
 func (m *BuildMonitor) StreamCloudWatchLogs(ctx context.Context) ([]LogEntry, error) {
 	var entries []LogEntry
 
-	// First, try to find log streams for this build
 	streamsInput := &cloudwatchlogs.DescribeLogStreamsInput{
 		LogGroupName: aws.String(m.logGroupName),
 		OrderBy:      "LastEventTime",
@@ -259,7 +269,6 @@ func (m *BuildMonitor) StreamCloudWatchLogs(ctx context.Context) ([]LogEntry, er
 		return nil, nil
 	}
 
-	// Get logs from the most recent stream
 	logStream := streamsResult.LogStreams[0]
 	logsInput := &cloudwatchlogs.GetLogEventsInput{
 		LogGroupName:  aws.String(m.logGroupName),
@@ -277,7 +286,6 @@ func (m *BuildMonitor) StreamCloudWatchLogs(ctx context.Context) ([]LogEntry, er
 		return nil, fmt.Errorf("failed to get log events: %w", err)
 	}
 
-	// Update token for next call
 	m.lastLogToken = logsResult.NextForwardToken
 
 	for _, event := range logsResult.Events {

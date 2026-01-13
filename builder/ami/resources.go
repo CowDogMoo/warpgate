@@ -24,6 +24,7 @@ package ami
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -32,6 +33,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
+
+// ErrNotFound is returned when a requested resource does not exist.
+// Use errors.Is(err, ami.ErrNotFound) to check for this error.
+var ErrNotFound = errors.New("resource not found")
 
 // ResourceManager handles idempotent creation and management of Image Builder resources
 type ResourceManager struct {
@@ -89,14 +94,13 @@ func (m *ResourceManager) GetInfrastructureConfig(ctx context.Context, name stri
 			}
 		}
 
-		// Check for more pages
 		if result.NextToken == nil {
 			break
 		}
 		input.NextToken = result.NextToken
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("infrastructure configuration %q: %w", name, ErrNotFound)
 }
 
 // GetDistributionConfig retrieves a distribution configuration by name
@@ -129,14 +133,13 @@ func (m *ResourceManager) GetDistributionConfig(ctx context.Context, name string
 			}
 		}
 
-		// Check for more pages
 		if result.NextToken == nil {
 			break
 		}
 		input.NextToken = result.NextToken
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("distribution configuration %q: %w", name, ErrNotFound)
 }
 
 // GetImageRecipe retrieves an image recipe by name and version
@@ -169,14 +172,13 @@ func (m *ResourceManager) GetImageRecipe(ctx context.Context, name, version stri
 			}
 		}
 
-		// Check for more pages
 		if result.NextToken == nil {
 			break
 		}
 		input.NextToken = result.NextToken
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("image recipe %q: %w", name, ErrNotFound)
 }
 
 // GetImagePipeline retrieves an image pipeline by name
@@ -202,14 +204,13 @@ func (m *ResourceManager) GetImagePipeline(ctx context.Context, name string) (*t
 			}
 		}
 
-		// Check for more pages
 		if result.NextToken == nil {
 			break
 		}
 		input.NextToken = result.NextToken
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("image pipeline %q: %w", name, ErrNotFound)
 }
 
 // DeleteInfrastructureConfig deletes an infrastructure configuration
@@ -479,7 +480,10 @@ func (m *ResourceManager) cleanupResource(ctx context.Context, typeName string, 
 // Helper functions to get ARNs
 func (m *ResourceManager) getPipelineARN(ctx context.Context, name string) (string, error) {
 	pipeline, err := m.GetImagePipeline(ctx, name)
-	if err != nil || pipeline == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(pipeline.Arn), nil
@@ -487,7 +491,10 @@ func (m *ResourceManager) getPipelineARN(ctx context.Context, name string) (stri
 
 func (m *ResourceManager) getRecipeARN(ctx context.Context, name string) (string, error) {
 	recipe, err := m.GetImageRecipe(ctx, name, "")
-	if err != nil || recipe == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(recipe.Arn), nil
@@ -495,7 +502,10 @@ func (m *ResourceManager) getRecipeARN(ctx context.Context, name string) (string
 
 func (m *ResourceManager) getDistConfigARN(ctx context.Context, name string) (string, error) {
 	dist, err := m.GetDistributionConfig(ctx, name)
-	if err != nil || dist == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(dist.Arn), nil
@@ -503,7 +513,10 @@ func (m *ResourceManager) getDistConfigARN(ctx context.Context, name string) (st
 
 func (m *ResourceManager) getInfraConfigARN(ctx context.Context, name string) (string, error) {
 	infra, err := m.GetInfrastructureConfig(ctx, name)
-	if err != nil || infra == nil {
+	if errors.Is(err, ErrNotFound) {
+		return "", nil // Not found is not an error for ARN lookup
+	}
+	if err != nil {
 		return "", err
 	}
 	return aws.ToString(infra.Arn), nil

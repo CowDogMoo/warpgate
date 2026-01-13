@@ -101,12 +101,10 @@ func runCleanup(cmd *cobra.Command, opts *cleanupOptions) error {
 		return fmt.Errorf("configuration not initialized")
 	}
 
-	// Require either a build name or --all flag
 	if opts.buildName == "" && !opts.all {
 		return fmt.Errorf("either specify a build name or use --all flag")
 	}
 
-	// Determine region
 	region := opts.region
 	if region == "" {
 		region = cfg.AWS.Region
@@ -117,7 +115,6 @@ func runCleanup(cmd *cobra.Command, opts *cleanupOptions) error {
 
 	logging.InfoContext(ctx, "Connecting to AWS in region: %s", region)
 
-	// Create AWS clients
 	amiConfig := ami.ClientConfig{
 		Region:          region,
 		Profile:         cfg.AWS.Profile,

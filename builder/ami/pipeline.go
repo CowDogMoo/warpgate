@@ -295,11 +295,10 @@ func (m *PipelineManager) handlePipelineStatus(ctx context.Context, image *types
 	}
 }
 
-// estimateRemainingTime estimates the remaining build time based on current stage and elapsed time
-// These are typical times based on common AMI build patterns
+// estimateRemainingTime estimates the remaining build time based on current stage and elapsed time.
+// These are typical times based on common AMI build patterns. Actual times vary based on
+// instance type, provisioners, etc.
 func (m *PipelineManager) estimateRemainingTime(currentStatus types.ImageStatus, elapsed time.Duration) time.Duration {
-	// Typical durations for each stage (based on general AMI build patterns)
-	// These are estimates and actual times vary based on instance type, provisioners, etc.
 	typicalStageDurations := map[types.ImageStatus]time.Duration{
 		types.ImageStatusPending:      2 * time.Minute,  // Waiting for resources
 		types.ImageStatusCreating:     5 * time.Minute,  // Initializing EC2 instance
