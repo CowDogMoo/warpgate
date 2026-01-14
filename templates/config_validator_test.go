@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -156,7 +157,7 @@ func TestValidator_ValidateWithOptions_SyntaxOnly(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.ValidateWithOptions(config, tt.options)
+			err := validator.ValidateWithOptions(context.Background(), config, tt.options)
 			if tt.shouldError && err == nil {
 				t.Errorf("ValidateWithOptions() expected error but got none. %s", tt.description)
 			}
@@ -192,10 +193,10 @@ func TestValidator_ValidateWithOptions_SyntaxOnly(t *testing.T) {
 	}
 
 	// Both modes should pass with existing file
-	if err := validator.ValidateWithOptions(configWithExistingFile, ValidationOptions{SyntaxOnly: true}); err != nil {
+	if err := validator.ValidateWithOptions(context.Background(), configWithExistingFile, ValidationOptions{SyntaxOnly: true}); err != nil {
 		t.Errorf("ValidateWithOptions(syntax-only) with existing file error: %v", err)
 	}
-	if err := validator.ValidateWithOptions(configWithExistingFile, ValidationOptions{SyntaxOnly: false}); err != nil {
+	if err := validator.ValidateWithOptions(context.Background(), configWithExistingFile, ValidationOptions{SyntaxOnly: false}); err != nil {
 		t.Errorf("ValidateWithOptions(full) with existing file error: %v", err)
 	}
 }
@@ -362,7 +363,7 @@ func TestValidator_ValidateProvisioners(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.ValidateWithOptions(tt.config, tt.options)
+			err := validator.ValidateWithOptions(context.Background(), tt.config, tt.options)
 			if tt.shouldError && err == nil {
 				t.Errorf("ValidateWithOptions() expected error but got none. %s", tt.description)
 			}
@@ -402,7 +403,7 @@ func TestValidator_Validate_BackwardCompatibility(t *testing.T) {
 	}
 
 	// Test that the old Validate() method still works (defaults to full validation)
-	if err := validator.Validate(config); err != nil {
+	if err := validator.Validate(context.Background(), config); err != nil {
 		t.Errorf("Validate() (backward compatibility) error: %v", err)
 	}
 
@@ -419,7 +420,7 @@ func TestValidator_Validate_BackwardCompatibility(t *testing.T) {
 		Targets: []builder.Target{{Type: "container", Platforms: []string{"linux/amd64"}}},
 	}
 
-	if err := validator.Validate(configWithMissingFile); err == nil {
+	if err := validator.Validate(context.Background(), configWithMissingFile); err == nil {
 		t.Error("Validate() (backward compatibility) should fail with missing file")
 	}
 }
@@ -475,7 +476,7 @@ func TestValidator_RequiredFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.Validate(tt.config)
+			err := validator.Validate(context.Background(), tt.config)
 			if tt.shouldError && err == nil {
 				t.Errorf("Validate() expected error containing %q but got none", tt.errorMsg)
 			}
@@ -586,7 +587,7 @@ func TestValidator_ValidateDockerfile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.ValidateWithOptions(tt.config, tt.options)
+			err := validator.ValidateWithOptions(context.Background(), tt.config, tt.options)
 			if tt.shouldError && err == nil {
 				t.Errorf("ValidateWithOptions() expected error but got none. %s", tt.description)
 			}
@@ -669,7 +670,7 @@ func TestValidator_DockerfileVsProvisioners(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validator.Validate(tt.config)
+			err := validator.Validate(context.Background(), tt.config)
 			if tt.shouldError && err == nil {
 				t.Errorf("Validate() expected error but got none. %s", tt.description)
 			}
@@ -853,7 +854,7 @@ func TestValidator_ValidateSource(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := baseConfig(tt.sources)
-			err := validator.ValidateWithOptions(config, ValidationOptions{SyntaxOnly: true})
+			err := validator.ValidateWithOptions(context.Background(), config, ValidationOptions{SyntaxOnly: true})
 
 			if tt.shouldError {
 				if err == nil {

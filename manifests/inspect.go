@@ -87,7 +87,7 @@ type ArchitectureInfo struct {
 
 // InspectManifest inspects a manifest from the registry using go-containerregistry
 func InspectManifest(ctx context.Context, opts InspectOptions) (*ManifestInfo, error) {
-	logging.Debug("Inspecting manifest: %s/%s:%s", opts.Registry, opts.ImageName, opts.Tag)
+	logging.DebugContext(ctx, "Inspecting manifest: %s/%s:%s", opts.Registry, opts.ImageName, opts.Tag)
 
 	// Build image reference
 	imageRef := BuildManifestReference(opts.Registry, opts.Namespace, opts.ImageName, opts.Tag)
@@ -124,7 +124,7 @@ func InspectManifest(ctx context.Context, opts InspectOptions) (*ManifestInfo, e
 		}
 	} else {
 		// Single-arch manifest
-		if err := parseSingleArchManifestFromDescriptor(descriptor, info); err != nil {
+		if err := parseSingleArchManifestFromDescriptor(ctx, descriptor, info); err != nil {
 			return nil, fmt.Errorf("failed to parse single-arch manifest: %w", err)
 		}
 	}
@@ -179,7 +179,7 @@ func parseMultiArchManifestFromDescriptor(descriptor *remote.Descriptor, info *M
 }
 
 // parseSingleArchManifestFromDescriptor parses a single-architecture manifest from a descriptor
-func parseSingleArchManifestFromDescriptor(descriptor *remote.Descriptor, info *ManifestInfo) error {
+func parseSingleArchManifestFromDescriptor(ctx context.Context, descriptor *remote.Descriptor, info *ManifestInfo) error {
 	// Try to get as image (single-arch)
 	img, err := descriptor.Image()
 	if err != nil {
@@ -195,7 +195,7 @@ func parseSingleArchManifestFromDescriptor(descriptor *remote.Descriptor, info *
 	// Get config file for platform info
 	configFile, err := img.ConfigFile()
 	if err != nil {
-		logging.Warn("Failed to get config file for manifest %s: %v. Architecture info will be incomplete.",
+		logging.WarnContext(ctx, "Failed to get config file for manifest %s: %v. Architecture info will be incomplete.",
 			manifest.Config.Digest.String()[:12], err)
 		// Continue without platform info - we'll use "unknown" values
 		configFile = nil
@@ -228,7 +228,7 @@ func parseSingleArchManifestFromDescriptor(descriptor *remote.Descriptor, info *
 
 // ListTags lists available tags for an image in the registry using go-containerregistry
 func ListTags(ctx context.Context, opts ListOptions) ([]string, error) {
-	logging.Debug("Listing tags for: %s/%s", opts.Registry, opts.ImageName)
+	logging.DebugContext(ctx, "Listing tags for: %s/%s", opts.Registry, opts.ImageName)
 
 	// Build repository reference
 	imageRef := BuildManifestReference(opts.Registry, opts.Namespace, opts.ImageName, "")

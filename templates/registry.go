@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -82,7 +83,8 @@ func isPlaceholderURL(rawURL string) bool {
 
 	u, err := url.Parse(parseURL)
 	if err != nil {
-		logging.Debug("URL parse failed for %q: %v (not a placeholder)", rawURL, err)
+		// Note: This function doesn't have context, so we can't use logging here
+		// The validation is simple enough that we can skip logging
 		return false // If it doesn't parse, let other validation handle it
 	}
 
@@ -103,11 +105,11 @@ func isPlaceholderURL(rawURL string) bool {
 }
 
 // NewTemplateRegistry creates a new template registry
-func NewTemplateRegistry() (*TemplateRegistry, error) {
+func NewTemplateRegistry(ctx context.Context) (*TemplateRegistry, error) {
 	// Load global config to get repositories and local paths
 	cfg, err := config.Load()
 	if err != nil {
-		logging.Warn("Failed to load global config, using defaults: %v", err)
+		logging.WarnContext(ctx, "Failed to load global config, using defaults: %v", err)
 		cfg = &config.Config{}
 	}
 
@@ -156,10 +158,10 @@ func NewTemplateRegistry() (*TemplateRegistry, error) {
 }
 
 // List returns all available templates in a repository
-func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
+func (tr *TemplateRegistry) List(ctx context.Context, repoName string) ([]TemplateInfo, error) {
 	// Special case: list all templates from all sources
 	if repoName == "" || repoName == "all" {
-		return tr.listAll()
+		return tr.listAll(ctx)
 	}
 
 	// Try to load from cache first (only for git repos, not local paths)
@@ -169,29 +171,29 @@ func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
 	}
 
 	if tr.pathValidator.IsLocalPath(repoURL) {
-		logging.Debug("Scanning local templates directory: %s", repoURL)
+		logging.DebugContext(ctx, "Scanning local templates directory: %s", repoURL)
 		return tr.discoverTemplates(repoURL)
 	}
 	cache, err := tr.loadCache(repoName)
 	if err == nil && cache != nil {
 		if time.Since(cache.LastUpdated) < DefaultCacheDuration {
-			logging.Debug("Using cached templates for repository: %s", repoName)
+			logging.DebugContext(ctx, "Using cached templates for repository: %s", repoName)
 			templates := make([]TemplateInfo, 0, len(cache.Templates))
 			for _, tmpl := range cache.Templates {
 				templates = append(templates, tmpl)
 			}
 			return templates, nil
 		}
-		logging.Debug("Cache expired for repository: %s", repoName)
+		logging.DebugContext(ctx, "Cache expired for repository: %s", repoName)
 	}
 
 	// Cache miss or expired - fetch fresh data from git
-	logging.Debug("Fetching templates from repository: %s", repoName)
+	logging.DebugContext(ctx, "Fetching templates from repository: %s", repoName)
 
 	// Clone or update the repository using persistent cache
 	repoCache := filepath.Join(tr.cacheDir, "repos", repoName)
 	gitOps := NewGitOperations(repoCache)
-	repoPath, err := gitOps.CloneOrUpdate(repoURL, "")
+	repoPath, err := gitOps.CloneOrUpdate(ctx, repoURL, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to access repository: %w", err)
 	}
@@ -204,7 +206,7 @@ func (tr *TemplateRegistry) List(repoName string) ([]TemplateInfo, error) {
 
 	// Save to cache
 	if err := tr.saveCache(repoName, templates); err != nil {
-		logging.Warn("Failed to save cache: %v", err)
+		logging.WarnContext(ctx, "Failed to save cache: %v", err)
 	}
 
 	return templates, nil
@@ -218,7 +220,7 @@ func tagTemplatesWithRepository(templates []TemplateInfo, repoName string) {
 }
 
 // scanLocalPaths discovers templates from local paths and tags them appropriately.
-func (tr *TemplateRegistry) scanLocalPaths() []TemplateInfo {
+func (tr *TemplateRegistry) scanLocalPaths(ctx context.Context) []TemplateInfo {
 	var templates []TemplateInfo
 
 	for _, localPath := range tr.localPaths {
@@ -227,7 +229,7 @@ func (tr *TemplateRegistry) scanLocalPaths() []TemplateInfo {
 		}
 		discovered, err := tr.discoverTemplates(localPath)
 		if err != nil {
-			logging.Warn("Failed to scan local path %s: %v", localPath, err)
+			logging.WarnContext(ctx, "Failed to scan local path %s: %v", localPath, err)
 			continue
 		}
 		// Tag templates with their source path
@@ -239,14 +241,14 @@ func (tr *TemplateRegistry) scanLocalPaths() []TemplateInfo {
 }
 
 // listAll returns all templates from all configured sources (repos and local paths)
-func (tr *TemplateRegistry) listAll() ([]TemplateInfo, error) {
+func (tr *TemplateRegistry) listAll(ctx context.Context) ([]TemplateInfo, error) {
 	var allTemplates []TemplateInfo
 
 	// List from all configured repositories
 	for repoName := range tr.repos {
-		templates, err := tr.List(repoName)
+		templates, err := tr.List(ctx, repoName)
 		if err != nil {
-			logging.Warn("Failed to list templates from %s: %v", repoName, err)
+			logging.WarnContext(ctx, "Failed to list templates from %s: %v", repoName, err)
 			continue
 		}
 		// Tag templates with their repository
@@ -255,13 +257,13 @@ func (tr *TemplateRegistry) listAll() ([]TemplateInfo, error) {
 	}
 
 	// Scan additional local paths
-	allTemplates = append(allTemplates, tr.scanLocalPaths()...)
+	allTemplates = append(allTemplates, tr.scanLocalPaths(ctx)...)
 
 	return allTemplates, nil
 }
 
 // ListLocal returns templates from local paths only (no git operations)
-func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
+func (tr *TemplateRegistry) ListLocal(ctx context.Context) ([]TemplateInfo, error) {
 	var allTemplates []TemplateInfo
 
 	// Check repos for local paths
@@ -271,7 +273,7 @@ func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
 		}
 		templates, err := tr.discoverTemplates(repoURL)
 		if err != nil {
-			logging.Warn("Failed to scan local repo %s: %v", repoName, err)
+			logging.WarnContext(ctx, "Failed to scan local repo %s: %v", repoName, err)
 			continue
 		}
 		// Tag templates with their repository name
@@ -280,7 +282,7 @@ func (tr *TemplateRegistry) ListLocal() ([]TemplateInfo, error) {
 	}
 
 	// Scan additional local paths from config
-	allTemplates = append(allTemplates, tr.scanLocalPaths()...)
+	allTemplates = append(allTemplates, tr.scanLocalPaths(ctx)...)
 
 	return allTemplates, nil
 }
@@ -346,12 +348,12 @@ func (tr *TemplateRegistry) loadTemplateInfo(configPath, name string) (TemplateI
 }
 
 // Search searches for templates matching a query
-func (tr *TemplateRegistry) Search(query string) ([]TemplateInfo, error) {
+func (tr *TemplateRegistry) Search(ctx context.Context, query string) ([]TemplateInfo, error) {
 	allTemplates := []TemplateInfo{}
 
 	// Search all registered repositories
 	for repoName := range tr.repos {
-		templates, err := tr.List(repoName)
+		templates, err := tr.List(ctx, repoName)
 		if err != nil {
 			continue // Skip repos that fail
 		}
@@ -462,8 +464,8 @@ func (tr *TemplateRegistry) saveCache(repoName string, templates []TemplateInfo)
 }
 
 // UpdateCache forces a cache refresh for a repository
-func (tr *TemplateRegistry) UpdateCache(repoName string) error {
-	logging.Info("Updating cache for repository: %s", repoName)
+func (tr *TemplateRegistry) UpdateCache(ctx context.Context, repoName string) error {
+	logging.InfoContext(ctx, "Updating cache for repository: %s", repoName)
 
 	repoURL, ok := tr.repos[repoName]
 	if !ok {
@@ -473,7 +475,7 @@ func (tr *TemplateRegistry) UpdateCache(repoName string) error {
 	// Clone or update the repository
 	repoCache := filepath.Join(tr.cacheDir, "repos", repoName)
 	gitOps := NewGitOperations(repoCache)
-	repoPath, err := gitOps.CloneOrUpdate(repoURL, "")
+	repoPath, err := gitOps.CloneOrUpdate(ctx, repoURL, "")
 	if err != nil {
 		return fmt.Errorf("failed to access repository: %w", err)
 	}
@@ -489,16 +491,16 @@ func (tr *TemplateRegistry) UpdateCache(repoName string) error {
 		return fmt.Errorf("failed to save cache: %w", err)
 	}
 
-	logging.Info("Cache updated successfully for repository: %s (%d templates)", repoName, len(templates))
+	logging.InfoContext(ctx, "Cache updated successfully for repository: %s (%d templates)", repoName, len(templates))
 	return nil
 }
 
 // UpdateAllCaches forces a cache refresh for all repositories
-func (tr *TemplateRegistry) UpdateAllCaches() error {
+func (tr *TemplateRegistry) UpdateAllCaches(ctx context.Context) error {
 	var errors []string
 
 	for repoName := range tr.repos {
-		if err := tr.UpdateCache(repoName); err != nil {
+		if err := tr.UpdateCache(ctx, repoName); err != nil {
 			errors = append(errors, fmt.Sprintf("%s: %v", repoName, err))
 		}
 	}

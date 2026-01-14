@@ -23,6 +23,7 @@ THE SOFTWARE.
 package manifests
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -162,7 +163,7 @@ func TestDiscoverDigestFiles(t *testing.T) {
 			}
 
 			// Discover digest files
-			digestFiles, err := DiscoverDigestFiles(DiscoveryOptions{
+			digestFiles, err := DiscoverDigestFiles(context.Background(), DiscoveryOptions{
 				ImageName: tt.imageName,
 				Directory: tmpDir,
 			})

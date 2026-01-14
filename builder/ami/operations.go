@@ -50,7 +50,7 @@ func NewAMIOperations(clients *AWSClients, cfg *config.Config) *AMIOperations {
 
 // ShareAMI shares an AMI with specified AWS accounts
 func (o *AMIOperations) ShareAMI(ctx context.Context, amiID string, accountIDs []string) error {
-	logging.Info("Sharing AMI %s with accounts: %v", amiID, accountIDs)
+	logging.InfoContext(ctx, "Sharing AMI %s with accounts: %v", amiID, accountIDs)
 
 	// Add launch permissions for each account
 	launchPermissions := make([]types.LaunchPermission, 0, len(accountIDs))
@@ -72,13 +72,13 @@ func (o *AMIOperations) ShareAMI(ctx context.Context, amiID string, accountIDs [
 		return fmt.Errorf("failed to share AMI: %w", err)
 	}
 
-	logging.Info("AMI shared successfully: %s", amiID)
+	logging.InfoContext(ctx, "AMI shared successfully: %s", amiID)
 	return nil
 }
 
 // CopyAMI copies an AMI to another region
 func (o *AMIOperations) CopyAMI(ctx context.Context, amiID, sourceRegion, destRegion, name string) (string, error) {
-	logging.Info("Copying AMI %s from %s to %s", amiID, sourceRegion, destRegion)
+	logging.InfoContext(ctx, "Copying AMI %s from %s to %s", amiID, sourceRegion, destRegion)
 
 	// Create EC2 client for destination region
 	destCfg := o.clients.Config.Copy()
@@ -98,20 +98,20 @@ func (o *AMIOperations) CopyAMI(ctx context.Context, amiID, sourceRegion, destRe
 	}
 
 	newAMIID := *result.ImageId
-	logging.Info("AMI copy initiated: %s (region: %s)", newAMIID, destRegion)
+	logging.InfoContext(ctx, "AMI copy initiated: %s (region: %s)", newAMIID, destRegion)
 
 	// Wait for AMI to be available
 	if err := o.waitForAMIAvailable(ctx, destEC2, newAMIID); err != nil {
 		return "", fmt.Errorf("failed waiting for AMI copy: %w", err)
 	}
 
-	logging.Info("AMI copied successfully: %s (region: %s)", newAMIID, destRegion)
+	logging.InfoContext(ctx, "AMI copied successfully: %s (region: %s)", newAMIID, destRegion)
 	return newAMIID, nil
 }
 
 // DeregisterAMI deregisters an AMI and optionally deletes associated snapshots
 func (o *AMIOperations) DeregisterAMI(ctx context.Context, amiID string, deleteSnapshots bool) error {
-	logging.Info("Deregistering AMI %s (delete_snapshots: %v)", amiID, deleteSnapshots)
+	logging.InfoContext(ctx, "Deregistering AMI %s (delete_snapshots: %v)", amiID, deleteSnapshots)
 
 	// Get AMI details to find snapshots if we need to delete them
 	var snapshotIDs []string
@@ -147,24 +147,24 @@ func (o *AMIOperations) DeregisterAMI(ctx context.Context, amiID string, deleteS
 		return fmt.Errorf("failed to deregister AMI: %w", err)
 	}
 
-	logging.Info("AMI deregistered: %s", amiID)
+	logging.InfoContext(ctx, "AMI deregistered: %s", amiID)
 
 	// Delete snapshots if requested
 	if deleteSnapshots {
 		for _, snapshotID := range snapshotIDs {
 			if err := o.deleteSnapshot(ctx, snapshotID); err != nil {
-				logging.Warn("Failed to delete snapshot %s: %v", snapshotID, err)
+				logging.WarnContext(ctx, "Failed to delete snapshot %s: %v", snapshotID, err)
 			}
 		}
 	}
 
-	logging.Info("AMI deregistration complete: %s", amiID)
+	logging.InfoContext(ctx, "AMI deregistration complete: %s", amiID)
 	return nil
 }
 
 // deleteSnapshot deletes an EBS snapshot
 func (o *AMIOperations) deleteSnapshot(ctx context.Context, snapshotID string) error {
-	logging.Debug("Deleting snapshot: %s", snapshotID)
+	logging.DebugContext(ctx, "Deleting snapshot: %s", snapshotID)
 
 	input := &ec2.DeleteSnapshotInput{
 		SnapshotId: aws.String(snapshotID),
@@ -175,13 +175,13 @@ func (o *AMIOperations) deleteSnapshot(ctx context.Context, snapshotID string) e
 		return fmt.Errorf("failed to delete snapshot: %w", err)
 	}
 
-	logging.Debug("Snapshot deleted: %s", snapshotID)
+	logging.DebugContext(ctx, "Snapshot deleted: %s", snapshotID)
 	return nil
 }
 
 // waitForAMIAvailable waits for an AMI to become available
 func (o *AMIOperations) waitForAMIAvailable(ctx context.Context, ec2Client *ec2.Client, amiID string) error {
-	logging.Debug("Waiting for AMI to be available: %s", amiID)
+	logging.DebugContext(ctx, "Waiting for AMI to be available: %s", amiID)
 
 	pollingInterval := time.Duration(o.globalConfig.AWS.AMI.PollingIntervalSec) * time.Second
 	buildTimeout := time.Duration(o.globalConfig.AWS.AMI.BuildTimeoutMin) * time.Minute
@@ -212,7 +212,7 @@ func (o *AMIOperations) waitForAMIAvailable(ctx context.Context, ec2Client *ec2.
 			}
 
 			state := result.Images[0].State
-			logging.Debug("AMI state: %s (ami: %s)", state, amiID)
+			logging.DebugContext(ctx, "AMI state: %s (ami: %s)", state, amiID)
 
 			switch state {
 			case types.ImageStateAvailable:
@@ -235,7 +235,7 @@ func (o *AMIOperations) TagAMI(ctx context.Context, amiID string, tags map[strin
 		return nil
 	}
 
-	logging.Info("Tagging AMI %s with tags: %v", amiID, tags)
+	logging.InfoContext(ctx, "Tagging AMI %s with tags: %v", amiID, tags)
 
 	ec2Tags := make([]types.Tag, 0, len(tags))
 	for key, value := range tags {
@@ -255,7 +255,7 @@ func (o *AMIOperations) TagAMI(ctx context.Context, amiID string, tags map[strin
 		return fmt.Errorf("failed to tag AMI: %w", err)
 	}
 
-	logging.Info("AMI tagged successfully: %s", amiID)
+	logging.InfoContext(ctx, "AMI tagged successfully: %s", amiID)
 	return nil
 }
 

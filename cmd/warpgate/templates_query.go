@@ -55,16 +55,19 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 	// Suppress logging for quiet mode or structured output formats
 	shouldSuppressLog := templatesListQuiet || templatesListFormat == "json" || templatesListFormat == "gha-matrix"
 
+	logger := logging.FromContext(ctx)
 	if shouldSuppressLog {
-		logging.SetQuiet(true)
-		defer logging.SetQuiet(false)
+		// Temporarily enable quiet mode for this operation
+		origQuiet := logger.IsQuiet()
+		logger.SetQuiet(true)
+		defer logger.SetQuiet(origQuiet)
 	}
 
 	if !shouldSuppressLog {
 		logging.InfoContext(ctx, "Fetching available templates...")
 	}
 
-	registry, err := templates.NewTemplateRegistry()
+	registry, err := templates.NewTemplateRegistry(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create template registry: %w", err)
 	}
@@ -73,13 +76,13 @@ func runTemplatesList(cmd *cobra.Command, args []string) error {
 
 	// Use local-only listing when --source local to avoid git operations
 	if templatesListSource == "local" {
-		templateList, err = registry.ListLocal()
+		templateList, err = registry.ListLocal(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to list local templates: %w", err)
 		}
 	} else {
 		// List all templates from all sources
-		templateList, err = registry.List("all")
+		templateList, err = registry.List(ctx, "all")
 		if err != nil {
 			return fmt.Errorf("failed to list templates: %w", err)
 		}
@@ -118,13 +121,13 @@ func runTemplatesSearch(cmd *cobra.Command, args []string) error {
 	logging.InfoContext(ctx, "Searching for templates matching: %s", query)
 
 	// Create template registry
-	registry, err := templates.NewTemplateRegistry()
+	registry, err := templates.NewTemplateRegistry(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create template registry: %w", err)
 	}
 
 	// Search for templates
-	results, err := registry.Search(query)
+	results, err := registry.Search(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to search templates: %w", err)
 	}
@@ -145,13 +148,13 @@ func runTemplatesInfo(cmd *cobra.Command, args []string) error {
 	logging.InfoContext(ctx, "Fetching information for template: %s", templateName)
 
 	// Create template loader
-	loader, err := templates.NewTemplateLoader()
+	loader, err := templates.NewTemplateLoader(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create template loader: %w", err)
 	}
 
 	// Load the template configuration
-	cfg, err := loader.LoadTemplateWithVars(templateName, nil)
+	cfg, err := loader.LoadTemplateWithVars(ctx, templateName, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load template: %w", err)
 	}

@@ -60,7 +60,7 @@ func (c *ResourceCleaner) ListWarpgateResources(ctx context.Context) ([]Resource
 	// List pipelines
 	pipelines, err := c.listPipelines(ctx)
 	if err != nil {
-		logging.Warn("Failed to list pipelines: %v", err)
+		logging.WarnContext(ctx, "Failed to list pipelines: %v", err)
 	} else {
 		resources = append(resources, pipelines...)
 	}
@@ -68,7 +68,7 @@ func (c *ResourceCleaner) ListWarpgateResources(ctx context.Context) ([]Resource
 	// List recipes
 	recipes, err := c.listRecipes(ctx)
 	if err != nil {
-		logging.Warn("Failed to list recipes: %v", err)
+		logging.WarnContext(ctx, "Failed to list recipes: %v", err)
 	} else {
 		resources = append(resources, recipes...)
 	}
@@ -76,7 +76,7 @@ func (c *ResourceCleaner) ListWarpgateResources(ctx context.Context) ([]Resource
 	// List distribution configurations
 	distConfigs, err := c.listDistributionConfigs(ctx)
 	if err != nil {
-		logging.Warn("Failed to list distribution configs: %v", err)
+		logging.WarnContext(ctx, "Failed to list distribution configs: %v", err)
 	} else {
 		resources = append(resources, distConfigs...)
 	}
@@ -84,7 +84,7 @@ func (c *ResourceCleaner) ListWarpgateResources(ctx context.Context) ([]Resource
 	// List infrastructure configurations
 	infraConfigs, err := c.listInfrastructureConfigs(ctx)
 	if err != nil {
-		logging.Warn("Failed to list infrastructure configs: %v", err)
+		logging.WarnContext(ctx, "Failed to list infrastructure configs: %v", err)
 	} else {
 		resources = append(resources, infraConfigs...)
 	}
@@ -92,7 +92,7 @@ func (c *ResourceCleaner) ListWarpgateResources(ctx context.Context) ([]Resource
 	// List components
 	components, err := c.listComponents(ctx)
 	if err != nil {
-		logging.Warn("Failed to list components: %v", err)
+		logging.WarnContext(ctx, "Failed to list components: %v", err)
 	} else {
 		resources = append(resources, components...)
 	}
@@ -134,7 +134,7 @@ func (c *ResourceCleaner) DeleteResources(ctx context.Context, resources []Resou
 		return fmt.Errorf("some resources failed to delete:\n  - %s", strings.Join(deleteErrors, "\n  - "))
 	}
 
-	logging.Info("Successfully deleted %d resources", len(resources))
+	logging.InfoContext(ctx, "Successfully deleted %d resources", len(resources))
 	return nil
 }
 
@@ -150,7 +150,7 @@ func (c *ResourceCleaner) groupResourcesByType(resources []ResourceInfo) map[str
 // deleteResourceGroup deletes a group of resources using the provided delete function
 func (c *ResourceCleaner) deleteResourceGroup(ctx context.Context, resources []ResourceInfo, typeName string, deleteFn func(context.Context, string) error, errors []string) []string {
 	for _, r := range resources {
-		logging.Info("Deleting %s: %s", typeName, r.Name)
+		logging.InfoContext(ctx, "Deleting %s: %s", typeName, r.Name)
 		if err := deleteFn(ctx, r.ARN); err != nil {
 			errors = append(errors, fmt.Sprintf("%s %s: %v", typeName, r.Name, err))
 		}

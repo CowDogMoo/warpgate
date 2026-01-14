@@ -80,7 +80,7 @@ func runManifestsCreate(cmd *cobra.Command, _ []string) error {
 // discoverAndValidateDigests discovers, validates, and filters digest files
 func discoverAndValidateDigests(ctx context.Context) ([]manifests.DigestFile, error) {
 	// Discover digest files
-	digestFiles, err := manifests.DiscoverDigestFiles(manifests.DiscoveryOptions{
+	digestFiles, err := manifests.DiscoverDigestFiles(ctx, manifests.DiscoveryOptions{
 		ImageName: manifestsCreateOpts.name,
 		Directory: manifestsCreateOpts.digestDir,
 	})
@@ -98,7 +98,7 @@ func discoverAndValidateDigests(ctx context.Context) ([]manifests.DigestFile, er
 	}
 
 	// Validate digest files
-	if err := manifests.ValidateDigestFiles(digestFiles, manifests.ValidationOptions{
+	if err := manifests.ValidateDigestFiles(ctx, digestFiles, manifests.ValidationOptions{
 		ImageName: manifestsCreateOpts.name,
 		MaxAge:    manifestsCreateOpts.maxAge,
 	}); err != nil {
@@ -106,7 +106,7 @@ func discoverAndValidateDigests(ctx context.Context) ([]manifests.DigestFile, er
 	}
 
 	// Filter architectures based on requirements
-	filteredDigests, err := manifests.FilterArchitectures(digestFiles, manifests.FilterOptions{
+	filteredDigests, err := manifests.FilterArchitectures(ctx, digestFiles, manifests.FilterOptions{
 		RequiredArchitectures: manifestsCreateOpts.requireArch,
 		BestEffort:            manifestsCreateOpts.bestEffort,
 	})

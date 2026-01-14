@@ -71,7 +71,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Validate configuration
 	validator := templates.NewValidator()
-	if err := validator.ValidateWithOptions(cfg, templates.ValidationOptions{
+	if err := validator.ValidateWithOptions(ctx, cfg, templates.ValidationOptions{
 		SyntaxOnly: syntaxOnly,
 	}); err != nil {
 		logging.ErrorContext(ctx, "Validation failed: %v", err)

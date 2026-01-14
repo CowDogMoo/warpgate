@@ -93,13 +93,13 @@ func runTemplatesUpdate(cmd *cobra.Command, args []string) error {
 	logging.InfoContext(ctx, "Updating template cache...")
 
 	// Create template registry
-	registry, err := templates.NewTemplateRegistry()
+	registry, err := templates.NewTemplateRegistry(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create template registry: %w", err)
 	}
 
 	// Update all caches
-	if err := registry.UpdateAllCaches(); err != nil {
+	if err := registry.UpdateAllCaches(ctx); err != nil {
 		return fmt.Errorf("failed to update template cache: %w", err)
 	}
 

@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -48,12 +49,12 @@ func NewValidator() *Validator {
 }
 
 // Validate checks if a configuration is valid with default options
-func (v *Validator) Validate(config *builder.Config) error {
-	return v.ValidateWithOptions(config, ValidationOptions{})
+func (v *Validator) Validate(ctx context.Context, config *builder.Config) error {
+	return v.ValidateWithOptions(ctx, config, ValidationOptions{})
 }
 
 // ValidateWithOptions checks if a configuration is valid with custom validation options
-func (v *Validator) ValidateWithOptions(config *builder.Config, options ValidationOptions) error {
+func (v *Validator) ValidateWithOptions(ctx context.Context, config *builder.Config, options ValidationOptions) error {
 	v.options = options
 	if config.Name == "" {
 		return fmt.Errorf("config.name is required")
@@ -73,7 +74,7 @@ func (v *Validator) ValidateWithOptions(config *builder.Config, options Validati
 
 		// Validate provisioners
 		for i, prov := range config.Provisioners {
-			if err := v.validateProvisioner(&prov, i); err != nil {
+			if err := v.validateProvisioner(ctx, &prov, i); err != nil {
 				return err
 			}
 		}
@@ -82,7 +83,7 @@ func (v *Validator) ValidateWithOptions(config *builder.Config, options Validati
 	// Validate sources
 	sourceNames := make(map[string]bool)
 	for i, source := range config.Sources {
-		if err := v.validateSource(&source, i, sourceNames); err != nil {
+		if err := v.validateSource(ctx, &source, i, sourceNames); err != nil {
 			return err
 		}
 	}
@@ -118,18 +119,18 @@ func (v *Validator) validateDockerfile(df *builder.DockerfileConfig) error {
 }
 
 // validateProvisioner validates a single provisioner
-func (v *Validator) validateProvisioner(prov *builder.Provisioner, index int) error {
+func (v *Validator) validateProvisioner(ctx context.Context, prov *builder.Provisioner, index int) error {
 	switch prov.Type {
 	case "shell":
 		return v.validateShellProvisioner(prov, index)
 	case "ansible":
-		return v.validateAnsibleProvisioner(prov, index)
+		return v.validateAnsibleProvisioner(ctx, prov, index)
 	case "script":
-		return v.validateScriptProvisioner(prov, index)
+		return v.validateScriptProvisioner(ctx, prov, index)
 	case "powershell":
-		return v.validatePowerShellProvisioner(prov, index)
+		return v.validatePowerShellProvisioner(ctx, prov, index)
 	case "file":
-		return v.validateFileProvisioner(prov, index)
+		return v.validateFileProvisioner(ctx, prov, index)
 	case "":
 		return fmt.Errorf("provisioner[%d]: type is required", index)
 	default:
@@ -146,17 +147,17 @@ func (v *Validator) validateShellProvisioner(prov *builder.Provisioner, index in
 }
 
 // validateAnsibleProvisioner validates an ansible provisioner
-func (v *Validator) validateAnsibleProvisioner(prov *builder.Provisioner, index int) error {
+func (v *Validator) validateAnsibleProvisioner(ctx context.Context, prov *builder.Provisioner, index int) error {
 	if prov.PlaybookPath == "" {
 		return fmt.Errorf("provisioner[%d]: ansible provisioner requires 'playbook_path'", index)
 	}
 
-	if err := v.validateFilePath(prov.PlaybookPath, index, "playbook"); err != nil {
+	if err := v.validateFilePath(ctx, prov.PlaybookPath, index, "playbook"); err != nil {
 		return err
 	}
 
 	if prov.GalaxyFile != "" {
-		if err := v.validateFilePath(prov.GalaxyFile, index, "galaxy"); err != nil {
+		if err := v.validateFilePath(ctx, prov.GalaxyFile, index, "galaxy"); err != nil {
 			return err
 		}
 	}
@@ -165,13 +166,13 @@ func (v *Validator) validateAnsibleProvisioner(prov *builder.Provisioner, index 
 }
 
 // validateScriptProvisioner validates a script provisioner
-func (v *Validator) validateScriptProvisioner(prov *builder.Provisioner, index int) error {
+func (v *Validator) validateScriptProvisioner(ctx context.Context, prov *builder.Provisioner, index int) error {
 	if len(prov.Scripts) == 0 {
 		return fmt.Errorf("provisioner[%d]: script provisioner requires 'scripts'", index)
 	}
 
 	for _, script := range prov.Scripts {
-		if err := v.validateFilePath(script, index, "script"); err != nil {
+		if err := v.validateFilePath(ctx, script, index, "script"); err != nil {
 			return err
 		}
 	}
@@ -180,13 +181,13 @@ func (v *Validator) validateScriptProvisioner(prov *builder.Provisioner, index i
 }
 
 // validatePowerShellProvisioner validates a powershell provisioner
-func (v *Validator) validatePowerShellProvisioner(prov *builder.Provisioner, index int) error {
+func (v *Validator) validatePowerShellProvisioner(ctx context.Context, prov *builder.Provisioner, index int) error {
 	if len(prov.PSScripts) == 0 {
 		return fmt.Errorf("provisioner[%d]: powershell provisioner requires 'ps_scripts'", index)
 	}
 
 	for _, script := range prov.PSScripts {
-		if err := v.validateFilePath(script, index, "PowerShell script"); err != nil {
+		if err := v.validateFilePath(ctx, script, index, "PowerShell script"); err != nil {
 			return err
 		}
 	}
@@ -195,7 +196,7 @@ func (v *Validator) validatePowerShellProvisioner(prov *builder.Provisioner, ind
 }
 
 // validateFileProvisioner validates a file provisioner
-func (v *Validator) validateFileProvisioner(prov *builder.Provisioner, index int) error {
+func (v *Validator) validateFileProvisioner(ctx context.Context, prov *builder.Provisioner, index int) error {
 	if prov.Source == "" {
 		return fmt.Errorf("provisioner[%d]: file provisioner requires 'source'", index)
 	}
@@ -212,7 +213,7 @@ func (v *Validator) validateFileProvisioner(prov *builder.Provisioner, index int
 	}
 
 	// Validate source file exists
-	if err := v.validateFilePath(prov.Source, index, "source file"); err != nil {
+	if err := v.validateFilePath(ctx, prov.Source, index, "source file"); err != nil {
 		return err
 	}
 
@@ -225,16 +226,16 @@ func (v *Validator) isSourceReference(path string) bool {
 }
 
 // validateFilePath checks if a file exists and warns about unresolved variables
-func (v *Validator) validateFilePath(path string, index int, fileType string) error {
+func (v *Validator) validateFilePath(ctx context.Context, path string, index int, fileType string) error {
 	if !v.options.SyntaxOnly {
 		if _, err := os.Stat(path); err != nil {
 			if v.hasUnresolvedVariable(path) {
-				logging.Warn("provisioner[%d]: %s may contain unresolved environment variables: %s", index, fileType, path)
+				logging.WarnContext(ctx, "provisioner[%d]: %s may contain unresolved environment variables: %s", index, fileType, path)
 			}
 			return fmt.Errorf("provisioner[%d]: %s file not found: %s", index, fileType, path)
 		}
 	} else if v.hasUnresolvedVariable(path) {
-		logging.Warn("provisioner[%d]: %s may contain unresolved environment variables: %s", index, fileType, path)
+		logging.WarnContext(ctx, "provisioner[%d]: %s may contain unresolved environment variables: %s", index, fileType, path)
 	}
 	return nil
 }
@@ -286,7 +287,7 @@ func (v *Validator) validateTarget(target *builder.Target, index int) error {
 }
 
 // validateSource validates a single source definition
-func (v *Validator) validateSource(source *builder.Source, index int, seenNames map[string]bool) error {
+func (v *Validator) validateSource(ctx context.Context, source *builder.Source, index int, seenNames map[string]bool) error {
 	// Name is required
 	if source.Name == "" {
 		return fmt.Errorf("sources[%d]: name is required", index)
@@ -316,7 +317,7 @@ func (v *Validator) validateSource(source *builder.Source, index int, seenNames 
 
 	// Validate git source
 	if source.Git != nil {
-		if err := v.validateGitSource(source.Git, index); err != nil {
+		if err := v.validateGitSource(ctx, source.Git, index); err != nil {
 			return err
 		}
 	}
@@ -325,7 +326,7 @@ func (v *Validator) validateSource(source *builder.Source, index int, seenNames 
 }
 
 // validateGitSource validates a git source configuration
-func (v *Validator) validateGitSource(git *builder.GitSource, index int) error {
+func (v *Validator) validateGitSource(ctx context.Context, git *builder.GitSource, index int) error {
 	if git.Repository == "" {
 		return fmt.Errorf("sources[%d].git: repository is required", index)
 	}
@@ -345,7 +346,7 @@ func (v *Validator) validateGitSource(git *builder.GitSource, index int) error {
 
 	// Validate auth configuration
 	if git.Auth != nil {
-		if err := v.validateGitAuth(git.Auth, index); err != nil {
+		if err := v.validateGitAuth(ctx, git.Auth, index); err != nil {
 			return err
 		}
 	}
@@ -354,7 +355,7 @@ func (v *Validator) validateGitSource(git *builder.GitSource, index int) error {
 }
 
 // validateGitAuth validates git authentication configuration
-func (v *Validator) validateGitAuth(auth *builder.GitAuth, index int) error {
+func (v *Validator) validateGitAuth(ctx context.Context, auth *builder.GitAuth, index int) error {
 	// Check for conflicting auth methods
 	authMethods := 0
 	if auth.SSHKey != "" || auth.SSHKeyFile != "" {
@@ -376,7 +377,7 @@ func (v *Validator) validateGitAuth(auth *builder.GitAuth, index int) error {
 		keyPath := expandPath(auth.SSHKeyFile)
 		if _, err := os.Stat(keyPath); err != nil {
 			if v.hasUnresolvedVariable(auth.SSHKeyFile) {
-				logging.Warn("sources[%d].git.auth: ssh_key_file may contain unresolved environment variables: %s", index, auth.SSHKeyFile)
+				logging.WarnContext(ctx, "sources[%d].git.auth: ssh_key_file may contain unresolved environment variables: %s", index, auth.SSHKeyFile)
 			} else {
 				return fmt.Errorf("sources[%d].git.auth: ssh_key_file not found: %s", index, keyPath)
 			}

@@ -23,6 +23,7 @@ THE SOFTWARE.
 package manifests
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -43,7 +44,7 @@ type FilterOptions struct {
 }
 
 // ValidateDigestFiles validates digest files
-func ValidateDigestFiles(digestFiles []DigestFile, opts ValidationOptions) error {
+func ValidateDigestFiles(ctx context.Context, digestFiles []DigestFile, opts ValidationOptions) error {
 	now := time.Now()
 
 	for _, df := range digestFiles {
@@ -68,7 +69,7 @@ func ValidateDigestFiles(digestFiles []DigestFile, opts ValidationOptions) error
 			}
 		}
 
-		logging.Debug("Validated digest file: %s (%s, age: %s)",
+		logging.DebugContext(ctx, "Validated digest file: %s (%s, age: %s)",
 			df.Path, df.Architecture, now.Sub(df.ModTime))
 	}
 
@@ -76,14 +77,14 @@ func ValidateDigestFiles(digestFiles []DigestFile, opts ValidationOptions) error
 }
 
 // FilterArchitectures filters digest files based on architecture requirements
-func FilterArchitectures(digestFiles []DigestFile, opts FilterOptions) ([]DigestFile, error) {
+func FilterArchitectures(ctx context.Context, digestFiles []DigestFile, opts FilterOptions) ([]DigestFile, error) {
 	// If no requirements, return all (auto-detect mode)
 	if len(opts.RequiredArchitectures) == 0 {
 		architectures := make([]string, 0, len(digestFiles))
 		for _, df := range digestFiles {
 			architectures = append(architectures, df.Architecture)
 		}
-		logging.Info("Auto-detected %d architecture(s): %v", len(architectures), architectures)
+		logging.InfoContext(ctx, "Auto-detected %d architecture(s): %v", len(architectures), architectures)
 		return digestFiles, nil
 	}
 
@@ -110,8 +111,8 @@ func FilterArchitectures(digestFiles []DigestFile, opts FilterOptions) ([]Digest
 		}
 
 		if opts.BestEffort {
-			logging.Warn("Some required architectures are missing: %v", missing)
-			logging.Warn("Continuing in best-effort mode with %d available architecture(s)", len(filtered))
+			logging.WarnContext(ctx, "Some required architectures are missing: %v", missing)
+			logging.WarnContext(ctx, "Continuing in best-effort mode with %d available architecture(s)", len(filtered))
 		} else {
 			return nil, fmt.Errorf("missing required architectures: %v (use --best-effort to create partial manifest)", missing)
 		}

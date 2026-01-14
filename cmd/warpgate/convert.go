@@ -139,7 +139,7 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 	}
 
 	// Perform conversion
-	buildConfig, err := converter.Convert()
+	buildConfig, err := converter.Convert(ctx)
 	if err != nil {
 		return fmt.Errorf("conversion failed: %w", err)
 	}

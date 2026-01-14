@@ -102,7 +102,7 @@ func (bo *BatchOperations) BatchTagResources(ctx context.Context, resourceIDs []
 		return fmt.Errorf("failed to batch tag resources: %w", err)
 	}
 
-	logging.Info("Tagged %d resources with %d tags", len(resourceIDs), len(tags))
+	logging.InfoContext(ctx, "Tagged %d resources with %d tags", len(resourceIDs), len(tags))
 	return nil
 }
 
@@ -158,11 +158,11 @@ func (bo *BatchOperations) BatchDeleteComponents(ctx context.Context, componentA
 	}
 
 	if len(errs) > 0 {
-		logging.Warn("Batch delete completed with %d errors out of %d components", len(errs), len(componentARNs))
+		logging.WarnContext(ctx, "Batch delete completed with %d errors out of %d components", len(errs), len(componentARNs))
 		return errors.Join(errs...)
 	}
 
-	logging.Info("Successfully deleted %d components", len(componentARNs))
+	logging.InfoContext(ctx, "Successfully deleted %d components", len(componentARNs))
 	return nil
 }
 
@@ -332,7 +332,7 @@ func (bo *BatchOperations) checkResourceExists(ctx context.Context, check Resour
 // OptimizedResourceCleanup performs cleanup with batched operations.
 // Deletes resources in dependency order: pipeline -> recipe -> (dist, infra).
 func (bo *BatchOperations) OptimizedResourceCleanup(ctx context.Context, buildName string) error {
-	logging.Info("Running optimized resource cleanup for: %s", buildName)
+	logging.InfoContext(ctx, "Running optimized resource cleanup for: %s", buildName)
 
 	// First, check which resources exist (batched)
 	checks := []ResourceCheck{
@@ -349,14 +349,14 @@ func (bo *BatchOperations) OptimizedResourceCleanup(ctx context.Context, buildNa
 
 	if existence[buildName+"-pipeline"] {
 		if err := resourceManager.DeleteImagePipeline(ctx, buildName+"-pipeline"); err != nil {
-			logging.Warn("Failed to delete pipeline: %v", err)
+			logging.WarnContext(ctx, "Failed to delete pipeline: %v", err)
 		}
 	}
 
 	if existence[buildName+"-recipe"] {
 		if arn, err := bo.getRecipeARN(ctx, buildName+"-recipe"); err == nil && arn != "" {
 			if err := resourceManager.DeleteImageRecipe(ctx, arn); err != nil {
-				logging.Warn("Failed to delete recipe: %v", err)
+				logging.WarnContext(ctx, "Failed to delete recipe: %v", err)
 			}
 		}
 	}
@@ -371,7 +371,7 @@ func (bo *BatchOperations) OptimizedResourceCleanup(ctx context.Context, buildNa
 			defer wg.Done()
 			if arn, err := bo.getDistARN(ctx, buildName+"-dist"); err == nil && arn != "" {
 				if err := resourceManager.DeleteDistributionConfig(ctx, arn); err != nil {
-					logging.Warn("Failed to delete distribution config: %v", err)
+					logging.WarnContext(ctx, "Failed to delete distribution config: %v", err)
 				}
 			}
 		}()
@@ -383,7 +383,7 @@ func (bo *BatchOperations) OptimizedResourceCleanup(ctx context.Context, buildNa
 			defer wg.Done()
 			if arn, err := bo.getInfraARN(ctx, buildName+"-infra"); err == nil && arn != "" {
 				if err := resourceManager.DeleteInfrastructureConfig(ctx, arn); err != nil {
-					logging.Warn("Failed to delete infrastructure config: %v", err)
+					logging.WarnContext(ctx, "Failed to delete infrastructure config: %v", err)
 				}
 			}
 		}()
@@ -391,7 +391,7 @@ func (bo *BatchOperations) OptimizedResourceCleanup(ctx context.Context, buildNa
 
 	wg.Wait()
 
-	logging.Info("Optimized cleanup completed for: %s", buildName)
+	logging.InfoContext(ctx, "Optimized cleanup completed for: %s", buildName)
 	return nil
 }
 

@@ -23,6 +23,7 @@ THE SOFTWARE.
 package builder
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -30,7 +31,7 @@ import (
 )
 
 // CreateBuildRequests creates build requests for each architecture, applying any arch-specific overrides.
-func CreateBuildRequests(buildConfig *Config) []BuildRequest {
+func CreateBuildRequests(ctx context.Context, buildConfig *Config) []BuildRequest {
 	requests := make([]BuildRequest, 0, len(buildConfig.Architectures))
 
 	for _, arch := range buildConfig.Architectures {
@@ -40,7 +41,7 @@ func CreateBuildRequests(buildConfig *Config) []BuildRequest {
 		archConfig := *buildConfig
 
 		if override, ok := buildConfig.ArchOverrides[arch]; ok {
-			ApplyArchOverrides(&archConfig, override, arch)
+			ApplyArchOverrides(ctx, &archConfig, override, arch)
 		}
 
 		requests = append(requests, BuildRequest{
@@ -55,8 +56,8 @@ func CreateBuildRequests(buildConfig *Config) []BuildRequest {
 }
 
 // ApplyArchOverrides applies architecture-specific overrides to the build configuration.
-func ApplyArchOverrides(archConfig *Config, override ArchOverride, arch string) {
-	logging.Info("Applying architecture overrides for %s", arch)
+func ApplyArchOverrides(ctx context.Context, archConfig *Config, override ArchOverride, arch string) {
+	logging.InfoContext(ctx, "Applying architecture overrides for %s", arch)
 
 	// Override base image if specified
 	if override.Base != nil {

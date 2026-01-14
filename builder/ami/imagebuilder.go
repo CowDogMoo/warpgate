@@ -125,7 +125,7 @@ func (b *ImageBuilder) GetBuildID() string {
 // Build implements the Builder interface for AMI builds
 func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*builder.BuildResult, error) {
 	startTime := time.Now()
-	logging.Info("Starting AMI build: %s (version: %s)", config.Name, config.Version)
+	logging.InfoContext(ctx, "Starting AMI build: %s (version: %s)", config.Name, config.Version)
 
 	amiTarget, err := b.setupBuild(config)
 	if err != nil {
@@ -133,9 +133,9 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 	}
 
 	if b.forceRecreate {
-		logging.Info("Force recreate enabled, cleaning up existing resources")
+		logging.InfoContext(ctx, "Force recreate enabled, cleaning up existing resources")
 		if err := b.resourceManager.CleanupResourcesForBuild(ctx, config.Name, true); err != nil {
-			logging.Warn("Force cleanup encountered errors (continuing): %v", err)
+			logging.WarnContext(ctx, "Force cleanup encountered errors (continuing): %v", err)
 		}
 	}
 
@@ -156,7 +156,7 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 	b.finalizeBuild(ctx, amiID, amiTarget, resources.PipelineARN)
 
 	duration := time.Since(startTime)
-	logging.Info("AMI build completed: %s (duration: %s)", amiID, duration)
+	logging.InfoContext(ctx, "AMI build completed: %s (duration: %s)", amiID, duration)
 
 	return &builder.BuildResult{
 		AMIID:    amiID,
@@ -259,13 +259,13 @@ func (b *ImageBuilder) finalizeBuild(ctx context.Context, amiID string, target *
 	// Tag the AMI
 	if len(target.AMITags) > 0 {
 		if err := b.operations.TagAMI(ctx, amiID, target.AMITags); err != nil {
-			logging.Warn("Failed to tag AMI: %v", err)
+			logging.WarnContext(ctx, "Failed to tag AMI: %v", err)
 		}
 	}
 
 	// Clean up resources
 	if err := b.pipelineManager.DeletePipeline(ctx, pipelineARN); err != nil {
-		logging.Warn("Failed to delete pipeline: %v", err)
+		logging.WarnContext(ctx, "Failed to delete pipeline: %v", err)
 	}
 }
 
@@ -298,7 +298,9 @@ func (b *ImageBuilder) Deregister(ctx context.Context, amiID, region string) err
 
 // Close implements the Builder interface
 func (b *ImageBuilder) Close() error {
-	logging.Info("Closing AMI builder")
+	// Create a background context since we don't have one passed in
+	ctx := context.Background()
+	logging.InfoContext(ctx, "Closing AMI builder")
 	// No resources to clean up currently
 	return nil
 }
@@ -310,7 +312,7 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 		return nil, nil
 	}
 
-	logging.Info("Creating %d components in parallel", numProvisioners)
+	logging.InfoContext(ctx, "Creating %d components in parallel", numProvisioners)
 
 	componentARNs := make([]string, numProvisioners)
 	g, ctx := errgroup.WithContext(ctx)
@@ -325,7 +327,7 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 			}
 
 			componentName := config.Name + "-" + fmt.Sprint(index)
-			logging.Info("Creating component: %s (index: %d)", prov.Type, index)
+			logging.InfoContext(ctx, "Creating component: %s (index: %d)", prov.Type, index)
 
 			// Determine the version to use:
 			// 1. Use provisioner's ComponentVersion if specified
@@ -335,13 +337,13 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 			version := NormalizeSemanticVersion(config.Version)
 			if prov.ComponentVersion != "" {
 				version = NormalizeSemanticVersion(prov.ComponentVersion)
-				logging.Info("Using provisioner-specified component version: %s", version)
+				logging.InfoContext(ctx, "Using provisioner-specified component version: %s", version)
 			}
 
 			if b.forceRecreate {
 				nextVersion, err := b.resourceManager.GetNextComponentVersion(ctx, componentName+"-"+prov.Type, version)
 				if err == nil && nextVersion != version {
-					logging.Info("Component version conflict detected, using next version: %s", nextVersion)
+					logging.InfoContext(ctx, "Component version conflict detected, using next version: %s", nextVersion)
 					version = nextVersion
 				}
 			}
@@ -373,13 +375,13 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 		}
 	}
 
-	logging.Info("Successfully created %d components", numProvisioners)
+	logging.InfoContext(ctx, "Successfully created %d components", numProvisioners)
 	return componentARNs, nil
 }
 
 // createInfrastructureConfig creates an infrastructure configuration
 func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name string, target *builder.Target) (string, error) {
-	logging.Info("Creating infrastructure configuration")
+	logging.InfoContext(ctx, "Creating infrastructure configuration")
 
 	instanceType := target.InstanceType
 	if instanceType == "" {
@@ -416,13 +418,13 @@ func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name stri
 	result, err := b.clients.ImageBuilder.CreateInfrastructureConfiguration(ctx, input)
 	if err != nil {
 		if IsResourceExistsError(err) {
-			logging.Info("Infrastructure configuration already exists, retrieving: %s", infraName)
+			logging.InfoContext(ctx, "Infrastructure configuration already exists, retrieving: %s", infraName)
 			existing, getErr := b.resourceManager.GetInfrastructureConfig(ctx, infraName)
 			if getErr != nil {
 				return "", fmt.Errorf("failed to create infrastructure config (already exists) and failed to retrieve: %w", err)
 			}
 			if existing != nil && existing.Arn != nil {
-				logging.Info("Reusing existing infrastructure configuration: %s", *existing.Arn)
+				logging.InfoContext(ctx, "Reusing existing infrastructure configuration: %s", *existing.Arn)
 				return *existing.Arn, nil
 			}
 			return "", fmt.Errorf("failed to create infrastructure config (already exists) but could not retrieve: %w", err)
@@ -435,7 +437,7 @@ func (b *ImageBuilder) createInfrastructureConfig(ctx context.Context, name stri
 
 // createDistributionConfig creates a distribution configuration
 func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string, target *builder.Target) (string, error) {
-	logging.Info("Creating distribution configuration")
+	logging.InfoContext(ctx, "Creating distribution configuration")
 
 	region := target.Region
 	if region == "" {
@@ -474,13 +476,13 @@ func (b *ImageBuilder) createDistributionConfig(ctx context.Context, name string
 	result, err := b.clients.ImageBuilder.CreateDistributionConfiguration(ctx, input)
 	if err != nil {
 		if IsResourceExistsError(err) {
-			logging.Info("Distribution configuration already exists, retrieving: %s", distName)
+			logging.InfoContext(ctx, "Distribution configuration already exists, retrieving: %s", distName)
 			existing, getErr := b.resourceManager.GetDistributionConfig(ctx, distName)
 			if getErr != nil {
 				return "", fmt.Errorf("failed to create distribution config (already exists) and failed to retrieve: %w", err)
 			}
 			if existing != nil && existing.Arn != nil {
-				logging.Info("Reusing existing distribution configuration: %s", *existing.Arn)
+				logging.InfoContext(ctx, "Reusing existing distribution configuration: %s", *existing.Arn)
 				return *existing.Arn, nil
 			}
 			return "", fmt.Errorf("failed to create distribution config (already exists) but could not retrieve: %w", err)
@@ -529,7 +531,7 @@ func parseVolumeType(volumeTypeStr string) types.EbsVolumeType {
 }
 
 func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Config, componentARNs []string, target *builder.Target) (string, error) {
-	logging.Info("Creating image recipe")
+	logging.InfoContext(ctx, "Creating image recipe")
 
 	parentImage := config.Base.Image
 	if parentImage == "" {
@@ -578,13 +580,13 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 	result, err := b.clients.ImageBuilder.CreateImageRecipe(ctx, input)
 	if err != nil {
 		if IsResourceExistsError(err) {
-			logging.Info("Image recipe already exists, retrieving: %s", recipeName)
+			logging.InfoContext(ctx, "Image recipe already exists, retrieving: %s", recipeName)
 			existing, getErr := b.resourceManager.GetImageRecipe(ctx, recipeName, config.Version)
 			if getErr != nil {
 				return "", fmt.Errorf("failed to create image recipe (already exists) and failed to retrieve: %w", err)
 			}
 			if existing != nil && existing.Arn != nil {
-				logging.Info("Reusing existing image recipe: %s", *existing.Arn)
+				logging.InfoContext(ctx, "Reusing existing image recipe: %s", *existing.Arn)
 				return *existing.Arn, nil
 			}
 			return "", fmt.Errorf("failed to create image recipe (already exists) but could not retrieve: %w", err)
@@ -628,12 +630,12 @@ func (b *ImageBuilder) getOrCreateInfrastructureConfig(ctx context.Context, name
 
 	if existing != nil {
 		if b.forceRecreate {
-			logging.Info("Force recreate enabled, deleting existing infrastructure config: %s", *existing.Arn)
+			logging.InfoContext(ctx, "Force recreate enabled, deleting existing infrastructure config: %s", *existing.Arn)
 			if err := b.resourceManager.DeleteInfrastructureConfig(ctx, *existing.Arn); err != nil {
 				return "", fmt.Errorf("failed to delete existing infrastructure config: %w", err)
 			}
 		} else {
-			logging.Info("Reusing existing infrastructure configuration: %s", *existing.Arn)
+			logging.InfoContext(ctx, "Reusing existing infrastructure configuration: %s", *existing.Arn)
 			return *existing.Arn, nil
 		}
 	}
@@ -657,12 +659,12 @@ func (b *ImageBuilder) getOrCreateDistributionConfig(ctx context.Context, name s
 
 	if existing != nil {
 		if b.forceRecreate {
-			logging.Info("Force recreate enabled, deleting existing distribution config: %s", *existing.Arn)
+			logging.InfoContext(ctx, "Force recreate enabled, deleting existing distribution config: %s", *existing.Arn)
 			if err := b.resourceManager.DeleteDistributionConfig(ctx, *existing.Arn); err != nil {
 				return "", fmt.Errorf("failed to delete existing distribution config: %w", err)
 			}
 		} else {
-			logging.Info("Reusing existing distribution configuration: %s", *existing.Arn)
+			logging.InfoContext(ctx, "Reusing existing distribution configuration: %s", *existing.Arn)
 			return *existing.Arn, nil
 		}
 	}
@@ -687,12 +689,12 @@ func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builde
 
 	if existing != nil {
 		if b.forceRecreate {
-			logging.Info("Force recreate enabled, deleting existing image recipe: %s", *existing.Arn)
+			logging.InfoContext(ctx, "Force recreate enabled, deleting existing image recipe: %s", *existing.Arn)
 			if err := b.resourceManager.DeleteImageRecipe(ctx, *existing.Arn); err != nil {
 				return "", fmt.Errorf("failed to delete existing image recipe: %w", err)
 			}
 		} else {
-			logging.Info("Reusing existing image recipe: %s", *existing.Arn)
+			logging.InfoContext(ctx, "Reusing existing image recipe: %s", *existing.Arn)
 			return *existing.Arn, nil
 		}
 	}
@@ -716,12 +718,12 @@ func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.C
 
 	if existing != nil {
 		if b.forceRecreate {
-			logging.Info("Force recreate enabled, deleting existing pipeline: %s", *existing.Arn)
+			logging.InfoContext(ctx, "Force recreate enabled, deleting existing pipeline: %s", *existing.Arn)
 			if err := b.resourceManager.DeleteImagePipeline(ctx, *existing.Arn); err != nil {
 				return "", fmt.Errorf("failed to delete existing pipeline: %w", err)
 			}
 		} else {
-			logging.Info("Reusing existing pipeline: %s", *existing.Arn)
+			logging.InfoContext(ctx, "Reusing existing pipeline: %s", *existing.Arn)
 			return *existing.Arn, nil
 		}
 	}
@@ -742,13 +744,13 @@ func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.C
 	pipelineARN, err := b.pipelineManager.CreatePipeline(ctx, pipelineConfig)
 	if err != nil {
 		if IsResourceExistsError(err) {
-			logging.Info("Pipeline already exists, retrieving: %s", pipelineName)
+			logging.InfoContext(ctx, "Pipeline already exists, retrieving: %s", pipelineName)
 			existingPipeline, getErr := b.resourceManager.GetImagePipeline(ctx, pipelineName)
 			if getErr != nil {
 				return "", fmt.Errorf("failed to create pipeline (already exists) and failed to retrieve: %w", err)
 			}
 			if existingPipeline != nil && existingPipeline.Arn != nil {
-				logging.Info("Reusing existing pipeline: %s", *existingPipeline.Arn)
+				logging.InfoContext(ctx, "Reusing existing pipeline: %s", *existingPipeline.Arn)
 				return *existingPipeline.Arn, nil
 			}
 			return "", fmt.Errorf("failed to create pipeline (already exists) but could not retrieve: %w", err)

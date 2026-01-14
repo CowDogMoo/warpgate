@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -218,13 +219,13 @@ func TestGitOperations_CloneOrUpdate_Integration(t *testing.T) {
 	gitURL := "https://github.com/cowdogmoo/warpgate-templates.git"
 
 	// First clone
-	path1, err := gitOps.CloneOrUpdate(gitURL, "")
+	path1, err := gitOps.CloneOrUpdate(context.Background(), gitURL, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, path1)
 	assert.True(t, dirExists(path1))
 
 	// Second call should use cached version
-	path2, err := gitOps.CloneOrUpdate(gitURL, "")
+	path2, err := gitOps.CloneOrUpdate(context.Background(), gitURL, "")
 	require.NoError(t, err)
 	assert.Equal(t, path1, path2)
 

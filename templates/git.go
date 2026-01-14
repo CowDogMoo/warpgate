@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -47,22 +48,22 @@ func NewGitOperations(cacheDir string) *GitOperations {
 }
 
 // CloneOrUpdate clones a repository if it doesn't exist, or updates it if it does
-func (g *GitOperations) CloneOrUpdate(gitURL, version string) (string, error) {
+func (g *GitOperations) CloneOrUpdate(ctx context.Context, gitURL, version string) (string, error) {
 	repoPath := g.getCachePath(gitURL, version)
 
 	pv := NewPathValidator()
 	// Check if already cached
 	if pv.DirExists(repoPath) {
-		logging.Debug("Repository already cached at %s, pulling updates", repoPath)
-		if err := g.pullUpdates(repoPath); err != nil {
-			logging.Warn("Failed to pull updates, using cached version: %v", err)
+		logging.DebugContext(ctx, "Repository already cached at %s, pulling updates", repoPath)
+		if err := g.pullUpdates(ctx, repoPath); err != nil {
+			logging.WarnContext(ctx, "Failed to pull updates, using cached version: %v", err)
 		}
 		return repoPath, nil
 	}
 
 	// Clone fresh
-	logging.Info("Cloning repository from %s", gitURL)
-	return g.clone(gitURL, version, repoPath)
+	logging.InfoContext(ctx, "Cloning repository from %s", gitURL)
+	return g.clone(ctx, gitURL, version, repoPath)
 }
 
 // isSpecificVersion checks if the version is a specific tag/branch (not main/master)
@@ -101,13 +102,13 @@ func checkoutVersion(repo *git.Repository, version string) error {
 }
 
 // clone clones a repository to the specified path
-func (g *GitOperations) clone(gitURL, version, repoPath string) (string, error) {
+func (g *GitOperations) clone(ctx context.Context, gitURL, version, repoPath string) (string, error) {
 	cloneOpts := &git.CloneOptions{
 		URL: gitURL,
 	}
 
 	// Only show progress if not in quiet mode
-	if !logging.IsQuiet() {
+	if !logging.FromContext(ctx).IsQuiet() {
 		cloneOpts.Progress = os.Stdout
 	}
 
@@ -125,7 +126,7 @@ func (g *GitOperations) clone(gitURL, version, repoPath string) (string, error) 
 	// If version is specified, try to checkout
 	if isSpecificVersion(version) {
 		if err := checkoutVersion(repo, version); err != nil {
-			logging.Warn("Could not checkout version %s, using default branch", version)
+			logging.WarnContext(ctx, "Could not checkout version %s, using default branch", version)
 		}
 	}
 
@@ -133,7 +134,7 @@ func (g *GitOperations) clone(gitURL, version, repoPath string) (string, error) 
 }
 
 // pullUpdates pulls the latest changes from the remote
-func (g *GitOperations) pullUpdates(repoPath string) error {
+func (g *GitOperations) pullUpdates(ctx context.Context, repoPath string) error {
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
@@ -149,7 +150,7 @@ func (g *GitOperations) pullUpdates(repoPath string) error {
 	}
 
 	// Only show progress if not in quiet mode
-	if !logging.IsQuiet() {
+	if !logging.FromContext(ctx).IsQuiet() {
 		pullOpts.Progress = os.Stdout
 	}
 

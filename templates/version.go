@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -165,7 +166,7 @@ func (vm *VersionManager) IsBreakingChange(oldVersion, newVersion string) (bool,
 }
 
 // GetLatestVersion returns the latest version from a list of versions
-func (vm *VersionManager) GetLatestVersion(versions []string) (string, error) {
+func (vm *VersionManager) GetLatestVersion(ctx context.Context, versions []string) (string, error) {
 	if len(versions) == 0 {
 		return "", fmt.Errorf("no versions provided")
 	}
@@ -176,7 +177,7 @@ func (vm *VersionManager) GetLatestVersion(versions []string) (string, error) {
 	for _, v := range versions {
 		ver, err := vm.ParseVersion(v)
 		if err != nil {
-			logging.Warn("Skipping invalid version: %s - %v", v, err)
+			logging.WarnContext(ctx, "Skipping invalid version: %s - %v", v, err)
 			continue
 		}
 

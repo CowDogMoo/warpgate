@@ -43,7 +43,7 @@ func ToDockerSDKAuth(ctx context.Context, registry string) (string, error) {
 	authenticator, err := authn.DefaultKeychain.Resolve(ref)
 	if err != nil {
 		// No credentials found, use anonymous access
-		logging.Debug("No credentials found for registry %s, using anonymous access", registry)
+		logging.DebugContext(ctx, "No credentials found for registry %s, using anonymous access", registry)
 		return "", nil
 	}
 
@@ -51,22 +51,22 @@ func ToDockerSDKAuth(ctx context.Context, registry string) (string, error) {
 	authConfig, err := authenticator.Authorization()
 	if err != nil {
 		// Failed to get authorization, use anonymous access
-		logging.Debug("Failed to get authorization for registry %s: %v, using anonymous access", registry, err)
+		logging.DebugContext(ctx, "Failed to get authorization for registry %s: %v, using anonymous access", registry, err)
 		return "", nil
 	}
 
 	// If no actual credentials present, return empty (anonymous)
 	if authConfig.Username == "" && authConfig.Password == "" &&
 		authConfig.IdentityToken == "" && authConfig.RegistryToken == "" {
-		logging.Debug("No credentials found for registry %s, using anonymous access", registry)
+		logging.DebugContext(ctx, "No credentials found for registry %s, using anonymous access", registry)
 		return "", nil
 	}
 
 	// Log successful credential resolution (without exposing credentials)
 	if authConfig.Username != "" {
-		logging.Debug("Found credentials for registry %s (username: %s)", registry, authConfig.Username)
+		logging.DebugContext(ctx, "Found credentials for registry %s (username: %s)", registry, authConfig.Username)
 	} else if authConfig.IdentityToken != "" || authConfig.RegistryToken != "" {
-		logging.Debug("Found token-based credentials for registry %s", registry)
+		logging.DebugContext(ctx, "Found token-based credentials for registry %s", registry)
 	}
 
 	// Convert to Docker SDK format

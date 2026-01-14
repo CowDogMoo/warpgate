@@ -27,6 +27,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/v3/config"
@@ -159,8 +160,10 @@ func initConfig(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			// Only warn if config file exists but failed to load
 			// Don't warn if simply no config file was found
+			// Note: We can't use context-based logging here yet since logger isn't initialized
+			// Use fmt.Fprintf to stderr instead
 			if !config.IsNotFoundError(err) {
-				logging.Warn("failed to load config, using defaults: %v", err)
+				fmt.Fprintf(os.Stderr, "Warning: failed to load config, using defaults: %v\n", err)
 			}
 			cfg = &config.Config{}
 		}
@@ -201,10 +204,8 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	quiet, _ := cmd.Flags().GetBool("quiet")
 	verbose, _ := cmd.Flags().GetBool("verbose")
 
-	// 7. Initialize logging with final values
-	if err := logging.Initialize(overrides.Log.Level, overrides.Log.Format, quiet, verbose); err != nil {
-		return fmt.Errorf("failed to initialize logging: %w", err)
-	}
+	// 7. Create a context-aware logger with final values
+	logger := logging.NewCustomLoggerWithOptions(overrides.Log.Level, overrides.Log.Format, quiet, verbose)
 
 	// 8. Apply overrides to config using type-safe struct values
 	cfg.Log.Level = overrides.Log.Level
@@ -212,8 +213,7 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	cfg.Registry.Default = overrides.Registry.Default
 	cfg.Build.DefaultArch = overrides.Build.DefaultArch
 
-	// 9. Create a context-aware logger and store it in context
-	logger := logging.FromContext(cmd.Context()) // Get the initialized logger
+	// 9. Store config and logger in context
 	ctx := context.WithValue(cmd.Context(), configKey, cfg)
 	ctx = logging.WithLogger(ctx, logger)
 	cmd.SetContext(ctx)
@@ -239,7 +239,9 @@ func BindFlagsToViper(v *viper.Viper, cmd *cobra.Command, viperKey string) {
 
 		// Only bind if not already set (avoids overwriting persistent flags)
 		if err := v.BindPFlag(key, f); err != nil {
-			logging.Warn("failed to bind flag %s to viper: %v", f.Name, err)
+			// Note: We can't use context-based logging here since this is called during init
+			// Use fmt.Fprintf to stderr instead
+			fmt.Fprintf(os.Stderr, "Warning: failed to bind flag %s to viper: %v\n", f.Name, err)
 		}
 	})
 }
@@ -257,7 +259,9 @@ func BindCommandFlagsToViper(v *viper.Viper, cmd *cobra.Command) {
 	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) {
 		key := strings.ReplaceAll(f.Name, "-", "_")
 		if err := v.BindPFlag(key, f); err != nil {
-			logging.Warn("failed to bind inherited flag %s to viper: %v", f.Name, err)
+			// Note: We can't use context-based logging here since this is called during init
+			// Use fmt.Fprintf to stderr instead
+			fmt.Fprintf(os.Stderr, "Warning: failed to bind inherited flag %s to viper: %v\n", f.Name, err)
 		}
 	})
 }

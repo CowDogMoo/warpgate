@@ -192,7 +192,7 @@ func (s *BuildService) executeMultiArchBuild(ctx context.Context, config *Config
 	}
 
 	orchestrator := NewBuildOrchestrator(concurrency)
-	requests := CreateBuildRequests(config)
+	requests := CreateBuildRequests(ctx, config)
 	results, err := orchestrator.BuildMultiArch(ctx, requests, bldr)
 	if err != nil {
 		return nil, fmt.Errorf("multi-arch build failed: %w", err)
@@ -223,7 +223,7 @@ func (s *BuildService) pushSingleArch(ctx context.Context, config *Config, resul
 				arch = config.Architectures[0]
 			}
 		}
-		if err := manifests.SaveDigestToFile(config.Name, arch, digest, opts.DigestDir); err != nil {
+		if err := manifests.SaveDigestToFile(ctx, config.Name, arch, digest, opts.DigestDir); err != nil {
 			logging.WarnContext(ctx, "Failed to save digest: %v", err)
 		} else {
 			logging.InfoContext(ctx, "Saved digest for %s: %s", arch, digest)
@@ -269,7 +269,7 @@ func (s *BuildService) saveDigests(ctx context.Context, imageName string, result
 	logging.InfoContext(ctx, "Saving image digests to %s", digestDir)
 	for _, result := range results {
 		if result.Digest != "" {
-			if err := manifests.SaveDigestToFile(imageName, result.Architecture, result.Digest, digestDir); err != nil {
+			if err := manifests.SaveDigestToFile(ctx, imageName, result.Architecture, result.Digest, digestDir); err != nil {
 				logging.WarnContext(ctx, "Failed to save digest for %s: %v", result.Architecture, err)
 			}
 		}
@@ -279,7 +279,7 @@ func (s *BuildService) saveDigests(ctx context.Context, imageName string, result
 // CreateManifestEntries creates manifest entries from build results.
 // The actual manifest creation and push should be done in the command layer
 // since it requires platform-specific handling.
-func CreateManifestEntries(results []BuildResult) ([]manifests.ManifestEntry, error) {
+func CreateManifestEntries(ctx context.Context, results []BuildResult) ([]manifests.ManifestEntry, error) {
 	entries := make([]manifests.ManifestEntry, 0, len(results))
 	for _, result := range results {
 		var imageDigest digest.Digest
@@ -287,7 +287,7 @@ func CreateManifestEntries(results []BuildResult) ([]manifests.ManifestEntry, er
 			var err error
 			imageDigest, err = digest.Parse(result.Digest)
 			if err != nil {
-				logging.Warn("Failed to parse digest for %s: %v", result.Architecture, err)
+				logging.WarnContext(ctx, "Failed to parse digest for %s: %v", result.Architecture, err)
 				continue
 			}
 		}
