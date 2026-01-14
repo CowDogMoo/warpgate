@@ -41,7 +41,8 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 
 	config, err := Load()
-	if err != nil {
+	// ErrConfigNotFound is expected when no config file exists - this is not an error
+	if err != nil && !IsNotFoundError(err) {
 		t.Fatalf("Failed to load defaults: %v", err)
 	}
 
@@ -246,7 +247,8 @@ func TestGet(t *testing.T) {
 	}
 
 	config, err := Get()
-	if err != nil {
+	// ErrConfigNotFound is expected when no config file exists - this is not an error
+	if err != nil && !IsNotFoundError(err) {
 		t.Fatalf("Failed to get config: %v", err)
 	}
 
