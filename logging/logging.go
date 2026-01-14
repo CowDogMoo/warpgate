@@ -33,6 +33,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -130,10 +131,14 @@ func (l *CustomLogger) shouldShowOnConsole(level LogLevel) bool {
 
 func (l *CustomLogger) log(level LogLevel, message string, args ...interface{}) {
 	formattedMsg := l.formatMessage(level, message, args...)
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
 	if l.shouldShowOnConsole(level) && l.ConsoleWriter != nil {
 		l.mu.Lock()
-		_, _ = fmt.Fprintln(l.ConsoleWriter, formattedMsg)
+		if _, err := fmt.Fprintf(l.ConsoleWriter, "[%s] %s\n", timestamp, formattedMsg); err != nil {
+			// Fallback to stderr if ConsoleWriter fails
+			fmt.Fprintf(os.Stderr, "[%s] %s\n", timestamp, formattedMsg)
+		}
 		l.mu.Unlock()
 	}
 }
