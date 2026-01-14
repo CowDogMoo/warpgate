@@ -50,7 +50,7 @@ type StrategyDetector struct {
 // NewStrategyDetector creates a new build strategy detector
 func NewStrategyDetector() (*StrategyDetector, error) {
 	cfg, err := config.Load()
-	if err != nil {
+	if err != nil && !config.IsNotFoundError(err) {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}
 

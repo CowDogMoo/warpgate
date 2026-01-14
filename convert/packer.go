@@ -111,10 +111,13 @@ type PackerConverter struct {
 // It loads the global Warpgate configuration to apply default values for
 // fields like version and license if not specified in options.
 //
-// Returns an error if the global configuration cannot be loaded.
+// Returns an error if the global configuration cannot be parsed.
+// Missing config files are handled gracefully (defaults are used).
 func NewPackerConverter(opts PackerConverterOptions) (*PackerConverter, error) {
 	globalCfg, err := config.Load()
-	if err != nil {
+	// config.Load returns a valid config with defaults even when ErrConfigNotFound,
+	// so we only fail on real errors (parse errors, etc.)
+	if err != nil && !config.IsNotFoundError(err) {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}
 
