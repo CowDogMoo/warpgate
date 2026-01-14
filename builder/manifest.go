@@ -136,6 +136,14 @@ func NewBuildManifest(config *Config, results []BuildResult, duration time.Durat
 
 // WriteManifest writes the build manifest to a JSON file
 func WriteManifest(path string, manifest *BuildManifest) error {
+	// Validate inputs
+	if path == "" {
+		return fmt.Errorf("manifest path cannot be empty")
+	}
+	if manifest == nil {
+		return fmt.Errorf("manifest cannot be nil")
+	}
+
 	// Ensure parent directory exists
 	dir := filepath.Dir(path)
 	if dir != "." && dir != "" {
@@ -150,8 +158,8 @@ func WriteManifest(path string, manifest *BuildManifest) error {
 		return fmt.Errorf("failed to marshal manifest: %w", err)
 	}
 
-	// Write file
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// Write file with restrictive permissions (owner read/write only)
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write manifest file: %w", err)
 	}
 

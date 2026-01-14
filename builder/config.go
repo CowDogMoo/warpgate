@@ -22,6 +22,12 @@ THE SOFTWARE.
 
 package builder
 
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
 // Version is the current version of warpgate, set at build time via ldflags.
 // Build with: go build -ldflags "-X 'github.com/cowdogmoo/warpgate/pkg/builder.Version=v1.2.3'"
 var Version = "dev"
@@ -445,4 +451,36 @@ type BuildResult struct {
 
 	// Any warnings or notes
 	Notes []string `json:"notes,omitempty"`
+}
+
+// configAlias is used to unmarshal Config without infinite recursion
+type configAlias Config
+
+// configWithDeprecated includes deprecated fields for detection during unmarshaling
+type configWithDeprecated struct {
+	configAlias `yaml:",inline"`
+
+	// PostProcessors is a DEPRECATED field that was removed in v3.0.0
+	// Warpgate handles tagging and pushing via CLI commands and Target configuration
+	PostProcessors []any `yaml:"post_processors,omitempty"`
+}
+
+// UnmarshalYAML implements custom unmarshaling to detect deprecated fields
+// and provide clear migration guidance to users.
+func (c *Config) UnmarshalYAML(node *yaml.Node) error {
+	// First unmarshal into a struct that includes deprecated fields
+	var withDeprecated configWithDeprecated
+	if err := node.Decode(&withDeprecated); err != nil {
+		return err
+	}
+
+	// Check for deprecated post_processors field
+	if len(withDeprecated.PostProcessors) > 0 {
+		return fmt.Errorf("'post_processors' field is deprecated and no longer supported; " +
+			"use Target.registry, Target.tags, and Target.push instead, or use --push CLI flag")
+	}
+
+	// Copy the aliased config to the actual config
+	*c = Config(withDeprecated.configAlias)
+	return nil
 }

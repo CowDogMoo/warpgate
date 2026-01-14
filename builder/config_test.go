@@ -449,3 +449,62 @@ func TestConfigWithArchOverrides(t *testing.T) {
 	assert.True(t, amd64Override.AppendProvisioners)
 	assert.Len(t, amd64Override.Provisioners, 1)
 }
+
+func TestDeprecatedPostProcessorsField(t *testing.T) {
+	tests := []struct {
+		name        string
+		yamlContent string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid config without post_processors",
+			yamlContent: `
+name: test
+version: "1.0.0"
+base:
+  image: ubuntu:22.04
+`,
+			expectError: false,
+		},
+		{
+			name: "config with deprecated post_processors field",
+			yamlContent: `
+name: test
+version: "1.0.0"
+base:
+  image: ubuntu:22.04
+post_processors:
+  - type: docker-tag
+    repository: ghcr.io/test/image
+`,
+			expectError: true,
+			errorMsg:    "'post_processors' field is deprecated",
+		},
+		{
+			name: "config with empty post_processors field",
+			yamlContent: `
+name: test
+version: "1.0.0"
+base:
+  image: ubuntu:22.04
+post_processors: []
+`,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var config Config
+			err := yaml.Unmarshal([]byte(tt.yamlContent), &config)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

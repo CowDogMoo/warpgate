@@ -210,3 +210,63 @@ func TestBuildManifestWithNotes(t *testing.T) {
 	assert.Contains(t, manifest.Builds[0].Notes, "Warning: deprecated base image")
 	assert.Contains(t, manifest.Builds[0].Notes, "Build used cache")
 }
+
+func TestWriteManifestValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		manifest    *BuildManifest
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "empty path",
+			path:        "",
+			manifest:    &BuildManifest{Template: "test"},
+			expectError: true,
+			errorMsg:    "manifest path cannot be empty",
+		},
+		{
+			name:        "nil manifest",
+			path:        "/tmp/test.json",
+			manifest:    nil,
+			expectError: true,
+			errorMsg:    "manifest cannot be nil",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := WriteManifest(tt.path, tt.manifest)
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWriteManifestFilePermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifestPath := filepath.Join(tmpDir, "perms-test.json")
+
+	manifest := &BuildManifest{
+		Template: "test",
+		Version:  "1.0.0",
+		Builds:   []ManifestBuild{},
+	}
+
+	err := WriteManifest(manifestPath, manifest)
+	require.NoError(t, err)
+
+	// Check file permissions
+	info, err := os.Stat(manifestPath)
+	require.NoError(t, err)
+
+	// Should be 0600 (owner read/write only)
+	expectedPerm := os.FileMode(0600)
+	actualPerm := info.Mode().Perm()
+	assert.Equal(t, expectedPerm, actualPerm, "manifest file should have restrictive permissions (0600)")
+}
