@@ -204,12 +204,24 @@ func (v *Validator) validateFileProvisioner(prov *builder.Provisioner, index int
 		return fmt.Errorf("provisioner[%d]: file provisioner requires 'destination'", index)
 	}
 
+	// Check if source is a ${sources.*} reference
+	if v.isSourceReference(prov.Source) {
+		// This is a reference to a fetched source - it will be resolved at build time
+		// Skip file existence validation
+		return nil
+	}
+
 	// Validate source file exists
 	if err := v.validateFilePath(prov.Source, index, "source file"); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// isSourceReference checks if a path is a ${sources.*} reference
+func (v *Validator) isSourceReference(path string) bool {
+	return strings.HasPrefix(path, "${sources.") && strings.HasSuffix(path, "}")
 }
 
 // validateFilePath checks if a file exists and warns about unresolved variables

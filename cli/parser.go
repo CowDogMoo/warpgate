@@ -143,3 +143,17 @@ func ValidateKeyValueFormat(pair string) bool {
 	}
 	return strings.TrimSpace(parts[0]) != ""
 }
+
+// ParseLabelsAndBuildArgs parses both labels and build arguments from string slices.
+// Returns the parsed labels, build args, and any error encountered.
+func (p *Parser) ParseLabelsAndBuildArgs(labels, buildArgs []string) (map[string]string, map[string]string, error) {
+	parsedLabels, err := p.ParseLabels(labels)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse labels: %w", err)
+	}
+	parsedBuildArgs, err := p.ParseBuildArgs(buildArgs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse build-args: %w", err)
+	}
+	return parsedLabels, parsedBuildArgs, nil
+}

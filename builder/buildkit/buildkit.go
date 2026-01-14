@@ -464,51 +464,63 @@ func (b *BuildKitBuilder) applyShellProvisioner(state llb.State, prov builder.Pr
 
 // applyFileProvisioner applies file copy operations to LLB state.
 func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	logging.Info("[FILE PROV] Starting - source: %s, dest: %s", prov.Source, prov.Destination)
+
 	if prov.Source == "" || prov.Destination == "" {
+		logging.Info("[FILE PROV] Empty source or dest, skipping")
 		return state, nil
 	}
 
-	// Check if source is an absolute path (e.g., from fetched sources)
-	pv := templates.NewPathValidator()
-	absSource, err := pv.ExpandPath(prov.Source)
+	// Resolve source path relative to the build context
+	sourcePath, err := b.makeRelativePath(prov.Source)
 	if err != nil {
-		return state, fmt.Errorf("failed to expand source path: %w", err)
+		return state, fmt.Errorf("failed to resolve source path: %w", err)
 	}
 
-	absContext, err := filepath.Abs(b.contextDir)
+	logging.Info("[FILE PROV] Resolved source path: %s", sourcePath)
+
+	// Check if source is a directory
+	absSource, err := filepath.Abs(filepath.Join(b.contextDir, sourcePath))
 	if err != nil {
-		return state, fmt.Errorf("failed to get absolute context: %w", err)
+		return state, fmt.Errorf("failed to resolve absolute source path: %w", err)
 	}
 
-	// Check if source is outside the build context
-	relPath, err := filepath.Rel(absContext, absSource)
-	isOutsideContext := err != nil || strings.HasPrefix(relPath, "..")
+	logging.Info("[FILE PROV] Context: %s, Source: %s, Abs: %s, Dest: %s",
+		b.contextDir, sourcePath, absSource, prov.Destination)
 
-	var sourceLocal llb.State
-	var sourcePath string
+	info, err := os.Stat(absSource)
+	if err != nil {
+		return state, fmt.Errorf("failed to stat source %s: %w", absSource, err)
+	}
 
-	if isOutsideContext {
-		// Source is outside build context (e.g., fetched source)
-		// Use the parent directory as a new local context
-		sourceDir := filepath.Dir(absSource)
-		sourceLocal = llb.Local("source-" + filepath.Base(sourceDir))
-		sourcePath = filepath.Base(absSource)
+	logging.Info("[FILE PROV] Source is dir: %v, size: %d", info.IsDir(), info.Size())
 
-		// Register this as an additional local context
-		logging.Debug("Using external source context: %s (from %s)", sourceDir, absSource)
+	if info.IsDir() {
+		// For directories: BuildKit copies the directory INTO the destination
+		// So copying "ares" to "/tmp" creates "/tmp/ares"
+		logging.Info("[FILE PROV] Directory copy: %s -> %s (will create %s/%s)",
+			sourcePath, prov.Destination, prov.Destination, filepath.Base(sourcePath))
+
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				sourcePath,
+				prov.Destination,
+				&llb.CopyInfo{
+					CreateDestPath: true,
+				},
+			),
+		)
 	} else {
-		// Source is inside build context, use relative path
-		sourceLocal = llb.Local("context")
-		sourcePath = relPath
+		// Regular file copy
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				sourcePath,
+				prov.Destination,
+			),
+		)
 	}
-
-	state = state.File(
-		llb.Copy(
-			sourceLocal,
-			sourcePath,
-			prov.Destination,
-		),
-	)
 
 	if prov.Mode != "" {
 		state = state.Run(
@@ -1051,20 +1063,11 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 
 	exportAttrs := buildExportAttributes(imageName, cfg.Labels)
 
-	// Build LocalDirs map, starting with the main context
+	// Build LocalDirs map with the main context
+	// Fetched sources are now copied into the build context directory,
+	// so they're accessible via the regular "context" local reference
 	localDirs := map[string]string{
 		"context": contextDir,
-	}
-
-	// Add local contexts for fetched sources
-	for _, source := range cfg.Sources {
-		if source.Path != "" {
-			// Use parent directory as context, file name for path resolution
-			sourceDir := filepath.Dir(source.Path)
-			contextName := "source-" + filepath.Base(sourceDir)
-			localDirs[contextName] = sourceDir
-			logging.Debug("Registering source context: %s -> %s", contextName, sourceDir)
-		}
 	}
 
 	solveOpt := client.SolveOpt{

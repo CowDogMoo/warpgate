@@ -78,16 +78,28 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 // expandVariables expands ${VAR} style variables only
 // Variables from the vars map take precedence over environment variables
 // $VAR syntax (without braces) is left untouched for container-level expansion
+// ${sources.*} references are preserved for later resolution after sources are fetched
 func (l *Loader) expandVariables(s string, vars map[string]string) string {
 	result := strings.Builder{}
 	result.Grow(len(s))
 
 	for i := 0; i < len(s); i++ {
 		if s[i] == '$' && i+1 < len(s) && s[i+1] == '{' {
-			// Found ${VAR} syntax - expand it
+			// Found ${VAR} syntax
 			end := strings.IndexByte(s[i+2:], '}')
 			if end >= 0 {
 				varName := s[i+2 : i+2+end]
+
+				// Preserve ${sources.*} references for later resolution
+				if strings.HasPrefix(varName, "sources.") {
+					result.WriteString("${")
+					result.WriteString(varName)
+					result.WriteString("}")
+					i += end + 2
+					continue
+				}
+
+				// Expand other variables normally
 				var value string
 				if vars != nil {
 					if v, ok := vars[varName]; ok {

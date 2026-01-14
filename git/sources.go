@@ -25,6 +25,7 @@ package git
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -287,6 +288,72 @@ func expandPath(path string) string {
 	return os.ExpandEnv(path)
 }
 
+// FetchSourcesWithCleanup fetches external sources and returns a cleanup function.
+// If no sources are defined, it returns a no-op cleanup function.
+// The cleanup function removes both the fetched sources and the copied sources directory.
+func FetchSourcesWithCleanup(ctx context.Context, sources []builder.Source, configFilePath string) (func(), error) {
+	if len(sources) == 0 {
+		return func() {}, nil
+	}
+
+	fetcher, err := NewSourceFetcher("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create source fetcher: %w", err)
+	}
+
+	if err := fetcher.FetchSources(ctx, sources); err != nil {
+		_ = fetcher.Cleanup()
+		return nil, err
+	}
+
+	configDir := "."
+	if configFilePath != "" {
+		configDir = filepath.Dir(configFilePath)
+	}
+
+	sourcesDir := filepath.Join(configDir, ".warpgate-sources")
+	if err := os.MkdirAll(sourcesDir, 0755); err != nil {
+		_ = fetcher.Cleanup()
+		return nil, fmt.Errorf("failed to create sources directory: %w", err)
+	}
+
+	// Copy each fetched source into the sources directory
+	for i := range sources {
+		source := &sources[i]
+		if source.Path == "" {
+			continue
+		}
+
+		destPath := filepath.Join(sourcesDir, source.Name)
+		logging.InfoContext(ctx, "Copying source from %s to %s", source.Path, destPath)
+
+		if err := copyDir(source.Path, destPath); err != nil {
+			_ = fetcher.Cleanup()
+			_ = os.RemoveAll(sourcesDir)
+			return nil, fmt.Errorf("failed to copy source %s: %w", source.Name, err)
+		}
+
+		absDestPath, err := filepath.Abs(destPath)
+		if err != nil {
+			_ = fetcher.Cleanup()
+			_ = os.RemoveAll(sourcesDir)
+			return nil, fmt.Errorf("failed to get absolute path for source %s: %w", source.Name, err)
+		}
+		source.Path = absDestPath
+	}
+
+	cleanup := func() {
+		if cleanupErr := fetcher.Cleanup(); cleanupErr != nil {
+			logging.WarnContext(ctx, "Failed to cleanup fetched sources: %v", cleanupErr)
+		}
+		if cleanupErr := os.RemoveAll(sourcesDir); cleanupErr != nil {
+			logging.WarnContext(ctx, "Failed to cleanup .warpgate-sources: %v", cleanupErr)
+		}
+	}
+
+	return cleanup, nil
+}
+
 // InjectTokenIntoURL injects an auth token into an HTTPS git URL
 // This is useful for CI/CD systems that pass tokens via URL
 func InjectTokenIntoURL(repoURL, token string) (string, error) {
@@ -310,4 +377,49 @@ func InjectTokenIntoURL(repoURL, token string) (string, error) {
 
 	parsed.User = url.UserPassword("x-access-token", token)
 	return parsed.String(), nil
+}
+
+// copyDir recursively copies a directory from src to dst
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		destPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(destPath, info.Mode())
+		}
+
+		srcFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err := srcFile.Close(); err != nil {
+				logging.Warn("Failed to close source file %s: %v", path, err)
+			}
+		}()
+
+		destFile, err := os.Create(destPath)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err := destFile.Close(); err != nil {
+				logging.Warn("Failed to close destination file %s: %v", destPath, err)
+			}
+		}()
+
+		if _, err := io.Copy(destFile, srcFile); err != nil {
+			return err
+		}
+
+		return os.Chmod(destPath, info.Mode())
+	})
 }

@@ -153,41 +153,29 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	logging.InfoContext(ctx, "Starting build process")
 
-	validator := cli.NewValidator()
-	cliOpts := buildOptsToCliOpts(args, opts)
-	if err := validator.ValidateBuildOptions(cliOpts); err != nil {
-		return fmt.Errorf("invalid options: %w", err)
-	}
-
 	parser := cli.NewParser()
-	labels, err := parser.ParseLabels(opts.labels)
+	labels, buildArgs, err := parser.ParseLabelsAndBuildArgs(opts.labels, opts.buildArgs)
 	if err != nil {
-		return fmt.Errorf("failed to parse labels: %w", err)
-	}
-	buildArgs, err := parser.ParseBuildArgs(opts.buildArgs)
-	if err != nil {
-		return fmt.Errorf("failed to parse build-args: %w", err)
+		return err
 	}
 
-	buildConfig, err := loadBuildConfig(ctx, args, opts)
+	buildConfig, err := loadAndValidateBuildConfig(ctx, args, opts)
 	if err != nil {
-		return fmt.Errorf("failed to load build configuration: %w", err)
+		return err
 	}
 
-	// Fetch external sources if defined
-	var sourceFetcher *wgit.SourceFetcher
+	var configFilePath string
+	if len(args) > 0 {
+		configFilePath = args[0]
+	}
+	cleanup, err := wgit.FetchSourcesWithCleanup(ctx, buildConfig.Sources, configFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to fetch sources: %w", err)
+	}
+	defer cleanup()
+
 	if len(buildConfig.Sources) > 0 {
-		sourceFetcher, err = fetchSources(ctx, buildConfig)
-		if err != nil {
-			return fmt.Errorf("failed to fetch sources: %w", err)
-		}
-		defer func() {
-			if sourceFetcher != nil {
-				if cleanupErr := sourceFetcher.Cleanup(); cleanupErr != nil {
-					logging.WarnContext(ctx, "Failed to cleanup fetched sources: %v", cleanupErr)
-				}
-			}
-		}()
+		updateProvisionerSourcePaths(buildConfig)
 	}
 
 	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc)
@@ -228,6 +216,21 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	}
 
 	return nil
+}
+
+// loadAndValidateBuildConfig validates CLI options and loads the build configuration
+func loadAndValidateBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*builder.Config, error) {
+	validator := cli.NewValidator()
+	cliOpts := buildOptsToCliOpts(args, opts)
+	if err := validator.ValidateBuildOptions(cliOpts); err != nil {
+		return nil, fmt.Errorf("invalid options: %w", err)
+	}
+
+	buildConfig, err := loadBuildConfig(ctx, args, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load build configuration: %w", err)
+	}
+	return buildConfig, nil
 }
 
 // executeBuild dispatches to the appropriate build handler based on target type
@@ -549,41 +552,22 @@ func handleAMIDryRun(ctx context.Context, amiBuilder *ami.ImageBuilder, buildCon
 	return nil, nil
 }
 
-// fetchSources fetches external sources defined in the config
-// It returns the fetcher for cleanup purposes
-func fetchSources(ctx context.Context, buildConfig *builder.Config) (*wgit.SourceFetcher, error) {
-	logging.InfoContext(ctx, "Fetching %d external sources", len(buildConfig.Sources))
-
-	fetcher, err := wgit.NewSourceFetcher("")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create source fetcher: %w", err)
-	}
-
-	if err := fetcher.FetchSources(ctx, buildConfig.Sources); err != nil {
-		// Cleanup on error
-		_ = fetcher.Cleanup()
-		return nil, err
-	}
-
-	// Update provisioner source paths to use fetched sources
-	updateProvisionerSourcePaths(buildConfig)
-
-	logging.InfoContext(ctx, "Successfully fetched all sources to %s", fetcher.BaseDir)
-	return fetcher, nil
-}
-
 // updateProvisionerSourcePaths updates file provisioner source paths
 // to use fetched sources when they reference ${sources.<name>}
 func updateProvisionerSourcePaths(config *builder.Config) {
 	sourceMap := make(map[string]string)
 	for _, src := range config.Sources {
 		sourceMap[src.Name] = src.Path
+		logging.Info("[UPDATE PATHS] Source %s -> %s", src.Name, src.Path)
 	}
 
 	for i := range config.Provisioners {
 		prov := &config.Provisioners[i]
+		logging.Info("[UPDATE PATHS] Checking provisioner %d: type=%s, source=%s", i, prov.Type, prov.Source)
 		if prov.Type == "file" && prov.Source != "" {
+			oldSource := prov.Source
 			prov.Source = resolveSourceReference(prov.Source, sourceMap)
+			logging.Info("[UPDATE PATHS] Provisioner %d: %s -> %s", i, oldSource, prov.Source)
 		}
 	}
 }
