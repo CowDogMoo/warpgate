@@ -43,7 +43,6 @@ var validTemplatesListFormats = map[string]bool{
 func runTemplatesList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
-	// Validate --format flag
 	if !validTemplatesListFormats[templatesListFormat] {
 		return fmt.Errorf("invalid format: %q. Valid options: table, json, gha-matrix", templatesListFormat)
 	}
@@ -120,13 +119,11 @@ func runTemplatesSearch(cmd *cobra.Command, args []string) error {
 	query := args[0]
 	logging.InfoContext(ctx, "Searching for templates matching: %s", query)
 
-	// Create template registry
 	registry, err := templates.NewTemplateRegistry(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create template registry: %w", err)
 	}
 
-	// Search for templates
 	results, err := registry.Search(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to search templates: %w", err)
@@ -147,13 +144,11 @@ func runTemplatesInfo(cmd *cobra.Command, args []string) error {
 	templateName := args[0]
 	logging.InfoContext(ctx, "Fetching information for template: %s", templateName)
 
-	// Create template loader
 	loader, err := templates.NewTemplateLoader(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create template loader: %w", err)
 	}
 
-	// Load the template configuration
 	cfg, err := loader.LoadTemplateWithVars(ctx, templateName, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load template: %w", err)

@@ -31,7 +31,6 @@ import (
 // getConfigHome returns the base config directory following CLI tool conventions.
 // Uses $XDG_CONFIG_HOME or ~/.config on Unix-like systems.
 func getConfigHome() string {
-	// Check XDG_CONFIG_HOME first (works on both Linux and macOS)
 	if configHome := os.Getenv("XDG_CONFIG_HOME"); configHome != "" {
 		return configHome
 	}
@@ -49,7 +48,6 @@ func getConfigHome() string {
 // getCacheHome returns the base cache directory following CLI tool conventions
 // On Unix-like systems (Linux, macOS, BSD), uses $XDG_CACHE_HOME or ~/.cache
 func getCacheHome() string {
-	// Check XDG_CACHE_HOME first (works on both Linux and macOS)
 	if cacheHome := os.Getenv("XDG_CACHE_HOME"); cacheHome != "" {
 		return cacheHome
 	}
@@ -86,7 +84,6 @@ func getConfigDirs() []string {
 	// On macOS, we skip /etc/xdg as it's not commonly used for CLI tools
 	if runtime.GOOS == "linux" || runtime.GOOS == "freebsd" || runtime.GOOS == "openbsd" {
 		if xdgConfigDirs := os.Getenv("XDG_CONFIG_DIRS"); xdgConfigDirs != "" {
-			// Parse colon-separated paths
 			for _, dir := range filepath.SplitList(xdgConfigDirs) {
 				if dir != "" {
 					dirs = append(dirs, filepath.Join(dir, "warpgate"))
@@ -111,7 +108,6 @@ func ConfigFile(filename string) (string, error) {
 	configPath := filepath.Join(configHome, "warpgate", filename)
 	configDir := filepath.Dir(configPath)
 
-	// Create directory if it doesn't exist
 	if err := os.MkdirAll(configDir, DirPermReadWriteExec); err != nil {
 		return "", err
 	}
@@ -129,7 +125,6 @@ func CacheFile(filename string) (string, error) {
 	cachePath := filepath.Join(cacheHome, "warpgate", filename)
 	cacheDir := filepath.Dir(cachePath)
 
-	// Create directory if it doesn't exist
 	if err := os.MkdirAll(cacheDir, DirPermReadWriteExec); err != nil {
 		return "", err
 	}

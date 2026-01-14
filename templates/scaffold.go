@@ -44,24 +44,20 @@ func NewScaffolder() *Scaffolder {
 
 // Create creates a new template with default structure.
 func (s *Scaffolder) Create(ctx context.Context, name, outputDir string) error {
-	// Create template directory
 	templateDir := filepath.Join(outputDir, name)
 	if err := os.MkdirAll(templateDir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
-	// Create scripts directory
 	scriptsDir := filepath.Join(templateDir, "scripts")
 	if err := os.MkdirAll(scriptsDir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create scripts directory: %w", err)
 	}
 
-	// Create default template configuration
 	if err := s.createDefaultTemplate(name, templateDir); err != nil {
 		return fmt.Errorf("failed to create template: %w", err)
 	}
 
-	// Create README
 	if err := s.createReadme(name, templateDir); err != nil {
 		return fmt.Errorf("failed to create README: %w", err)
 	}
@@ -76,7 +72,6 @@ func (s *Scaffolder) Create(ctx context.Context, name, outputDir string) error {
 func (s *Scaffolder) Fork(ctx context.Context, fromTemplate, newName, outputDir string) error {
 	logging.InfoContext(ctx, "Forking template from: %s", fromTemplate)
 
-	// Load the source template
 	loader, err := NewTemplateLoader(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create loader: %w", err)
@@ -87,19 +82,16 @@ func (s *Scaffolder) Fork(ctx context.Context, fromTemplate, newName, outputDir 
 		return fmt.Errorf("failed to load template: %w", err)
 	}
 
-	// Create output directory
 	templateDir := filepath.Join(outputDir, newName)
 	if err := os.MkdirAll(templateDir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
-	// Create scripts directory
 	scriptsDir := filepath.Join(templateDir, "scripts")
 	if err := os.MkdirAll(scriptsDir, config.DirPermReadWriteExec); err != nil {
 		return fmt.Errorf("failed to create scripts directory: %w", err)
 	}
 
-	// Update metadata
 	cfg.Metadata.Name = newName
 	cfg.Metadata.Version = "1.0.0"
 	cfg.Metadata.Description = fmt.Sprintf("Forked from %s", fromTemplate)
@@ -111,7 +103,6 @@ func (s *Scaffolder) Fork(ctx context.Context, fromTemplate, newName, outputDir 
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	// Create README
 	if err := s.createReadme(newName, templateDir); err != nil {
 		return fmt.Errorf("failed to create README: %w", err)
 	}

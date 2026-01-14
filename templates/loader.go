@@ -165,7 +165,6 @@ type TemplateLoader struct {
 
 // NewTemplateLoader creates a new template loader
 func NewTemplateLoader(ctx context.Context) (*TemplateLoader, error) {
-	// Get cache directory for templates
 	cacheDir, err := config.GetCacheDir("templates")
 	if err != nil {
 		return nil, err
@@ -239,10 +238,8 @@ func (tl *TemplateLoader) LoadTemplateWithVars(ctx context.Context, ref string, 
 
 // loadTemplateByNameWithVars searches all configured repositories and local paths for a template with variable substitution.
 func (tl *TemplateLoader) loadTemplateByNameWithVars(ctx context.Context, name string, vars map[string]string) (*builder.Config, error) {
-	// Parse version if specified: attack-box@v1.2.0
 	templateName, version := parseTemplateRef(name)
 
-	// Get all repos from registry
 	repos := tl.registry.GetRepositories()
 	logging.DebugContext(ctx, "Got %d repositories: %+v", len(repos), repos)
 	logging.DebugContext(ctx, "Cache dir: %s", tl.cacheDir)
@@ -295,7 +292,6 @@ func (tl *TemplateLoader) loadFromRegistryWithVars(ctx context.Context, repoURL,
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	// Load config from cloned repo
 	configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
 	logging.DebugContext(ctx, "Checking for template at path: %s", configPath)
 	if !tl.pathValidator.FileExists(configPath) {
@@ -306,8 +302,6 @@ func (tl *TemplateLoader) loadFromRegistryWithVars(ctx context.Context, repoURL,
 
 // loadFromGitWithVars loads a template from a git URL with variable substitution.
 func (tl *TemplateLoader) loadFromGitWithVars(ctx context.Context, gitURL string, vars map[string]string) (*builder.Config, error) {
-	// Parse git URL to extract path within repo
-	// Format: https://git.example.com/jdoe/repo.git//path/to/template
 	parts := strings.Split(gitURL, "//")
 	repoURL := parts[0]
 	templatePath := ""
@@ -321,7 +315,6 @@ func (tl *TemplateLoader) loadFromGitWithVars(ctx context.Context, gitURL string
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	// Build config path
 	configPath := filepath.Join(localPath, templatePath, "warpgate.yaml")
 	return tl.loadFromFileWithVars(ctx, configPath, vars)
 }
@@ -333,7 +326,6 @@ func (tl *TemplateLoader) loadFromFileWithVars(ctx context.Context, path string,
 		return nil, err
 	}
 
-	// Validate the configuration
 	validator := NewValidator()
 	if err := validator.Validate(ctx, cfg); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)

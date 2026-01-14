@@ -99,7 +99,6 @@ func init() {
 	convertPackerCmd.Flags().StringVarP(&convertOpts.output, "output", "o", "", "Output file path (default: <template-dir>/warpgate.yaml)")
 	convertPackerCmd.Flags().BoolVar(&convertOpts.dryRun, "dry-run", false, "Print converted YAML without writing file")
 
-	// Add subcommands to convert
 	convertCmd.AddCommand(convertPackerCmd)
 }
 
@@ -122,7 +121,6 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create converter options
 	opts := convert.PackerConverterOptions{
 		TemplateDir: absTemplateDir,
 		Author:      author,
@@ -132,7 +130,6 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 		IncludeAMI:  convertOpts.includeAMI,
 	}
 
-	// Create converter
 	converter, err := convert.NewPackerConverter(opts)
 	if err != nil {
 		return fmt.Errorf("failed to create converter: %w", err)
@@ -167,7 +164,6 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Write output or print dry-run
 	if err := writeConvertedTemplate(ctx, yamlWithSchema, outputPath); err != nil {
 		return err
 	}
@@ -240,7 +236,6 @@ func writeConvertedTemplate(ctx context.Context, yamlWithSchema []byte, outputPa
 		return nil
 	}
 
-	// Write to file
 	if err := os.WriteFile(outputPath, yamlWithSchema, 0644); err != nil {
 		return fmt.Errorf("failed to write output file: %w", err)
 	}

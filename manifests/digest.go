@@ -105,12 +105,10 @@ func ParseDigestFile(path string) (DigestFile, error) {
 	// Known architectures: amd64, arm64, arm-v7, arm-v6, ppc64le, s390x, 386, riscv64
 	basename := filepath.Base(path)
 
-	// Remove prefix and suffix
 	if !strings.HasPrefix(basename, "digest-") || !strings.HasSuffix(basename, ".txt") {
 		return DigestFile{}, fmt.Errorf("invalid filename format: %s (expected digest-*-*.txt)", basename)
 	}
 
-	// Remove "digest-" prefix and ".txt" suffix
 	nameArch := strings.TrimPrefix(basename, "digest-")
 	nameArch = strings.TrimSuffix(nameArch, ".txt")
 
@@ -137,20 +135,17 @@ func ParseDigestFile(path string) (DigestFile, error) {
 		return DigestFile{}, fmt.Errorf("invalid filename format: %s (unknown architecture)", basename)
 	}
 
-	// Read digest content
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return DigestFile{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Parse digest (should be sha256:...)
 	digestStr := strings.TrimSpace(string(content))
 	imageDigest, err := digest.Parse(digestStr)
 	if err != nil {
 		return DigestFile{}, fmt.Errorf("invalid digest format: %w", err)
 	}
 
-	// Get file modification time
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return DigestFile{}, fmt.Errorf("failed to stat file: %w", err)
@@ -176,11 +171,9 @@ func SaveDigestToFile(ctx context.Context, imageName, arch, digestStr, dir strin
 		return fmt.Errorf("failed to create digest directory: %w", err)
 	}
 
-	// Create filename: digest-{image}-{arch}.txt
 	filename := fmt.Sprintf("digest-%s-%s.txt", imageName, arch)
 	filepath := filepath.Join(dir, filename)
 
-	// Write digest to file
 	if err := os.WriteFile(filepath, []byte(digestStr), 0644); err != nil {
 		return fmt.Errorf("failed to write digest file: %w", err)
 	}

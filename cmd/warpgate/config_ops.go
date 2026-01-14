@@ -42,7 +42,6 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}
 
-	// Check if config already exists
 	ctx := cmd.Context()
 	if _, err := os.Stat(configPath); err == nil {
 		if !configForce {
@@ -52,7 +51,6 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		logging.WarnContext(ctx, "This will reset all custom settings to defaults!")
 	}
 
-	// Check for legacy config and suggest migration
 	if home, err := os.UserHomeDir(); err == nil {
 		legacyPath := filepath.Join(home, ".warpgate", "config.yaml")
 		if _, err := os.Stat(legacyPath); err == nil {
@@ -62,7 +60,6 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Load config from context
 	config := configFromContext(cmd)
 	if config == nil {
 		return fmt.Errorf("config not available in context")
@@ -74,7 +71,6 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// Write to file (xdg.ConfigFile already creates parent dirs)
 	if err := os.WriteFile(configPath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -150,7 +146,6 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 			if err := runConfigInit(cmd, []string{}); err != nil {
 				return err
 			}
-			// Get the path where config init created the file
 			var pathErr error
 			configPath, pathErr = config.ConfigFile("config.yaml")
 			if pathErr != nil {
@@ -167,10 +162,8 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		configPath = v.ConfigFileUsed()
 	}
 
-	// Set the value
 	v.Set(key, value)
 
-	// Write back to file
 	if err := v.WriteConfig(); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}

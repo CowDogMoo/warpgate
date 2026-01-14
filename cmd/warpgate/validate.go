@@ -62,14 +62,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		logging.InfoContext(ctx, "Validating configuration: %s", configPath)
 	}
 
-	// Load configuration
 	loader := templates.NewLoader()
 	cfg, err := loader.LoadFromFileWithVars(configPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Validate configuration
 	validator := templates.NewValidator()
 	if err := validator.ValidateWithOptions(ctx, cfg, templates.ValidationOptions{
 		SyntaxOnly: syntaxOnly,

@@ -90,13 +90,11 @@ var (
 )
 
 func init() {
-	// Initialize options structs
 	manifestsSharedOpts = &manifestsSharedOptions{}
 	manifestsCreateOpts = &manifestsCreateOptions{}
 	manifestsInspectOpts = &manifestsInspectOptions{}
 	manifestsListOpts = &manifestsListOptions{}
 
-	// Initialize parent command
 	manifestsCmd = &cobra.Command{
 		Use:   "manifests",
 		Short: "Manage multi-architecture manifests",
@@ -106,7 +104,6 @@ This command provides tools for creating and pushing multi-architecture
 manifests from digest files generated during separate architecture builds.`,
 		Args: cobra.NoArgs,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Validate required persistent flag --registry for all subcommands
 			if manifestsSharedOpts.registry == "" {
 				return fmt.Errorf("required flag \"registry\" not set")
 			}
@@ -119,7 +116,6 @@ manifests from digest files generated during separate architecture builds.`,
 	manifestsCmd.PersistentFlags().StringVar(&manifestsSharedOpts.namespace, "namespace", "", "Image namespace/organization")
 	manifestsCmd.PersistentFlags().StringVar(&manifestsSharedOpts.authFile, "auth-file", "", "Path to authentication file")
 
-	// Initialize create subcommand
 	manifestsCreateCmd = &cobra.Command{
 		Use:   "create",
 		Short: "Create and push a multi-architecture manifest",
@@ -166,7 +162,6 @@ Examples:
 		RunE: runManifestsCreate,
 	}
 
-	// Initialize inspect subcommand
 	manifestsInspectCmd = &cobra.Command{
 		Use:   "inspect",
 		Short: "Inspect a multi-architecture manifest",
@@ -185,7 +180,6 @@ Examples:
 		RunE: runManifestsInspect,
 	}
 
-	// Initialize list subcommand
 	manifestsListCmd = &cobra.Command{
 		Use:   "list",
 		Short: "List available manifest tags",
@@ -243,7 +237,6 @@ Examples:
 	manifestsListCmd.Flags().StringVar(&manifestsListOpts.name, "name", "", "Image name (required)")
 	_ = manifestsListCmd.MarkFlagRequired("name")
 
-	// Add subcommands to parent
 	manifestsCmd.AddCommand(manifestsCreateCmd)
 	manifestsCmd.AddCommand(manifestsInspectCmd)
 	manifestsCmd.AddCommand(manifestsListCmd)

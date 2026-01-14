@@ -63,12 +63,10 @@ func runManifestsCreate(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Handle dry-run mode
 	if manifestsCreateOpts.dryRun {
 		return handleDryRun(ctx, filteredDigests)
 	}
 
-	// Parse metadata and create manifests
 	annotations, labels, err := parseMetadata(ctx)
 	if err != nil {
 		return err
@@ -105,7 +103,6 @@ func discoverAndValidateDigests(ctx context.Context) ([]manifests.DigestFile, er
 		return nil, fmt.Errorf("digest validation failed: %w", err)
 	}
 
-	// Filter architectures based on requirements
 	filteredDigests, err := manifests.FilterArchitectures(ctx, digestFiles, manifests.FilterOptions{
 		RequiredArchitectures: manifestsCreateOpts.requireArch,
 		BestEffort:            manifestsCreateOpts.bestEffort,
@@ -195,7 +192,6 @@ func parseMetadata(_ context.Context) (map[string]string, map[string]string, err
 
 // createAndPushManifests creates and pushes manifests for all tags using the appropriate builder
 func createAndPushManifests(ctx context.Context, filteredDigests []manifests.DigestFile, annotations, labels map[string]string) error {
-	// Create the appropriate builder for manifest operations
 	bldr, err := createBuilderForManifests(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create builder: %w", err)
@@ -217,10 +213,8 @@ func createAndPushManifests(ctx context.Context, filteredDigests []manifests.Dig
 		// Convert DigestFiles to ManifestEntries
 		entries := convertDigestFilesToManifestEntries(filteredDigests, manifestsSharedOpts.registry, manifestsSharedOpts.namespace, tag)
 
-		// Build the manifest name/destination
 		manifestName := manifests.BuildManifestReference(manifestsSharedOpts.registry, manifestsSharedOpts.namespace, manifestsCreateOpts.name, tag)
 
-		// Create and push the manifest using the builder
 		if err := createManifestWithBuilder(ctx, bldr, manifestName, entries); err != nil {
 			logging.ErrorContext(ctx, "Failed to create/push manifest for tag %s: %v", tag, err)
 			failedTags = append(failedTags, tag)
@@ -264,16 +258,10 @@ func convertDigestFilesToManifestEntries(digestFiles []manifests.DigestFile, reg
 	entries := make([]manifests.ManifestEntry, 0, len(digestFiles))
 
 	for _, df := range digestFiles {
-		// Build the digest-based image reference (registry/namespace/image@sha256:...)
-		// instead of tag-based reference with architecture suffix
 		imageRef := manifests.BuildManifestReference(registry, namespace, df.ImageName, "")
-		// Remove trailing colon if tag was empty
 		imageRef = strings.TrimSuffix(imageRef, ":")
-		// Add digest
 		imageRef = fmt.Sprintf("%s@%s", imageRef, df.Digest.String())
 
-		// Parse platform information using the consolidated utility
-		// The architecture field in DigestFile may contain variants (e.g., "arm/v7")
 		platformInfo := manifests.ParsePlatform(df.Architecture)
 
 		// Format the platform string properly

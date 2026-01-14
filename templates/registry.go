@@ -106,14 +106,12 @@ func isPlaceholderURL(rawURL string) bool {
 
 // NewTemplateRegistry creates a new template registry
 func NewTemplateRegistry(ctx context.Context) (*TemplateRegistry, error) {
-	// Load global config to get repositories and local paths
 	cfg, err := config.Load()
 	if err != nil {
 		logging.WarnContext(ctx, "Failed to load global config, using defaults: %v", err)
 		cfg = &config.Config{}
 	}
 
-	// Get cache directory for registry
 	cacheDir, err := config.GetCacheDir("registry")
 	if err != nil {
 		return nil, err
@@ -266,7 +264,6 @@ func (tr *TemplateRegistry) listAll(ctx context.Context) ([]TemplateInfo, error)
 func (tr *TemplateRegistry) ListLocal(ctx context.Context) ([]TemplateInfo, error) {
 	var allTemplates []TemplateInfo
 
-	// Check repos for local paths
 	for repoName, repoURL := range tr.repos {
 		if !tr.pathValidator.IsLocalPath(repoURL) {
 			continue
@@ -313,7 +310,6 @@ func (tr *TemplateRegistry) discoverTemplates(repoPath string) ([]TemplateInfo, 
 			continue // Skip if no config found
 		}
 
-		// Load template metadata
 		info, err := tr.loadTemplateInfo(configPath, entry.Name())
 		if err != nil {
 			continue // Skip templates with errors
@@ -351,7 +347,6 @@ func (tr *TemplateRegistry) loadTemplateInfo(configPath, name string) (TemplateI
 func (tr *TemplateRegistry) Search(ctx context.Context, query string) ([]TemplateInfo, error) {
 	allTemplates := []TemplateInfo{}
 
-	// Search all registered repositories
 	for repoName := range tr.repos {
 		templates, err := tr.List(ctx, repoName)
 		if err != nil {
