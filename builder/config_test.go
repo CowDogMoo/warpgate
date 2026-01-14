@@ -91,37 +91,6 @@ func TestProvisionerAnsible(t *testing.T) {
 	assert.Equal(t, "/usr/bin/python3", prov.ExtraVars["ansible_python_interpreter"])
 }
 
-func TestPostProcessorManifest(t *testing.T) {
-	pp := PostProcessor{
-		Type:      "manifest",
-		Output:    "manifest.json",
-		StripPath: true,
-		Only:      []string{"docker.amd64"},
-	}
-
-	assert.Equal(t, "manifest", pp.Type)
-	assert.Equal(t, "manifest.json", pp.Output)
-	assert.True(t, pp.StripPath)
-	assert.Contains(t, pp.Only, "docker.amd64")
-}
-
-func TestPostProcessorDockerTag(t *testing.T) {
-	pp := PostProcessor{
-		Type:       "docker-tag",
-		Repository: "ghcr.io/org/image",
-		Tags:       []string{"latest", "v1.0.0"},
-		Force:      true,
-		Except:     []string{"amazon-ebs.ubuntu"},
-	}
-
-	assert.Equal(t, "docker-tag", pp.Type)
-	assert.Equal(t, "ghcr.io/org/image", pp.Repository)
-	assert.Contains(t, pp.Tags, "latest")
-	assert.Contains(t, pp.Tags, "v1.0.0")
-	assert.True(t, pp.Force)
-	assert.Contains(t, pp.Except, "amazon-ebs.ubuntu")
-}
-
 func TestConfigWithNewFeatures(t *testing.T) {
 	config := Config{
 		Metadata: Metadata{
@@ -155,18 +124,6 @@ func TestConfigWithNewFeatures(t *testing.T) {
 				AnsibleEnvVars: []string{"ANSIBLE_REMOTE_TMP=/tmp"},
 			},
 		},
-		PostProcessors: []PostProcessor{
-			{
-				Type:      "manifest",
-				Output:    "manifest.json",
-				StripPath: true,
-			},
-			{
-				Type:       "docker-tag",
-				Repository: "ghcr.io/test/image",
-				Tags:       []string{"latest"},
-			},
-		},
 		Targets: []Target{
 			{
 				Type:      "container",
@@ -179,7 +136,6 @@ func TestConfigWithNewFeatures(t *testing.T) {
 	assert.Equal(t, "test-template", config.Name)
 	assert.True(t, config.Base.Privileged)
 	assert.Len(t, config.Provisioners, 2)
-	assert.Len(t, config.PostProcessors, 2)
 
 	// Verify provisioner conditionals
 	assert.Contains(t, config.Provisioners[0].Only, "docker.amd64")
@@ -187,10 +143,6 @@ func TestConfigWithNewFeatures(t *testing.T) {
 	// Verify Ansible provisioner
 	assert.Equal(t, "ubuntu", config.Provisioners[1].User)
 	assert.Contains(t, config.Provisioners[1].AnsibleEnvVars, "ANSIBLE_REMOTE_TMP=/tmp")
-
-	// Verify post-processors
-	assert.Equal(t, "manifest", config.PostProcessors[0].Type)
-	assert.Equal(t, "docker-tag", config.PostProcessors[1].Type)
 }
 
 func TestConfigYAMLMarshaling(t *testing.T) {
@@ -209,12 +161,6 @@ func TestConfigYAMLMarshaling(t *testing.T) {
 				Inline: []string{"echo test"},
 			},
 		},
-		PostProcessors: []PostProcessor{
-			{
-				Type:   "manifest",
-				Output: "manifest.json",
-			},
-		},
 	}
 
 	// Marshal to YAML
@@ -227,8 +173,6 @@ func TestConfigYAMLMarshaling(t *testing.T) {
 	assert.Contains(t, yamlStr, "privileged: true")
 	assert.Contains(t, yamlStr, "only:")
 	assert.Contains(t, yamlStr, "docker.amd64")
-	assert.Contains(t, yamlStr, "post_processors:")
-	assert.Contains(t, yamlStr, "type: manifest")
 
 	// Unmarshal back
 	var unmarshaled Config
@@ -237,7 +181,6 @@ func TestConfigYAMLMarshaling(t *testing.T) {
 	assert.Equal(t, config.Name, unmarshaled.Name)
 	assert.True(t, unmarshaled.Base.Privileged)
 	assert.Contains(t, unmarshaled.Provisioners[0].Only, "docker.amd64")
-	assert.Len(t, unmarshaled.PostProcessors, 1)
 }
 
 func TestBaseImageDefaultValues(t *testing.T) {
@@ -264,19 +207,6 @@ func TestProvisionerDefaultValues(t *testing.T) {
 	assert.Empty(t, prov.User)
 	assert.Nil(t, prov.AnsibleEnvVars)
 	assert.False(t, prov.UseProxy)
-}
-
-func TestPostProcessorDefaultValues(t *testing.T) {
-	pp := PostProcessor{
-		Type: "manifest",
-	}
-
-	// Default values should be false/empty
-	assert.False(t, pp.StripPath)
-	assert.False(t, pp.Force)
-	assert.False(t, pp.KeepInputArtifact)
-	assert.Nil(t, pp.Only)
-	assert.Nil(t, pp.Except)
 }
 
 func TestDockerfileConfig(t *testing.T) {
@@ -518,4 +448,63 @@ func TestConfigWithArchOverrides(t *testing.T) {
 	assert.Equal(t, "ubuntu:22.04-amd64-optimized", amd64Override.Base.Image)
 	assert.True(t, amd64Override.AppendProvisioners)
 	assert.Len(t, amd64Override.Provisioners, 1)
+}
+
+func TestDeprecatedPostProcessorsField(t *testing.T) {
+	tests := []struct {
+		name        string
+		yamlContent string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid config without post_processors",
+			yamlContent: `
+name: test
+version: "1.0.0"
+base:
+  image: ubuntu:22.04
+`,
+			expectError: false,
+		},
+		{
+			name: "config with deprecated post_processors field",
+			yamlContent: `
+name: test
+version: "1.0.0"
+base:
+  image: ubuntu:22.04
+post_processors:
+  - type: docker-tag
+    repository: ghcr.io/test/image
+`,
+			expectError: true,
+			errorMsg:    "'post_processors' field is deprecated",
+		},
+		{
+			name: "config with empty post_processors field",
+			yamlContent: `
+name: test
+version: "1.0.0"
+base:
+  image: ubuntu:22.04
+post_processors: []
+`,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var config Config
+			err := yaml.Unmarshal([]byte(tt.yamlContent), &config)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

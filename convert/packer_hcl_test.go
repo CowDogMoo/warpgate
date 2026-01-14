@@ -117,12 +117,11 @@ func TestParseVariablesFileNotFound(t *testing.T) {
 
 func TestParseBuildFile(t *testing.T) {
 	tests := []struct {
-		name              string
-		content           string
-		expectError       bool
-		expectedBuilds    int
-		expectedProvs     int
-		expectedPostProcs int
+		name           string
+		content        string
+		expectError    bool
+		expectedBuilds int
+		expectedProvs  int
 	}{
 		{
 			name: "build with shell provisioner",
@@ -131,10 +130,9 @@ func TestParseBuildFile(t *testing.T) {
     inline = ["apt-get update", "apt-get install -y curl"]
   }
 }`,
-			expectError:       false,
-			expectedBuilds:    1,
-			expectedProvs:     1,
-			expectedPostProcs: 0,
+			expectError:    false,
+			expectedBuilds: 1,
+			expectedProvs:  1,
 		},
 		{
 			name: "build with multiple provisioners",
@@ -146,29 +144,9 @@ func TestParseBuildFile(t *testing.T) {
     playbook_file = "playbook.yml"
   }
 }`,
-			expectError:       false,
-			expectedBuilds:    1,
-			expectedProvs:     2,
-			expectedPostProcs: 0,
-		},
-		{
-			name: "build with post-processors",
-			content: `build {
-  provisioner "shell" {
-    inline = ["echo test"]
-  }
-  post-processor "manifest" {
-    output = "manifest.json"
-  }
-  post-processor "docker-tag" {
-    repository = "ghcr.io/test/image"
-    tags = ["latest"]
-  }
-}`,
-			expectError:       false,
-			expectedBuilds:    1,
-			expectedProvs:     1,
-			expectedPostProcs: 2,
+			expectError:    false,
+			expectedBuilds: 1,
+			expectedProvs:  2,
 		},
 		{
 			name:        "invalid HCL",
@@ -194,7 +172,6 @@ func TestParseBuildFile(t *testing.T) {
 				assert.Len(t, builds, tt.expectedBuilds)
 				if len(builds) > 0 {
 					assert.Len(t, builds[0].Provisioners, tt.expectedProvs)
-					assert.Len(t, builds[0].PostProcessors, tt.expectedPostProcs)
 				}
 			}
 		})
@@ -407,49 +384,96 @@ func TestParseDockerSourceWithVolumes(t *testing.T) {
 	assert.Contains(t, dockerSrc.Changes, "USER root")
 }
 
-func TestParsePostProcessorWithConditionals(t *testing.T) {
-	tmpDir := t.TempDir()
-	buildPath := filepath.Join(tmpDir, "docker.pkr.hcl")
-	content := `build {
-  provisioner "shell" {
-    inline = ["echo test"]
-  }
-
-  post-processor "manifest" {
-    output     = "manifest.json"
-    strip_path = true
-    only       = ["docker.amd64"]
-    except     = ["docker.arm64"]
-  }
-
+func TestParsePostProcessorBlocks(t *testing.T) {
+	tests := []struct {
+		name           string
+		content        string
+		expectedCount  int
+		checkPostProcs func(t *testing.T, builds []PackerBuild)
+	}{
+		{
+			name: "docker-tag post-processor",
+			content: `build {
   post-processor "docker-tag" {
     repository = "ghcr.io/test/image"
     tags       = ["latest", "v1.0.0"]
-    force      = true
   }
-}`
-	err := os.WriteFile(buildPath, []byte(content), 0644)
-	require.NoError(t, err)
+}`,
+			expectedCount: 1,
+			checkPostProcs: func(t *testing.T, builds []PackerBuild) {
+				require.Len(t, builds[0].PostProcessors, 1)
+				pp := builds[0].PostProcessors[0]
+				assert.Equal(t, "docker-tag", pp.Type)
+				assert.Equal(t, "ghcr.io/test/image", pp.Repository)
+				assert.Contains(t, pp.Tags, "latest")
+				assert.Contains(t, pp.Tags, "v1.0.0")
+			},
+		},
+		{
+			name: "docker-push post-processor",
+			content: `build {
+  post-processor "docker-push" {}
+}`,
+			expectedCount: 1,
+			checkPostProcs: func(t *testing.T, builds []PackerBuild) {
+				require.Len(t, builds[0].PostProcessors, 1)
+				assert.Equal(t, "docker-push", builds[0].PostProcessors[0].Type)
+			},
+		},
+		{
+			name: "multiple post-processors",
+			content: `build {
+  post-processor "docker-tag" {
+    repository = "ghcr.io/org/app"
+    tags       = ["latest"]
+  }
+  post-processor "docker-push" {}
+}`,
+			expectedCount: 1,
+			checkPostProcs: func(t *testing.T, builds []PackerBuild) {
+				require.Len(t, builds[0].PostProcessors, 2)
+				assert.Equal(t, "docker-tag", builds[0].PostProcessors[0].Type)
+				assert.Equal(t, "docker-push", builds[0].PostProcessors[1].Type)
+			},
+		},
+		{
+			name: "nested post-processors block",
+			content: `build {
+  post-processors {
+    post-processor "docker-tag" {
+      repository = "registry.example.com/image"
+      tags       = ["dev"]
+    }
+    post-processor "docker-push" {}
+  }
+}`,
+			expectedCount: 1,
+			checkPostProcs: func(t *testing.T, builds []PackerBuild) {
+				require.Len(t, builds[0].PostProcessors, 2)
+				assert.Equal(t, "docker-tag", builds[0].PostProcessors[0].Type)
+				assert.Equal(t, "registry.example.com/image", builds[0].PostProcessors[0].Repository)
+				assert.Equal(t, "docker-push", builds[0].PostProcessors[1].Type)
+			},
+		},
+	}
 
-	parser := NewHCLParser()
-	builds, err := parser.ParseBuildFile(buildPath)
-	require.NoError(t, err)
-	require.Len(t, builds, 1)
-	require.Len(t, builds[0].PostProcessors, 2)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			buildPath := filepath.Join(tmpDir, "docker.pkr.hcl")
+			err := os.WriteFile(buildPath, []byte(tt.content), 0644)
+			require.NoError(t, err)
 
-	manifest := builds[0].PostProcessors[0]
-	assert.Equal(t, "manifest", manifest.Type)
-	assert.Equal(t, "manifest.json", manifest.Output)
-	assert.True(t, manifest.StripPath)
-	assert.Contains(t, manifest.Only, "docker.amd64")
-	assert.Contains(t, manifest.Except, "docker.arm64")
+			parser := NewHCLParser()
+			builds, err := parser.ParseBuildFile(buildPath)
 
-	dockerTag := builds[0].PostProcessors[1]
-	assert.Equal(t, "docker-tag", dockerTag.Type)
-	assert.Equal(t, "ghcr.io/test/image", dockerTag.Repository)
-	assert.Contains(t, dockerTag.Tags, "latest")
-	assert.Contains(t, dockerTag.Tags, "v1.0.0")
-	assert.True(t, dockerTag.Force)
+			require.NoError(t, err)
+			require.Len(t, builds, tt.expectedCount)
+			if tt.checkPostProcs != nil {
+				tt.checkPostProcs(t, builds)
+			}
+		})
+	}
 }
 
 func TestProvisionersMatch(t *testing.T) {
@@ -598,7 +622,7 @@ func TestBuildTargetsWithAMISource(t *testing.T) {
 	require.NoError(t, err)
 
 	// Build targets
-	targets := converter.buildTargets(parser)
+	targets := converter.buildTargets(parser, "", nil, false)
 
 	// Should have container and AMI targets
 	assert.Len(t, targets, 2)

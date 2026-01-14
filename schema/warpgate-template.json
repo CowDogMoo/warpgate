@@ -272,88 +272,6 @@
       ],
       "description": "Metadata contains template metadata"
     },
-    "PostProcessor": {
-      "properties": {
-        "type": {
-          "type": "string",
-          "description": "Type is the type of post-processor: \"manifest\", \"docker-tag\", \"docker-push\", \"compress\", or \"checksum\""
-        },
-        "output": {
-          "type": "string",
-          "description": "Output specifies the path where the manifest file should be written"
-        },
-        "strip_path": {
-          "type": "boolean",
-          "description": "StripPath indicates whether to remove directory paths from artifact names in the manifest"
-        },
-        "repository": {
-          "type": "string",
-          "description": "Repository is the target repository name (e.g., \"ghcr.io/org/name\")"
-        },
-        "tags": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Tags is a list of tags to apply to the image (e.g., [\"latest\", \"v1.0.0\"])"
-        },
-        "force": {
-          "type": "boolean",
-          "description": "Force indicates whether to overwrite existing tags if they already exist"
-        },
-        "login_server": {
-          "type": "string",
-          "description": "LoginServer is the registry login server for ECR/ACR authentication"
-        },
-        "login_username": {
-          "type": "string",
-          "description": "LoginUsername is the username for registry authentication"
-        },
-        "login_password": {
-          "type": "string",
-          "description": "LoginPassword is the password or token for registry authentication (use environment variables)"
-        },
-        "format": {
-          "type": "string",
-          "description": "Format specifies the compression format: \"tar.gz\", \"zip\", \"tar.bz2\", etc."
-        },
-        "compression_level": {
-          "type": "integer",
-          "description": "CompressionLevel sets the compression level from 1 (fast) to 9 (best compression)"
-        },
-        "checksum_types": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "ChecksumTypes specifies hash algorithms to use: \"md5\", \"sha1\", \"sha256\", \"sha512\""
-        },
-        "only": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Only is the list of build sources to restrict execution to"
-        },
-        "except": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "Except is the list of build sources to skip execution for"
-        },
-        "keep_input_artifact": {
-          "type": "boolean",
-          "description": "KeepInputArtifact indicates whether to preserve the original artifact after post-processing"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "type"
-      ],
-      "description": "PostProcessor represents a post-processing step after the build"
-    },
     "Provisioner": {
       "properties": {
         "type": {
@@ -629,13 +547,6 @@
       },
       "type": "array",
       "description": "PostChanges applies Dockerfile-style instructions after provisioners complete\nUseful for setting USER/WORKDIR after creating users during provisioning"
-    },
-    "post_processors": {
-      "items": {
-        "$ref": "#/$defs/PostProcessor"
-      },
-      "type": "array",
-      "description": "PostProcessors is the list of post-processors to run after the build"
     },
     "targets": {
       "items": {

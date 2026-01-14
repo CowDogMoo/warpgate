@@ -22,6 +22,12 @@ THE SOFTWARE.
 
 package builder
 
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
 // Version is the current version of warpgate, set at build time via ldflags.
 // Build with: go build -ldflags "-X 'github.com/cowdogmoo/warpgate/pkg/builder.Version=v1.2.3'"
 var Version = "dev"
@@ -52,9 +58,6 @@ type Config struct {
 	// PostChanges applies Dockerfile-style instructions after provisioners complete
 	// Useful for setting USER/WORKDIR after creating users during provisioning
 	PostChanges []string `yaml:"post_changes,omitempty" json:"post_changes,omitempty"`
-
-	// PostProcessors is the list of post-processors to run after the build
-	PostProcessors []PostProcessor `yaml:"post_processors,omitempty" json:"post_processors,omitempty"`
 
 	// Targets is the list of build targets (container, AMI, etc.)
 	Targets []Target `yaml:"targets" json:"targets"`
@@ -361,66 +364,6 @@ type Provisioner struct {
 	User string `yaml:"user,omitempty" json:"user,omitempty"`
 }
 
-// PostProcessor represents a post-processing step after the build
-type PostProcessor struct {
-	// Type is the type of post-processor: "manifest", "docker-tag", "docker-push", "compress", or "checksum"
-	Type string `yaml:"type" json:"type"`
-
-	// Manifest post-processor fields
-
-	// Output specifies the path where the manifest file should be written
-	Output string `yaml:"output,omitempty" json:"output,omitempty"`
-
-	// StripPath indicates whether to remove directory paths from artifact names in the manifest
-	StripPath bool `yaml:"strip_path,omitempty" json:"strip_path,omitempty"`
-
-	// Docker-tag post-processor fields
-
-	// Repository is the target repository name (e.g., "ghcr.io/org/name")
-	Repository string `yaml:"repository,omitempty" json:"repository,omitempty"`
-
-	// Tags is a list of tags to apply to the image (e.g., ["latest", "v1.0.0"])
-	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
-
-	// Force indicates whether to overwrite existing tags if they already exist
-	Force bool `yaml:"force,omitempty" json:"force,omitempty"`
-
-	// Docker-push post-processor fields
-
-	// LoginServer is the registry login server for ECR/ACR authentication
-	LoginServer string `yaml:"login_server,omitempty" json:"login_server,omitempty"`
-
-	// LoginUsername is the username for registry authentication
-	LoginUsername string `yaml:"login_username,omitempty" json:"login_username,omitempty"`
-
-	// LoginPassword is the password or token for registry authentication (use environment variables)
-	LoginPassword string `yaml:"login_password,omitempty" json:"login_password,omitempty"`
-
-	// Compress post-processor fields
-
-	// Format specifies the compression format: "tar.gz", "zip", "tar.bz2", etc.
-	Format string `yaml:"format,omitempty" json:"format,omitempty"`
-
-	// CompressionLevel sets the compression level from 1 (fast) to 9 (best compression)
-	CompressionLevel int `yaml:"compression_level,omitempty" json:"compression_level,omitempty"`
-
-	// Checksum post-processor fields
-
-	// ChecksumTypes specifies hash algorithms to use: "md5", "sha1", "sha256", "sha512"
-	ChecksumTypes []string `yaml:"checksum_types,omitempty" json:"checksum_types,omitempty"`
-
-	// Common fields
-
-	// Only is the list of build sources to restrict execution to
-	Only []string `yaml:"only,omitempty" json:"only,omitempty"`
-
-	// Except is the list of build sources to skip execution for
-	Except []string `yaml:"except,omitempty" json:"except,omitempty"`
-
-	// KeepInputArtifact indicates whether to preserve the original artifact after post-processing
-	KeepInputArtifact bool `yaml:"keep_input_artifact,omitempty" json:"keep_input_artifact,omitempty"`
-}
-
 // Target represents a build target
 type Target struct {
 	// Type is the type of build target: "container" for Docker images or "ami" for AWS AMIs
@@ -508,4 +451,36 @@ type BuildResult struct {
 
 	// Any warnings or notes
 	Notes []string `json:"notes,omitempty"`
+}
+
+// configAlias is used to unmarshal Config without infinite recursion
+type configAlias Config
+
+// configWithDeprecated includes deprecated fields for detection during unmarshaling
+type configWithDeprecated struct {
+	configAlias `yaml:",inline"`
+
+	// PostProcessors is a DEPRECATED field that was removed in v3.0.0
+	// Warpgate handles tagging and pushing via CLI commands and Target configuration
+	PostProcessors []any `yaml:"post_processors,omitempty"`
+}
+
+// UnmarshalYAML implements custom unmarshaling to detect deprecated fields
+// and provide clear migration guidance to users.
+func (c *Config) UnmarshalYAML(node *yaml.Node) error {
+	// First unmarshal into a struct that includes deprecated fields
+	var withDeprecated configWithDeprecated
+	if err := node.Decode(&withDeprecated); err != nil {
+		return err
+	}
+
+	// Check for deprecated post_processors field
+	if len(withDeprecated.PostProcessors) > 0 {
+		return fmt.Errorf("'post_processors' field is deprecated and no longer supported; " +
+			"use Target.registry, Target.tags, and Target.push instead, or use --push CLI flag")
+	}
+
+	// Copy the aliased config to the actual config
+	*c = Config(withDeprecated.configAlias)
+	return nil
 }

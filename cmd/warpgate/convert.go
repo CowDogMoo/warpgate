@@ -141,13 +141,12 @@ func runConvertPacker(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("conversion failed: %w", err)
 	}
 
-	// Count provisioners and post-processors
+	// Count provisioners and targets
 	provisionerCount := len(buildConfig.Provisioners)
-	postProcessorCount := len(buildConfig.PostProcessors)
 	targetCount := len(buildConfig.Targets)
 
-	logging.InfoContext(ctx, "Conversion complete: %d provisioners, %d post-processors, %d targets",
-		provisionerCount, postProcessorCount, targetCount)
+	logging.InfoContext(ctx, "Conversion complete: %d provisioners, %d targets",
+		provisionerCount, targetCount)
 
 	// Marshal to YAML
 	yamlData, err := yaml.Marshal(buildConfig)
