@@ -86,7 +86,6 @@ var _ builder.ContainerBuilder = (*BuildKitBuilder)(nil)
 // NewBuildKitBuilder creates a new BuildKit builder instance.
 // Supports auto-detect, explicit endpoint (docker-container://, tcp://, unix://), and remote TCP with TLS.
 func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
-	// Load global configuration
 	cfg, err := config.Load()
 	if err != nil {
 		logging.Warn("Failed to load config, using defaults: %v", err)
@@ -123,7 +122,6 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		))
 		logging.Info("TLS enabled for BuildKit connection")
 	} else if strings.HasPrefix(addr, "tcp://") {
-		// Insecure TCP connection
 		clientOpts = append(clientOpts, client.WithGRPCDialOption(
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		))
@@ -464,7 +462,10 @@ func (b *BuildKitBuilder) applyShellProvisioner(state llb.State, prov builder.Pr
 
 // applyFileProvisioner applies file copy operations to LLB state.
 func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
+	logging.Debug("[FILE PROV] Starting - source: %s, dest: %s", prov.Source, prov.Destination)
+
 	if prov.Source == "" || prov.Destination == "" {
+		logging.Debug("[FILE PROV] Empty source or dest, skipping")
 		return state, nil
 	}
 
@@ -473,13 +474,48 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 		return state, fmt.Errorf("failed to resolve source path: %w", err)
 	}
 
-	state = state.File(
-		llb.Copy(
-			llb.Local("context"),
-			sourcePath,
-			prov.Destination,
-		),
-	)
+	logging.Debug("[FILE PROV] Resolved source path: %s", sourcePath)
+
+	absSource, err := filepath.Abs(filepath.Join(b.contextDir, sourcePath))
+	if err != nil {
+		return state, fmt.Errorf("failed to resolve absolute source path: %w", err)
+	}
+
+	logging.Debug("[FILE PROV] Context: %s, Source: %s, Abs: %s, Dest: %s",
+		b.contextDir, sourcePath, absSource, prov.Destination)
+
+	info, err := os.Stat(absSource)
+	if err != nil {
+		return state, fmt.Errorf("failed to stat source %s: %w", absSource, err)
+	}
+
+	logging.Debug("[FILE PROV] Source is dir: %v, size: %d", info.IsDir(), info.Size())
+
+	if info.IsDir() {
+		// For directories: BuildKit copies the directory INTO the destination
+		// So copying "ares" to "/tmp" creates "/tmp/ares"
+		logging.Debug("[FILE PROV] Directory copy: %s -> %s (will create %s/%s)",
+			sourcePath, prov.Destination, prov.Destination, filepath.Base(sourcePath))
+
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				sourcePath,
+				prov.Destination,
+				&llb.CopyInfo{
+					CreateDestPath: true,
+				},
+			),
+		)
+	} else {
+		state = state.File(
+			llb.Copy(
+				llb.Local("context"),
+				sourcePath,
+				prov.Destination,
+			),
+		)
+	}
 
 	if prov.Mode != "" {
 		state = state.Run(
@@ -696,7 +732,6 @@ func buildExportAttributes(imageName string, labels map[string]string) map[strin
 		"name": imageName,
 	}
 
-	// Add labels to image metadata
 	if len(labels) > 0 {
 		for key, value := range labels {
 			// BuildKit expects labels in the format "label:key=value"
@@ -843,7 +878,7 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 		commonParent = findCommonParent(commonParent, p)
 	}
 
-	logging.Info("Calculated build context from %d file(s): %s", len(paths), commonParent)
+	logging.Debug("Calculated build context from %d file(s): %s", len(paths), commonParent)
 	return commonParent, nil
 }
 
@@ -1022,6 +1057,10 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 
 	exportAttrs := buildExportAttributes(imageName, cfg.Labels)
 
+	localDirs := map[string]string{
+		"context": contextDir,
+	}
+
 	solveOpt := client.SolveOpt{
 		Exports: []client.ExportEntry{
 			{
@@ -1030,10 +1069,8 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 				Attrs:  exportAttrs,
 			},
 		},
-		LocalDirs: map[string]string{
-			"context": contextDir,
-		},
-		Session: createAuthProvider(),
+		LocalDirs: localDirs,
+		Session:   createAuthProvider(),
 	}
 
 	b.configureCacheOptions(&solveOpt, cfg)
@@ -1331,7 +1368,6 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 		})
 	}
 
-	// Create an empty index and append all manifests
 	mediaType := types.MediaType(manifestList.MediaType)
 	idx := mutate.IndexMediaType(mutate.AppendManifests(
 		mutate.IndexMediaType(empty.Index, mediaType),

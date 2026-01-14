@@ -44,6 +44,7 @@ Configuration precedence (highest to lowest):
 2. Environment variables (WARPGATE_*)
 3. Configuration file
 4. Built-in defaults`,
+	Args: cobra.NoArgs,
 }
 
 var configInitCmd = &cobra.Command{
@@ -56,6 +57,7 @@ This will create an XDG-compliant config file at:
 
 If a legacy config exists at ~/.warpgate/config.yaml, you'll be notified.
 If the file already exists, it will be overwritten only with --force.`,
+	Args: cobra.NoArgs,
 	RunE: runConfigInit,
 }
 
@@ -69,6 +71,7 @@ This shows the effective configuration after merging:
 - Configuration file values
 - Environment variables
 - CLI flag overrides`,
+	Args: cobra.NoArgs,
 	RunE: runConfigShow,
 }
 
@@ -76,6 +79,7 @@ var configPathCmd = &cobra.Command{
 	Use:   "path",
 	Short: "Show configuration file path",
 	Long:  `Display the path to the configuration file.`,
+	Args:  cobra.NoArgs,
 	RunE:  runConfigPath,
 }
 

@@ -25,12 +25,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"sync"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
 	"github.com/cowdogmoo/warpgate/v3/cli"
 	"github.com/cowdogmoo/warpgate/v3/config"
+	wgit "github.com/cowdogmoo/warpgate/v3/git"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -73,6 +76,7 @@ func init() {
 	buildCmd = &cobra.Command{
 		Use:   "build [config|template]",
 		Short: "Build image from config or template",
+		Args:  cobra.MaximumNArgs(1),
 		Long: `Build a container image or AMI from a template configuration.
 
 Examples:
@@ -141,6 +145,95 @@ Examples:
 	buildCmd.Flags().StringSliceVar(&opts.copyToRegions, "copy-to-regions", nil, "Copy AMI to additional regions after build (comma-separated)")
 	buildCmd.Flags().BoolVar(&opts.streamLogs, "stream-logs", false, "Stream CloudWatch/SSM logs from build instance (AMI builds only)")
 	buildCmd.Flags().BoolVar(&opts.showEC2Status, "show-ec2-status", false, "Show EC2 instance status during build (AMI builds only)")
+
+	registerBuildCompletions(buildCmd)
+}
+
+// registerBuildCompletions registers dynamic shell completion functions for build command flags.
+func registerBuildCompletions(cmd *cobra.Command) {
+	// Architecture completion
+	_ = cmd.RegisterFlagCompletionFunc("arch", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"amd64\tLinux/macOS x86_64",
+			"arm64\tLinux/macOS ARM64 (Apple Silicon, AWS Graviton)",
+			"arm/v7\tARM 32-bit (Raspberry Pi)",
+			"arm/v6\tARM 32-bit (older devices)",
+			"386\tLinux x86 32-bit",
+			"ppc64le\tPowerPC 64-bit Little Endian",
+			"s390x\tIBM Z-Series",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	// Target type completion
+	_ = cmd.RegisterFlagCompletionFunc("target", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"container\tBuild a container image",
+			"ami\tBuild an AWS AMI",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	// Region completion for AWS regions
+	_ = cmd.RegisterFlagCompletionFunc("region", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return getCommonAWSRegions(), cobra.ShellCompDirectiveNoFileComp
+	})
+
+	_ = cmd.RegisterFlagCompletionFunc("regions", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return getCommonAWSRegions(), cobra.ShellCompDirectiveNoFileComp
+	})
+
+	// Registry completion with common registries
+	_ = cmd.RegisterFlagCompletionFunc("registry", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return getCommonRegistries(), cobra.ShellCompDirectiveNoFileComp
+	})
+
+	// Instance type completion for common EC2 instance types
+	_ = cmd.RegisterFlagCompletionFunc("instance-type", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"t3.micro\tGeneral purpose, 2 vCPU, 1 GiB RAM",
+			"t3.small\tGeneral purpose, 2 vCPU, 2 GiB RAM",
+			"t3.medium\tGeneral purpose, 2 vCPU, 4 GiB RAM",
+			"t3.large\tGeneral purpose, 2 vCPU, 8 GiB RAM",
+			"t3.xlarge\tGeneral purpose, 4 vCPU, 16 GiB RAM",
+			"m5.large\tGeneral purpose, 2 vCPU, 8 GiB RAM",
+			"m5.xlarge\tGeneral purpose, 4 vCPU, 16 GiB RAM",
+			"c5.large\tCompute optimized, 2 vCPU, 4 GiB RAM",
+			"c5.xlarge\tCompute optimized, 4 vCPU, 8 GiB RAM",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
+}
+
+// getCommonAWSRegions returns a list of common AWS regions for shell completion.
+func getCommonAWSRegions() []string {
+	return []string{
+		"us-east-1\tUS East (N. Virginia)",
+		"us-east-2\tUS East (Ohio)",
+		"us-west-1\tUS West (N. California)",
+		"us-west-2\tUS West (Oregon)",
+		"eu-west-1\tEurope (Ireland)",
+		"eu-west-2\tEurope (London)",
+		"eu-central-1\tEurope (Frankfurt)",
+		"ap-northeast-1\tAsia Pacific (Tokyo)",
+		"ap-southeast-1\tAsia Pacific (Singapore)",
+		"ap-southeast-2\tAsia Pacific (Sydney)",
+	}
+}
+
+// getCommonRegistries returns a list of common container registries for shell completion.
+func getCommonRegistries() []string {
+	return []string{
+		"ghcr.io\tGitHub Container Registry",
+		"docker.io\tDocker Hub",
+		"gcr.io\tGoogle Container Registry",
+		"quay.io\tRed Hat Quay",
+		"registry.gitlab.com\tGitLab Container Registry",
+	}
+}
+
+// validBuildTargets defines the valid target types for builds
+var validBuildTargets = map[string]bool{
+	"container": true,
+	"ami":       true,
+	"":          true, // Empty is valid (auto-detected from config)
 }
 
 func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
@@ -150,27 +243,36 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 		return fmt.Errorf("configuration not initialized")
 	}
 
+	// Validate --target flag if specified
+	if !validBuildTargets[opts.targetType] {
+		return fmt.Errorf("invalid target: %q. Valid options: container, ami", opts.targetType)
+	}
+
 	logging.InfoContext(ctx, "Starting build process")
 
-	validator := cli.NewValidator()
-	cliOpts := buildOptsToCliOpts(args, opts)
-	if err := validator.ValidateBuildOptions(cliOpts); err != nil {
-		return fmt.Errorf("invalid options: %w", err)
-	}
-
 	parser := cli.NewParser()
-	labels, err := parser.ParseLabels(opts.labels)
+	labels, buildArgs, err := parser.ParseLabelsAndBuildArgs(opts.labels, opts.buildArgs)
 	if err != nil {
-		return fmt.Errorf("failed to parse labels: %w", err)
-	}
-	buildArgs, err := parser.ParseBuildArgs(opts.buildArgs)
-	if err != nil {
-		return fmt.Errorf("failed to parse build-args: %w", err)
+		return err
 	}
 
-	buildConfig, err := loadBuildConfig(ctx, args, opts)
+	buildConfig, err := loadAndValidateBuildConfig(ctx, args, opts)
 	if err != nil {
-		return fmt.Errorf("failed to load build configuration: %w", err)
+		return err
+	}
+
+	var configFilePath string
+	if len(args) > 0 {
+		configFilePath = args[0]
+	}
+	cleanup, err := wgit.FetchSourcesWithCleanup(ctx, buildConfig.Sources, configFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to fetch sources: %w", err)
+	}
+	defer cleanup()
+
+	if len(buildConfig.Sources) > 0 {
+		updateProvisionerSourcePaths(buildConfig)
 	}
 
 	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc)
@@ -213,6 +315,20 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	return nil
 }
 
+func loadAndValidateBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*builder.Config, error) {
+	validator := cli.NewValidator()
+	cliOpts := buildOptsToCliOpts(args, opts)
+	if err := validator.ValidateBuildOptions(cliOpts); err != nil {
+		return nil, fmt.Errorf("invalid options: %w", err)
+	}
+
+	buildConfig, err := loadBuildConfig(ctx, args, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load build configuration: %w", err)
+	}
+	return buildConfig, nil
+}
+
 // executeBuild dispatches to the appropriate build handler based on target type
 func executeBuild(ctx context.Context, targetType string, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
 	switch targetType {
@@ -238,7 +354,6 @@ func executeAMIBuildTarget(ctx context.Context, service *builder.BuildService, c
 		return executeMultiRegionAMIBuild(ctx, service, cfg, buildConfig, builderOpts, opts, regions)
 	}
 
-	// Single region build
 	region := cfg.AWS.Region
 	if opts.region != "" {
 		region = opts.region
@@ -447,7 +562,6 @@ func executeParallelRegionBuilds(ctx context.Context, service *builder.BuildServ
 		})
 	}
 
-	// Wait for all builds to complete
 	if err := g.Wait(); err != nil {
 		logging.WarnContext(ctx, "Some parallel builds failed: %v", err)
 		// Return partial results if we have any
@@ -530,4 +644,57 @@ func handleAMIDryRun(ctx context.Context, amiBuilder *ami.ImageBuilder, buildCon
 	}
 	logging.InfoContext(ctx, "Dry-run validation completed successfully")
 	return nil, nil
+}
+
+// updateProvisionerSourcePaths updates file provisioner source paths
+// to use fetched sources when they reference ${sources.<name>}
+func updateProvisionerSourcePaths(config *builder.Config) {
+	sourceMap := make(map[string]string)
+	for _, src := range config.Sources {
+		sourceMap[src.Name] = src.Path
+		logging.Debug("[UPDATE PATHS] Source %s -> %s", src.Name, src.Path)
+	}
+
+	for i := range config.Provisioners {
+		prov := &config.Provisioners[i]
+		logging.Debug("[UPDATE PATHS] Checking provisioner %d: type=%s, source=%s", i, prov.Type, prov.Source)
+		if prov.Type == "file" && prov.Source != "" {
+			oldSource := prov.Source
+			prov.Source = resolveSourceReference(prov.Source, sourceMap)
+			logging.Debug("[UPDATE PATHS] Provisioner %d: %s -> %s", i, oldSource, prov.Source)
+		}
+	}
+}
+
+// sourceRefPattern matches source references like ${sources.name} or ${sources.name/subpath}
+// Captures: group 1 = source name, group 2 = optional subpath (including leading /)
+var sourceRefPattern = regexp.MustCompile(`^\$\{sources\.([a-zA-Z0-9_-]+)(/[^}]*)?\}$`)
+
+// resolveSourceReference resolves a source reference to its actual path.
+// Supported formats:
+//   - ${sources.name} - resolves to the source's root path
+//   - ${sources.name/subpath} - resolves to a subpath within the source
+//
+// Returns the original string if it's not a valid source reference or if the source is not found.
+func resolveSourceReference(source string, sourceMap map[string]string) string {
+	matches := sourceRefPattern.FindStringSubmatch(source)
+	if matches == nil {
+		return source
+	}
+
+	sourceName := matches[1]
+	subpath := matches[2] // May be empty or include leading /
+
+	basePath, ok := sourceMap[sourceName]
+	if !ok {
+		logging.Warn("Source reference %q not found in configured sources", sourceName)
+		return source
+	}
+
+	if subpath != "" {
+		// Remove leading / from subpath and join with base path
+		return filepath.Join(basePath, subpath[1:])
+	}
+
+	return basePath
 }

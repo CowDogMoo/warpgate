@@ -79,6 +79,14 @@ func (v *Validator) ValidateWithOptions(config *builder.Config, options Validati
 		}
 	}
 
+	// Validate sources
+	sourceNames := make(map[string]bool)
+	for i, source := range config.Sources {
+		if err := v.validateSource(&source, i, sourceNames); err != nil {
+			return err
+		}
+	}
+
 	// Validate targets
 	if len(config.Targets) == 0 {
 		return fmt.Errorf("at least one target is required")
@@ -196,12 +204,24 @@ func (v *Validator) validateFileProvisioner(prov *builder.Provisioner, index int
 		return fmt.Errorf("provisioner[%d]: file provisioner requires 'destination'", index)
 	}
 
+	// Check if source is a ${sources.*} reference
+	if v.isSourceReference(prov.Source) {
+		// This is a reference to a fetched source - it will be resolved at build time
+		// Skip file existence validation
+		return nil
+	}
+
 	// Validate source file exists
 	if err := v.validateFilePath(prov.Source, index, "source file"); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// isSourceReference checks if a path is a ${sources.*} reference
+func (v *Validator) isSourceReference(path string) bool {
+	return strings.HasPrefix(path, "${sources.") && strings.HasSuffix(path, "}")
 }
 
 // validateFilePath checks if a file exists and warns about unresolved variables
@@ -263,4 +283,116 @@ func (v *Validator) validateTarget(target *builder.Target, index int) error {
 	}
 
 	return nil
+}
+
+// validateSource validates a single source definition
+func (v *Validator) validateSource(source *builder.Source, index int, seenNames map[string]bool) error {
+	// Name is required
+	if source.Name == "" {
+		return fmt.Errorf("sources[%d]: name is required", index)
+	}
+
+	// Check for duplicate names
+	if seenNames[source.Name] {
+		return fmt.Errorf("sources[%d]: duplicate source name %q", index, source.Name)
+	}
+	seenNames[source.Name] = true
+
+	// Validate source name format (alphanumeric, hyphens, underscores)
+	for _, r := range source.Name {
+		isLower := r >= 'a' && r <= 'z'
+		isUpper := r >= 'A' && r <= 'Z'
+		isDigit := r >= '0' && r <= '9'
+		isValid := isLower || isUpper || isDigit || r == '-' || r == '_'
+		if !isValid {
+			return fmt.Errorf("sources[%d]: name %q contains invalid characters (use alphanumeric, hyphens, underscores)", index, source.Name)
+		}
+	}
+
+	// Must have at least one source type defined
+	if source.Git == nil {
+		return fmt.Errorf("sources[%d]: must specify a source type (git)", index)
+	}
+
+	// Validate git source
+	if source.Git != nil {
+		if err := v.validateGitSource(source.Git, index); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateGitSource validates a git source configuration
+func (v *Validator) validateGitSource(git *builder.GitSource, index int) error {
+	if git.Repository == "" {
+		return fmt.Errorf("sources[%d].git: repository is required", index)
+	}
+
+	// Basic URL validation
+	if !strings.HasPrefix(git.Repository, "https://") &&
+		!strings.HasPrefix(git.Repository, "http://") &&
+		!strings.HasPrefix(git.Repository, "git@") &&
+		!strings.HasPrefix(git.Repository, "ssh://") {
+		return fmt.Errorf("sources[%d].git: repository must be a valid git URL (https://, git@, ssh://)", index)
+	}
+
+	// Validate depth is non-negative
+	if git.Depth < 0 {
+		return fmt.Errorf("sources[%d].git: depth must be non-negative", index)
+	}
+
+	// Validate auth configuration
+	if git.Auth != nil {
+		if err := v.validateGitAuth(git.Auth, index); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateGitAuth validates git authentication configuration
+func (v *Validator) validateGitAuth(auth *builder.GitAuth, index int) error {
+	// Check for conflicting auth methods
+	authMethods := 0
+	if auth.SSHKey != "" || auth.SSHKeyFile != "" {
+		authMethods++
+	}
+	if auth.Token != "" {
+		authMethods++
+	}
+	if auth.Username != "" && auth.Password != "" {
+		authMethods++
+	}
+
+	if authMethods > 1 {
+		return fmt.Errorf("sources[%d].git.auth: specify only one auth method (ssh_key/ssh_key_file, token, or username/password)", index)
+	}
+
+	// Validate SSH key file exists if specified
+	if auth.SSHKeyFile != "" && !v.options.SyntaxOnly {
+		keyPath := expandPath(auth.SSHKeyFile)
+		if _, err := os.Stat(keyPath); err != nil {
+			if v.hasUnresolvedVariable(auth.SSHKeyFile) {
+				logging.Warn("sources[%d].git.auth: ssh_key_file may contain unresolved environment variables: %s", index, auth.SSHKeyFile)
+			} else {
+				return fmt.Errorf("sources[%d].git.auth: ssh_key_file not found: %s", index, keyPath)
+			}
+		}
+	}
+
+	return nil
+}
+
+// expandPath expands ~ and environment variables in a path
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = home + path[1:]
+		}
+	}
+	return os.ExpandEnv(path)
 }

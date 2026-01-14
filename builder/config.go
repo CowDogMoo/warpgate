@@ -62,6 +62,10 @@ type Config struct {
 	// ArchOverrides allows specifying different configurations per architecture
 	ArchOverrides map[string]ArchOverride `yaml:"arch_overrides,omitempty" json:"arch_overrides,omitempty"`
 
+	// Sources defines external sources to fetch before the build starts
+	// These can be referenced by provisioners using ${sources.<name>}
+	Sources []Source `yaml:"sources,omitempty" json:"sources,omitempty"`
+
 	// Runtime overrides (not in YAML, set by CLI flags)
 	Architectures   []string          `yaml:"-" json:"-"` // Architectures to build for
 	Registry        string            `yaml:"-" json:"-"` // Registry to push to (overrides target registry)
@@ -212,6 +216,62 @@ type ImageAuth struct {
 
 	// Registry is the registry URL (e.g., "ghcr.io", "docker.io", "quay.io")
 	Registry string `yaml:"registry,omitempty" json:"registry,omitempty"`
+}
+
+// Source defines an external source to fetch before the build starts
+// Sources are fetched to a temporary directory and can be referenced by provisioners
+type Source struct {
+	// Name is a unique identifier for this source, used to reference it in provisioners
+	// Reference sources in provisioners using ${sources.<name>}
+	Name string `yaml:"name" json:"name"`
+
+	// Git specifies a git repository to clone
+	Git *GitSource `yaml:"git,omitempty" json:"git,omitempty"`
+
+	// Path is populated at runtime with the local path where the source was fetched
+	Path string `yaml:"-" json:"-"`
+}
+
+// GitSource defines a git repository to clone
+type GitSource struct {
+	// Repository is the git repository URL (HTTPS or SSH format)
+	// Examples: "https://github.com/org/repo.git", "git@github.com:org/repo.git"
+	Repository string `yaml:"repository" json:"repository"`
+
+	// Ref is the git reference to checkout (branch, tag, or commit SHA)
+	// Defaults to the repository's default branch if not specified
+	Ref string `yaml:"ref,omitempty" json:"ref,omitempty"`
+
+	// Depth specifies the clone depth for shallow clones
+	// Use 1 for fastest clone when only latest commit is needed
+	// Use 0 or omit for full clone with complete history
+	Depth int `yaml:"depth,omitempty" json:"depth,omitempty"`
+
+	// Auth provides authentication for private repositories
+	Auth *GitAuth `yaml:"auth,omitempty" json:"auth,omitempty"`
+}
+
+// GitAuth contains authentication information for git repositories
+type GitAuth struct {
+	// SSHKey is the SSH private key content for SSH-based authentication
+	// Use environment variable expansion for security: ${SSH_PRIVATE_KEY}
+	SSHKey string `yaml:"ssh_key,omitempty" json:"ssh_key,omitempty"`
+
+	// SSHKeyFile is the path to an SSH private key file
+	SSHKeyFile string `yaml:"ssh_key_file,omitempty" json:"ssh_key_file,omitempty"`
+
+	// Token is the access token for HTTPS-based authentication
+	// Works with GitHub PAT, GitLab tokens, etc.
+	// Use environment variable expansion for security: ${GITHUB_TOKEN}
+	Token string `yaml:"token,omitempty" json:"token,omitempty"`
+
+	// Username is the username for HTTPS basic authentication
+	// Usually not needed when using tokens (most providers accept any username with token as password)
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+
+	// Password is the password for HTTPS basic authentication
+	// Prefer using Token instead for better security
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
 }
 
 // Provisioner represents a provisioning step

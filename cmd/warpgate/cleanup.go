@@ -92,6 +92,17 @@ Examples:
 	cleanupCmd.Flags().BoolVar(&opts.versions, "versions", false, "Clean up old component versions instead of all resources")
 	cleanupCmd.Flags().IntVar(&opts.keepVersions, "keep", 3, "Number of component versions to keep (used with --versions)")
 	cleanupCmd.Flags().BoolVarP(&opts.yes, "yes", "y", false, "Skip confirmation prompts (non-interactive mode for CI/CD)")
+
+	// Register shell completions for cleanup command
+	registerCleanupCompletions(cleanupCmd)
+}
+
+// registerCleanupCompletions registers dynamic shell completion functions for cleanup command flags.
+func registerCleanupCompletions(cmd *cobra.Command) {
+	// Region completion for AWS regions
+	_ = cmd.RegisterFlagCompletionFunc("region", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return getCommonAWSRegions(), cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 func runCleanup(cmd *cobra.Command, opts *cleanupOptions) error {

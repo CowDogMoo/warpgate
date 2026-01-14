@@ -679,3 +679,205 @@ func TestValidator_DockerfileVsProvisioners(t *testing.T) {
 		})
 	}
 }
+
+func TestValidator_ValidateSource(t *testing.T) {
+	validator := NewValidator()
+
+	baseConfig := func(sources []builder.Source) *builder.Config {
+		return &builder.Config{
+			Name: "test",
+			Base: builder.BaseImage{Image: "ubuntu:22.04"},
+			Provisioners: []builder.Provisioner{
+				{Type: "shell", Inline: []string{"echo test"}},
+			},
+			Targets: []builder.Target{
+				{Type: "container", Platforms: []string{"linux/amd64"}},
+			},
+			Sources: sources,
+		}
+	}
+
+	tests := []struct {
+		name        string
+		sources     []builder.Source
+		shouldError bool
+		errContains string
+	}{
+		{
+			name: "Valid git source",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+					Git: &builder.GitSource{
+						Repository: "https://github.com/org/repo.git",
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name: "Valid git source with ref and depth",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+					Git: &builder.GitSource{
+						Repository: "https://github.com/org/repo.git",
+						Ref:        "main",
+						Depth:      1,
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name: "Valid SSH git source",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+					Git: &builder.GitSource{
+						Repository: "git@github.com:org/repo.git",
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name: "Missing source name",
+			sources: []builder.Source{
+				{
+					Git: &builder.GitSource{
+						Repository: "https://github.com/org/repo.git",
+					},
+				},
+			},
+			shouldError: true,
+			errContains: "name is required",
+		},
+		{
+			name: "Duplicate source names",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+					Git: &builder.GitSource{
+						Repository: "https://github.com/org/repo1.git",
+					},
+				},
+				{
+					Name: "my-source",
+					Git: &builder.GitSource{
+						Repository: "https://github.com/org/repo2.git",
+					},
+				},
+			},
+			shouldError: true,
+			errContains: "duplicate source name",
+		},
+		{
+			name: "Invalid source name characters",
+			sources: []builder.Source{
+				{
+					Name: "my source!",
+					Git: &builder.GitSource{
+						Repository: "https://github.com/org/repo.git",
+					},
+				},
+			},
+			shouldError: true,
+			errContains: "invalid characters",
+		},
+		{
+			name: "Missing source type",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+				},
+			},
+			shouldError: true,
+			errContains: "must specify a source type",
+		},
+		{
+			name: "Missing git repository",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+					Git:  &builder.GitSource{},
+				},
+			},
+			shouldError: true,
+			errContains: "repository is required",
+		},
+		{
+			name: "Invalid git repository URL",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+					Git: &builder.GitSource{
+						Repository: "not-a-valid-url",
+					},
+				},
+			},
+			shouldError: true,
+			errContains: "valid git URL",
+		},
+		{
+			name: "Negative depth",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+					Git: &builder.GitSource{
+						Repository: "https://github.com/org/repo.git",
+						Depth:      -1,
+					},
+				},
+			},
+			shouldError: true,
+			errContains: "non-negative",
+		},
+		{
+			name: "Valid source with token auth",
+			sources: []builder.Source{
+				{
+					Name: "my-source",
+					Git: &builder.GitSource{
+						Repository: "https://github.com/org/repo.git",
+						Auth: &builder.GitAuth{
+							Token: "${GITHUB_TOKEN}",
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := baseConfig(tt.sources)
+			err := validator.ValidateWithOptions(config, ValidationOptions{SyntaxOnly: true})
+
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("expected error containing %q but got none", tt.errContains)
+				} else if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Errorf("expected error containing %q but got: %v", tt.errContains, err)
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

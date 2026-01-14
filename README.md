@@ -85,7 +85,7 @@ docker images | grep attack-box
   installation instructions
 - **[Usage Guide](docs/usage-guide.md)** - Common workflows and practical examples
 
-### Configuration
+### Configuration Guides
 
 - **[CLI Configuration Guide](docs/cli-configuration.md)** - Global
   configuration and security best practices
@@ -180,20 +180,55 @@ warpgate cleanup my-template --versions --keep 3
 warpgate cleanup --all --dry-run
 ```
 
-## Environment Variables
+## Configuration
+
+### Configuration Precedence
+
+Warp Gate uses a layered configuration system. Settings are applied in the
+following order (highest to lowest priority):
+
+1. **CLI flags** - Command-line arguments (e.g., `--log-level debug`)
+2. **Environment variables** - `WARPGATE_*` prefixed variables
+3. **Configuration file** - YAML config file
+4. **Built-in defaults** - Sensible default values
+
+This means CLI flags always take precedence over environment variables, which
+take precedence over config file settings.
+
+### Configuration File Locations
+
+Warp Gate searches for configuration files in the following locations:
+
+1. `$XDG_CONFIG_HOME/warpgate/config.yaml` (typically `~/.config/warpgate/`)
+2. `~/.warpgate/config.yaml` (legacy, for backward compatibility)
+3. `./config.yaml` (current directory)
+
+Initialize a config file with defaults:
+
+```bash
+warpgate config init
+```
+
+View current effective configuration:
+
+```bash
+warpgate config show
+```
+
+### Environment Variables
 
 Warp Gate supports the following environment variables:
 
-| Variable             | Description                    | Default     |
-| -------------------- | ------------------------------ | ----------- |
-| `WARPGATE_LOG_LEVEL` | Log verbosity (debug/info/etc) | `info`      |
-| `WARPGATE_LOG_FORMAT`| Log format (text, json)        | `text`      |
-| `WARPGATE_REGISTRY`  | Default container registry     | -           |
-| `AWS_REGION`         | AWS region for AMI builds      | `us-east-1` |
-| `AWS_PROFILE`        | AWS credentials profile        | `default`   |
-| `DOCKER_CONFIG`      | Docker config directory        | `~/.docker` |
+| Variable | Description | Default |
+| --- | --- | --- |
+| `WARPGATE_LOG_LEVEL` | Log verbosity (debug/info/etc) | `info` |
+| `WARPGATE_LOG_FORMAT` | Log format (text, json, color) | `color` |
+| `WARPGATE_REGISTRY_DEFAULT` | Default container registry | `ghcr.io` |
+| `WARPGATE_BUILD_DEFAULT_ARCH` | Default build architectures | `amd64` |
+| `AWS_REGION` | AWS region for AMI builds | - |
+| `AWS_PROFILE` | AWS credentials profile | - |
 
-## Example Configuration
+### Example Configuration
 
 Create `~/.config/warpgate/config.yaml`:
 

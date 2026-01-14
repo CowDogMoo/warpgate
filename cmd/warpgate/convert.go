@@ -59,6 +59,7 @@ var convertCmd = &cobra.Command{
 
 This command helps migrate existing infrastructure templates to Warpgate's
 unified configuration format.`,
+	Args: cobra.NoArgs,
 }
 
 var convertPackerCmd = &cobra.Command{

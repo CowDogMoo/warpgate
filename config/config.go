@@ -24,6 +24,7 @@ THE SOFTWARE.
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,6 +32,23 @@ import (
 
 	"github.com/spf13/viper"
 )
+
+// ErrConfigNotFound is returned when no configuration file is found
+var ErrConfigNotFound = errors.New("config file not found")
+
+// IsNotFoundError returns true if the error indicates a config file was not found
+func IsNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Check for our sentinel error
+	if errors.Is(err, ErrConfigNotFound) {
+		return true
+	}
+	// Check for Viper's config file not found error
+	var viperNotFound viper.ConfigFileNotFoundError
+	return errors.As(err, &viperNotFound)
+}
 
 // Standard file and directory permissions
 const (
@@ -189,6 +207,8 @@ type BuildKitConfig struct {
 }
 
 // loadConfigWithViper encapsulates the common Viper configuration loading pattern.
+// If the config file is not found (ErrConfigNotFound), returns a valid config with defaults
+// along with the error, allowing callers to distinguish between "no config" and "bad config".
 func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 	v := viper.New()
 
@@ -205,11 +225,14 @@ func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 	bindEnvVars(v)
 
 	// Call the setup function to configure the Viper instance
-	if err := setupFunc(v); err != nil {
-		return nil, err
+	setupErr := setupFunc(v)
+	if setupErr != nil && !errors.Is(setupErr, ErrConfigNotFound) {
+		// Real error (e.g., parse error) - fail fast
+		return nil, setupErr
 	}
 
-	// Unmarshal into Config struct
+	// Unmarshal into Config struct (works even if no config file was found,
+	// since we have defaults set)
 	var config Config
 	if err := v.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
@@ -219,10 +242,13 @@ func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 	// This ensures they can NEVER come from config files
 	populateAWSCredentials(&config)
 
-	return &config, nil
+	// Return config with the setup error (may be ErrConfigNotFound or nil)
+	return &config, setupErr
 }
 
 // Load reads and parses the global configuration file.
+// Returns ErrConfigNotFound if no config file is found (this is not an error condition).
+// Returns an error if a config file is found but cannot be parsed.
 func Load() (*Config, error) {
 	return loadConfigWithViper(func(v *viper.Viper) error {
 		// Set config name (without extension)
@@ -241,8 +267,16 @@ func Load() (*Config, error) {
 		// Current directory (lowest priority)
 		v.AddConfigPath(".")
 
-		// Read config file (optional - doesn't error if missing)
-		_ = v.ReadInConfig()
+		// Read config file
+		if err := v.ReadInConfig(); err != nil {
+			// Config file not found is a special case - return sentinel error
+			var notFoundErr viper.ConfigFileNotFoundError
+			if errors.As(err, &notFoundErr) {
+				return ErrConfigNotFound
+			}
+			// Other errors (e.g., parse errors) are actual errors
+			return fmt.Errorf("failed to read config: %w", err)
+		}
 
 		return nil
 	})

@@ -37,20 +37,20 @@ func runManifestsInspect(cmd *cobra.Command, _ []string) error {
 
 	// Use first tag
 	tag := "latest"
-	if len(manifestsOpts.tags) > 0 {
-		tag = manifestsOpts.tags[0]
+	if len(manifestsInspectOpts.tags) > 0 {
+		tag = manifestsInspectOpts.tags[0]
 	}
 
-	manifestRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, tag)
+	manifestRef := manifests.BuildManifestReference(manifestsSharedOpts.registry, manifestsSharedOpts.namespace, manifestsInspectOpts.name, tag)
 	logging.InfoContext(ctx, "Inspecting manifest: %s", manifestRef)
 
 	// Inspect the manifest
 	manifestInfo, err := manifests.InspectManifest(ctx, manifests.InspectOptions{
-		Registry:  manifestsOpts.registry,
-		Namespace: manifestsOpts.namespace,
-		ImageName: manifestsOpts.name,
+		Registry:  manifestsSharedOpts.registry,
+		Namespace: manifestsSharedOpts.namespace,
+		ImageName: manifestsInspectOpts.name,
 		Tag:       tag,
-		AuthFile:  manifestsOpts.authFile,
+		AuthFile:  manifestsSharedOpts.authFile,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to inspect manifest: %w", err)
@@ -66,15 +66,15 @@ func runManifestsInspect(cmd *cobra.Command, _ []string) error {
 func runManifestsList(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 
-	imageRef := manifests.BuildManifestReference(manifestsOpts.registry, manifestsOpts.namespace, manifestsOpts.name, "")
+	imageRef := manifests.BuildManifestReference(manifestsSharedOpts.registry, manifestsSharedOpts.namespace, manifestsListOpts.name, "")
 	logging.InfoContext(ctx, "Listing tags for: %s", strings.TrimSuffix(imageRef, ":"))
 
 	// List tags
 	tags, err := manifests.ListTags(ctx, manifests.ListOptions{
-		Registry:  manifestsOpts.registry,
-		Namespace: manifestsOpts.namespace,
-		ImageName: manifestsOpts.name,
-		AuthFile:  manifestsOpts.authFile,
+		Registry:  manifestsSharedOpts.registry,
+		Namespace: manifestsSharedOpts.namespace,
+		ImageName: manifestsListOpts.name,
+		AuthFile:  manifestsSharedOpts.authFile,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to list tags: %w", err)

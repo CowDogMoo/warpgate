@@ -69,7 +69,7 @@ func NewImageBuilderWithOptions(ctx context.Context, clientConfig ClientConfig, 
 // NewImageBuilderWithAllOptions creates a new AMI builder with all options including monitoring
 func NewImageBuilderWithAllOptions(ctx context.Context, clientConfig ClientConfig, forceRecreate bool, monitorConfig MonitorConfig) (*ImageBuilder, error) {
 	globalCfg, err := config.Load()
-	if err != nil {
+	if err != nil && !config.IsNotFoundError(err) {
 		return nil, fmt.Errorf("failed to load global config: %w", err)
 	}
 

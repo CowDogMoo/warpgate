@@ -30,6 +30,7 @@ var templatesCmd = &cobra.Command{
 	Use:   "templates",
 	Short: "Manage warpgate templates",
 	Long:  `List, search, inspect, and manage template sources.`,
+	Args:  cobra.NoArgs,
 }
 
 var templatesAddCmd = &cobra.Command{
@@ -90,6 +91,7 @@ Examples:
 
   # Combine filters
   warpgate templates list --source local --format gha-matrix`,
+	Args: cobra.NoArgs,
 	RunE: runTemplatesList,
 }
 
@@ -111,6 +113,7 @@ var templatesUpdateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update template cache",
 	Long:  `Update the local cache of templates from all configured repositories.`,
+	Args:  cobra.NoArgs,
 	RunE:  runTemplatesUpdate,
 }
 
@@ -126,4 +129,28 @@ func init() {
 	templatesListCmd.Flags().StringVarP(&templatesListFormat, "format", "f", "table", "Output format (table, json, gha-matrix)")
 	templatesListCmd.Flags().StringVarP(&templatesListSource, "source", "s", "all", "Filter by source (all, local, git, or specific repo name)")
 	templatesListCmd.Flags().BoolVarP(&templatesListQuiet, "quiet", "q", false, "Suppress informational output")
+
+	// Register shell completions for templates list command
+	registerTemplatesListCompletions(templatesListCmd)
+}
+
+// registerTemplatesListCompletions registers dynamic shell completion functions for templates list command flags.
+func registerTemplatesListCompletions(cmd *cobra.Command) {
+	// Format completion
+	_ = cmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"table\tHuman-readable table format (default)",
+			"json\tJSON format for programmatic use",
+			"gha-matrix\tGitHub Actions matrix format",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	// Source completion
+	_ = cmd.RegisterFlagCompletionFunc("source", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"all\tAll configured sources (default)",
+			"local\tLocal directory sources only",
+			"git\tGit repository sources only",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
