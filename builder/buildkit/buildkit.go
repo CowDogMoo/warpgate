@@ -1154,7 +1154,7 @@ func (b *BuildKitBuilder) displayProgress(ctx context.Context, ch <-chan *client
 			}
 		}
 		for _, log := range status.Logs {
-			fmt.Print(string(log.Data))
+			logging.PrintContext(ctx, string(log.Data))
 		}
 	}
 }

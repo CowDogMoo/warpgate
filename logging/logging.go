@@ -32,6 +32,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/fatih/color"
 )
@@ -63,6 +64,7 @@ const (
 
 // CustomLogger wraps the logging functionality with custom formatting options.
 type CustomLogger struct {
+	mu            sync.Mutex
 	LogLevel      slog.Level
 	OutputType    OutputType
 	Quiet         bool
@@ -130,7 +132,9 @@ func (l *CustomLogger) log(level LogLevel, message string, args ...interface{}) 
 	formattedMsg := l.formatMessage(level, message, args...)
 
 	if l.shouldShowOnConsole(level) && l.ConsoleWriter != nil {
+		l.mu.Lock()
 		_, _ = fmt.Fprintln(l.ConsoleWriter, formattedMsg)
+		l.mu.Unlock()
 	}
 }
 
@@ -200,6 +204,9 @@ func (l *CustomLogger) Info(format string, args ...interface{}) {
 
 // Output sends data to stdout.
 func (l *CustomLogger) Output(data interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	switch l.OutputType {
 	case JSONOutput:
 		encoder := json.NewEncoder(os.Stdout)
@@ -211,6 +218,17 @@ func (l *CustomLogger) Output(data interface{}) {
 		if _, err := fmt.Fprintln(os.Stdout, data); err != nil {
 			l.Error("Failed to write output: %v", err)
 		}
+	}
+}
+
+// Print writes raw output to stdout without adding a newline.
+// Use this for streaming output that already contains newlines.
+func (l *CustomLogger) Print(data string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if _, err := fmt.Fprint(os.Stdout, data); err != nil {
+		l.Error("Failed to write output: %v", err)
 	}
 }
 
@@ -333,4 +351,10 @@ func ErrorErrContext(ctx context.Context, err error) {
 // OutputContext sends data to stdout using the logger from context.
 func OutputContext(ctx context.Context, data interface{}) {
 	FromContext(ctx).Output(data)
+}
+
+// PrintContext writes raw output to stdout using the logger from context.
+// Use this for streaming output that already contains newlines.
+func PrintContext(ctx context.Context, data string) {
+	FromContext(ctx).Print(data)
 }
