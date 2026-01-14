@@ -141,7 +141,7 @@ func TestBuildTargets(t *testing.T) {
 
 			// Create HCL parser for buildTargets
 			hclParser := NewHCLParser()
-			result := converter.buildTargets(hclParser)
+			result := converter.buildTargets(hclParser, "", nil, false)
 			assert.Len(t, result, tt.expectedLen)
 
 			// Verify container target
@@ -273,76 +273,6 @@ func TestConvertWithBaseImageOverride(t *testing.T) {
 
 	// Verify base image was overridden
 	assert.Equal(t, "debian:bullseye:latest", config.Base.Image)
-}
-
-func TestConvertWithPostProcessors(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create README.md
-	readmeContent := `# Test Template
-
-Test template with post-processors.`
-	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(readmeContent), 0644)
-	require.NoError(t, err)
-
-	// Create variables.pkr.hcl
-	varsContent := `variable "base_image" {
-  type    = string
-  default = "ubuntu"
-}
-
-variable "base_image_version" {
-  type    = string
-  default = "22.04"
-}`
-	err = os.WriteFile(filepath.Join(tmpDir, "variables.pkr.hcl"), []byte(varsContent), 0644)
-	require.NoError(t, err)
-
-	// Create docker.pkr.hcl with post-processors
-	dockerContent := `build {
-  provisioner "shell" {
-    inline = ["echo 'test'"]
-  }
-
-  post-processor "manifest" {
-    output     = "manifest.json"
-    strip_path = true
-  }
-
-  post-processor "docker-tag" {
-    repository = "ghcr.io/test/example"
-    tags       = ["latest", "v1.0.0"]
-  }
-}`
-	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
-	require.NoError(t, err)
-
-	// Run conversion
-	converter, err := NewPackerConverter(PackerConverterOptions{
-		TemplateDir: tmpDir,
-		Author:      "Test Author",
-		License:     "MIT",
-		Version:     "1.0.0",
-	})
-	require.NoError(t, err)
-
-	config, err := converter.Convert(context.Background())
-	require.NoError(t, err)
-	require.NotNil(t, config)
-
-	// Verify post-processors
-	assert.Len(t, config.PostProcessors, 2)
-
-	// Verify manifest post-processor
-	assert.Equal(t, "manifest", config.PostProcessors[0].Type)
-	assert.Equal(t, "manifest.json", config.PostProcessors[0].Output)
-	assert.True(t, config.PostProcessors[0].StripPath)
-
-	// Verify docker-tag post-processor
-	assert.Equal(t, "docker-tag", config.PostProcessors[1].Type)
-	assert.Equal(t, "ghcr.io/test/example", config.PostProcessors[1].Repository)
-	assert.Contains(t, config.PostProcessors[1].Tags, "latest")
-	assert.Contains(t, config.PostProcessors[1].Tags, "v1.0.0")
 }
 
 func TestConvertWithProvisionerConditionals(t *testing.T) {
@@ -527,11 +457,6 @@ variable "container_user" {
       "ANSIBLE_REMOTE_TMP=/tmp/ansible"
     ]
   }
-
-  post-processor "manifest" {
-    output = "manifest.json"
-    strip_path = true
-  }
 }`
 	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
 	require.NoError(t, err)
@@ -551,7 +476,6 @@ variable "container_user" {
 
 	// Verify we have all components
 	assert.Len(t, config.Provisioners, 2)
-	assert.Len(t, config.PostProcessors, 1)
 
 	// Verify shell provisioner with conditionals
 	shell := config.Provisioners[0]
@@ -566,113 +490,6 @@ variable "container_user" {
 	assert.Equal(t, "security", ansible.User) // Variable is evaluated to its default value
 	assert.Contains(t, ansible.Only, "docker.amd64")
 	assert.Contains(t, ansible.AnsibleEnvVars, "ANSIBLE_REMOTE_TMP=/tmp/ansible")
-
-	// Verify post-processor
-	assert.Equal(t, "manifest", config.PostProcessors[0].Type)
-	assert.Equal(t, "manifest.json", config.PostProcessors[0].Output)
-}
-
-func TestConvertHCLPostProcessors(t *testing.T) {
-	converter, err := NewPackerConverter(PackerConverterOptions{})
-	require.NoError(t, err)
-
-	tests := []struct {
-		name     string
-		builds   []PackerBuild
-		expected int
-		validate func(t *testing.T, postProcs []builder.PostProcessor)
-	}{
-		{
-			name: "manifest post-processor",
-			builds: []PackerBuild{
-				{
-					PostProcessors: []PackerPostProcessor{
-						{
-							Type:      "manifest",
-							Output:    "manifest.json",
-							StripPath: true,
-						},
-					},
-				},
-			},
-			expected: 1,
-			validate: func(t *testing.T, postProcs []builder.PostProcessor) {
-				assert.Equal(t, "manifest", postProcs[0].Type)
-				assert.Equal(t, "manifest.json", postProcs[0].Output)
-				assert.True(t, postProcs[0].StripPath)
-			},
-		},
-		{
-			name: "docker-tag post-processor",
-			builds: []PackerBuild{
-				{
-					PostProcessors: []PackerPostProcessor{
-						{
-							Type:       "docker-tag",
-							Repository: "ghcr.io/org/image",
-							Tags:       []string{"latest", "v1.0"},
-							Force:      true,
-						},
-					},
-				},
-			},
-			expected: 1,
-			validate: func(t *testing.T, postProcs []builder.PostProcessor) {
-				assert.Equal(t, "docker-tag", postProcs[0].Type)
-				assert.Equal(t, "ghcr.io/org/image", postProcs[0].Repository)
-				assert.Contains(t, postProcs[0].Tags, "latest")
-				assert.Contains(t, postProcs[0].Tags, "v1.0")
-				assert.True(t, postProcs[0].Force)
-			},
-		},
-		{
-			name: "post-processor with conditionals",
-			builds: []PackerBuild{
-				{
-					PostProcessors: []PackerPostProcessor{
-						{
-							Type:   "manifest",
-							Output: "manifest.json",
-							Only:   []string{"docker.amd64"},
-							Except: []string{"amazon-ebs.ubuntu"},
-						},
-					},
-				},
-			},
-			expected: 1,
-			validate: func(t *testing.T, postProcs []builder.PostProcessor) {
-				assert.Equal(t, "manifest", postProcs[0].Type)
-				assert.Contains(t, postProcs[0].Only, "docker.amd64")
-				assert.Contains(t, postProcs[0].Except, "amazon-ebs.ubuntu")
-			},
-		},
-		{
-			name: "multiple post-processors",
-			builds: []PackerBuild{
-				{
-					PostProcessors: []PackerPostProcessor{
-						{Type: "manifest", Output: "manifest.json"},
-						{Type: "docker-tag", Repository: "ghcr.io/test"},
-					},
-				},
-			},
-			expected: 2,
-			validate: func(t *testing.T, postProcs []builder.PostProcessor) {
-				assert.Equal(t, "manifest", postProcs[0].Type)
-				assert.Equal(t, "docker-tag", postProcs[1].Type)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := converter.convertHCLPostProcessors(tt.builds)
-			assert.Len(t, result, tt.expected)
-			if tt.validate != nil {
-				tt.validate(t, result)
-			}
-		})
-	}
 }
 
 func TestConvertHCLProvisioners(t *testing.T) {
@@ -938,4 +755,190 @@ build {
 	assert.Contains(t, config.Base.Changes, "USER sliver")
 	assert.Contains(t, config.Base.Changes, "WORKDIR /home/sliver")
 	assert.Contains(t, config.Base.Changes, "ENV PATH=/opt/sliver:$PATH")
+}
+
+func TestConvertWithPostProcessors(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create README.md
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test Post-Processors"), 0644)
+	require.NoError(t, err)
+
+	// Create variables.pkr.hcl
+	varsContent := `variable "base_image" {
+  type    = string
+  default = "ubuntu"
+}
+
+variable "base_image_version" {
+  type    = string
+  default = "22.04"
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "variables.pkr.hcl"), []byte(varsContent), 0644)
+	require.NoError(t, err)
+
+	// Create docker.pkr.hcl with post-processors
+	dockerContent := `build {
+  provisioner "shell" {
+    inline = ["apt-get update"]
+  }
+
+  post-processor "docker-tag" {
+    repository = "ghcr.io/myorg/myimage"
+    tags       = ["latest", "v1.0.0", "dev"]
+  }
+
+  post-processor "docker-push" {}
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
+	require.NoError(t, err)
+
+	// Run conversion
+	converter, err := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+	require.NoError(t, err)
+
+	config, err := converter.Convert(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Verify provisioners
+	assert.Len(t, config.Provisioners, 1)
+	assert.Equal(t, "shell", config.Provisioners[0].Type)
+
+	// Verify target has post-processor info
+	require.Len(t, config.Targets, 1)
+	containerTarget := config.Targets[0]
+
+	assert.Equal(t, "container", containerTarget.Type)
+	assert.Equal(t, "ghcr.io/myorg/myimage", containerTarget.Registry)
+	assert.Len(t, containerTarget.Tags, 3)
+	assert.Contains(t, containerTarget.Tags, "latest")
+	assert.Contains(t, containerTarget.Tags, "v1.0.0")
+	assert.Contains(t, containerTarget.Tags, "dev")
+	assert.True(t, containerTarget.Push)
+}
+
+func TestConvertWithNestedPostProcessors(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create README.md
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test Nested"), 0644)
+	require.NoError(t, err)
+
+	// Create docker.pkr.hcl with nested post-processors block
+	dockerContent := `build {
+  post-processors {
+    post-processor "docker-tag" {
+      repository = "docker.io/org/app"
+      tags       = ["stable"]
+    }
+    post-processor "docker-push" {}
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
+	require.NoError(t, err)
+
+	// Run conversion
+	converter, err := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+	require.NoError(t, err)
+
+	config, err := converter.Convert(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Verify target has post-processor info from nested block
+	require.Len(t, config.Targets, 1)
+	containerTarget := config.Targets[0]
+
+	assert.Equal(t, "docker.io/org/app", containerTarget.Registry)
+	assert.Contains(t, containerTarget.Tags, "stable")
+	assert.True(t, containerTarget.Push)
+}
+
+func TestExtractDockerTargetConfig(t *testing.T) {
+	converter, err := NewPackerConverter(PackerConverterOptions{})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name             string
+		builds           []PackerBuild
+		expectedRegistry string
+		expectedTags     []string
+		expectedPush     bool
+	}{
+		{
+			name:             "empty builds",
+			builds:           []PackerBuild{},
+			expectedRegistry: "",
+			expectedTags:     nil,
+			expectedPush:     false,
+		},
+		{
+			name: "docker-tag only",
+			builds: []PackerBuild{
+				{
+					PostProcessors: []PackerPostProcessor{
+						{
+							Type:       "docker-tag",
+							Repository: "ghcr.io/test/image",
+							Tags:       []string{"latest"},
+						},
+					},
+				},
+			},
+			expectedRegistry: "ghcr.io/test/image",
+			expectedTags:     []string{"latest"},
+			expectedPush:     false,
+		},
+		{
+			name: "docker-push only",
+			builds: []PackerBuild{
+				{
+					PostProcessors: []PackerPostProcessor{
+						{Type: "docker-push"},
+					},
+				},
+			},
+			expectedRegistry: "",
+			expectedTags:     nil,
+			expectedPush:     true,
+		},
+		{
+			name: "both docker-tag and docker-push",
+			builds: []PackerBuild{
+				{
+					PostProcessors: []PackerPostProcessor{
+						{
+							Type:       "docker-tag",
+							Repository: "quay.io/org/app",
+							Tags:       []string{"v1.0.0", "latest"},
+						},
+						{Type: "docker-push"},
+					},
+				},
+			},
+			expectedRegistry: "quay.io/org/app",
+			expectedTags:     []string{"v1.0.0", "latest"},
+			expectedPush:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry, tags, push := converter.extractDockerTargetConfig(context.Background(), tt.builds)
+			assert.Equal(t, tt.expectedRegistry, registry)
+			assert.Equal(t, tt.expectedTags, tags)
+			assert.Equal(t, tt.expectedPush, push)
+		})
+	}
 }

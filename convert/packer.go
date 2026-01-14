@@ -30,10 +30,9 @@ THE SOFTWARE.
 //
 // The converter handles the following Packer constructs:
 //   - Source blocks (docker, amazon-ebs)
-//   - Build blocks with provisioners and post-processors
+//   - Build blocks with provisioners
 //   - Variable definitions and references
 //   - Shell, file, and Ansible provisioners
-//   - Docker and manifest post-processors
 //
 // # Usage
 //
@@ -149,11 +148,11 @@ func (c *PackerConverter) Convert(ctx context.Context) (*builder.Config, error) 
 	_ = hclParser.ParseSourceBlocks(amiPath)
 	amiProvisioners := c.parseAMIProvisionersHCL(ctx, hclParser)
 
+	// Parse build files to extract post-processors for target configuration
 	dockerBuilds, _ := hclParser.ParseBuildFile(dockerPath)
 	amiBuilds, _ := hclParser.ParseBuildFile(amiPath)
-	allBuilds := dockerBuilds
-	allBuilds = append(allBuilds, amiBuilds...)
-	postProcessors := c.convertHCLPostProcessors(allBuilds)
+	dockerBuilds = append(dockerBuilds, amiBuilds...)
+	registry, tags, push := c.extractDockerTargetConfig(ctx, dockerBuilds)
 
 	// Use template name as the image name
 	imageName := templateName
@@ -208,15 +207,14 @@ func (c *PackerConverter) Convert(ctx context.Context) (*builder.Config, error) 
 				Warpgate: c.globalConfig.Convert.WarpgateVersion,
 			},
 		},
-		Name:           imageName,
-		Version:        "latest",
-		Base:           base,
-		Provisioners:   provisioners,
-		PostProcessors: postProcessors,
-		Targets:        c.buildTargets(hclParser),
+		Name:         imageName,
+		Version:      "latest",
+		Base:         base,
+		Provisioners: provisioners,
+		Targets:      c.buildTargets(hclParser, registry, tags, push),
 	}
 
-	logging.InfoContext(ctx, "Conversion complete: %d provisioners, %d post-processors, %d targets", len(provisioners), len(postProcessors), len(config.Targets))
+	logging.InfoContext(ctx, "Conversion complete: %d provisioners, %d targets", len(provisioners), len(config.Targets))
 
 	return config, nil
 }
@@ -263,13 +261,24 @@ func (c *PackerConverter) extractDescription(ctx context.Context) string {
 }
 
 // buildTargets creates target configurations
-func (c *PackerConverter) buildTargets(hclParser *HCLParser) []builder.Target {
+func (c *PackerConverter) buildTargets(hclParser *HCLParser, registry string, tags []string, push bool) []builder.Target {
 	var targets []builder.Target
 
-	targets = append(targets, builder.Target{
+	containerTarget := builder.Target{
 		Type:      "container",
 		Platforms: c.globalConfig.Container.DefaultPlatforms,
-	})
+	}
+
+	// Populate from post-processor extraction
+	if registry != "" {
+		containerTarget.Registry = registry
+	}
+	if len(tags) > 0 {
+		containerTarget.Tags = tags
+	}
+	containerTarget.Push = push
+
+	targets = append(targets, containerTarget)
 
 	if c.options.IncludeAMI {
 		instanceType := c.globalConfig.Convert.AMIInstanceType
@@ -306,6 +315,28 @@ func (c *PackerConverter) buildTargets(hclParser *HCLParser) []builder.Target {
 	}
 
 	return targets
+}
+
+// extractDockerTargetConfig extracts registry/tags/push from post-processors
+func (c *PackerConverter) extractDockerTargetConfig(ctx context.Context, builds []PackerBuild) (registry string, tags []string, push bool) {
+	for _, build := range builds {
+		for _, pp := range build.PostProcessors {
+			switch pp.Type {
+			case "docker-tag":
+				if pp.Repository != "" {
+					registry = pp.Repository
+				}
+				if len(pp.Tags) > 0 {
+					tags = pp.Tags
+				}
+			case "docker-push":
+				push = true
+			case "manifest", "compress", "checksum":
+				logging.WarnContext(ctx, "Post-processor '%s' has no warpgate equivalent - ignored", pp.Type)
+			}
+		}
+	}
+	return
 }
 
 // provisionersMatch checks if two provisioner lists are equivalent
@@ -418,35 +449,6 @@ func (c *PackerConverter) convertHCLProvisioners(builds []PackerBuild) []builder
 	}
 
 	return provisioners
-}
-
-// convertHCLPostProcessors converts HCL post-processors to Warpgate post-processors
-func (c *PackerConverter) convertHCLPostProcessors(builds []PackerBuild) []builder.PostProcessor {
-	var postProcessors []builder.PostProcessor
-
-	for _, build := range builds {
-		for _, hclPost := range build.PostProcessors {
-			postProc := builder.PostProcessor{
-				Type:   hclPost.Type,
-				Only:   hclPost.Only,
-				Except: hclPost.Except,
-			}
-
-			switch hclPost.Type {
-			case "manifest":
-				postProc.Output = hclPost.Output
-				postProc.StripPath = hclPost.StripPath
-			case "docker-tag":
-				postProc.Repository = hclPost.Repository
-				postProc.Tags = hclPost.Tags
-				postProc.Force = hclPost.Force
-			}
-
-			postProcessors = append(postProcessors, postProc)
-		}
-	}
-
-	return postProcessors
 }
 
 // parseAnsibleExtraArgs parses Ansible extra_arguments array into a map

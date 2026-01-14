@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
+	"time"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
@@ -66,6 +67,7 @@ type buildOptions struct {
 	copyToRegions   []string // Copy built AMI to additional regions
 	streamLogs      bool     // Stream CloudWatch/SSM logs during build
 	showEC2Status   bool     // Show EC2 instance status during build
+	outputManifest  string   // Path to write build manifest JSON
 }
 
 var buildCmd *cobra.Command
@@ -145,6 +147,7 @@ Examples:
 	buildCmd.Flags().StringSliceVar(&opts.copyToRegions, "copy-to-regions", nil, "Copy AMI to additional regions after build (comma-separated)")
 	buildCmd.Flags().BoolVar(&opts.streamLogs, "stream-logs", false, "Stream CloudWatch/SSM logs from build instance (AMI builds only)")
 	buildCmd.Flags().BoolVar(&opts.showEC2Status, "show-ec2-status", false, "Show EC2 instance status during build (AMI builds only)")
+	buildCmd.Flags().StringVar(&opts.outputManifest, "output-manifest", "", "Write build manifest JSON to file")
 
 	registerBuildCompletions(buildCmd)
 }
@@ -238,6 +241,7 @@ var validBuildTargets = map[string]bool{
 
 func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	ctx := cmd.Context()
+	startTime := time.Now()
 	cfg := configFromContext(cmd)
 	if cfg == nil {
 		return fmt.Errorf("configuration not initialized")
@@ -307,6 +311,17 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	formatter := cli.NewOutputFormatter("text")
 	formatter.DisplayBuildResults(ctx, results)
+
+	// Write build manifest if requested
+	if opts.outputManifest != "" {
+		buildDuration := time.Since(startTime)
+		manifest := builder.NewBuildManifest(buildConfig, results, buildDuration)
+		manifest.Pushed = opts.push
+		if err := builder.WriteManifest(opts.outputManifest, manifest); err != nil {
+			return fmt.Errorf("failed to write build manifest: %w", err)
+		}
+		logging.InfoContext(ctx, "Build manifest written to: %s", opts.outputManifest)
+	}
 
 	if opts.push && opts.registry != "" {
 		return service.Push(ctx, *buildConfig, results, builderOpts)

@@ -69,15 +69,11 @@ type PackerBuild struct {
 }
 
 // PackerPostProcessor represents a Packer post-processor block
+// Used during conversion to extract docker-tag and docker-push info
 type PackerPostProcessor struct {
 	Type       string
-	Only       []string
-	Except     []string
-	Output     string
-	StripPath  bool
-	Repository string
-	Tags       []string
-	Force      bool
+	Repository string   // docker-tag: registry/image reference
+	Tags       []string // docker-tag: image tags
 }
 
 // PackerDockerSource represents a Packer docker source block
@@ -265,31 +261,52 @@ func (p *HCLParser) extractBuildSources(block *hclsyntax.Block, build *PackerBui
 
 // extractBuildBlocks extracts provisioners and post-processors from nested blocks
 func (p *HCLParser) extractBuildBlocks(block *hclsyntax.Block, content []byte, build *PackerBuild) {
-	for _, provBlock := range block.Body.Blocks {
-		switch provBlock.Type {
+	for _, nestedBlock := range block.Body.Blocks {
+		switch nestedBlock.Type {
 		case "provisioner":
-			if provisioner, err := p.parseProvisionerBlock(provBlock, content); err == nil {
+			if provisioner, err := p.parseProvisionerBlock(nestedBlock, content); err == nil {
 				build.Provisioners = append(build.Provisioners, provisioner)
 			}
 		case "post-processor":
-			if postProc, err := p.parsePostProcessorBlock(provBlock, content); err == nil {
-				build.PostProcessors = append(build.PostProcessors, postProc)
+			if postProc := p.parsePostProcessorBlock(nestedBlock); postProc != nil {
+				build.PostProcessors = append(build.PostProcessors, *postProc)
 			}
 		case "post-processors":
-			p.extractNestedPostProcessors(provBlock, content, build)
+			p.extractNestedPostProcessors(nestedBlock, build)
 		}
 	}
 }
 
-// extractNestedPostProcessors handles post-processors wrapper block
-func (p *HCLParser) extractNestedPostProcessors(provBlock *hclsyntax.Block, content []byte, build *PackerBuild) {
-	for _, nestedBlock := range provBlock.Body.Blocks {
+// extractNestedPostProcessors handles the post-processors wrapper block
+func (p *HCLParser) extractNestedPostProcessors(block *hclsyntax.Block, build *PackerBuild) {
+	for _, nestedBlock := range block.Body.Blocks {
 		if nestedBlock.Type == "post-processor" {
-			if postProc, err := p.parsePostProcessorBlock(nestedBlock, content); err == nil {
-				build.PostProcessors = append(build.PostProcessors, postProc)
+			if postProc := p.parsePostProcessorBlock(nestedBlock); postProc != nil {
+				build.PostProcessors = append(build.PostProcessors, *postProc)
 			}
 		}
 	}
+}
+
+// parsePostProcessorBlock parses a post-processor block
+func (p *HCLParser) parsePostProcessorBlock(block *hclsyntax.Block) *PackerPostProcessor {
+	if len(block.Labels) == 0 {
+		return nil
+	}
+
+	postProc := &PackerPostProcessor{
+		Type: block.Labels[0],
+	}
+
+	switch postProc.Type {
+	case "docker-tag":
+		postProc.Repository = p.getStringAttribute(block, "repository")
+		postProc.Tags = p.getStringListAttribute(block, "tags")
+	case "docker-push":
+		// Presence alone indicates push=true; no additional fields needed
+	}
+
+	return postProc
 }
 
 // parseProvisionerBlock parses a provisioner block
@@ -365,42 +382,6 @@ func (p *HCLParser) parseAnsibleProvisionerHCL(block *hclsyntax.Block, provision
 			provisioner.UseProxy = val.True()
 		}
 	}
-}
-
-// parsePostProcessorBlock parses a post-processor block
-func (p *HCLParser) parsePostProcessorBlock(block *hclsyntax.Block, content []byte) (PackerPostProcessor, error) {
-	if len(block.Labels) == 0 {
-		return PackerPostProcessor{}, fmt.Errorf("post-processor block missing type label")
-	}
-
-	postProc := PackerPostProcessor{
-		Type: block.Labels[0],
-	}
-
-	postProc.Only = p.getStringListAttribute(block, "only")
-	postProc.Except = p.getStringListAttribute(block, "except")
-
-	switch postProc.Type {
-	case "manifest":
-		postProc.Output = p.getStringAttribute(block, "output")
-		if attr, exists := block.Body.Attributes["strip_path"]; exists {
-			val, diags := attr.Expr.Value(p.evalCtx)
-			if !diags.HasErrors() && val.Type() == cty.Bool {
-				postProc.StripPath = val.True()
-			}
-		}
-	case "docker-tag":
-		postProc.Repository = p.getStringAttribute(block, "repository")
-		postProc.Tags = p.getStringListAttribute(block, "tags")
-		if attr, exists := block.Body.Attributes["force"]; exists {
-			val, diags := attr.Expr.Value(p.evalCtx)
-			if !diags.HasErrors() && val.Type() == cty.Bool {
-				postProc.Force = val.True()
-			}
-		}
-	}
-
-	return postProc, nil
 }
 
 // GetVariable returns a parsed variable by name
