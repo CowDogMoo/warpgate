@@ -76,6 +76,7 @@ func init() {
 	buildCmd = &cobra.Command{
 		Use:   "build [config|template]",
 		Short: "Build image from config or template",
+		Args:  cobra.MaximumNArgs(1),
 		Long: `Build a container image or AMI from a template configuration.
 
 Examples:
@@ -228,11 +229,23 @@ func getCommonRegistries() []string {
 	}
 }
 
+// validBuildTargets defines the valid target types for builds
+var validBuildTargets = map[string]bool{
+	"container": true,
+	"ami":       true,
+	"":          true, // Empty is valid (auto-detected from config)
+}
+
 func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	ctx := cmd.Context()
 	cfg := configFromContext(cmd)
 	if cfg == nil {
 		return fmt.Errorf("configuration not initialized")
+	}
+
+	// Validate --target flag if specified
+	if !validBuildTargets[opts.targetType] {
+		return fmt.Errorf("invalid target: %q. Valid options: container, ami", opts.targetType)
 	}
 
 	logging.InfoContext(ctx, "Starting build process")

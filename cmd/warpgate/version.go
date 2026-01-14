@@ -60,6 +60,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Long:  `Display the version, commit hash, and build date of warpgate.`,
+	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("warpgate version %s\n", version)
 		fmt.Printf("  commit: %s\n", commit)

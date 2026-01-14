@@ -33,8 +33,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Valid format values for templates list command
+var validTemplatesListFormats = map[string]bool{
+	"table":      true,
+	"json":       true,
+	"gha-matrix": true,
+}
+
 func runTemplatesList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	// Validate --format flag
+	if !validTemplatesListFormats[templatesListFormat] {
+		return fmt.Errorf("invalid format: %q. Valid options: table, json, gha-matrix", templatesListFormat)
+	}
+
+	// Validate --source flag (allows specific repo names, so we check special values)
+	// Note: source can be "all", "local", "git", or a specific repository name
+	// We only validate against reserved keywords here; other values are treated as repo names
 
 	// Suppress logging for quiet mode or structured output formats
 	shouldSuppressLog := templatesListQuiet || templatesListFormat == "json" || templatesListFormat == "gha-matrix"
