@@ -23,6 +23,7 @@ THE SOFTWARE.
 package manifests
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,8 +71,8 @@ type ManifestEntry struct {
 }
 
 // DiscoverDigestFiles discovers and parses digest files in the specified directory
-func DiscoverDigestFiles(opts DiscoveryOptions) ([]DigestFile, error) {
-	logging.Info("Discovering digest files in %s", opts.Directory)
+func DiscoverDigestFiles(ctx context.Context, opts DiscoveryOptions) ([]DigestFile, error) {
+	logging.InfoContext(ctx, "Discovering digest files in %s", opts.Directory)
 
 	// Pattern: digest-{IMAGE_NAME}-{ARCHITECTURE}.txt
 	pattern := fmt.Sprintf("digest-%s-*.txt", opts.ImageName)
@@ -88,7 +89,7 @@ func DiscoverDigestFiles(opts DiscoveryOptions) ([]DigestFile, error) {
 	for _, path := range matches {
 		df, err := ParseDigestFile(path)
 		if err != nil {
-			logging.Warn("Skipping invalid digest file %s: %v", path, err)
+			logging.WarnContext(ctx, "Skipping invalid digest file %s: %v", path, err)
 			continue
 		}
 		digestFiles = append(digestFiles, df)
@@ -104,12 +105,10 @@ func ParseDigestFile(path string) (DigestFile, error) {
 	// Known architectures: amd64, arm64, arm-v7, arm-v6, ppc64le, s390x, 386, riscv64
 	basename := filepath.Base(path)
 
-	// Remove prefix and suffix
 	if !strings.HasPrefix(basename, "digest-") || !strings.HasSuffix(basename, ".txt") {
 		return DigestFile{}, fmt.Errorf("invalid filename format: %s (expected digest-*-*.txt)", basename)
 	}
 
-	// Remove "digest-" prefix and ".txt" suffix
 	nameArch := strings.TrimPrefix(basename, "digest-")
 	nameArch = strings.TrimSuffix(nameArch, ".txt")
 
@@ -136,20 +135,17 @@ func ParseDigestFile(path string) (DigestFile, error) {
 		return DigestFile{}, fmt.Errorf("invalid filename format: %s (unknown architecture)", basename)
 	}
 
-	// Read digest content
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return DigestFile{}, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Parse digest (should be sha256:...)
 	digestStr := strings.TrimSpace(string(content))
 	imageDigest, err := digest.Parse(digestStr)
 	if err != nil {
 		return DigestFile{}, fmt.Errorf("invalid digest format: %w", err)
 	}
 
-	// Get file modification time
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return DigestFile{}, fmt.Errorf("failed to stat file: %w", err)
@@ -165,7 +161,7 @@ func ParseDigestFile(path string) (DigestFile, error) {
 }
 
 // SaveDigestToFile saves an image digest to a file
-func SaveDigestToFile(imageName, arch, digestStr, dir string) error {
+func SaveDigestToFile(ctx context.Context, imageName, arch, digestStr, dir string) error {
 	if digestStr == "" {
 		return fmt.Errorf("empty digest provided")
 	}
@@ -175,15 +171,13 @@ func SaveDigestToFile(imageName, arch, digestStr, dir string) error {
 		return fmt.Errorf("failed to create digest directory: %w", err)
 	}
 
-	// Create filename: digest-{image}-{arch}.txt
 	filename := fmt.Sprintf("digest-%s-%s.txt", imageName, arch)
 	filepath := filepath.Join(dir, filename)
 
-	// Write digest to file
 	if err := os.WriteFile(filepath, []byte(digestStr), 0644); err != nil {
 		return fmt.Errorf("failed to write digest file: %w", err)
 	}
 
-	logging.Info("Saved digest to %s", filepath)
+	logging.InfoContext(ctx, "Saved digest to %s", filepath)
 	return nil
 }

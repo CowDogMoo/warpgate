@@ -272,7 +272,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	defer cleanup()
 
 	if len(buildConfig.Sources) > 0 {
-		updateProvisionerSourcePaths(buildConfig)
+		updateProvisionerSourcePaths(ctx, buildConfig)
 	}
 
 	service := builder.NewBuildService(cfg, newBuildKitBuilderFunc)
@@ -648,20 +648,20 @@ func handleAMIDryRun(ctx context.Context, amiBuilder *ami.ImageBuilder, buildCon
 
 // updateProvisionerSourcePaths updates file provisioner source paths
 // to use fetched sources when they reference ${sources.<name>}
-func updateProvisionerSourcePaths(config *builder.Config) {
+func updateProvisionerSourcePaths(ctx context.Context, config *builder.Config) {
 	sourceMap := make(map[string]string)
 	for _, src := range config.Sources {
 		sourceMap[src.Name] = src.Path
-		logging.Debug("[UPDATE PATHS] Source %s -> %s", src.Name, src.Path)
+		logging.DebugContext(ctx, "[UPDATE PATHS] Source %s -> %s", src.Name, src.Path)
 	}
 
 	for i := range config.Provisioners {
 		prov := &config.Provisioners[i]
-		logging.Debug("[UPDATE PATHS] Checking provisioner %d: type=%s, source=%s", i, prov.Type, prov.Source)
+		logging.DebugContext(ctx, "[UPDATE PATHS] Checking provisioner %d: type=%s, source=%s", i, prov.Type, prov.Source)
 		if prov.Type == "file" && prov.Source != "" {
 			oldSource := prov.Source
-			prov.Source = resolveSourceReference(prov.Source, sourceMap)
-			logging.Debug("[UPDATE PATHS] Provisioner %d: %s -> %s", i, oldSource, prov.Source)
+			prov.Source = resolveSourceReference(ctx, prov.Source, sourceMap)
+			logging.DebugContext(ctx, "[UPDATE PATHS] Provisioner %d: %s -> %s", i, oldSource, prov.Source)
 		}
 	}
 }
@@ -676,7 +676,7 @@ var sourceRefPattern = regexp.MustCompile(`^\$\{sources\.([a-zA-Z0-9_-]+)(/[^}]*
 //   - ${sources.name/subpath} - resolves to a subpath within the source
 //
 // Returns the original string if it's not a valid source reference or if the source is not found.
-func resolveSourceReference(source string, sourceMap map[string]string) string {
+func resolveSourceReference(ctx context.Context, source string, sourceMap map[string]string) string {
 	matches := sourceRefPattern.FindStringSubmatch(source)
 	if matches == nil {
 		return source
@@ -687,7 +687,7 @@ func resolveSourceReference(source string, sourceMap map[string]string) string {
 
 	basePath, ok := sourceMap[sourceName]
 	if !ok {
-		logging.Warn("Source reference %q not found in configured sources", sourceName)
+		logging.WarnContext(ctx, "Source reference %q not found in configured sources", sourceName)
 		return source
 	}
 

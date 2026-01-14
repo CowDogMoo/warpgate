@@ -64,6 +64,5 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return scaffolder.Fork(ctx, initFromTemplate, templateName, initOutputDir)
 	}
 
-	// Create new template from scratch
 	return scaffolder.Create(ctx, templateName, initOutputDir)
 }

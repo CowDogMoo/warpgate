@@ -222,7 +222,7 @@ func (m *ResourceManager) DeleteInfrastructureConfig(ctx context.Context, arn st
 	if err != nil {
 		return fmt.Errorf("failed to delete infrastructure configuration: %w", err)
 	}
-	logging.Info("Deleted existing infrastructure configuration: %s", arn)
+	logging.InfoContext(ctx, "Deleted existing infrastructure configuration: %s", arn)
 	return nil
 }
 
@@ -235,7 +235,7 @@ func (m *ResourceManager) DeleteDistributionConfig(ctx context.Context, arn stri
 	if err != nil {
 		return fmt.Errorf("failed to delete distribution configuration: %w", err)
 	}
-	logging.Info("Deleted existing distribution configuration: %s", arn)
+	logging.InfoContext(ctx, "Deleted existing distribution configuration: %s", arn)
 	return nil
 }
 
@@ -248,7 +248,7 @@ func (m *ResourceManager) DeleteImageRecipe(ctx context.Context, arn string) err
 	if err != nil {
 		return fmt.Errorf("failed to delete image recipe: %w", err)
 	}
-	logging.Info("Deleted existing image recipe: %s", arn)
+	logging.InfoContext(ctx, "Deleted existing image recipe: %s", arn)
 	return nil
 }
 
@@ -261,7 +261,7 @@ func (m *ResourceManager) DeleteImagePipeline(ctx context.Context, arn string) e
 	if err != nil {
 		return fmt.Errorf("failed to delete image pipeline: %w", err)
 	}
-	logging.Info("Deleted existing image pipeline: %s", arn)
+	logging.InfoContext(ctx, "Deleted existing image pipeline: %s", arn)
 	return nil
 }
 
@@ -274,7 +274,7 @@ func (m *ResourceManager) DeleteComponent(ctx context.Context, arn string) error
 	if err != nil {
 		return fmt.Errorf("failed to delete component: %w", err)
 	}
-	logging.Info("Deleted existing component: %s", arn)
+	logging.InfoContext(ctx, "Deleted existing component: %s", arn)
 	return nil
 }
 
@@ -358,7 +358,7 @@ func (m *ResourceManager) CleanupOldComponentVersions(ctx context.Context, name 
 	}
 
 	if len(versions) <= keepCount {
-		logging.Info("Component %s has %d versions, keeping all (threshold: %d)", name, len(versions), keepCount)
+		logging.InfoContext(ctx, "Component %s has %d versions, keeping all (threshold: %d)", name, len(versions), keepCount)
 		return nil, nil
 	}
 
@@ -377,20 +377,20 @@ func (m *ResourceManager) CleanupOldComponentVersions(ctx context.Context, name 
 		// Get all build versions for this component version to delete them
 		buildVersions, err := m.getComponentBuildVersions(ctx, *v.Arn)
 		if err != nil {
-			logging.Warn("Failed to get build versions for %s: %v", *v.Arn, err)
+			logging.WarnContext(ctx, "Failed to get build versions for %s: %v", *v.Arn, err)
 			continue
 		}
 
 		for _, buildARN := range buildVersions {
 			if err := m.DeleteComponent(ctx, buildARN); err != nil {
-				logging.Warn("Failed to delete component version %s: %v", buildARN, err)
+				logging.WarnContext(ctx, "Failed to delete component version %s: %v", buildARN, err)
 			} else {
 				deletedARNs = append(deletedARNs, buildARN)
 			}
 		}
 	}
 
-	logging.Info("Cleaned up %d old component versions for %s", len(deletedARNs), name)
+	logging.InfoContext(ctx, "Cleaned up %d old component versions for %s", len(deletedARNs), name)
 	return deletedARNs, nil
 }
 
@@ -436,7 +436,7 @@ func (m *ResourceManager) ListComponentsByPrefix(ctx context.Context, prefix str
 
 // CleanupResourcesForBuild deletes all resources associated with a build name
 func (m *ResourceManager) CleanupResourcesForBuild(ctx context.Context, buildName string, force bool) error {
-	logging.Info("Cleaning up existing resources for build: %s", buildName)
+	logging.InfoContext(ctx, "Cleaning up existing resources for build: %s", buildName)
 
 	// Define cleanup operations in dependency order
 	cleanupOps := []struct {
@@ -457,7 +457,7 @@ func (m *ResourceManager) CleanupResourcesForBuild(ctx context.Context, buildNam
 		}
 	}
 
-	logging.Info("Resource cleanup completed for: %s", buildName)
+	logging.InfoContext(ctx, "Resource cleanup completed for: %s", buildName)
 	return nil
 }
 
@@ -472,7 +472,7 @@ func (m *ResourceManager) cleanupResource(ctx context.Context, typeName string, 
 		if !force {
 			return fmt.Errorf("failed to delete %s: %w", typeName, err)
 		}
-		logging.Warn("Failed to delete %s (continuing): %v", typeName, err)
+		logging.WarnContext(ctx, "Failed to delete %s (continuing): %v", typeName, err)
 	}
 	return nil
 }
@@ -543,38 +543,38 @@ type CreatedResources struct {
 
 // Cleanup deletes all tracked resources
 func (r *CreatedResources) Cleanup(ctx context.Context, manager *ResourceManager) {
-	logging.Info("Cleaning up resources created during failed build")
+	logging.InfoContext(ctx, "Cleaning up resources created during failed build")
 
 	// Delete in reverse order of dependency
 	if r.PipelineARN != "" {
 		if err := manager.DeleteImagePipeline(ctx, r.PipelineARN); err != nil {
-			logging.Warn("Failed to cleanup pipeline: %v", err)
+			logging.WarnContext(ctx, "Failed to cleanup pipeline: %v", err)
 		}
 	}
 
 	if r.RecipeARN != "" {
 		if err := manager.DeleteImageRecipe(ctx, r.RecipeARN); err != nil {
-			logging.Warn("Failed to cleanup image recipe: %v", err)
+			logging.WarnContext(ctx, "Failed to cleanup image recipe: %v", err)
 		}
 	}
 
 	if r.DistARN != "" {
 		if err := manager.DeleteDistributionConfig(ctx, r.DistARN); err != nil {
-			logging.Warn("Failed to cleanup distribution config: %v", err)
+			logging.WarnContext(ctx, "Failed to cleanup distribution config: %v", err)
 		}
 	}
 
 	if r.InfraARN != "" {
 		if err := manager.DeleteInfrastructureConfig(ctx, r.InfraARN); err != nil {
-			logging.Warn("Failed to cleanup infrastructure config: %v", err)
+			logging.WarnContext(ctx, "Failed to cleanup infrastructure config: %v", err)
 		}
 	}
 
 	for _, arn := range r.ComponentARNs {
 		if err := manager.DeleteComponent(ctx, arn); err != nil {
-			logging.Warn("Failed to cleanup component: %v", err)
+			logging.WarnContext(ctx, "Failed to cleanup component: %v", err)
 		}
 	}
 
-	logging.Info("Resource cleanup completed")
+	logging.InfoContext(ctx, "Resource cleanup completed")
 }

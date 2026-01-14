@@ -46,7 +46,7 @@ type VerificationOptions struct {
 
 // VerifyDigestsInRegistry verifies that digests exist in the registry.
 func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts VerificationOptions) error {
-	logging.Info("Verifying %d digest(s) exist in registry...", len(digestFiles))
+	logging.InfoContext(ctx, "Verifying %d digest(s) exist in registry...", len(digestFiles))
 
 	// Limit concurrency to avoid overwhelming the registry
 	maxConcurrent := opts.MaxConcurrent
@@ -54,10 +54,10 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 		maxConcurrent = 5 // Default
 	}
 	if maxConcurrent > 20 {
-		logging.Warn("Limiting concurrency to 20 (requested: %d) to avoid overwhelming the registry", maxConcurrent)
+		logging.WarnContext(ctx, "Limiting concurrency to 20 (requested: %d) to avoid overwhelming the registry", maxConcurrent)
 		maxConcurrent = 20
 	}
-	logging.Debug("Using concurrency limit of %d for digest verification", maxConcurrent)
+	logging.DebugContext(ctx, "Using concurrency limit of %d for digest verification", maxConcurrent)
 
 	// Use errgroup with concurrency limit for better error handling and consistency
 	g, ctx := errgroup.WithContext(ctx)
@@ -77,7 +77,7 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 			imageRef = strings.TrimSuffix(imageRef, ":") // Remove trailing colon if no tag
 			imageRef = fmt.Sprintf("%s@%s", imageRef, df.Digest.String())
 
-			logging.Debug("Verifying %s exists in registry...", imageRef)
+			logging.DebugContext(ctx, "Verifying %s exists in registry...", imageRef)
 
 			// Parse reference using go-containerregistry
 			ref, err := name.ParseReference(imageRef)
@@ -95,7 +95,7 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 					df.Digest.String(), err)
 			}
 
-			logging.Debug("Verified %s exists in registry", imageRef)
+			logging.DebugContext(ctx, "Verified %s exists in registry", imageRef)
 			return nil
 		})
 	}
@@ -106,13 +106,13 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 		return fmt.Errorf("verification failed: %w", err)
 	}
 
-	logging.Info("All digests verified in registry")
+	logging.InfoContext(ctx, "All digests verified in registry")
 	return nil
 }
 
 // CheckManifestExists checks if a manifest already exists with the same content
 func CheckManifestExists(ctx context.Context, digestFiles []DigestFile) (bool, error) {
-	logging.Debug("Checking if manifest already exists...")
+	logging.DebugContext(ctx, "Checking if manifest already exists...")
 
 	// For idempotency checking, we would need to:
 	// 1. Pull the existing manifest from the registry
@@ -127,7 +127,7 @@ func CheckManifestExists(ctx context.Context, digestFiles []DigestFile) (bool, e
 
 // HealthCheckRegistry performs a health check on the registry using go-containerregistry
 func HealthCheckRegistry(ctx context.Context, opts VerificationOptions) error {
-	logging.Info("Performing registry health check for %s...", opts.Registry)
+	logging.InfoContext(ctx, "Performing registry health check for %s...", opts.Registry)
 
 	// Try to access a well-known public image to verify registry connectivity
 	testRef := opts.Registry + "/library/hello-world:latest"
@@ -136,7 +136,7 @@ func HealthCheckRegistry(ctx context.Context, opts VerificationOptions) error {
 		testRef = opts.Registry + "/hello-world/hello-world:latest"
 	}
 
-	logging.Debug("Testing registry connectivity with %s", testRef)
+	logging.DebugContext(ctx, "Testing registry connectivity with %s", testRef)
 
 	ref, err := name.ParseReference(testRef)
 	if err != nil {
@@ -147,12 +147,12 @@ func HealthCheckRegistry(ctx context.Context, opts VerificationOptions) error {
 	_, err = remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithContext(ctx))
 	if err != nil {
 		// Don't fail on health check, just warn
-		logging.Warn("Registry health check warning: %v", err)
-		logging.Info("Registry may require authentication or test image not available")
-		logging.Info("Proceeding with manifest creation...")
+		logging.WarnContext(ctx, "Registry health check warning: %v", err)
+		logging.InfoContext(ctx, "Registry may require authentication or test image not available")
+		logging.InfoContext(ctx, "Proceeding with manifest creation...")
 		return nil
 	}
 
-	logging.Info("Registry health check passed")
+	logging.InfoContext(ctx, "Registry health check passed")
 	return nil
 }

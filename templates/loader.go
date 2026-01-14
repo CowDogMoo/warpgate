@@ -143,6 +143,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -163,14 +164,13 @@ type TemplateLoader struct {
 }
 
 // NewTemplateLoader creates a new template loader
-func NewTemplateLoader() (*TemplateLoader, error) {
-	// Get cache directory for templates
+func NewTemplateLoader(ctx context.Context) (*TemplateLoader, error) {
 	cacheDir, err := config.GetCacheDir("templates")
 	if err != nil {
 		return nil, err
 	}
 
-	registry, err := NewTemplateRegistry()
+	registry, err := NewTemplateRegistry(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create template registry: %w", err)
 	}
@@ -196,7 +196,7 @@ func (tl *TemplateLoader) SetVariables(vars map[string]string) {
 }
 
 // LoadTemplateWithVars handles all template loading strategies with variable substitution.
-func (tl *TemplateLoader) LoadTemplateWithVars(ref string, vars map[string]string) (*builder.Config, error) {
+func (tl *TemplateLoader) LoadTemplateWithVars(ctx context.Context, ref string, vars map[string]string) (*builder.Config, error) {
 	// Merge instance variables with provided variables (provided vars take precedence)
 	mergedVars := make(map[string]string)
 	for k, v := range tl.variables {
@@ -205,68 +205,66 @@ func (tl *TemplateLoader) LoadTemplateWithVars(ref string, vars map[string]strin
 	for k, v := range vars {
 		mergedVars[k] = v
 	}
-	logging.Debug("Loading template: %s", ref)
+	logging.DebugContext(ctx, "Loading template: %s", ref)
 
 	// Strategy 1: Local file path (absolute or relative warpgate.yaml)
 	if filepath.IsAbs(ref) || tl.pathValidator.FileExists(ref) {
-		logging.Debug("Loading template from local file: %s", ref)
+		logging.DebugContext(ctx, "Loading template from local file: %s", ref)
 		// If it's a directory, look for warpgate.yaml inside
 		if tl.pathValidator.DirExists(ref) {
 			configPath := filepath.Join(ref, "warpgate.yaml")
 			if tl.pathValidator.FileExists(configPath) {
-				return tl.loadFromFileWithVars(configPath, mergedVars)
+				return tl.loadFromFileWithVars(ctx, configPath, mergedVars)
 			}
 			return nil, fmt.Errorf("no warpgate.yaml found in directory: %s", ref)
 		}
-		return tl.loadFromFileWithVars(ref, mergedVars)
+		return tl.loadFromFileWithVars(ctx, ref, mergedVars)
 	}
 
 	// Strategy 2: Template name (search all repos/local paths)
 	if !strings.Contains(ref, "/") && !strings.HasPrefix(ref, "https://") && !strings.HasPrefix(ref, "git@") {
-		logging.Debug("Loading template by name from registry: %s", ref)
-		return tl.loadTemplateByNameWithVars(ref, mergedVars)
+		logging.DebugContext(ctx, "Loading template by name from registry: %s", ref)
+		return tl.loadTemplateByNameWithVars(ctx, ref, mergedVars)
 	}
 
 	// Strategy 3: Full git URL
 	if strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "git@") {
-		logging.Debug("Loading template from git URL: %s", ref)
-		return tl.loadFromGitWithVars(ref, mergedVars)
+		logging.DebugContext(ctx, "Loading template from git URL: %s", ref)
+		return tl.loadFromGitWithVars(ctx, ref, mergedVars)
 	}
 
 	return nil, fmt.Errorf("unknown template reference: %s", ref)
 }
 
 // loadTemplateByNameWithVars searches all configured repositories and local paths for a template with variable substitution.
-func (tl *TemplateLoader) loadTemplateByNameWithVars(name string, vars map[string]string) (*builder.Config, error) {
-	// Parse version if specified: attack-box@v1.2.0
+func (tl *TemplateLoader) loadTemplateByNameWithVars(ctx context.Context, name string, vars map[string]string) (*builder.Config, error) {
 	templateName, version := parseTemplateRef(name)
 
-	// Get all repos from registry
 	repos := tl.registry.GetRepositories()
-	logging.Debug("Got %d repositories: %+v", len(repos), repos)
-	logging.Debug("Cache dir: %s", tl.cacheDir)
+	logging.DebugContext(ctx, "Got %d repositories: %+v", len(repos), repos)
+	logging.DebugContext(ctx, "Cache dir: %s", tl.cacheDir)
 
 	// Try each repository
 	for repoName, repoURL := range repos {
-		logging.Debug("Checking repository %s: %s", repoName, repoURL)
+		logging.DebugContext(ctx, "Checking repository %s: %s", repoName, repoURL)
 		// Check if it's a local path
 		if tl.pathValidator.IsLocalPath(repoURL) {
 			configPath := filepath.Join(repoURL, "templates", templateName, "warpgate.yaml")
-			logging.Debug("Checking local path: %s", configPath)
+			logging.DebugContext(ctx, "Checking local path: %s", configPath)
 			if tl.pathValidator.FileExists(configPath) {
-				logging.Debug("Found template %s in local path: %s", templateName, repoURL)
-				return tl.loadFromFileWithVars(configPath, vars)
+				logging.DebugContext(ctx, "Found template %s in local path: %s", templateName, repoURL)
+				return tl.loadFromFileWithVars(ctx, configPath, vars)
 			}
 			continue
 		}
 
 		// Try loading from git repo
-		logging.Debug("Searching for template %s in repository: %s", templateName, repoName)
-		cfg, err := tl.loadFromRegistryWithVars(repoURL, templateName, version, vars)
+		logging.DebugContext(ctx, "Searching for template %s in repository: %s", templateName, repoName)
+		cfg, err := tl.loadFromRegistryWithVars(ctx, repoURL, templateName, version, vars)
 		if err == nil {
 			return cfg, nil
 		}
-		logging.Debug("Template not found in %s: %v", repoName, err)
+		logging.DebugContext(ctx, "Template not found in %s: %v", repoName, err)
 	}
 
 	// Also check local paths from config
@@ -277,36 +275,33 @@ func (tl *TemplateLoader) loadTemplateByNameWithVars(name string, vars map[strin
 		}
 		configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
 		if tl.pathValidator.FileExists(configPath) {
-			logging.Debug("Found template %s in local path: %s", templateName, localPath)
-			return tl.loadFromFileWithVars(configPath, vars)
+			logging.DebugContext(ctx, "Found template %s in local path: %s", templateName, localPath)
+			return tl.loadFromFileWithVars(ctx, configPath, vars)
 		}
-		logging.Debug("Template not found in local path: %s", localPath)
+		logging.DebugContext(ctx, "Template not found in local path: %s", localPath)
 	}
 
 	return nil, fmt.Errorf("template not found in any configured repository: %s", name)
 }
 
 // loadFromRegistryWithVars loads a template from a git repository by name with variable substitution.
-func (tl *TemplateLoader) loadFromRegistryWithVars(repoURL, templateName, version string, vars map[string]string) (*builder.Config, error) {
+func (tl *TemplateLoader) loadFromRegistryWithVars(ctx context.Context, repoURL, templateName, version string, vars map[string]string) (*builder.Config, error) {
 	// Clone or update repo
-	localPath, err := tl.gitOps.CloneOrUpdate(repoURL, version)
+	localPath, err := tl.gitOps.CloneOrUpdate(ctx, repoURL, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	// Load config from cloned repo
 	configPath := filepath.Join(localPath, "templates", templateName, "warpgate.yaml")
-	logging.Debug("Checking for template at path: %s", configPath)
+	logging.DebugContext(ctx, "Checking for template at path: %s", configPath)
 	if !tl.pathValidator.FileExists(configPath) {
 		return nil, fmt.Errorf("template file not found at: %s", configPath)
 	}
-	return tl.loadFromFileWithVars(configPath, vars)
+	return tl.loadFromFileWithVars(ctx, configPath, vars)
 }
 
 // loadFromGitWithVars loads a template from a git URL with variable substitution.
-func (tl *TemplateLoader) loadFromGitWithVars(gitURL string, vars map[string]string) (*builder.Config, error) {
-	// Parse git URL to extract path within repo
-	// Format: https://git.example.com/jdoe/repo.git//path/to/template
+func (tl *TemplateLoader) loadFromGitWithVars(ctx context.Context, gitURL string, vars map[string]string) (*builder.Config, error) {
 	parts := strings.Split(gitURL, "//")
 	repoURL := parts[0]
 	templatePath := ""
@@ -315,26 +310,24 @@ func (tl *TemplateLoader) loadFromGitWithVars(gitURL string, vars map[string]str
 	}
 
 	// Clone or update repo
-	localPath, err := tl.gitOps.CloneOrUpdate(repoURL, "")
+	localPath, err := tl.gitOps.CloneOrUpdate(ctx, repoURL, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	// Build config path
 	configPath := filepath.Join(localPath, templatePath, "warpgate.yaml")
-	return tl.loadFromFileWithVars(configPath, vars)
+	return tl.loadFromFileWithVars(ctx, configPath, vars)
 }
 
 // loadFromFileWithVars loads a template configuration from a file with variable substitution.
-func (tl *TemplateLoader) loadFromFileWithVars(path string, vars map[string]string) (*builder.Config, error) {
+func (tl *TemplateLoader) loadFromFileWithVars(ctx context.Context, path string, vars map[string]string) (*builder.Config, error) {
 	cfg, err := tl.configLoad.LoadFromFileWithVars(path, vars)
 	if err != nil {
 		return nil, err
 	}
 
-	// Validate the configuration
 	validator := NewValidator()
-	if err := validator.Validate(cfg); err != nil {
+	if err := validator.Validate(ctx, cfg); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
@@ -342,8 +335,8 @@ func (tl *TemplateLoader) loadFromFileWithVars(path string, vars map[string]stri
 }
 
 // List returns all available templates from the registry
-func (tl *TemplateLoader) List() ([]TemplateInfo, error) {
-	return tl.registry.List("official")
+func (tl *TemplateLoader) List(ctx context.Context) ([]TemplateInfo, error) {
+	return tl.registry.List(ctx, "official")
 }
 
 // parseTemplateRef parses a template reference like "attack-box@v1.2.0"

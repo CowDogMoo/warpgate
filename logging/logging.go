@@ -21,6 +21,8 @@ THE SOFTWARE.
 */
 
 // Package logging provides a custom logger with support for multiple output formats and log levels.
+// All logging should be done through context-based functions (InfoContext, WarnContext, etc.)
+// to ensure proper logger propagation through the application.
 package logging
 
 import (
@@ -31,15 +33,9 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/fatih/color"
-)
-
-// logger is the global variable to access the custom logger.
-var (
-	logger     *CustomLogger
-	loggerOnce sync.Once
-	loggerMu   sync.RWMutex
 )
 
 // LogLevel represents the severity level of a log message
@@ -55,20 +51,38 @@ const (
 	JSONOutput
 )
 
-// Log levels for different types of log messages
+// Log levels for different types of log messages.
+// Ordered from least to most severe for numeric comparison.
 const (
+	// DebugLevel represents debug messages (lowest severity)
+	DebugLevel LogLevel = iota
 	// InfoLevel represents informational messages
-	InfoLevel LogLevel = iota
+	InfoLevel
 	// WarnLevel represents warning messages
 	WarnLevel
-	// DebugLevel represents debug messages
-	DebugLevel
-	// ErrorLevel represents error messages
+	// ErrorLevel represents error messages (highest severity)
 	ErrorLevel
 )
 
+// String returns the string representation of the log level.
+func (l LogLevel) String() string {
+	switch l {
+	case DebugLevel:
+		return "DEBUG"
+	case InfoLevel:
+		return "INFO"
+	case WarnLevel:
+		return "WARN"
+	case ErrorLevel:
+		return "ERROR"
+	default:
+		return "INFO"
+	}
+}
+
 // CustomLogger wraps the logging functionality with custom formatting options.
 type CustomLogger struct {
+	mu            sync.Mutex
 	LogLevel      slog.Level
 	OutputType    OutputType
 	Quiet         bool
@@ -76,7 +90,9 @@ type CustomLogger struct {
 	Verbose       bool
 }
 
-// formatMessage handles color formatting based on output type and log level
+// formatMessage handles formatting based on output type and log level.
+// For ColorOutput, it includes a colored level prefix.
+// For PlainOutput, it returns the message as-is.
 func (l *CustomLogger) formatMessage(level LogLevel, message string, args ...interface{}) string {
 	formattedMsg := fmt.Sprintf(message, args...)
 
@@ -84,59 +100,58 @@ func (l *CustomLogger) formatMessage(level LogLevel, message string, args ...int
 		return formattedMsg
 	}
 
-	colorFunc := map[LogLevel]func(format string, a ...interface{}) string{
-		InfoLevel:  color.GreenString,
-		WarnLevel:  color.YellowString,
-		DebugLevel: color.CyanString,
-		ErrorLevel: color.RedString,
-	}[level]
-
-	if colorFunc == nil {
+	// Apply colored level prefix for color output
+	switch level {
+	case DebugLevel:
+		return color.HiBlackString("[DEBUG] %s", formattedMsg)
+	case InfoLevel:
+		return color.HiGreenString("[INFO] %s", formattedMsg)
+	case WarnLevel:
+		return color.HiYellowString("[WARN] %s", formattedMsg)
+	case ErrorLevel:
+		return color.HiRedString("[ERROR] %s", formattedMsg)
+	default:
 		return formattedMsg
 	}
-
-	return colorFunc("%s", formattedMsg)
 }
 
-// shouldShowOnConsole determines if a message should be shown on console
-func (l *CustomLogger) shouldShowOnConsole(level LogLevel) bool {
-	// Always suppress in quiet mode except errors
-	if l.Quiet && level != ErrorLevel {
-		return false
+// shouldShowOnConsoleLocked determines if a message should be shown on console.
+// This method must be called while holding l.mu.
+// Logic:
+// - In quiet mode, only errors are shown
+// - In verbose mode, all messages are shown
+// - Otherwise, show messages at INFO level and above (INFO, WARN, ERROR)
+func (l *CustomLogger) shouldShowOnConsoleLocked(level LogLevel) bool {
+	// In quiet mode, only show errors
+	if l.Quiet {
+		return level == ErrorLevel
 	}
 
-	// Check against log level
-	var slogLevel slog.Level
-	switch level {
-	case InfoLevel:
-		slogLevel = slog.LevelInfo
-	case WarnLevel:
-		slogLevel = slog.LevelWarn
-	case DebugLevel:
-		slogLevel = slog.LevelDebug
-	case ErrorLevel:
-		slogLevel = slog.LevelError
-	}
-
-	// Always show errors and warnings
-	if level == ErrorLevel || level == WarnLevel {
+	// In verbose mode, show all messages
+	if l.Verbose {
 		return true
 	}
 
-	// Info messages: show by default unless log level is set higher than Info
-	if level == InfoLevel {
-		return l.LogLevel <= slogLevel
-	}
-
-	// Debug messages: only show if verbose is enabled AND log level allows it
-	return (l.Verbose || l.LogLevel <= slog.LevelDebug) && l.LogLevel <= slogLevel
+	// Default: show INFO and above (INFO, WARN, ERROR but not DEBUG)
+	return level >= InfoLevel
 }
 
 func (l *CustomLogger) log(level LogLevel, message string, args ...interface{}) {
 	formattedMsg := l.formatMessage(level, message, args...)
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
-	if l.shouldShowOnConsole(level) && l.ConsoleWriter != nil {
-		_, _ = fmt.Fprintln(l.ConsoleWriter, formattedMsg)
+	l.mu.Lock()
+	shouldShow := l.shouldShowOnConsoleLocked(level)
+	writer := l.ConsoleWriter
+	l.mu.Unlock()
+
+	if shouldShow && writer != nil {
+		l.mu.Lock()
+		if _, err := fmt.Fprintf(writer, "[%s] %s\n", timestamp, formattedMsg); err != nil {
+			// Fallback to stderr if ConsoleWriter fails
+			fmt.Fprintf(os.Stderr, "[%s] %s\n", timestamp, formattedMsg)
+		}
+		l.mu.Unlock()
 	}
 }
 
@@ -151,16 +166,61 @@ func NewCustomLogger(level slog.Level) *CustomLogger {
 	}
 }
 
+// NewCustomLoggerWithOptions creates a new CustomLogger with full configuration.
+func NewCustomLoggerWithOptions(logLevelStr, outputFormat string, quiet, verbose bool) *CustomLogger {
+	logLevel := DetermineLogLevel(logLevelStr)
+
+	// Map the format string to the appropriate OutputType
+	outputType := PlainOutput
+	switch outputFormat {
+	case "json":
+		outputType = JSONOutput
+	case "color":
+		outputType = ColorOutput
+	case "text", "plain":
+		outputType = PlainOutput
+	}
+
+	// If verbose is set, ensure we're at least at debug level
+	if verbose {
+		if logLevel > slog.LevelDebug {
+			logLevel = slog.LevelDebug
+		}
+	}
+
+	return &CustomLogger{
+		LogLevel:      logLevel,
+		OutputType:    outputType,
+		Quiet:         quiet,
+		ConsoleWriter: os.Stderr,
+		Verbose:       verbose,
+	}
+}
+
 // SetQuiet enables or disables quiet mode.
 // In quiet mode, only error messages are displayed.
+// This method is thread-safe.
 func (l *CustomLogger) SetQuiet(quiet bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.Quiet = quiet
 }
 
 // SetVerbose enables or disables verbose mode.
 // In verbose mode, info and debug messages are displayed on console.
+// This method is thread-safe.
 func (l *CustomLogger) SetVerbose(verbose bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.Verbose = verbose
+}
+
+// IsQuiet returns whether the logger is in quiet mode.
+// This method is thread-safe.
+func (l *CustomLogger) IsQuiet() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.Quiet
 }
 
 // Info logs an informational message.
@@ -170,6 +230,9 @@ func (l *CustomLogger) Info(format string, args ...interface{}) {
 
 // Output sends data to stdout.
 func (l *CustomLogger) Output(data interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	switch l.OutputType {
 	case JSONOutput:
 		encoder := json.NewEncoder(os.Stdout)
@@ -181,6 +244,17 @@ func (l *CustomLogger) Output(data interface{}) {
 		if _, err := fmt.Fprintln(os.Stdout, data); err != nil {
 			l.Error("Failed to write output: %v", err)
 		}
+	}
+}
+
+// Print writes raw output to stdout without adding a newline.
+// Use this for streaming output that already contains newlines.
+func (l *CustomLogger) Print(data string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if _, err := fmt.Fprint(os.Stdout, data); err != nil {
+		l.Error("Failed to write output: %v", err)
 	}
 }
 
@@ -239,164 +313,6 @@ func DetermineLogLevel(levelStr string) slog.Level {
 	}
 }
 
-// Initialize sets up the global logger following 12-factor app principles.
-// Logs are written to stderr; the execution environment handles capture and routing.
-func Initialize(logLevelStr, outputFormat string, quiet, verbose bool) error {
-	logLevel := DetermineLogLevel(logLevelStr)
-
-	// Map the format string to the appropriate OutputType
-	outputType := PlainOutput
-	switch outputFormat {
-	case "json":
-		outputType = JSONOutput
-	case "color":
-		outputType = ColorOutput
-	case "text", "plain":
-		outputType = PlainOutput
-	}
-
-	// If verbose is set, ensure we're at least at debug level
-	if verbose {
-		if logLevel > slog.LevelDebug {
-			logLevel = slog.LevelDebug
-		}
-	}
-
-	loggerMu.Lock()
-	logger = &CustomLogger{
-		LogLevel:      logLevel,
-		OutputType:    outputType,
-		Quiet:         quiet,
-		ConsoleWriter: os.Stderr,
-		Verbose:       verbose,
-	}
-	loggerMu.Unlock()
-
-	return nil
-}
-
-// ensureLogger initializes the logger if it hasn't been initialized yet
-func ensureLogger() error {
-	loggerOnce.Do(func() {
-		logger = &CustomLogger{
-			LogLevel:      slog.LevelInfo,
-			OutputType:    PlainOutput,
-			Quiet:         false,
-			ConsoleWriter: os.Stderr,
-			Verbose:       false,
-		}
-	})
-	return nil
-}
-
-// logGlobal handles logging through the global logger instance
-func logGlobal(level LogLevel, message string, args ...interface{}) {
-	if err := ensureLogger(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		return
-	}
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-	logger.log(level, message, args...)
-}
-
-// Info logs an informational message using the global logger.
-func Info(message string, args ...interface{}) {
-	logGlobal(InfoLevel, message, args...)
-}
-
-// Output sends data to stdout using the global logger.
-func Output(data interface{}) {
-	if err := ensureLogger(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		return
-	}
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-	logger.Output(data)
-}
-
-// Warn logs a warning message using the global logger.
-func Warn(message string, args ...interface{}) {
-	logGlobal(WarnLevel, message, args...)
-}
-
-// Error logs an error message using the global logger. It accepts either an error,
-// a format string, or any other value as the first argument.
-func Error(firstArg interface{}, args ...interface{}) {
-	if err := ensureLogger(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		return
-	}
-
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-	logger.Error(firstArg, args...)
-}
-
-// Errorf logs a formatted error message using the global logger.
-func Errorf(format string, args ...interface{}) {
-	if err := ensureLogger(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		return
-	}
-
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-	logger.Errorf(format, args...)
-}
-
-// ErrorErr logs an error value using the global logger.
-func ErrorErr(err error) {
-	if initErr := ensureLogger(); initErr != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", initErr)
-		return
-	}
-
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-	logger.ErrorErr(err)
-}
-
-// Debug logs a debug message using the global logger.
-func Debug(message string, args ...interface{}) {
-	logGlobal(DebugLevel, message, args...)
-}
-
-// SetQuiet enables or disables quiet mode on the global logger.
-// In quiet mode, only error messages are displayed.
-func SetQuiet(quiet bool) {
-	if err := ensureLogger(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		return
-	}
-	loggerMu.Lock()
-	defer loggerMu.Unlock()
-	logger.SetQuiet(quiet)
-}
-
-// IsQuiet returns whether the global logger is in quiet mode.
-func IsQuiet() bool {
-	if err := ensureLogger(); err != nil {
-		return false
-	}
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-	return logger.Quiet
-}
-
-// SetVerbose enables or disables verbose mode on the global logger.
-// In verbose mode, info and debug messages are displayed on console.
-func SetVerbose(verbose bool) {
-	if err := ensureLogger(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		return
-	}
-	loggerMu.Lock()
-	defer loggerMu.Unlock()
-	logger.SetVerbose(verbose)
-}
-
 // Context-based logging support
 
 // loggerKeyType is the type for the logger context key
@@ -411,33 +327,21 @@ func WithLogger(ctx context.Context, l *CustomLogger) context.Context {
 }
 
 // FromContext retrieves the logger from the context.
-// If no logger is found in context, returns the global logger.
+// If no logger is found in context, returns a new default logger instance.
 func FromContext(ctx context.Context) *CustomLogger {
-	if ctx == nil {
-		if err := ensureLogger(); err != nil {
-			return NewCustomLogger(slog.LevelInfo)
+	if ctx != nil {
+		if l, ok := ctx.Value(loggerKey).(*CustomLogger); ok && l != nil {
+			return l
 		}
-		loggerMu.RLock()
-		defer loggerMu.RUnlock()
-		return logger
 	}
 
-	if l, ok := ctx.Value(loggerKey).(*CustomLogger); ok && l != nil {
-		return l
-	}
-
-	// Fallback to global logger
-	if err := ensureLogger(); err != nil {
-		return NewCustomLogger(slog.LevelInfo)
-	}
-	loggerMu.RLock()
-	defer loggerMu.RUnlock()
-	return logger
+	// Return a new default logger - no global state, no race conditions
+	return NewCustomLogger(slog.LevelInfo)
 }
 
 // Context-aware logging functions
-// These functions retrieve the logger from context and use it,
-// falling back to the global logger if no context logger is available.
+// These functions retrieve the logger from context and use it.
+// If no logger is found in context, a default logger is used.
 
 // InfoContext logs an informational message using the logger from context.
 func InfoContext(ctx context.Context, message string, args ...interface{}) {
@@ -473,4 +377,10 @@ func ErrorErrContext(ctx context.Context, err error) {
 // OutputContext sends data to stdout using the logger from context.
 func OutputContext(ctx context.Context, data interface{}) {
 	FromContext(ctx).Output(data)
+}
+
+// PrintContext writes raw output to stdout using the logger from context.
+// Use this for streaming output that already contains newlines.
+func PrintContext(ctx context.Context, data string) {
+	FromContext(ctx).Print(data)
 }

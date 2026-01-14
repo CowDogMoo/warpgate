@@ -195,7 +195,7 @@ func TestCreateManifestEntries(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := CreateManifestEntries(tt.results)
+			got, err := CreateManifestEntries(context.Background(), tt.results)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CreateManifestEntries() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -217,7 +217,7 @@ func TestCreateManifestEntries_PlatformParsing(t *testing.T) {
 		},
 	}
 
-	got, err := CreateManifestEntries(results)
+	got, err := CreateManifestEntries(context.Background(), results)
 	if err != nil {
 		t.Errorf("CreateManifestEntries() error = %v", err)
 	}
@@ -343,7 +343,7 @@ func TestManifestEntry_DigestParsing(t *testing.T) {
 		Digest:       "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
 	}
 
-	entries, err := CreateManifestEntries([]BuildResult{result})
+	entries, err := CreateManifestEntries(context.Background(), []BuildResult{result})
 	if err != nil {
 		t.Errorf("CreateManifestEntries() error = %v", err)
 	}

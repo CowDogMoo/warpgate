@@ -128,6 +128,8 @@ docker images | grep attack-box
 | **Packer Conversion**        | Convert Packer to Warpgate             |
 | **Registry Push**            | Push images to registries              |
 | **Multi-arch Manifests**     | Create/push multi-arch images          |
+| **Context-aware Logging**    | Thread-safe, structured logging        |
+| **Sensitive Data Redaction** | Auto-redact credentials in logs        |
 
 ### AMI Build Features
 

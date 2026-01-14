@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -116,7 +117,7 @@ func TestNewTemplateRegistry(t *testing.T) {
 		}
 	}()
 
-	registry, err := NewTemplateRegistry()
+	registry, err := NewTemplateRegistry(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to create registry: %v", err)
 	}
@@ -219,7 +220,7 @@ func TestTemplateRegistryDisableOfficialRepo(t *testing.T) {
 }
 
 func TestTemplateRegistryAddRemoveRepository(t *testing.T) {
-	registry, err := NewTemplateRegistry()
+	registry, err := NewTemplateRegistry(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to create registry: %v", err)
 	}

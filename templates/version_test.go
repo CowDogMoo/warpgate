@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"testing"
 )
 
@@ -419,7 +420,7 @@ func TestGetLatestVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := vm.GetLatestVersion(tt.versions)
+			result, err := vm.GetLatestVersion(context.Background(), tt.versions)
 			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")

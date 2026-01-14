@@ -347,10 +347,10 @@ func (m *BuildMonitor) PollAndDisplay(ctx context.Context) {
 	if m.showEC2Status {
 		status, err := m.GetEC2InstanceStatus(ctx)
 		if err != nil {
-			logging.Debug("Failed to get EC2 status: %v", err)
+			logging.DebugContext(ctx, "Failed to get EC2 status: %v", err)
 		} else if status != nil && status.State != m.lastEC2Status {
 			m.lastEC2Status = status.State
-			m.displayEC2Status(status)
+			m.displayEC2Status(ctx, status)
 		}
 	}
 
@@ -359,13 +359,13 @@ func (m *BuildMonitor) PollAndDisplay(ctx context.Context) {
 		// Try CloudWatch logs first
 		cwLogs, err := m.StreamCloudWatchLogs(ctx)
 		if err != nil {
-			logging.Debug("Failed to get CloudWatch logs: %v", err)
+			logging.DebugContext(ctx, "Failed to get CloudWatch logs: %v", err)
 		}
 
 		// Also try SSM output
 		ssmLogs, err := m.GetSSMCommandOutput(ctx)
 		if err != nil {
-			logging.Debug("Failed to get SSM output: %v", err)
+			logging.DebugContext(ctx, "Failed to get SSM output: %v", err)
 		}
 
 		// Combine and sort logs
@@ -377,13 +377,13 @@ func (m *BuildMonitor) PollAndDisplay(ctx context.Context) {
 
 		// Display new logs
 		for _, entry := range allLogs {
-			m.displayLogEntry(entry)
+			m.displayLogEntry(ctx, entry)
 		}
 	}
 }
 
 // displayEC2Status displays EC2 instance status information
-func (m *BuildMonitor) displayEC2Status(status *EC2InstanceStatus) {
+func (m *BuildMonitor) displayEC2Status(ctx context.Context, status *EC2InstanceStatus) {
 	var details []string
 	details = append(details, fmt.Sprintf("Instance: %s", status.InstanceID))
 	details = append(details, fmt.Sprintf("State: %s", status.State))
@@ -400,11 +400,11 @@ func (m *BuildMonitor) displayEC2Status(status *EC2InstanceStatus) {
 		details = append(details, fmt.Sprintf("Uptime: %s", uptime))
 	}
 
-	logging.Info("EC2 Build Instance: %s", strings.Join(details, " | "))
+	logging.InfoContext(ctx, "EC2 Build Instance: %s", strings.Join(details, " | "))
 }
 
 // displayLogEntry displays a single log entry
-func (m *BuildMonitor) displayLogEntry(entry LogEntry) {
+func (m *BuildMonitor) displayLogEntry(ctx context.Context, entry LogEntry) {
 	// Truncate very long messages
 	message := entry.Message
 	if len(message) > 500 {
@@ -418,7 +418,7 @@ func (m *BuildMonitor) displayLogEntry(entry LogEntry) {
 	}
 
 	timestamp := entry.Timestamp.Format("15:04:05")
-	logging.Info("[%s] [%s] %s", timestamp, entry.Source, message)
+	logging.InfoContext(ctx, "[%s] [%s] %s", timestamp, entry.Source, message)
 }
 
 // GetBuildInstanceLogs returns all available logs for the build instance

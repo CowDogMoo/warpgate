@@ -76,7 +76,7 @@ func (m *Manager) AddGitRepository(ctx context.Context, name, gitURL string) err
 		return fmt.Errorf("repository name '%s' already exists with different URL: %s", name, existing)
 	}
 
-	logging.InfoContext(ctx, "Adding git repository: %s -> %s", name, gitURL)
+	logging.InfoContext(ctx, "Adding git repository: %s -> %s", name, logging.RedactURL(gitURL))
 	m.config.Templates.Repositories[name] = gitURL
 
 	// Save to config file

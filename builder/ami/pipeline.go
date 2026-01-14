@@ -139,7 +139,7 @@ func (m *PipelineManager) SetMonitorConfig(config MonitorConfig) {
 
 // CreatePipeline creates an Image Builder pipeline
 func (m *PipelineManager) CreatePipeline(ctx context.Context, config PipelineConfig) (*string, error) {
-	logging.Info("Creating Image Builder pipeline: %s", config.Name)
+	logging.InfoContext(ctx, "Creating Image Builder pipeline: %s", config.Name)
 
 	input := &imagebuilder.CreateImagePipelineInput{
 		Name:                           aws.String(config.Name),
@@ -157,13 +157,13 @@ func (m *PipelineManager) CreatePipeline(ctx context.Context, config PipelineCon
 		return nil, fmt.Errorf("failed to create pipeline: %w", err)
 	}
 
-	logging.Info("Pipeline created successfully: %s", *result.ImagePipelineArn)
+	logging.InfoContext(ctx, "Pipeline created successfully: %s", *result.ImagePipelineArn)
 	return result.ImagePipelineArn, nil
 }
 
 // StartPipeline starts an image pipeline execution
 func (m *PipelineManager) StartPipeline(ctx context.Context, pipelineARN string) (*string, error) {
-	logging.Info("Starting pipeline execution: %s", pipelineARN)
+	logging.InfoContext(ctx, "Starting pipeline execution: %s", pipelineARN)
 
 	input := &imagebuilder.StartImagePipelineExecutionInput{
 		ImagePipelineArn: aws.String(pipelineARN),
@@ -174,7 +174,7 @@ func (m *PipelineManager) StartPipeline(ctx context.Context, pipelineARN string)
 		return nil, fmt.Errorf("failed to start pipeline: %w", err)
 	}
 
-	logging.Info("Pipeline execution started: %s", *result.ImageBuildVersionArn)
+	logging.InfoContext(ctx, "Pipeline execution started: %s", *result.ImageBuildVersionArn)
 	return result.ImageBuildVersionArn, nil
 }
 
@@ -185,7 +185,7 @@ func (m *PipelineManager) WaitForPipelineCompletion(ctx context.Context, imageAR
 
 // WaitForPipelineCompletionWithImageName waits for completion with optional monitoring
 func (m *PipelineManager) WaitForPipelineCompletionWithImageName(ctx context.Context, imageARN string, pollInterval time.Duration, imageName string) (*types.Image, error) {
-	logging.Info("Waiting for pipeline completion: %s", imageARN)
+	logging.InfoContext(ctx, "Waiting for pipeline completion: %s", imageARN)
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
@@ -223,8 +223,10 @@ type pipelineWaitState struct {
 // initMonitorIfEnabled initializes the build monitor if monitoring is configured
 func (m *PipelineManager) initMonitorIfEnabled(imageName string) {
 	if (m.monitorConfig.StreamLogs || m.monitorConfig.ShowEC2Status) && imageName != "" {
+		// Create a background context since we don't have one passed in
+		ctx := context.Background()
 		m.monitor = NewBuildMonitor(m.clients, imageName, m.monitorConfig)
-		logging.Info("Build monitoring enabled (logs: %v, EC2 status: %v)",
+		logging.InfoContext(ctx, "Build monitoring enabled (logs: %v, EC2 status: %v)",
 			m.monitorConfig.StreamLogs, m.monitorConfig.ShowEC2Status)
 	}
 }
@@ -257,20 +259,23 @@ func (m *PipelineManager) processPipelineTick(ctx context.Context, imageARN stri
 func (m *PipelineManager) logBuildProgress(status types.ImageStatus, elapsed time.Duration, statusChanged bool) {
 	estimatedRemaining := m.estimateRemainingTime(status, elapsed)
 
+	// Create a background context since we don't have one passed in
+	ctx := context.Background()
+
 	if statusChanged {
 		stageInfo := m.formatBuildStage(status)
 		if estimatedRemaining > 0 {
-			logging.Info("Build stage: %s (elapsed: %s, estimated remaining: ~%s)",
+			logging.InfoContext(ctx, "Build stage: %s (elapsed: %s, estimated remaining: ~%s)",
 				stageInfo, elapsed, estimatedRemaining.Round(time.Minute))
 		} else {
-			logging.Info("Build stage: %s (elapsed: %s)", stageInfo, elapsed)
+			logging.InfoContext(ctx, "Build stage: %s (elapsed: %s)", stageInfo, elapsed)
 		}
 	} else {
 		if estimatedRemaining > 0 {
-			logging.Debug("Build status: %s (elapsed: %s, ~%s remaining)",
+			logging.DebugContext(ctx, "Build status: %s (elapsed: %s, ~%s remaining)",
 				status, elapsed, estimatedRemaining.Round(time.Minute))
 		} else {
-			logging.Debug("Build status: %s (elapsed: %s)", status, elapsed)
+			logging.DebugContext(ctx, "Build status: %s (elapsed: %s)", status, elapsed)
 		}
 	}
 }
@@ -279,7 +284,7 @@ func (m *PipelineManager) logBuildProgress(status types.ImageStatus, elapsed tim
 func (m *PipelineManager) handlePipelineStatus(ctx context.Context, image *types.Image, imageARN string, status types.ImageStatus, elapsed time.Duration) (*types.Image, error) {
 	switch status {
 	case types.ImageStatusAvailable:
-		logging.Info("Pipeline completed successfully in %s", elapsed)
+		logging.InfoContext(ctx, "Pipeline completed successfully in %s", elapsed)
 		return image, nil
 	case types.ImageStatusFailed, types.ImageStatusCancelled, types.ImageStatusDeprecated:
 		failureDetails := m.getFailureDetails(ctx, image, imageARN)
@@ -414,7 +419,7 @@ func (m *PipelineManager) GetPipeline(ctx context.Context, pipelineARN string) (
 
 // DeletePipeline deletes an image pipeline
 func (m *PipelineManager) DeletePipeline(ctx context.Context, pipelineARN string) error {
-	logging.Info("Deleting pipeline: %s", pipelineARN)
+	logging.InfoContext(ctx, "Deleting pipeline: %s", pipelineARN)
 
 	input := &imagebuilder.DeleteImagePipelineInput{
 		ImagePipelineArn: aws.String(pipelineARN),
@@ -425,32 +430,32 @@ func (m *PipelineManager) DeletePipeline(ctx context.Context, pipelineARN string
 		return fmt.Errorf("failed to delete pipeline: %w", err)
 	}
 
-	logging.Info("Pipeline deleted successfully: %s", pipelineARN)
+	logging.InfoContext(ctx, "Pipeline deleted successfully: %s", pipelineARN)
 	return nil
 }
 
 // CleanupResources cleans up Image Builder resources
 func (m *PipelineManager) CleanupResources(ctx context.Context, recipeARN, infraARN, distARN string) error {
-	logging.Info("Cleaning up Image Builder resources")
+	logging.InfoContext(ctx, "Cleaning up Image Builder resources")
 
 	// Delete distribution configuration
 	if distARN != "" {
 		if err := m.deleteDistributionConfig(ctx, distARN); err != nil {
-			logging.Warn("Failed to delete distribution config: %v", err)
+			logging.WarnContext(ctx, "Failed to delete distribution config: %v", err)
 		}
 	}
 
 	// Delete infrastructure configuration
 	if infraARN != "" {
 		if err := m.deleteInfrastructureConfig(ctx, infraARN); err != nil {
-			logging.Warn("Failed to delete infrastructure config: %v", err)
+			logging.WarnContext(ctx, "Failed to delete infrastructure config: %v", err)
 		}
 	}
 
 	// Delete image recipe
 	if recipeARN != "" {
 		if err := m.deleteImageRecipe(ctx, recipeARN); err != nil {
-			logging.Warn("Failed to delete image recipe: %v", err)
+			logging.WarnContext(ctx, "Failed to delete image recipe: %v", err)
 		}
 	}
 
@@ -553,7 +558,7 @@ func (m *PipelineManager) getWorkflowExecutionLogs(ctx context.Context, imageARN
 
 	listExecResult, err := m.clients.ImageBuilder.ListWorkflowExecutions(ctx, listExecInput)
 	if err != nil {
-		logging.Debug("Failed to get workflow executions: %v", err)
+		logging.DebugContext(ctx, "Failed to get workflow executions: %v", err)
 		return logs
 	}
 
@@ -587,7 +592,7 @@ func (m *PipelineManager) getWorkflowExecutionLogs(ctx context.Context, imageARN
 
 			stepResult, stepErr := m.clients.ImageBuilder.ListWorkflowStepExecutions(ctx, stepInput)
 			if stepErr != nil {
-				logging.Debug("Failed to get workflow step executions: %v", stepErr)
+				logging.DebugContext(ctx, "Failed to get workflow step executions: %v", stepErr)
 				continue
 			}
 

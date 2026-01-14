@@ -23,6 +23,7 @@ THE SOFTWARE.
 package builder
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 
@@ -62,17 +63,17 @@ func NewStrategyDetector() (*StrategyDetector, error) {
 }
 
 // DetectStrategy determines the build strategy for a target architecture
-func (sd *StrategyDetector) DetectStrategy(targetArch string) (BuildStrategy, string) {
+func (sd *StrategyDetector) DetectStrategy(ctx context.Context, targetArch string) (BuildStrategy, string) {
 	// Normalize architecture names
 	normalizedTarget := normalizeArch(targetArch)
 	normalizedHost := normalizeArch(sd.hostArch)
 
 	if normalizedTarget == normalizedHost {
-		logging.Info("Using native build for %s (host arch: %s)", targetArch, sd.hostArch)
+		logging.InfoContext(ctx, "Using native build for %s (host arch: %s)", targetArch, sd.hostArch)
 		return NativeBuild, fmt.Sprintf("Native build on %s", sd.hostArch)
 	}
 
-	logging.Warn("Cross-compiling for %s on %s host - this will use QEMU emulation and may be slower", targetArch, sd.hostArch)
+	logging.WarnContext(ctx, "Cross-compiling for %s on %s host - this will use QEMU emulation and may be slower", targetArch, sd.hostArch)
 	return CrossCompile, fmt.Sprintf("Cross-compile from %s to %s using QEMU", sd.hostArch, targetArch)
 }
 
@@ -89,8 +90,8 @@ func (sd *StrategyDetector) GetOptimalRunnerForArch(arch string) string {
 }
 
 // ShouldWarnSlowBuild determines if we should warn about slow build times
-func (sd *StrategyDetector) ShouldWarnSlowBuild(targetArch string) bool {
-	strategy, _ := sd.DetectStrategy(targetArch)
+func (sd *StrategyDetector) ShouldWarnSlowBuild(ctx context.Context, targetArch string) bool {
+	strategy, _ := sd.DetectStrategy(ctx, targetArch)
 	return strategy == CrossCompile
 }
 
@@ -111,8 +112,8 @@ func normalizeArch(arch string) string {
 }
 
 // EstimateBuildTime estimates relative build time based on strategy
-func (sd *StrategyDetector) EstimateBuildTime(targetArch string, baselineMinutes int) (int, string) {
-	strategy, _ := sd.DetectStrategy(targetArch)
+func (sd *StrategyDetector) EstimateBuildTime(ctx context.Context, targetArch string, baselineMinutes int) (int, string) {
+	strategy, _ := sd.DetectStrategy(ctx, targetArch)
 
 	switch strategy {
 	case NativeBuild:
@@ -128,13 +129,13 @@ func (sd *StrategyDetector) EstimateBuildTime(targetArch string, baselineMinutes
 }
 
 // RecommendParallelism suggests how many parallel builds to run
-func (sd *StrategyDetector) RecommendParallelism(architectures []string) int {
+func (sd *StrategyDetector) RecommendParallelism(ctx context.Context, architectures []string) int {
 	// Count how many are native vs cross-compile
 	nativeCount := 0
 	crossCount := 0
 
 	for _, arch := range architectures {
-		strategy, _ := sd.DetectStrategy(arch)
+		strategy, _ := sd.DetectStrategy(ctx, arch)
 		if strategy == NativeBuild {
 			nativeCount++
 		} else {
@@ -160,13 +161,13 @@ func (sd *StrategyDetector) RecommendParallelism(architectures []string) int {
 }
 
 // GetBuildMatrix returns the build matrix for CI/CD
-func (sd *StrategyDetector) GetBuildMatrix(architectures []string) []BuildMatrixEntry {
+func (sd *StrategyDetector) GetBuildMatrix(ctx context.Context, architectures []string) []BuildMatrixEntry {
 	var matrix []BuildMatrixEntry
 
 	for _, arch := range architectures {
-		strategy, reason := sd.DetectStrategy(arch)
+		strategy, reason := sd.DetectStrategy(ctx, arch)
 		runner := sd.GetOptimalRunnerForArch(arch)
-		estimatedMinutes, speedNote := sd.EstimateBuildTime(arch, 10) // 10 min baseline
+		estimatedMinutes, speedNote := sd.EstimateBuildTime(ctx, arch, 10) // 10 min baseline
 
 		matrix = append(matrix, BuildMatrixEntry{
 			Architecture:     arch,

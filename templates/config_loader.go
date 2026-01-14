@@ -44,7 +44,6 @@ func NewLoader() *Loader {
 // LoadFromFileWithVars loads a template configuration from a YAML file with variable substitution
 // Variables from the vars map take precedence over environment variables
 func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*builder.Config, error) {
-	// Read the file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, errors.Wrap("read config file", path, err)
@@ -54,7 +53,6 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 	// Precedence: CLI vars > Environment variables
 	expandedData := l.expandVariables(string(data), vars)
 
-	// Parse YAML
 	var config builder.Config
 	if err := yaml.Unmarshal([]byte(expandedData), &config); err != nil {
 		return nil, errors.Wrap("parse config file", path, err)

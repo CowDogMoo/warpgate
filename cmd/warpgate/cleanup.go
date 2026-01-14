@@ -155,7 +155,7 @@ func runCleanup(cmd *cobra.Command, opts *cleanupOptions) error {
 }
 
 func runCleanupAll(ctx context.Context, cleaner *ami.ResourceCleaner, dryRun, skipConfirmation bool) error {
-	logging.Info("Scanning for all warpgate-created resources...")
+	logging.InfoContext(ctx, "Scanning for all warpgate-created resources...")
 
 	resources, err := cleaner.ListWarpgateResources(ctx)
 	if err != nil {
@@ -163,7 +163,7 @@ func runCleanupAll(ctx context.Context, cleaner *ami.ResourceCleaner, dryRun, sk
 	}
 
 	if len(resources) == 0 {
-		logging.Info("No warpgate-created resources found")
+		logging.InfoContext(ctx, "No warpgate-created resources found")
 		return nil
 	}
 
@@ -183,7 +183,7 @@ func runCleanupAll(ctx context.Context, cleaner *ami.ResourceCleaner, dryRun, sk
 	fmt.Printf("Total: %d resources\n\n", len(resources))
 
 	if dryRun {
-		logging.Info("Dry-run mode - no resources were deleted")
+		logging.InfoContext(ctx, "Dry-run mode - no resources were deleted")
 		return nil
 	}
 
@@ -193,11 +193,11 @@ func runCleanupAll(ctx context.Context, cleaner *ami.ResourceCleaner, dryRun, sk
 		var response string
 		if _, err := fmt.Scanln(&response); err != nil {
 			// If Scanln fails (e.g., empty input), treat as 'N'
-			logging.Info("Cleanup cancelled")
+			logging.InfoContext(ctx, "Cleanup cancelled")
 			return nil
 		}
 		if response != "y" && response != "Y" {
-			logging.Info("Cleanup cancelled")
+			logging.InfoContext(ctx, "Cleanup cancelled")
 			return nil
 		}
 	}
@@ -206,7 +206,7 @@ func runCleanupAll(ctx context.Context, cleaner *ami.ResourceCleaner, dryRun, sk
 }
 
 func runCleanupBuild(ctx context.Context, cleaner *ami.ResourceCleaner, buildName string, dryRun, skipConfirmation bool) error {
-	logging.Info("Scanning for resources from build: %s", buildName)
+	logging.InfoContext(ctx, "Scanning for resources from build: %s", buildName)
 
 	resources, err := cleaner.ListResourcesForBuild(ctx, buildName)
 	if err != nil {
@@ -214,7 +214,7 @@ func runCleanupBuild(ctx context.Context, cleaner *ami.ResourceCleaner, buildNam
 	}
 
 	if len(resources) == 0 {
-		logging.Info("No resources found for build: %s", buildName)
+		logging.InfoContext(ctx, "No resources found for build: %s", buildName)
 		return nil
 	}
 
@@ -231,7 +231,7 @@ func runCleanupBuild(ctx context.Context, cleaner *ami.ResourceCleaner, buildNam
 	fmt.Printf("Total: %d resources\n\n", len(resources))
 
 	if dryRun {
-		logging.Info("Dry-run mode - no resources were deleted")
+		logging.InfoContext(ctx, "Dry-run mode - no resources were deleted")
 		return nil
 	}
 
@@ -241,11 +241,11 @@ func runCleanupBuild(ctx context.Context, cleaner *ami.ResourceCleaner, buildNam
 		var response string
 		if _, err := fmt.Scanln(&response); err != nil {
 			// If Scanln fails (e.g., empty input), treat as 'N'
-			logging.Info("Cleanup cancelled")
+			logging.InfoContext(ctx, "Cleanup cancelled")
 			return nil
 		}
 		if response != "y" && response != "Y" {
-			logging.Info("Cleanup cancelled")
+			logging.InfoContext(ctx, "Cleanup cancelled")
 			return nil
 		}
 	}
@@ -261,14 +261,14 @@ type componentInfo struct {
 }
 
 func runVersionCleanup(ctx context.Context, manager *ami.ResourceManager, opts *cleanupOptions) error {
-	logging.Info("Scanning for component versions to clean up (keeping %d most recent)...", opts.keepVersions)
+	logging.InfoContext(ctx, "Scanning for component versions to clean up (keeping %d most recent)...", opts.keepVersions)
 
 	componentNames, err := getComponentNames(ctx, manager, opts)
 	if err != nil {
 		return err
 	}
 	if len(componentNames) == 0 {
-		logging.Info("No components found")
+		logging.InfoContext(ctx, "No components found")
 		return nil
 	}
 
@@ -276,16 +276,16 @@ func runVersionCleanup(ctx context.Context, manager *ami.ResourceManager, opts *
 	totalToDelete := displayComponentInfos(infos, len(componentNames))
 
 	if totalToDelete == 0 {
-		logging.Info("No old versions to clean up")
+		logging.InfoContext(ctx, "No old versions to clean up")
 		return nil
 	}
 
 	if opts.dryRun {
-		logging.Info("Dry-run mode - no versions were deleted")
+		logging.InfoContext(ctx, "Dry-run mode - no versions were deleted")
 		return nil
 	}
 
-	if !opts.yes && !confirmVersionCleanup() {
+	if !opts.yes && !confirmVersionCleanup(ctx) {
 		return nil
 	}
 
@@ -321,7 +321,7 @@ func getComponentInfos(ctx context.Context, manager *ami.ResourceManager, names 
 	for _, name := range names {
 		versions, err := manager.GetComponentVersions(ctx, name)
 		if err != nil {
-			logging.Warn("Failed to get versions for %s: %v", name, err)
+			logging.WarnContext(ctx, "Failed to get versions for %s: %v", name, err)
 			continue
 		}
 
@@ -361,15 +361,15 @@ func displayComponentInfos(infos []componentInfo, componentCount int) int {
 }
 
 // confirmVersionCleanup prompts for user confirmation
-func confirmVersionCleanup() bool {
+func confirmVersionCleanup(ctx context.Context) bool {
 	fmt.Print("Delete old component versions? [y/N]: ")
 	var response string
 	if _, err := fmt.Scanln(&response); err != nil {
-		logging.Info("Version cleanup cancelled")
+		logging.InfoContext(ctx, "Version cleanup cancelled")
 		return false
 	}
 	if response != "y" && response != "Y" {
-		logging.Info("Version cleanup cancelled")
+		logging.InfoContext(ctx, "Version cleanup cancelled")
 		return false
 	}
 	return true
@@ -381,12 +381,12 @@ func performVersionCleanup(ctx context.Context, manager *ami.ResourceManager, na
 	for _, name := range names {
 		deleted, err := manager.CleanupOldComponentVersions(ctx, name, keepVersions)
 		if err != nil {
-			logging.Warn("Failed to clean up versions for %s: %v", name, err)
+			logging.WarnContext(ctx, "Failed to clean up versions for %s: %v", name, err)
 			continue
 		}
 		totalDeleted += len(deleted)
 	}
 
-	logging.Info("Successfully deleted %d old component versions", totalDeleted)
+	logging.InfoContext(ctx, "Successfully deleted %d old component versions", totalDeleted)
 	return nil
 }

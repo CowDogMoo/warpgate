@@ -63,6 +63,7 @@ package convert
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -128,13 +129,13 @@ func NewPackerConverter(opts PackerConverterOptions) (*PackerConverter, error) {
 }
 
 // Convert performs the conversion from Packer to Warpgate format
-func (c *PackerConverter) Convert() (*builder.Config, error) {
-	logging.Info("Starting Packer template conversion for: %s", c.options.TemplateDir)
+func (c *PackerConverter) Convert(ctx context.Context) (*builder.Config, error) {
+	logging.InfoContext(ctx, "Starting Packer template conversion for: %s", c.options.TemplateDir)
 
 	templateName := filepath.Base(c.options.TemplateDir)
-	description := c.extractDescription()
+	description := c.extractDescription(ctx)
 	hclParser := NewHCLParser()
-	baseImage, baseVersion := c.extractBaseImageHCL(hclParser)
+	baseImage, baseVersion := c.extractBaseImageHCL(ctx, hclParser)
 	if c.options.BaseImage != "" {
 		baseImage = c.options.BaseImage
 		baseVersion = "latest"
@@ -142,11 +143,11 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 
 	dockerPath := filepath.Join(c.options.TemplateDir, "docker.pkr.hcl")
 	_ = hclParser.ParseSourceBlocks(dockerPath)
-	dockerProvisioners := c.parseDockerProvisionersHCL(hclParser)
+	dockerProvisioners := c.parseDockerProvisionersHCL(ctx, hclParser)
 
 	amiPath := filepath.Join(c.options.TemplateDir, "ami.pkr.hcl")
 	_ = hclParser.ParseSourceBlocks(amiPath)
-	amiProvisioners := c.parseAMIProvisionersHCL(hclParser)
+	amiProvisioners := c.parseAMIProvisionersHCL(ctx, hclParser)
 
 	dockerBuilds, _ := hclParser.ParseBuildFile(dockerPath)
 	amiBuilds, _ := hclParser.ParseBuildFile(amiPath)
@@ -167,8 +168,8 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 	// Warn if AMI provisioners differ from Docker provisioners
 	if len(dockerProvisioners) > 0 && len(amiProvisioners) > 0 {
 		if !c.provisionersMatch(dockerProvisioners, amiProvisioners) {
-			logging.Warn("AMI provisioners differ from Docker provisioners - using Docker provisioners for conversion")
-			logging.Warn("You may need to manually review and adjust provisioners for AMI builds")
+			logging.WarnContext(ctx, "AMI provisioners differ from Docker provisioners - using Docker provisioners for conversion")
+			logging.WarnContext(ctx, "You may need to manually review and adjust provisioners for AMI builds")
 		}
 	}
 
@@ -215,23 +216,23 @@ func (c *PackerConverter) Convert() (*builder.Config, error) {
 		Targets:        c.buildTargets(hclParser),
 	}
 
-	logging.Info("Conversion complete: %d provisioners, %d post-processors, %d targets", len(provisioners), len(postProcessors), len(config.Targets))
+	logging.InfoContext(ctx, "Conversion complete: %d provisioners, %d post-processors, %d targets", len(provisioners), len(postProcessors), len(config.Targets))
 
 	return config, nil
 }
 
 // extractDescription reads the README.md and extracts a description
-func (c *PackerConverter) extractDescription() string {
+func (c *PackerConverter) extractDescription(ctx context.Context) string {
 	readmePath := filepath.Join(c.options.TemplateDir, "README.md")
 
 	file, err := os.Open(readmePath)
 	if err != nil {
-		logging.Debug("No README.md found, using default description")
+		logging.DebugContext(ctx, "No README.md found, using default description")
 		return fmt.Sprintf("%s security tooling image", filepath.Base(c.options.TemplateDir))
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			logging.Debug("Failed to close README.md: %v", err)
+			logging.DebugContext(ctx, "Failed to close README.md: %v", err)
 		}
 	}()
 
@@ -329,13 +330,13 @@ func (c *PackerConverter) provisionersMatch(p1, p2 []builder.Provisioner) bool {
 }
 
 // extractBaseImageHCL uses HCL parser to extract base image from variables
-func (c *PackerConverter) extractBaseImageHCL(parser *HCLParser) (string, string) {
+func (c *PackerConverter) extractBaseImageHCL(ctx context.Context, parser *HCLParser) (string, string) {
 	varsPath := filepath.Join(c.options.TemplateDir, "variables.pkr.hcl")
 
 	// Try to parse with HCL
 	err := parser.ParseVariablesFile(varsPath)
 	if err != nil {
-		logging.Debug("Failed to parse variables with HCL, using defaults: %v", err)
+		logging.DebugContext(ctx, "Failed to parse variables with HCL, using defaults: %v", err)
 		return c.globalConfig.Container.DefaultBaseImage, c.globalConfig.Container.DefaultBaseVersion
 	}
 
@@ -355,12 +356,12 @@ func (c *PackerConverter) extractBaseImageHCL(parser *HCLParser) (string, string
 }
 
 // parseDockerProvisionersHCL uses HCL parser to extract provisioners from docker.pkr.hcl
-func (c *PackerConverter) parseDockerProvisionersHCL(parser *HCLParser) []builder.Provisioner {
+func (c *PackerConverter) parseDockerProvisionersHCL(ctx context.Context, parser *HCLParser) []builder.Provisioner {
 	dockerPath := filepath.Join(c.options.TemplateDir, "docker.pkr.hcl")
 
 	builds, err := parser.ParseBuildFile(dockerPath)
 	if err != nil {
-		logging.Debug("Failed to parse docker.pkr.hcl with HCL: %v", err)
+		logging.DebugContext(ctx, "Failed to parse docker.pkr.hcl with HCL: %v", err)
 		return nil
 	}
 
@@ -368,12 +369,12 @@ func (c *PackerConverter) parseDockerProvisionersHCL(parser *HCLParser) []builde
 }
 
 // parseAMIProvisionersHCL uses HCL parser to extract provisioners from ami.pkr.hcl
-func (c *PackerConverter) parseAMIProvisionersHCL(parser *HCLParser) []builder.Provisioner {
+func (c *PackerConverter) parseAMIProvisionersHCL(ctx context.Context, parser *HCLParser) []builder.Provisioner {
 	amiPath := filepath.Join(c.options.TemplateDir, "ami.pkr.hcl")
 
 	builds, err := parser.ParseBuildFile(amiPath)
 	if err != nil {
-		logging.Debug("Failed to parse ami.pkr.hcl with HCL: %v", err)
+		logging.DebugContext(ctx, "Failed to parse ami.pkr.hcl with HCL: %v", err)
 		return nil
 	}
 

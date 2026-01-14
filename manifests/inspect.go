@@ -87,18 +87,15 @@ type ArchitectureInfo struct {
 
 // InspectManifest inspects a manifest from the registry using go-containerregistry
 func InspectManifest(ctx context.Context, opts InspectOptions) (*ManifestInfo, error) {
-	logging.Debug("Inspecting manifest: %s/%s:%s", opts.Registry, opts.ImageName, opts.Tag)
+	logging.DebugContext(ctx, "Inspecting manifest: %s/%s:%s", opts.Registry, opts.ImageName, opts.Tag)
 
-	// Build image reference
 	imageRef := BuildManifestReference(opts.Registry, opts.Namespace, opts.ImageName, opts.Tag)
 
-	// Parse reference using go-containerregistry
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse reference: %w", err)
 	}
 
-	// Get descriptor (manifest metadata)
 	descriptor, err := remote.Get(ref, remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get manifest: %w", err)
@@ -116,7 +113,6 @@ func InspectManifest(ctx context.Context, opts InspectOptions) (*ManifestInfo, e
 		Annotations: make(map[string]string),
 	}
 
-	// Parse manifest based on media type
 	if isMultiArchMediaType(descriptor.MediaType) {
 		// Multi-arch manifest (OCI Index or Docker Manifest List)
 		if err := parseMultiArchManifestFromDescriptor(descriptor, info); err != nil {
@@ -124,7 +120,7 @@ func InspectManifest(ctx context.Context, opts InspectOptions) (*ManifestInfo, e
 		}
 	} else {
 		// Single-arch manifest
-		if err := parseSingleArchManifestFromDescriptor(descriptor, info); err != nil {
+		if err := parseSingleArchManifestFromDescriptor(ctx, descriptor, info); err != nil {
 			return nil, fmt.Errorf("failed to parse single-arch manifest: %w", err)
 		}
 	}
@@ -146,7 +142,6 @@ func parseMultiArchManifestFromDescriptor(descriptor *remote.Descriptor, info *M
 		return fmt.Errorf("failed to get image index: %w", err)
 	}
 
-	// Get index manifest
 	indexManifest, err := index.IndexManifest()
 	if err != nil {
 		return fmt.Errorf("failed to get index manifest: %w", err)
@@ -179,7 +174,7 @@ func parseMultiArchManifestFromDescriptor(descriptor *remote.Descriptor, info *M
 }
 
 // parseSingleArchManifestFromDescriptor parses a single-architecture manifest from a descriptor
-func parseSingleArchManifestFromDescriptor(descriptor *remote.Descriptor, info *ManifestInfo) error {
+func parseSingleArchManifestFromDescriptor(ctx context.Context, descriptor *remote.Descriptor, info *ManifestInfo) error {
 	// Try to get as image (single-arch)
 	img, err := descriptor.Image()
 	if err != nil {
@@ -192,10 +187,9 @@ func parseSingleArchManifestFromDescriptor(descriptor *remote.Descriptor, info *
 		return fmt.Errorf("failed to get manifest: %w", err)
 	}
 
-	// Get config file for platform info
 	configFile, err := img.ConfigFile()
 	if err != nil {
-		logging.Warn("Failed to get config file for manifest %s: %v. Architecture info will be incomplete.",
+		logging.WarnContext(ctx, "Failed to get config file for manifest %s: %v. Architecture info will be incomplete.",
 			manifest.Config.Digest.String()[:12], err)
 		// Continue without platform info - we'll use "unknown" values
 		configFile = nil
@@ -228,15 +222,12 @@ func parseSingleArchManifestFromDescriptor(descriptor *remote.Descriptor, info *
 
 // ListTags lists available tags for an image in the registry using go-containerregistry
 func ListTags(ctx context.Context, opts ListOptions) ([]string, error) {
-	logging.Debug("Listing tags for: %s/%s", opts.Registry, opts.ImageName)
+	logging.DebugContext(ctx, "Listing tags for: %s/%s", opts.Registry, opts.ImageName)
 
-	// Build repository reference
 	imageRef := BuildManifestReference(opts.Registry, opts.Namespace, opts.ImageName, "")
-	// Remove trailing colon if no tag was specified
 	imageRef = fmt.Sprintf("%s:%s", imageRef[:len(imageRef)-1], "latest")
 
-	// Parse as repository
-	repo, err := name.NewRepository(imageRef[:len(imageRef)-7]) // Remove ":latest"
+	repo, err := name.NewRepository(imageRef[:len(imageRef)-7])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse repository: %w", err)
 	}

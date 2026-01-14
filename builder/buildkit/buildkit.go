@@ -88,7 +88,7 @@ var _ builder.ContainerBuilder = (*BuildKitBuilder)(nil)
 func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		logging.Warn("Failed to load config, using defaults: %v", err)
+		logging.WarnContext(ctx, "Failed to load config, using defaults: %v", err)
 		cfg = &config.Config{}
 	}
 
@@ -99,7 +99,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	if cfg.BuildKit.Endpoint != "" {
 		// Use configured endpoint
 		addr = cfg.BuildKit.Endpoint
-		logging.Info("Using configured BuildKit endpoint: %s", addr)
+		logging.InfoContext(ctx, "Using configured BuildKit endpoint: %s", addr)
 	} else {
 		// Auto-detect local buildx builder
 		builderName, containerName, err = detectBuildxBuilder(ctx)
@@ -107,7 +107,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 			return nil, errors.Wrap("detect buildx builder", "set buildkit.endpoint in config for remote BuildKit", err)
 		}
 		addr = fmt.Sprintf("docker-container://%s", containerName)
-		logging.Info("Auto-detected BuildKit builder: %s", containerName)
+		logging.InfoContext(ctx, "Auto-detected BuildKit builder: %s", containerName)
 	}
 
 	clientOpts := []client.ClientOpt{}
@@ -120,12 +120,12 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		clientOpts = append(clientOpts, client.WithGRPCDialOption(
 			grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		))
-		logging.Info("TLS enabled for BuildKit connection")
+		logging.InfoContext(ctx, "TLS enabled for BuildKit connection")
 	} else if strings.HasPrefix(addr, "tcp://") {
 		clientOpts = append(clientOpts, client.WithGRPCDialOption(
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		))
-		logging.Warn("Connecting to BuildKit without TLS (insecure)")
+		logging.WarnContext(ctx, "Connecting to BuildKit without TLS (insecure)")
 	}
 
 	c, err := client.New(ctx, addr, clientOpts...)
@@ -139,7 +139,7 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		return nil, errors.Wrap("verify BuildKit connection", "", err)
 	}
 
-	logging.Info("BuildKit client connected (version %s)", info.BuildkitVersion.Version)
+	logging.InfoContext(ctx, "BuildKit client connected (version %s)", info.BuildkitVersion.Version)
 
 	dockerCli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
@@ -208,9 +208,10 @@ func loadTLSConfig(cfg config.BuildKitConfig) (*tls.Config, error) {
 // This enables authentication for base image pulls from private registries.
 // Returns nil if no Docker config is available (falls back to anonymous access).
 func createAuthProvider() []session.Attachable {
+	ctx := context.Background()
 	dockerCfg, err := dockerconfig.Load(dockerconfig.Dir())
 	if err != nil {
-		logging.Debug("Failed to load Docker config for auth: %v (using anonymous access)", err)
+		logging.DebugContext(ctx, "Failed to load Docker config for auth: %v (using anonymous access)", err)
 		return nil
 	}
 
@@ -218,7 +219,7 @@ func createAuthProvider() []session.Attachable {
 		ConfigFile: dockerCfg,
 	})
 
-	logging.Debug("Created auth provider from Docker config for base image pulls")
+	logging.DebugContext(ctx, "Created auth provider from Docker config for base image pulls")
 	return []session.Attachable{ap}
 }
 
@@ -226,14 +227,14 @@ func createAuthProvider() []session.Attachable {
 // Cache sources (cacheFrom) are used to import cache from external registries.
 // Cache destinations (cacheTo) specify where to export cache after the build.
 // Format example: "type=registry,ref=user/app:cache,mode=max"
-func (b *BuildKitBuilder) SetCacheOptions(cacheFrom, cacheTo []string) {
+func (b *BuildKitBuilder) SetCacheOptions(ctx context.Context, cacheFrom, cacheTo []string) {
 	b.cacheFrom = cacheFrom
 	b.cacheTo = cacheTo
 	if len(cacheFrom) > 0 {
-		logging.Info("BuildKit cache sources: %v", cacheFrom)
+		logging.InfoContext(ctx, "BuildKit cache sources: %v", cacheFrom)
 	}
 	if len(cacheTo) > 0 {
-		logging.Info("BuildKit cache destinations: %v", cacheTo)
+		logging.InfoContext(ctx, "BuildKit cache destinations: %v", cacheTo)
 	}
 }
 
@@ -275,7 +276,7 @@ func detectBuildxBuilder(ctx context.Context) (string, string, error) {
 	}
 	defer func() {
 		if err := dockerCli.Close(); err != nil {
-			logging.Warn("Failed to close Docker client: %v", err)
+			logging.WarnContext(ctx, "Failed to close Docker client: %v", err)
 		}
 	}()
 
@@ -303,7 +304,7 @@ func detectBuildxBuilder(ctx context.Context) (string, string, error) {
 				builderName := strings.TrimPrefix(name, "buildx_buildkit_")
 				builderName = strings.TrimSuffix(builderName, "0")
 
-				logging.Debug("Found buildx builder: %s (container: %s)", builderName, name)
+				logging.DebugContext(ctx, "Found buildx builder: %s (container: %s)", builderName, name)
 				return builderName, name, nil
 			}
 		}
@@ -376,6 +377,7 @@ func (b *BuildKitBuilder) convertToLLB(cfg builder.Config) (llb.State, error) {
 
 // applyProvisioner applies a provisioner to the LLB state.
 func (b *BuildKitBuilder) applyProvisioner(state llb.State, prov builder.Provisioner, cfg builder.Config) (llb.State, error) {
+	ctx := context.Background()
 	switch prov.Type {
 	case "shell":
 		return b.applyShellProvisioner(state, prov)
@@ -388,7 +390,7 @@ func (b *BuildKitBuilder) applyProvisioner(state llb.State, prov builder.Provisi
 	case "powershell":
 		return b.applyPowerShellProvisioner(state, prov)
 	default:
-		logging.Warn("Unsupported provisioner type: %s", prov.Type)
+		logging.WarnContext(ctx, "Unsupported provisioner type: %s", prov.Type)
 		return state, nil
 	}
 }
@@ -462,10 +464,11 @@ func (b *BuildKitBuilder) applyShellProvisioner(state llb.State, prov builder.Pr
 
 // applyFileProvisioner applies file copy operations to LLB state.
 func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Provisioner) (llb.State, error) {
-	logging.Debug("[FILE PROV] Starting - source: %s, dest: %s", prov.Source, prov.Destination)
+	ctx := context.Background()
+	logging.DebugContext(ctx, "[FILE PROV] Starting - source: %s, dest: %s", prov.Source, prov.Destination)
 
 	if prov.Source == "" || prov.Destination == "" {
-		logging.Debug("[FILE PROV] Empty source or dest, skipping")
+		logging.DebugContext(ctx, "[FILE PROV] Empty source or dest, skipping")
 		return state, nil
 	}
 
@@ -474,14 +477,14 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 		return state, fmt.Errorf("failed to resolve source path: %w", err)
 	}
 
-	logging.Debug("[FILE PROV] Resolved source path: %s", sourcePath)
+	logging.DebugContext(ctx, "[FILE PROV] Resolved source path: %s", sourcePath)
 
 	absSource, err := filepath.Abs(filepath.Join(b.contextDir, sourcePath))
 	if err != nil {
 		return state, fmt.Errorf("failed to resolve absolute source path: %w", err)
 	}
 
-	logging.Debug("[FILE PROV] Context: %s, Source: %s, Abs: %s, Dest: %s",
+	logging.DebugContext(ctx, "[FILE PROV] Context: %s, Source: %s, Abs: %s, Dest: %s",
 		b.contextDir, sourcePath, absSource, prov.Destination)
 
 	info, err := os.Stat(absSource)
@@ -489,12 +492,12 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 		return state, fmt.Errorf("failed to stat source %s: %w", absSource, err)
 	}
 
-	logging.Debug("[FILE PROV] Source is dir: %v, size: %d", info.IsDir(), info.Size())
+	logging.DebugContext(ctx, "[FILE PROV] Source is dir: %v, size: %d", info.IsDir(), info.Size())
 
 	if info.IsDir() {
 		// For directories: BuildKit copies the directory INTO the destination
 		// So copying "ares" to "/tmp" creates "/tmp/ares"
-		logging.Debug("[FILE PROV] Directory copy: %s -> %s (will create %s/%s)",
+		logging.DebugContext(ctx, "[FILE PROV] Directory copy: %s -> %s (will create %s/%s)",
 			sourcePath, prov.Destination, prov.Destination, filepath.Base(sourcePath))
 
 		state = state.File(
@@ -608,7 +611,8 @@ func (b *BuildKitBuilder) applyAnsibleProvisioner(state llb.State, prov builder.
 	if collectionRoot != "" {
 		relCollectionRoot, err := b.makeRelativePath(collectionRoot)
 		if err != nil {
-			logging.Warn("Failed to resolve collection root, skipping: %v", err)
+			ctx := context.Background()
+			logging.WarnContext(ctx, "Failed to resolve collection root, skipping: %v", err)
 		} else {
 			state = state.File(
 				llb.Copy(
@@ -728,6 +732,7 @@ func detectCollectionRoot(playbookPath string) string {
 
 // buildExportAttributes creates export attributes for BuildKit including labels
 func buildExportAttributes(imageName string, labels map[string]string) map[string]string {
+	ctx := context.Background()
 	exportAttrs := map[string]string{
 		"name": imageName,
 	}
@@ -737,7 +742,7 @@ func buildExportAttributes(imageName string, labels map[string]string) map[strin
 			// BuildKit expects labels in the format "label:key=value"
 			labelKey := fmt.Sprintf("label:%s", key)
 			exportAttrs[labelKey] = value
-			logging.Debug("Adding label to image: %s=%s", key, value)
+			logging.DebugContext(ctx, "Adding label to image: %s=%s", key, value)
 		}
 	}
 
@@ -746,6 +751,7 @@ func buildExportAttributes(imageName string, labels map[string]string) map[strin
 
 // configureCacheOptions configures cache import/export for BuildKit.
 func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, cfg builder.Config) {
+	ctx := context.Background()
 	// Determine if caching should be disabled
 	// For local templates, disable caching by default to ensure changes are reflected
 	// Can be overridden with explicit cache parameters (--cache-from, --cache-to)
@@ -753,7 +759,7 @@ func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, cfg b
 
 	if !noCache {
 		if len(b.cacheFrom) > 0 {
-			logging.Info("Configuring cache import from %d source(s)", len(b.cacheFrom))
+			logging.InfoContext(ctx, "Configuring cache import from %d source(s)", len(b.cacheFrom))
 			for _, cacheSource := range b.cacheFrom {
 				solveOpt.CacheImports = append(solveOpt.CacheImports, client.CacheOptionsEntry{
 					Type:  "registry",
@@ -763,7 +769,7 @@ func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, cfg b
 		}
 
 		if len(b.cacheTo) > 0 {
-			logging.Info("Configuring cache export to %d destination(s)", len(b.cacheTo))
+			logging.InfoContext(ctx, "Configuring cache export to %d destination(s)", len(b.cacheTo))
 			for _, cacheDest := range b.cacheTo {
 				solveOpt.CacheExports = append(solveOpt.CacheExports, client.CacheOptionsEntry{
 					Type:  "registry",
@@ -776,7 +782,7 @@ func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, cfg b
 		if cfg.IsLocalTemplate {
 			reason = "local template detected (changes will be reflected immediately)"
 		}
-		logging.Info("Caching disabled - %s", reason)
+		logging.InfoContext(ctx, "Caching disabled - %s", reason)
 	}
 }
 
@@ -784,7 +790,7 @@ func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, cfg b
 func (b *BuildKitBuilder) getLocalImageDigest(ctx context.Context, imageName string) string {
 	inspect, err := b.dockerClient.ImageInspect(ctx, imageName)
 	if err != nil {
-		logging.Warn("Failed to inspect image %s: %v", imageName, err)
+		logging.WarnContext(ctx, "Failed to inspect image %s: %v", imageName, err)
 		return ""
 	}
 
@@ -807,14 +813,14 @@ func (b *BuildKitBuilder) getLocalImageDigest(ctx context.Context, imageName str
 
 // loadAndTagImage loads the built Docker image tar into Docker and tags it using Docker SDK
 func (b *BuildKitBuilder) loadAndTagImage(ctx context.Context, imageTarPath, imageName string) error {
-	logging.Info("Loading image into Docker...")
+	logging.InfoContext(ctx, "Loading image into Docker...")
 	imageFile, err := os.Open(imageTarPath)
 	if err != nil {
 		return fmt.Errorf("failed to open image tar: %w", err)
 	}
 	defer func() {
 		if err := imageFile.Close(); err != nil {
-			logging.Warn("Failed to close image file: %v", err)
+			logging.WarnContext(ctx, "Failed to close image file: %v", err)
 		}
 	}()
 
@@ -824,18 +830,18 @@ func (b *BuildKitBuilder) loadAndTagImage(ctx context.Context, imageTarPath, ima
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			logging.Warn("Failed to close response body: %v", err)
+			logging.WarnContext(ctx, "Failed to close response body: %v", err)
 		}
 	}()
 
 	buf := new(strings.Builder)
 	if _, err := io.Copy(buf, resp.Body); err != nil {
-		logging.Warn("Failed to read load response: %v", err)
+		logging.WarnContext(ctx, "Failed to read load response: %v", err)
 	} else {
-		logging.Debug("Image load response: %s", buf.String())
+		logging.DebugContext(ctx, "Image load response: %s", buf.String())
 	}
 
-	logging.Info("Image loaded successfully: %s", imageName)
+	logging.InfoContext(ctx, "Image loaded successfully: %s", imageName)
 	return nil
 }
 
@@ -878,7 +884,8 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 		commonParent = findCommonParent(commonParent, p)
 	}
 
-	logging.Debug("Calculated build context from %d file(s): %s", len(paths), commonParent)
+	ctx := context.Background()
+	logging.DebugContext(ctx, "Calculated build context from %d file(s): %s", len(paths), commonParent)
 	return commonParent, nil
 }
 
@@ -1021,13 +1028,13 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 	}
 
 	startTime := time.Now()
-	logging.Info("Building image: %s (native LLB)", cfg.Name)
+	logging.InfoContext(ctx, "Building image: %s (native LLB)", cfg.Name)
 
 	contextDir, err := b.calculateBuildContext(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate build context: %w", err)
 	}
-	logging.Debug("Using build context: %s", contextDir)
+	logging.DebugContext(ctx, "Using build context: %s", contextDir)
 
 	b.contextDir = contextDir
 
@@ -1041,7 +1048,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, fmt.Errorf("LLB marshal failed: %w", err)
 	}
 
-	logging.Debug("LLB definition: %d bytes", len(def.Def))
+	logging.DebugContext(ctx, "LLB definition: %d bytes", len(def.Def))
 
 	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
 	if cfg.Registry != "" {
@@ -1051,7 +1058,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
-			logging.Warn("Failed to remove temporary image tar: %v", err)
+			logging.WarnContext(ctx, "Failed to remove temporary image tar: %v", err)
 		}
 	}()
 
@@ -1078,7 +1085,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 	ch := make(chan *client.SolveStatus)
 	done := make(chan struct{})
 
-	go b.displayProgress(ch, done)
+	go b.displayProgress(ctx, ch, done)
 
 	_, err = b.client.Solve(ctx, def, solveOpt, ch)
 	<-done
@@ -1133,20 +1140,21 @@ func fixedWriteCloser(filepath string) func(map[string]string) (io.WriteCloser, 
 // The done channel MUST be closed by this function to signal build completion.
 //
 // Parameters:
+//   - ctx: Context for logging operations
 //   - ch: Channel of solve status updates from BuildKit (closed when build completes)
 //   - done: Channel to signal when progress display is complete (closed by this function)
-func (b *BuildKitBuilder) displayProgress(ch <-chan *client.SolveStatus, done chan<- struct{}) {
+func (b *BuildKitBuilder) displayProgress(ctx context.Context, ch <-chan *client.SolveStatus, done chan<- struct{}) {
 	defer close(done)
 
 	for status := range ch {
 		// codespell:ignore vertexes
 		for _, vertex := range status.Vertexes {
 			if vertex.Name != "" {
-				logging.Debug("[%s] %s", vertex.Digest.String()[:12], vertex.Name)
+				logging.DebugContext(ctx, "[%s] %s", vertex.Digest.String()[:12], vertex.Name)
 			}
 		}
 		for _, log := range status.Logs {
-			fmt.Print(string(log.Data))
+			logging.PrintContext(ctx, string(log.Data))
 		}
 	}
 }
@@ -1173,7 +1181,7 @@ func extractRegistryFromImageRef(imageRef string) string {
 
 // Push pushes the built image to a container registry using the Docker SDK.
 func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
-	logging.Info("Pushing image: %s", imageRef)
+	logging.InfoContext(ctx, "Pushing image: %s", imageRef)
 
 	fullImageRef := imageRef
 	if registry != "" && !strings.Contains(imageRef, "/") {
@@ -1184,11 +1192,11 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 	}
 
 	registryHostname := extractRegistryFromImageRef(fullImageRef)
-	logging.Debug("Using registry hostname for auth: %s", registryHostname)
+	logging.DebugContext(ctx, "Using registry hostname for auth: %s", registryHostname)
 
 	registryAuth, err := ToDockerSDKAuth(ctx, registryHostname)
 	if err != nil {
-		logging.Warn("Failed to get registry credentials: %v (attempting push anyway)", err)
+		logging.WarnContext(ctx, "Failed to get registry credentials: %v (attempting push anyway)", err)
 		registryAuth = ""
 	}
 
@@ -1196,23 +1204,23 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		RegistryAuth: registryAuth,
 	}
 
-	logging.Info("Pushing to: %s", fullImageRef)
+	logging.InfoContext(ctx, "Pushing to: %s", fullImageRef)
 	resp, err := b.dockerClient.ImagePush(ctx, fullImageRef, pushOpts)
 	if err != nil {
 		return "", fmt.Errorf("failed to push %s: %w", fullImageRef, err)
 	}
 	defer func() {
 		if err := resp.Close(); err != nil {
-			logging.Warn("Failed to close response: %v", err)
+			logging.WarnContext(ctx, "Failed to close response: %v", err)
 		}
 	}()
 
 	buf := new(strings.Builder)
 	if _, err := io.Copy(buf, resp); err != nil {
-		logging.Warn("Failed to read push response: %v", err)
+		logging.WarnContext(ctx, "Failed to read push response: %v", err)
 	} else {
 		output := buf.String()
-		logging.Debug("Push response: %s", output)
+		logging.DebugContext(ctx, "Push response: %s", output)
 
 		if strings.Contains(output, "\"error\"") {
 			return "", fmt.Errorf("push failed: %s", output)
@@ -1221,7 +1229,7 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 
 	inspect, err := b.dockerClient.ImageInspect(ctx, fullImageRef)
 	if err != nil {
-		logging.Warn("Failed to inspect image after push: %v", err)
+		logging.WarnContext(ctx, "Failed to inspect image after push: %v", err)
 		return "", nil
 	}
 
@@ -1230,12 +1238,12 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		digestParts := strings.Split(repoDigest, "@")
 		if len(digestParts) == 2 {
 			digest := digestParts[1]
-			logging.Info("Image digest: %s", digest)
+			logging.InfoContext(ctx, "Image digest: %s", digest)
 			return digest, nil
 		}
 	}
 
-	logging.Warn("No digest found for %s", fullImageRef)
+	logging.WarnContext(ctx, "No digest found for %s", fullImageRef)
 	return "", nil
 }
 
@@ -1245,7 +1253,7 @@ func (b *BuildKitBuilder) Tag(ctx context.Context, imageRef, newTag string) erro
 		return fmt.Errorf("docker tag failed: %w", err)
 	}
 
-	logging.Debug("Tagged %s as %s", imageRef, newTag)
+	logging.DebugContext(ctx, "Tagged %s as %s", imageRef, newTag)
 	return nil
 }
 
@@ -1261,7 +1269,7 @@ func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 		return fmt.Errorf("docker rmi failed: %w", err)
 	}
 
-	logging.Debug("Removed image: %s", imageRef)
+	logging.DebugContext(ctx, "Removed image: %s", imageRef)
 	return nil
 }
 
@@ -1271,13 +1279,13 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 		return fmt.Errorf("no manifest entries provided")
 	}
 
-	logging.Info("Creating multi-arch manifest: %s", manifestName)
-	logging.Info("Manifest %s will include %d architectures:", manifestName, len(entries))
+	logging.InfoContext(ctx, "Creating multi-arch manifest: %s", manifestName)
+	logging.InfoContext(ctx, "Manifest %s will include %d architectures:", manifestName, len(entries))
 
 	manifestDescriptors := make([]specs.Descriptor, 0, len(entries))
 
 	for _, entry := range entries {
-		logging.Info("  - %s/%s (digest: %s)", entry.OS, entry.Architecture, entry.Digest.String())
+		logging.InfoContext(ctx, "  - %s/%s (digest: %s)", entry.OS, entry.Architecture, entry.Digest.String())
 
 		if entry.Digest.String() == "" {
 			return fmt.Errorf("no digest found for %s/%s", entry.OS, entry.Architecture)
@@ -1294,7 +1302,7 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 		inspect, err := b.dockerClient.ImageInspect(ctx, entry.ImageRef)
 		var imageSize int64
 		if err != nil {
-			logging.Warn("Failed to inspect image %s for size (using 0): %v", entry.ImageRef, err)
+			logging.WarnContext(ctx, "Failed to inspect image %s for size (using 0): %v", entry.ImageRef, err)
 			imageSize = 0
 		} else {
 			imageSize = inspect.Size
@@ -1321,8 +1329,8 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 		return fmt.Errorf("failed to marshal manifest list: %w", err)
 	}
 
-	logging.Debug("Manifest list JSON: %s", string(manifestJSON))
-	logging.Info("Successfully created multi-arch manifest: %s", manifestName)
+	logging.DebugContext(ctx, "Manifest list JSON: %s", string(manifestJSON))
+	logging.InfoContext(ctx, "Successfully created multi-arch manifest: %s", manifestName)
 
 	ref, err := name.ParseReference(manifestName)
 	if err != nil {
@@ -1333,19 +1341,19 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 	for _, entry := range entries {
 		imgRef, err := name.ParseReference(entry.ImageRef)
 		if err != nil {
-			logging.Warn("Failed to parse image reference %s: %v (skipping)", entry.ImageRef, err)
+			logging.WarnContext(ctx, "Failed to parse image reference %s: %v (skipping)", entry.ImageRef, err)
 			continue
 		}
 
 		desc, err := remote.Get(imgRef, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithContext(ctx))
 		if err != nil {
-			logging.Warn("Failed to get remote descriptor for %s: %v (skipping)", entry.ImageRef, err)
+			logging.WarnContext(ctx, "Failed to get remote descriptor for %s: %v (skipping)", entry.ImageRef, err)
 			continue
 		}
 
 		img, err := desc.Image()
 		if err != nil {
-			logging.Warn("Failed to convert descriptor to image for %s: %v (skipping)", entry.ImageRef, err)
+			logging.WarnContext(ctx, "Failed to convert descriptor to image for %s: %v (skipping)", entry.ImageRef, err)
 			continue
 		}
 
@@ -1374,7 +1382,7 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 		adds...,
 	), mediaType)
 
-	logging.Info("Pushing manifest list to registry: %s", manifestName)
+	logging.InfoContext(ctx, "Pushing manifest list to registry: %s", manifestName)
 	if err := remote.WriteIndex(ref, idx,
 		remote.WithAuthFromKeychain(authn.DefaultKeychain),
 		remote.WithContext(ctx),
@@ -1382,20 +1390,20 @@ func (b *BuildKitBuilder) CreateAndPushManifest(ctx context.Context, manifestNam
 		return fmt.Errorf("failed to push manifest list: %w", err)
 	}
 
-	logging.Info("Successfully pushed multi-arch manifest: %s", manifestName)
+	logging.InfoContext(ctx, "Successfully pushed multi-arch manifest: %s", manifestName)
 	return nil
 }
 
 // InspectManifest retrieves information about a manifest list from Docker.
 func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName string) ([]manifests.ManifestEntry, error) {
-	logging.Debug("Inspecting manifest: %s", manifestName)
+	logging.DebugContext(ctx, "Inspecting manifest: %s", manifestName)
 
 	inspect, err := b.dockerClient.DistributionInspect(ctx, manifestName, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect manifest: %w", err)
 	}
 
-	logging.Debug("Manifest descriptor: %+v", inspect.Descriptor)
+	logging.DebugContext(ctx, "Manifest descriptor: %+v", inspect.Descriptor)
 
 	var entries []manifests.ManifestEntry
 
@@ -1409,14 +1417,14 @@ func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName stri
 		})
 	}
 
-	logging.Debug("Found %d manifest entries", len(entries))
+	logging.DebugContext(ctx, "Found %d manifest entries", len(entries))
 	return entries, nil
 }
 
 // BuildDockerfile builds a container image using a Dockerfile with BuildKit's native client.
 func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
 	startTime := time.Now()
-	logging.Info("Building image from Dockerfile: %s (native BuildKit)", cfg.Name)
+	logging.InfoContext(ctx, "Building image from Dockerfile: %s (native BuildKit)", cfg.Name)
 
 	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
 	if cfg.Registry != "" {
@@ -1427,7 +1435,7 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 	dockerfilePath := dockerfileCfg.GetDockerfilePath()
 	buildContext := dockerfileCfg.GetBuildContext()
 
-	logging.Debug("Dockerfile: %s, Context: %s", dockerfilePath, buildContext)
+	logging.DebugContext(ctx, "Dockerfile: %s, Context: %s", dockerfilePath, buildContext)
 
 	relDockerfilePath, err := filepath.Rel(buildContext, dockerfilePath)
 	if err != nil {
@@ -1461,7 +1469,7 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
-			logging.Warn("Failed to remove temporary image tar: %v", err)
+			logging.WarnContext(ctx, "Failed to remove temporary image tar: %v", err)
 		}
 	}()
 
@@ -1489,7 +1497,7 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 	ch := make(chan *client.SolveStatus)
 	done := make(chan struct{})
 
-	go b.displayProgress(ch, done)
+	go b.displayProgress(ctx, ch, done)
 
 	_, err = b.client.Solve(ctx, nil, solveOpt, ch)
 	<-done

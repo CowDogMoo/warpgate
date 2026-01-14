@@ -111,7 +111,7 @@ func NewValidator(clients *AWSClients) *Validator {
 func (v *Validator) ValidateBuild(ctx context.Context, config builder.Config, target *builder.Target) *ValidationResult {
 	result := &ValidationResult{Valid: true}
 
-	logging.Info("Running dry-run validation...")
+	logging.InfoContext(ctx, "Running dry-run validation...")
 
 	// Validate basic configuration
 	v.validateBasicConfig(result, config, target)

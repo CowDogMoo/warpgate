@@ -60,7 +60,7 @@ type BuildRequest struct {
 
 // BuildMultiArch builds images for multiple architectures in parallel with controlled concurrency.
 func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []BuildRequest, builder ContainerBuilder) ([]BuildResult, error) {
-	logging.Info("Starting multi-arch build for %d architectures", len(requests))
+	logging.InfoContext(ctx, "Starting multi-arch build for %d architectures", len(requests))
 
 	// Use errgroup with concurrency limit
 	g, ctx := errgroup.WithContext(ctx)
@@ -74,7 +74,7 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			logging.Info("Building %s for %s", req.Config.Name, req.Architecture)
+			logging.InfoContext(ctx, "Building %s for %s", req.Config.Name, req.Architecture)
 
 			configCopy := req.Config
 			configCopy.Base.Platform = req.Platform
@@ -84,12 +84,12 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 
 			result, err := builder.Build(ctx, configCopy)
 			if err != nil {
-				logging.Error("Failed to build %s for %s: %v", req.Config.Name, req.Architecture, err)
+				logging.ErrorContext(ctx, "Failed to build %s for %s: %v", req.Config.Name, req.Architecture, err)
 				return errors.Wrap(fmt.Sprintf("build %s", req.Config.Name), req.Architecture, err)
 			}
 
 			results[i] = *result
-			logging.Info("Successfully built %s for %s: %s", req.Config.Name, req.Architecture, result.ImageRef)
+			logging.InfoContext(ctx, "Successfully built %s for %s: %s", req.Config.Name, req.Architecture, result.ImageRef)
 			return nil
 		})
 	}
@@ -98,13 +98,13 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 		return results, errors.Wrap("complete multi-arch build", "", err)
 	}
 
-	logging.Info("Successfully completed all %d architecture builds", len(requests))
+	logging.InfoContext(ctx, "Successfully completed all %d architecture builds", len(requests))
 	return results, nil
 }
 
 // PushMultiArch pushes all architecture-specific images to a registry in parallel.
 func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildResult, registry string, builder ContainerBuilder) error {
-	logging.Info("Pushing %d architecture images to %s", len(results), registry)
+	logging.InfoContext(ctx, "Pushing %d architecture images to %s", len(results), registry)
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -115,19 +115,19 @@ func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildR
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			logging.Info("Pushing %s to %s", result.ImageRef, registry)
+			logging.InfoContext(ctx, "Pushing %s to %s", result.ImageRef, registry)
 
 			digest, err := builder.Push(ctx, result.ImageRef, registry)
 			if err != nil {
-				logging.Error("Failed to push %s: %v", result.ImageRef, err)
+				logging.ErrorContext(ctx, "Failed to push %s: %v", result.ImageRef, err)
 				return errors.Wrap("push image", result.ImageRef, err)
 			}
 
 			if digest != "" {
 				results[i].Digest = digest
-				logging.Info("Successfully pushed %s with digest %s", result.ImageRef, digest)
+				logging.InfoContext(ctx, "Successfully pushed %s with digest %s", result.ImageRef, digest)
 			} else {
-				logging.Info("Successfully pushed %s", result.ImageRef)
+				logging.InfoContext(ctx, "Successfully pushed %s", result.ImageRef)
 			}
 
 			return nil

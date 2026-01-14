@@ -23,6 +23,7 @@ THE SOFTWARE.
 package manifests
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -107,7 +108,7 @@ func TestValidateDigestFiles(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Validate digest files
-			err := ValidateDigestFiles(tt.digestFiles, tt.opts)
+			err := ValidateDigestFiles(context.Background(), tt.digestFiles, tt.opts)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -189,7 +190,7 @@ func TestFilterArchitectures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Filter architectures
-			filtered, err := FilterArchitectures(tt.digestFiles, tt.opts)
+			filtered, err := FilterArchitectures(context.Background(), tt.digestFiles, tt.opts)
 
 			if tt.expectError {
 				assert.Error(t, err)

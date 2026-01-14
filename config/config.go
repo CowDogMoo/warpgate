@@ -41,11 +41,9 @@ func IsNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Check for our sentinel error
 	if errors.Is(err, ErrConfigNotFound) {
 		return true
 	}
-	// Check for Viper's config file not found error
 	var viperNotFound viper.ConfigFileNotFoundError
 	return errors.As(err, &viperNotFound)
 }
@@ -212,10 +210,8 @@ type BuildKitConfig struct {
 func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 	v := viper.New()
 
-	// Set config type
 	v.SetConfigType("yaml")
 
-	// Set sensible defaults
 	setDefaults(v)
 
 	// Environment variable support
@@ -224,7 +220,6 @@ func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 	v.AutomaticEnv()
 	bindEnvVars(v)
 
-	// Call the setup function to configure the Viper instance
 	setupErr := setupFunc(v)
 	if setupErr != nil && !errors.Is(setupErr, ErrConfigNotFound) {
 		// Real error (e.g., parse error) - fail fast
@@ -251,7 +246,6 @@ func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 // Returns an error if a config file is found but cannot be parsed.
 func Load() (*Config, error) {
 	return loadConfigWithViper(func(v *viper.Viper) error {
-		// Set config name (without extension)
 		v.SetConfigName("config")
 
 		// Look in these locations (in order of precedence):
@@ -259,7 +253,6 @@ func Load() (*Config, error) {
 		// 2. Legacy ~/.warpgate directory (backward compatibility)
 		// 3. Current directory
 
-		// Add config paths using our CLI-specific XDG implementation
 		for _, dir := range getConfigDirs() {
 			v.AddConfigPath(dir)
 		}
@@ -267,7 +260,6 @@ func Load() (*Config, error) {
 		// Current directory (lowest priority)
 		v.AddConfigPath(".")
 
-		// Read config file
 		if err := v.ReadInConfig(); err != nil {
 			// Config file not found is a special case - return sentinel error
 			var notFoundErr viper.ConfigFileNotFoundError
@@ -285,10 +277,8 @@ func Load() (*Config, error) {
 // LoadFromPath loads configuration from a specific file path
 func LoadFromPath(path string) (*Config, error) {
 	return loadConfigWithViper(func(v *viper.Viper) error {
-		// Set specific config file path
 		v.SetConfigFile(path)
 
-		// Read the config file (required when loading from a specific path)
 		if err := v.ReadInConfig(); err != nil {
 			return fmt.Errorf("failed to read config file %s: %w", path, err)
 		}
@@ -357,7 +347,6 @@ func setDefaults(v *viper.Viper) {
 	// Templates defaults - use CLI-specific cache directory (~/.cache on Unix-like systems)
 	v.SetDefault("templates.cache_dir", filepath.Join(getCacheHome(), "warpgate", "templates"))
 
-	// Build defaults
 	v.SetDefault("build.parallel_builds", true)
 	v.SetDefault("build.default_arch", []string{"amd64"})
 	v.SetDefault("build.timeout", "2h")

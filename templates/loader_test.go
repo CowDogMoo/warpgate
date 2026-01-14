@@ -23,6 +23,7 @@ THE SOFTWARE.
 package templates
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,7 @@ import (
 )
 
 func TestNewTemplateLoader(t *testing.T) {
-	loader, err := NewTemplateLoader()
+	loader, err := NewTemplateLoader(context.Background())
 	require.NoError(t, err)
 	assert.NotNil(t, loader)
 	assert.NotEmpty(t, loader.cacheDir)
@@ -155,11 +156,11 @@ targets:
 	err := os.WriteFile(configPath, []byte(content), 0644)
 	require.NoError(t, err)
 
-	loader, err := NewTemplateLoader()
+	loader, err := NewTemplateLoader(context.Background())
 	require.NoError(t, err)
 
 	// Test loading from local file (absolute path)
-	cfg, err := loader.LoadTemplateWithVars(configPath, nil)
+	cfg, err := loader.LoadTemplateWithVars(context.Background(), configPath, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "test-template", cfg.Name)
@@ -167,11 +168,11 @@ targets:
 }
 
 func TestTemplateLoader_LoadTemplate_InvalidFile(t *testing.T) {
-	loader, err := NewTemplateLoader()
+	loader, err := NewTemplateLoader(context.Background())
 	require.NoError(t, err)
 
 	// Test loading from non-existent file
-	_, err = loader.LoadTemplateWithVars("/non/existent/path/warpgate.yaml", nil)
+	_, err = loader.LoadTemplateWithVars(context.Background(), "/non/existent/path/warpgate.yaml", nil)
 	assert.Error(t, err)
 }
 
@@ -229,7 +230,7 @@ func TestTemplateLoader_LoadTemplate_ReferenceTypes(t *testing.T) {
 }
 
 func TestTemplateLoader_CacheDirectory(t *testing.T) {
-	loader, err := NewTemplateLoader()
+	loader, err := NewTemplateLoader(context.Background())
 	require.NoError(t, err)
 
 	// Verify cache directory exists
@@ -262,10 +263,10 @@ name: test
 	err := os.WriteFile(invalidConfig, []byte(content), 0644)
 	require.NoError(t, err)
 
-	loader, err := NewTemplateLoader()
+	loader, err := NewTemplateLoader(context.Background())
 	require.NoError(t, err)
 
 	// Should fail validation
-	_, err = loader.loadFromFileWithVars(invalidConfig, nil)
+	_, err = loader.loadFromFileWithVars(context.Background(), invalidConfig, nil)
 	assert.Error(t, err)
 }

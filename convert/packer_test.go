@@ -23,6 +23,7 @@ THE SOFTWARE.
 package convert
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,7 +108,7 @@ Some more content here.`,
 			})
 			require.NoError(t, err)
 
-			result := converter.extractDescription()
+			result := converter.extractDescription(context.Background())
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -216,7 +217,7 @@ variable "provision_repo_path" {
 	})
 	require.NoError(t, err)
 
-	config, err := converter.Convert()
+	config, err := converter.Convert(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, config)
 
@@ -266,7 +267,7 @@ func TestConvertWithBaseImageOverride(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	config, err := converter.Convert()
+	config, err := converter.Convert(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, config)
 
@@ -325,7 +326,7 @@ variable "base_image_version" {
 	})
 	require.NoError(t, err)
 
-	config, err := converter.Convert()
+	config, err := converter.Convert(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, config)
 
@@ -383,7 +384,7 @@ func TestConvertWithProvisionerConditionals(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	config, err := converter.Convert()
+	config, err := converter.Convert(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, config)
 
@@ -453,7 +454,7 @@ variable "provision_repo_path" {
 	})
 	require.NoError(t, err)
 
-	config, err := converter.Convert()
+	config, err := converter.Convert(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, config)
 
@@ -544,7 +545,7 @@ variable "container_user" {
 	})
 	require.NoError(t, err)
 
-	config, err := converter.Convert()
+	config, err := converter.Convert(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, config)
 
@@ -912,7 +913,7 @@ build {
 	})
 	require.NoError(t, err)
 
-	config, err := converter.Convert()
+	config, err := converter.Convert(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, config)
 
