@@ -185,10 +185,36 @@ func init() {
 	manifestsCreateCmd.Flags().BoolVarP(&manifestsOpts.quiet, "quiet", "q", false, "Only output errors")
 	manifestsCreateCmd.Flags().BoolVarP(&manifestsOpts.verbose, "verbose", "v", false, "Verbose output with detailed progress")
 
-	// Add subcommands
 	manifestsCmd.AddCommand(manifestsCreateCmd)
 	manifestsCmd.AddCommand(manifestsInspectCmd)
 	manifestsCmd.AddCommand(manifestsListCmd)
+
+	registerManifestsCompletions(manifestsCreateCmd)
+	registerManifestsCompletions(manifestsInspectCmd)
+	registerManifestsCompletions(manifestsListCmd)
+}
+
+// registerManifestsCompletions registers dynamic shell completion functions for manifests command flags.
+func registerManifestsCompletions(cmd *cobra.Command) {
+	// Registry completion with common registries
+	_ = cmd.RegisterFlagCompletionFunc("registry", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"ghcr.io\tGitHub Container Registry",
+			"docker.io\tDocker Hub",
+			"gcr.io\tGoogle Container Registry",
+			"quay.io\tRed Hat Quay",
+			"registry.gitlab.com\tGitLab Container Registry",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	// Architecture completion for require-arch flag
+	_ = cmd.RegisterFlagCompletionFunc("require-arch", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{
+			"amd64\tLinux/macOS x86_64",
+			"arm64\tLinux/macOS ARM64 (Apple Silicon, AWS Graviton)",
+			"arm/v7\tARM 32-bit (Raspberry Pi)",
+		}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 func init() {

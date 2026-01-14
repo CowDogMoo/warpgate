@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -235,6 +236,185 @@ func TestInjectTokenIntoURL(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestGetGitAuth(t *testing.T) {
+	fetcher, err := NewSourceFetcher("")
+	require.NoError(t, err)
+	defer func() { _ = fetcher.Cleanup() }()
+
+	ctx := context.Background()
+
+	t.Run("returns nil for nil auth", func(t *testing.T) {
+		gitSource := &builder.GitSource{
+			Repository: "https://github.com/org/repo.git",
+			Auth:       nil,
+		}
+
+		auth, err := fetcher.getGitAuth(ctx, gitSource)
+		require.NoError(t, err)
+		assert.Nil(t, auth)
+	})
+
+	t.Run("returns token auth with default username", func(t *testing.T) {
+		gitSource := &builder.GitSource{
+			Repository: "https://github.com/org/repo.git",
+			Auth: &builder.GitAuth{
+				Token: "ghp_testtoken123",
+			},
+		}
+
+		auth, err := fetcher.getGitAuth(ctx, gitSource)
+		require.NoError(t, err)
+		require.NotNil(t, auth)
+
+		switch basicAuth := auth.(type) {
+		case *githttp.BasicAuth:
+			assert.Equal(t, "x-access-token", basicAuth.Username)
+			assert.Equal(t, "ghp_testtoken123", basicAuth.Password)
+		default:
+			t.Fatalf("expected BasicAuth type, got %T", auth)
+		}
+	})
+
+	t.Run("returns token auth with custom username", func(t *testing.T) {
+		gitSource := &builder.GitSource{
+			Repository: "https://gitlab.com/org/repo.git",
+			Auth: &builder.GitAuth{
+				Username: "oauth2",
+				Token:    "glpat_testtoken123",
+			},
+		}
+
+		auth, err := fetcher.getGitAuth(ctx, gitSource)
+		require.NoError(t, err)
+		require.NotNil(t, auth)
+
+		switch basicAuth := auth.(type) {
+		case *githttp.BasicAuth:
+			assert.Equal(t, "oauth2", basicAuth.Username)
+			assert.Equal(t, "glpat_testtoken123", basicAuth.Password)
+		default:
+			t.Fatalf("expected BasicAuth type, got %T", auth)
+		}
+	})
+
+	t.Run("returns basic auth for username/password", func(t *testing.T) {
+		gitSource := &builder.GitSource{
+			Repository: "https://github.com/org/repo.git",
+			Auth: &builder.GitAuth{
+				Username: "testuser",
+				Password: "testpass",
+			},
+		}
+
+		auth, err := fetcher.getGitAuth(ctx, gitSource)
+		require.NoError(t, err)
+		require.NotNil(t, auth)
+
+		switch basicAuth := auth.(type) {
+		case *githttp.BasicAuth:
+			assert.Equal(t, "testuser", basicAuth.Username)
+			assert.Equal(t, "testpass", basicAuth.Password)
+		default:
+			t.Fatalf("expected BasicAuth type, got %T", auth)
+		}
+	})
+
+	t.Run("returns nil for empty auth struct", func(t *testing.T) {
+		gitSource := &builder.GitSource{
+			Repository: "https://github.com/org/repo.git",
+			Auth:       &builder.GitAuth{},
+		}
+
+		auth, err := fetcher.getGitAuth(ctx, gitSource)
+		require.NoError(t, err)
+		assert.Nil(t, auth)
+	})
+}
+
+func TestGetSSHAuth(t *testing.T) {
+	fetcher, err := NewSourceFetcher("")
+	require.NoError(t, err)
+	defer func() { _ = fetcher.Cleanup() }()
+
+	ctx := context.Background()
+
+	t.Run("returns nil for empty auth", func(t *testing.T) {
+		auth, err := fetcher.getSSHAuth(ctx, &builder.GitAuth{})
+		require.NoError(t, err)
+		assert.Nil(t, auth)
+	})
+
+	t.Run("returns error for invalid SSH key file", func(t *testing.T) {
+		auth, err := fetcher.getSSHAuth(ctx, &builder.GitAuth{
+			SSHKeyFile: "/nonexistent/path/to/key",
+		})
+		assert.Error(t, err)
+		assert.Nil(t, auth)
+		assert.Contains(t, err.Error(), "failed to load SSH key")
+	})
+
+	t.Run("returns error for invalid inline SSH key", func(t *testing.T) {
+		auth, err := fetcher.getSSHAuth(ctx, &builder.GitAuth{
+			SSHKey: "not-a-valid-ssh-key",
+		})
+		assert.Error(t, err)
+		assert.Nil(t, auth)
+		assert.Contains(t, err.Error(), "failed to parse SSH key")
+	})
+
+	t.Run("loads SSH key from file when available", func(t *testing.T) {
+		// Try to use the user's default SSH key if available
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Skip("Cannot get home directory")
+		}
+
+		defaultKey := filepath.Join(home, ".ssh", "id_ed25519")
+		if _, err := os.Stat(defaultKey); os.IsNotExist(err) {
+			defaultKey = filepath.Join(home, ".ssh", "id_rsa")
+			if _, err := os.Stat(defaultKey); os.IsNotExist(err) {
+				t.Skip("No SSH key available for testing")
+			}
+		}
+
+		auth, err := fetcher.getSSHAuth(ctx, &builder.GitAuth{
+			SSHKeyFile: defaultKey,
+		})
+		// May fail if key has passphrase, which is expected
+		if err != nil {
+			t.Skipf("SSH key loading failed (may have passphrase): %v", err)
+		}
+		assert.NotNil(t, auth)
+	})
+}
+
+func TestInjectTokenIntoURL_Extended(t *testing.T) {
+	t.Run("does not modify ssh:// URL", func(t *testing.T) {
+		result, err := InjectTokenIntoURL("ssh://git@github.com/org/repo.git", "token123")
+		require.NoError(t, err)
+		assert.Equal(t, "ssh://git@github.com/org/repo.git", result)
+	})
+
+	t.Run("returns error for invalid URL", func(t *testing.T) {
+		_, err := InjectTokenIntoURL("://invalid-url", "token123")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid repository URL")
+	})
+
+	t.Run("does not modify HTTP URL", func(t *testing.T) {
+		result, err := InjectTokenIntoURL("http://github.com/org/repo.git", "token123")
+		require.NoError(t, err)
+		// HTTP URLs are not modified (only HTTPS)
+		assert.Equal(t, "http://github.com/org/repo.git", result)
+	})
+
+	t.Run("handles URL with port", func(t *testing.T) {
+		result, err := InjectTokenIntoURL("https://github.com:443/org/repo.git", "token123")
+		require.NoError(t, err)
+		assert.Contains(t, result, "x-access-token:token123@")
+	})
 }
 
 func TestExpandPath(t *testing.T) {

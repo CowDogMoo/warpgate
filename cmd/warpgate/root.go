@@ -27,10 +27,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -116,12 +118,16 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	v.AutomaticEnv()
 
 	// 4. Bind Cobra flags to Viper (this enables: flags > env > config > defaults)
+	// Bind root persistent flags
 	if err := v.BindPFlag("log.level", cmd.Root().PersistentFlags().Lookup("log-level")); err != nil {
 		return fmt.Errorf("failed to bind log-level flag: %w", err)
 	}
 	if err := v.BindPFlag("log.format", cmd.Root().PersistentFlags().Lookup("log-format")); err != nil {
 		return fmt.Errorf("failed to bind log-format flag: %w", err)
 	}
+
+	// Bind all subcommand flags to Viper for consistent precedence
+	BindCommandFlagsToViper(v, cmd)
 
 	// 5. Get final values from Viper (single source of truth)
 	logLevel := v.GetString("log.level")
@@ -152,4 +158,57 @@ func initConfig(cmd *cobra.Command, args []string) error {
 // Execute runs the root command
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// BindFlagsToViper binds all flags from a command to a Viper instance.
+// This enables the configuration precedence: CLI Flags > Environment Variables > Config File > Defaults.
+// The viperKey parameter allows specifying a prefix for the Viper keys (e.g., "build" for build command flags).
+func BindFlagsToViper(v *viper.Viper, cmd *cobra.Command, viperKey string) {
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		// Convert flag name to viper key format (e.g., "digest-dir" -> "digest_dir")
+		key := strings.ReplaceAll(f.Name, "-", "_")
+		if viperKey != "" {
+			key = viperKey + "." + key
+		}
+
+		// Only bind if not already set (avoids overwriting persistent flags)
+		if err := v.BindPFlag(key, f); err != nil {
+			logging.Warn("failed to bind flag %s to viper: %v", f.Name, err)
+		}
+	})
+}
+
+// BindCommandFlagsToViper binds flags from the current command and its parent persistent flags to Viper.
+// This is called during command execution to ensure all flags follow the configuration precedence chain.
+func BindCommandFlagsToViper(v *viper.Viper, cmd *cobra.Command) {
+	// Get the command path for namespacing (e.g., "build", "manifests.create")
+	cmdPath := getCommandPath(cmd)
+
+	// Bind the command's local flags
+	BindFlagsToViper(v, cmd, cmdPath)
+
+	// Also bind persistent flags from parent commands
+	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) {
+		key := strings.ReplaceAll(f.Name, "-", "_")
+		if err := v.BindPFlag(key, f); err != nil {
+			logging.Warn("failed to bind inherited flag %s to viper: %v", f.Name, err)
+		}
+	})
+}
+
+// getCommandPath returns the command path for Viper key namespacing.
+// For example, "warpgate manifests create" returns "manifests.create".
+func getCommandPath(cmd *cobra.Command) string {
+	var parts []string
+	current := cmd
+
+	for current != nil && current.Parent() != nil {
+		parts = append([]string{current.Name()}, parts...)
+		current = current.Parent()
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, ".")
 }

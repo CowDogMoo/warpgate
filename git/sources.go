@@ -40,17 +40,21 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
-// SourceFetcher handles fetching external sources before builds
+const (
+	// sourcesTempDirPrefix is the prefix used for temporary source directories.
+	sourcesTempDirPrefix = "warpgate-sources-"
+	// sourcesLocalDirName is the name of the directory where sources are copied within the build context.
+	sourcesLocalDirName = ".warpgate-sources"
+)
+
 type SourceFetcher struct {
-	// BaseDir is the base directory where sources will be cloned
 	BaseDir string
 }
 
-// NewSourceFetcher creates a new source fetcher
 // If baseDir is empty, a temporary directory will be created
 func NewSourceFetcher(baseDir string) (*SourceFetcher, error) {
 	if baseDir == "" {
-		tmpDir, err := os.MkdirTemp("", "warpgate-sources-*")
+		tmpDir, err := os.MkdirTemp("", sourcesTempDirPrefix+"*")
 		if err != nil {
 			return nil, fmt.Errorf("failed to create temp directory for sources: %w", err)
 		}
@@ -62,8 +66,7 @@ func NewSourceFetcher(baseDir string) (*SourceFetcher, error) {
 	}, nil
 }
 
-// FetchSources fetches all sources defined in the config
-// It populates the Path field of each source with the local path
+// Populates the Path field of each source with the local path
 func (f *SourceFetcher) FetchSources(ctx context.Context, sources []builder.Source) error {
 	for i := range sources {
 		source := &sources[i]
@@ -74,7 +77,6 @@ func (f *SourceFetcher) FetchSources(ctx context.Context, sources []builder.Sour
 	return nil
 }
 
-// fetchSource fetches a single source
 func (f *SourceFetcher) fetchSource(ctx context.Context, source *builder.Source) error {
 	if source.Git != nil {
 		return f.fetchGitSource(ctx, source)
@@ -84,30 +86,25 @@ func (f *SourceFetcher) fetchSource(ctx context.Context, source *builder.Source)
 	return fmt.Errorf("source %q has no valid source type defined (git, etc.)", source.Name)
 }
 
-// fetchGitSource clones a git repository
 func (f *SourceFetcher) fetchGitSource(ctx context.Context, source *builder.Source) error {
 	gitSource := source.Git
 
-	// Create destination directory
 	destDir := filepath.Join(f.BaseDir, source.Name)
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", destDir, err)
 	}
 
-	logging.InfoContext(ctx, "Cloning %s to %s", gitSource.Repository, destDir)
+	logging.DebugContext(ctx, "Cloning %s to %s", gitSource.Repository, destDir)
 
-	// Build clone options
 	cloneOpts := &git.CloneOptions{
 		URL:      gitSource.Repository,
 		Progress: os.Stdout,
 	}
 
-	// Set depth for shallow clone
 	if gitSource.Depth > 0 {
 		cloneOpts.Depth = gitSource.Depth
 	}
 
-	// Set up authentication
 	auth, err := f.getGitAuth(ctx, gitSource)
 	if err != nil {
 		return fmt.Errorf("failed to configure git auth: %w", err)
@@ -116,13 +113,11 @@ func (f *SourceFetcher) fetchGitSource(ctx context.Context, source *builder.Sour
 		cloneOpts.Auth = auth
 	}
 
-	// Set reference if specified
 	if gitSource.Ref != "" {
 		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(gitSource.Ref)
 		cloneOpts.SingleBranch = true
 	}
 
-	// Clone the repository
 	repo, err := git.PlainCloneContext(ctx, destDir, false, cloneOpts)
 	if err != nil {
 		// If branch reference failed, try as a tag
@@ -139,7 +134,6 @@ func (f *SourceFetcher) fetchGitSource(ctx context.Context, source *builder.Sour
 			cloneOpts.SingleBranch = false
 			repo, err = git.PlainCloneContext(ctx, destDir, false, cloneOpts)
 			if err == nil {
-				// Try to checkout the ref as a commit hash
 				err = f.checkoutRef(ctx, repo, gitSource.Ref)
 			}
 		}
@@ -149,7 +143,6 @@ func (f *SourceFetcher) fetchGitSource(ctx context.Context, source *builder.Sour
 		}
 	}
 
-	// Update source with the local path
 	source.Path = destDir
 
 	head, err := repo.Head()
@@ -160,14 +153,12 @@ func (f *SourceFetcher) fetchGitSource(ctx context.Context, source *builder.Sour
 	return nil
 }
 
-// checkoutRef checks out a specific ref (commit, tag, or branch)
 func (f *SourceFetcher) checkoutRef(ctx context.Context, repo *git.Repository, ref string) error {
 	worktree, err := repo.Worktree()
 	if err != nil {
 		return fmt.Errorf("failed to get worktree: %w", err)
 	}
 
-	// Try as commit hash first
 	hash := plumbing.NewHash(ref)
 	err = worktree.Checkout(&git.CheckoutOptions{
 		Hash: hash,
@@ -176,7 +167,6 @@ func (f *SourceFetcher) checkoutRef(ctx context.Context, repo *git.Repository, r
 		return nil
 	}
 
-	// Try as branch
 	err = worktree.Checkout(&git.CheckoutOptions{
 		Branch: plumbing.NewBranchReferenceName(ref),
 	})
@@ -184,7 +174,6 @@ func (f *SourceFetcher) checkoutRef(ctx context.Context, repo *git.Repository, r
 		return nil
 	}
 
-	// Try as tag
 	err = worktree.Checkout(&git.CheckoutOptions{
 		Branch: plumbing.NewTagReferenceName(ref),
 	})
@@ -195,7 +184,6 @@ func (f *SourceFetcher) checkoutRef(ctx context.Context, repo *git.Repository, r
 	return fmt.Errorf("could not checkout ref %s: not a valid branch, tag, or commit", ref)
 }
 
-// getGitAuth returns the appropriate authentication method for the git source
 func (f *SourceFetcher) getGitAuth(ctx context.Context, gitSource *builder.GitSource) (transport.AuthMethod, error) {
 	if gitSource.Auth == nil {
 		return nil, nil
@@ -203,17 +191,14 @@ func (f *SourceFetcher) getGitAuth(ctx context.Context, gitSource *builder.GitSo
 
 	auth := gitSource.Auth
 
-	// SSH key authentication
 	if auth.SSHKey != "" || auth.SSHKeyFile != "" {
 		return f.getSSHAuth(ctx, auth)
 	}
 
-	// Token authentication (GitHub PAT, GitLab token, etc.)
 	if auth.Token != "" {
-		// For GitHub, GitLab, etc., use token as password with any username
 		username := auth.Username
 		if username == "" {
-			username = "x-access-token" // Works for GitHub, GitLab, etc.
+			username = "x-access-token"
 		}
 		return &http.BasicAuth{
 			Username: username,
@@ -221,7 +206,6 @@ func (f *SourceFetcher) getGitAuth(ctx context.Context, gitSource *builder.GitSo
 		}, nil
 	}
 
-	// Basic auth with username/password
 	if auth.Username != "" && auth.Password != "" {
 		return &http.BasicAuth{
 			Username: auth.Username,
@@ -232,9 +216,7 @@ func (f *SourceFetcher) getGitAuth(ctx context.Context, gitSource *builder.GitSo
 	return nil, nil
 }
 
-// getSSHAuth returns SSH authentication
 func (f *SourceFetcher) getSSHAuth(ctx context.Context, auth *builder.GitAuth) (transport.AuthMethod, error) {
-	// SSH key from file
 	if auth.SSHKeyFile != "" {
 		keyPath := expandPath(auth.SSHKeyFile)
 		publicKeys, err := ssh.NewPublicKeysFromFile("git", keyPath, "")
@@ -244,7 +226,6 @@ func (f *SourceFetcher) getSSHAuth(ctx context.Context, auth *builder.GitAuth) (
 		return publicKeys, nil
 	}
 
-	// SSH key from content (e.g., from environment variable)
 	if auth.SSHKey != "" {
 		publicKeys, err := ssh.NewPublicKeys("git", []byte(auth.SSHKey), "")
 		if err != nil {
@@ -256,15 +237,13 @@ func (f *SourceFetcher) getSSHAuth(ctx context.Context, auth *builder.GitAuth) (
 	return nil, nil
 }
 
-// Cleanup removes the fetched sources directory
 func (f *SourceFetcher) Cleanup() error {
-	if f.BaseDir != "" && strings.Contains(f.BaseDir, "warpgate-sources-") {
+	if f.BaseDir != "" && strings.Contains(f.BaseDir, sourcesTempDirPrefix) {
 		return os.RemoveAll(f.BaseDir)
 	}
 	return nil
 }
 
-// GetSourcePath returns the local path for a named source
 func GetSourcePath(sources []builder.Source, name string) (string, error) {
 	for _, s := range sources {
 		if s.Name == name {
@@ -277,7 +256,6 @@ func GetSourcePath(sources []builder.Source, name string) (string, error) {
 	return "", fmt.Errorf("source %q not found", name)
 }
 
-// expandPath expands ~ and environment variables in a path
 func expandPath(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
@@ -311,13 +289,12 @@ func FetchSourcesWithCleanup(ctx context.Context, sources []builder.Source, conf
 		configDir = filepath.Dir(configFilePath)
 	}
 
-	sourcesDir := filepath.Join(configDir, ".warpgate-sources")
+	sourcesDir := filepath.Join(configDir, sourcesLocalDirName)
 	if err := os.MkdirAll(sourcesDir, 0755); err != nil {
 		_ = fetcher.Cleanup()
 		return nil, fmt.Errorf("failed to create sources directory: %w", err)
 	}
 
-	// Copy each fetched source into the sources directory
 	for i := range sources {
 		source := &sources[i]
 		if source.Path == "" {
@@ -325,9 +302,9 @@ func FetchSourcesWithCleanup(ctx context.Context, sources []builder.Source, conf
 		}
 
 		destPath := filepath.Join(sourcesDir, source.Name)
-		logging.InfoContext(ctx, "Copying source from %s to %s", source.Path, destPath)
+		logging.DebugContext(ctx, "Copying source from %s to %s", source.Path, destPath)
 
-		if err := copyDir(source.Path, destPath); err != nil {
+		if err := copyDir(ctx, source.Path, destPath); err != nil {
 			_ = fetcher.Cleanup()
 			_ = os.RemoveAll(sourcesDir)
 			return nil, fmt.Errorf("failed to copy source %s: %w", source.Name, err)
@@ -347,7 +324,7 @@ func FetchSourcesWithCleanup(ctx context.Context, sources []builder.Source, conf
 			logging.WarnContext(ctx, "Failed to cleanup fetched sources: %v", cleanupErr)
 		}
 		if cleanupErr := os.RemoveAll(sourcesDir); cleanupErr != nil {
-			logging.WarnContext(ctx, "Failed to cleanup .warpgate-sources: %v", cleanupErr)
+			logging.WarnContext(ctx, "Failed to cleanup %s: %v", sourcesLocalDirName, cleanupErr)
 		}
 	}
 
@@ -379,11 +356,33 @@ func InjectTokenIntoURL(repoURL, token string) (string, error) {
 	return parsed.String(), nil
 }
 
-// copyDir recursively copies a directory from src to dst
-func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+// copyDir recursively copies a directory from src to dst.
+// It preserves file modes and directory structure.
+//
+// The context is checked before each file copy, allowing the operation to be
+// cancelled during long-running copies of large directories.
+//
+// Race Condition Considerations:
+//   - This function is NOT safe for concurrent modification of the source directory.
+//   - If files are added/removed/modified in src during the copy, behavior is undefined:
+//   - Added files may or may not be copied
+//   - Removed files will cause errors
+//   - Modified files may be partially copied
+//   - The caller MUST ensure src is stable (not being modified) during the copy.
+//   - For git repositories, this is safe because sources are freshly cloned and
+//     not modified until the copy completes.
+//
+// Thread Safety: This function is not goroutine-safe for the same src/dst pair.
+// Multiple goroutines may call copyDir concurrently with different directories.
+func copyDir(ctx context.Context, src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, walkErr error) error {
+		// Check for cancellation before processing each entry
+		if err := ctx.Err(); err != nil {
 			return err
+		}
+
+		if walkErr != nil {
+			return walkErr
 		}
 
 		relPath, err := filepath.Rel(src, path)
@@ -396,30 +395,41 @@ func copyDir(src, dst string) error {
 			return os.MkdirAll(destPath, info.Mode())
 		}
 
-		srcFile, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := srcFile.Close(); err != nil {
-				logging.Warn("Failed to close source file %s: %v", path, err)
-			}
-		}()
-
-		destFile, err := os.Create(destPath)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if err := destFile.Close(); err != nil {
-				logging.Warn("Failed to close destination file %s: %v", destPath, err)
-			}
-		}()
-
-		if _, err := io.Copy(destFile, srcFile); err != nil {
-			return err
-		}
-
-		return os.Chmod(destPath, info.Mode())
+		return copyFile(ctx, path, destPath, info.Mode())
 	})
+}
+
+// copyFile copies a single file from src to dst with proper error handling for file closes.
+// The context is checked before the copy begins to support cancellation.
+func copyFile(ctx context.Context, src, dst string, mode os.FileMode) (retErr error) {
+	// Check for cancellation before starting the copy
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := srcFile.Close(); closeErr != nil && retErr == nil {
+			retErr = fmt.Errorf("failed to close source file: %w", closeErr)
+		}
+	}()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := destFile.Close(); closeErr != nil && retErr == nil {
+			retErr = fmt.Errorf("failed to close destination file: %w", closeErr)
+		}
+	}()
+
+	if _, err := io.Copy(destFile, srcFile); err != nil {
+		return err
+	}
+
+	return os.Chmod(dst, mode)
 }
