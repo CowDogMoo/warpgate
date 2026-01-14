@@ -879,8 +879,22 @@ func (b *BuildKitBuilder) calculateBuildContext(cfg builder.Config) (string, err
 		return ".", nil
 	}
 
-	commonParent := filepath.Dir(paths[0])
-	for _, p := range paths[1:] {
+	contextRoots := make([]string, 0, len(paths))
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil {
+			contextRoots = append(contextRoots, filepath.Dir(p))
+			continue
+		}
+		if info.IsDir() {
+			contextRoots = append(contextRoots, p)
+		} else {
+			contextRoots = append(contextRoots, filepath.Dir(p))
+		}
+	}
+
+	commonParent := contextRoots[0]
+	for _, p := range contextRoots[1:] {
 		commonParent = findCommonParent(commonParent, p)
 	}
 
