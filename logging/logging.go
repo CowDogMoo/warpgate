@@ -51,17 +51,34 @@ const (
 	JSONOutput
 )
 
-// Log levels for different types of log messages
+// Log levels for different types of log messages.
+// Ordered from least to most severe for numeric comparison.
 const (
+	// DebugLevel represents debug messages (lowest severity)
+	DebugLevel LogLevel = iota
 	// InfoLevel represents informational messages
-	InfoLevel LogLevel = iota
+	InfoLevel
 	// WarnLevel represents warning messages
 	WarnLevel
-	// DebugLevel represents debug messages
-	DebugLevel
-	// ErrorLevel represents error messages
+	// ErrorLevel represents error messages (highest severity)
 	ErrorLevel
 )
+
+// String returns the string representation of the log level.
+func (l LogLevel) String() string {
+	switch l {
+	case DebugLevel:
+		return "DEBUG"
+	case InfoLevel:
+		return "INFO"
+	case WarnLevel:
+		return "WARN"
+	case ErrorLevel:
+		return "ERROR"
+	default:
+		return "INFO"
+	}
+}
 
 // CustomLogger wraps the logging functionality with custom formatting options.
 type CustomLogger struct {
@@ -73,7 +90,9 @@ type CustomLogger struct {
 	Verbose       bool
 }
 
-// formatMessage handles color formatting based on output type and log level
+// formatMessage handles formatting based on output type and log level.
+// For ColorOutput, it includes a colored level prefix.
+// For PlainOutput, it returns the message as-is.
 func (l *CustomLogger) formatMessage(level LogLevel, message string, args ...interface{}) string {
 	formattedMsg := fmt.Sprintf(message, args...)
 
@@ -81,61 +100,54 @@ func (l *CustomLogger) formatMessage(level LogLevel, message string, args ...int
 		return formattedMsg
 	}
 
-	colorFunc := map[LogLevel]func(format string, a ...interface{}) string{
-		InfoLevel:  color.GreenString,
-		WarnLevel:  color.YellowString,
-		DebugLevel: color.CyanString,
-		ErrorLevel: color.RedString,
-	}[level]
-
-	if colorFunc == nil {
+	// Apply colored level prefix for color output
+	switch level {
+	case DebugLevel:
+		return color.HiBlackString("[DEBUG] %s", formattedMsg)
+	case InfoLevel:
+		return color.HiGreenString("[INFO] %s", formattedMsg)
+	case WarnLevel:
+		return color.HiYellowString("[WARN] %s", formattedMsg)
+	case ErrorLevel:
+		return color.HiRedString("[ERROR] %s", formattedMsg)
+	default:
 		return formattedMsg
 	}
-
-	return colorFunc("%s", formattedMsg)
 }
 
-// shouldShowOnConsole determines if a message should be shown on console
-func (l *CustomLogger) shouldShowOnConsole(level LogLevel) bool {
-	// Always suppress in quiet mode except errors
-	if l.Quiet && level != ErrorLevel {
-		return false
+// shouldShowOnConsoleLocked determines if a message should be shown on console.
+// This method must be called while holding l.mu.
+// Logic:
+// - In quiet mode, only errors are shown
+// - In verbose mode, all messages are shown
+// - Otherwise, show messages at INFO level and above (INFO, WARN, ERROR)
+func (l *CustomLogger) shouldShowOnConsoleLocked(level LogLevel) bool {
+	// In quiet mode, only show errors
+	if l.Quiet {
+		return level == ErrorLevel
 	}
 
-	// Check against log level
-	var slogLevel slog.Level
-	switch level {
-	case InfoLevel:
-		slogLevel = slog.LevelInfo
-	case WarnLevel:
-		slogLevel = slog.LevelWarn
-	case DebugLevel:
-		slogLevel = slog.LevelDebug
-	case ErrorLevel:
-		slogLevel = slog.LevelError
-	}
-
-	// Always show errors and warnings
-	if level == ErrorLevel || level == WarnLevel {
+	// In verbose mode, show all messages
+	if l.Verbose {
 		return true
 	}
 
-	// Info messages: show by default unless log level is set higher than Info
-	if level == InfoLevel {
-		return l.LogLevel <= slogLevel
-	}
-
-	// Debug messages: only show if verbose is enabled AND log level allows it
-	return (l.Verbose || l.LogLevel <= slog.LevelDebug) && l.LogLevel <= slogLevel
+	// Default: show INFO and above (INFO, WARN, ERROR but not DEBUG)
+	return level >= InfoLevel
 }
 
 func (l *CustomLogger) log(level LogLevel, message string, args ...interface{}) {
 	formattedMsg := l.formatMessage(level, message, args...)
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
-	if l.shouldShowOnConsole(level) && l.ConsoleWriter != nil {
+	l.mu.Lock()
+	shouldShow := l.shouldShowOnConsoleLocked(level)
+	writer := l.ConsoleWriter
+	l.mu.Unlock()
+
+	if shouldShow && writer != nil {
 		l.mu.Lock()
-		if _, err := fmt.Fprintf(l.ConsoleWriter, "[%s] %s\n", timestamp, formattedMsg); err != nil {
+		if _, err := fmt.Fprintf(writer, "[%s] %s\n", timestamp, formattedMsg); err != nil {
 			// Fallback to stderr if ConsoleWriter fails
 			fmt.Fprintf(os.Stderr, "[%s] %s\n", timestamp, formattedMsg)
 		}
@@ -187,18 +199,27 @@ func NewCustomLoggerWithOptions(logLevelStr, outputFormat string, quiet, verbose
 
 // SetQuiet enables or disables quiet mode.
 // In quiet mode, only error messages are displayed.
+// This method is thread-safe.
 func (l *CustomLogger) SetQuiet(quiet bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.Quiet = quiet
 }
 
 // SetVerbose enables or disables verbose mode.
 // In verbose mode, info and debug messages are displayed on console.
+// This method is thread-safe.
 func (l *CustomLogger) SetVerbose(verbose bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.Verbose = verbose
 }
 
 // IsQuiet returns whether the logger is in quiet mode.
+// This method is thread-safe.
 func (l *CustomLogger) IsQuiet() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.Quiet
 }
 

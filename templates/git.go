@@ -62,7 +62,7 @@ func (g *GitOperations) CloneOrUpdate(ctx context.Context, gitURL, version strin
 	}
 
 	// Clone fresh
-	logging.InfoContext(ctx, "Cloning repository from %s", gitURL)
+	logging.InfoContext(ctx, "Cloning repository from %s", logging.RedactURL(gitURL))
 	return g.clone(ctx, gitURL, version, repoPath)
 }
 

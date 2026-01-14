@@ -94,7 +94,7 @@ func (f *SourceFetcher) fetchGitSource(ctx context.Context, source *builder.Sour
 		return fmt.Errorf("failed to create directory %s: %w", destDir, err)
 	}
 
-	logging.DebugContext(ctx, "Cloning %s to %s", gitSource.Repository, destDir)
+	logging.DebugContext(ctx, "Cloning %s to %s", logging.RedactURL(gitSource.Repository), destDir)
 
 	cloneOpts := &git.CloneOptions{
 		URL:      gitSource.Repository,

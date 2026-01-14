@@ -174,7 +174,7 @@ func applyLabelsAndBuildArgs(ctx context.Context, config *Config, opts BuildOpti
 		}
 		for key, value := range opts.Labels {
 			config.Labels[key] = value
-			logging.DebugContext(ctx, "Added label: %s=%s", key, value)
+			logging.DebugContext(ctx, "Added label: %s=%s", key, logging.RedactSensitiveValue(key, value))
 		}
 	}
 
@@ -185,7 +185,7 @@ func applyLabelsAndBuildArgs(ctx context.Context, config *Config, opts BuildOpti
 		}
 		for key, value := range opts.BuildArgs {
 			config.BuildArgs[key] = value
-			logging.DebugContext(ctx, "Added build arg: %s=%s", key, value)
+			logging.DebugContext(ctx, "Added build arg: %s=%s", key, logging.RedactSensitiveValue(key, value))
 		}
 	}
 }

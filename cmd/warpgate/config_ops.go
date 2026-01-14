@@ -175,7 +175,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
-	logging.InfoContext(ctx, "Set %s = %s", key, value)
+	logging.InfoContext(ctx, "Set %s = %s", key, logging.RedactSensitiveValue(key, value))
 	logging.InfoContext(ctx, "Config file updated: %s", configPath)
 
 	return nil

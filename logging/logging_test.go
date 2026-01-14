@@ -399,3 +399,74 @@ func TestOutputContext(t *testing.T) {
 	// Just ensure it doesn't panic - Output goes to stdout, not the buffer
 	logging.OutputContext(ctx, "test output")
 }
+
+func TestLogLevel_String(t *testing.T) {
+	tests := []struct {
+		level logging.LogLevel
+		want  string
+	}{
+		{logging.DebugLevel, "DEBUG"},
+		{logging.InfoLevel, "INFO"},
+		{logging.WarnLevel, "WARN"},
+		{logging.ErrorLevel, "ERROR"},
+		{logging.LogLevel(99), "INFO"}, // unknown level defaults to INFO
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := tt.level.String()
+			if got != tt.want {
+				t.Errorf("LogLevel(%d).String() = %q, want %q", tt.level, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLogLevel_Ordering(t *testing.T) {
+	// Verify log levels are ordered from least to most severe
+	if logging.DebugLevel >= logging.InfoLevel {
+		t.Error("DebugLevel should be less than InfoLevel")
+	}
+	if logging.InfoLevel >= logging.WarnLevel {
+		t.Error("InfoLevel should be less than WarnLevel")
+	}
+	if logging.WarnLevel >= logging.ErrorLevel {
+		t.Error("WarnLevel should be less than ErrorLevel")
+	}
+}
+
+func TestCustomLogger_ConcurrentAccess(t *testing.T) {
+	logger := logging.NewCustomLogger(slog.LevelInfo)
+	buf := &bytes.Buffer{}
+	logger.ConsoleWriter = buf
+
+	// Run concurrent operations to verify thread safety
+	done := make(chan bool)
+	for i := 0; i < 10; i++ {
+		go func() {
+			for j := 0; j < 100; j++ {
+				logger.SetQuiet(true)
+				logger.SetQuiet(false)
+				logger.SetVerbose(true)
+				logger.SetVerbose(false)
+				_ = logger.IsQuiet()
+				logger.Info("concurrent message %d", j)
+			}
+			done <- true
+		}()
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
+func TestPrintContext(t *testing.T) {
+	logger := logging.NewCustomLogger(slog.LevelInfo)
+
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	// Just ensure it doesn't panic - Print goes to stdout
+	logging.PrintContext(ctx, "test print output\n")
+}
