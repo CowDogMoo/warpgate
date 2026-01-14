@@ -468,14 +468,43 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 		return state, nil
 	}
 
-	sourcePath, err := b.makeRelativePath(prov.Source)
+	// Check if source is an absolute path (e.g., from fetched sources)
+	pv := templates.NewPathValidator()
+	absSource, err := pv.ExpandPath(prov.Source)
 	if err != nil {
-		return state, fmt.Errorf("failed to resolve source path: %w", err)
+		return state, fmt.Errorf("failed to expand source path: %w", err)
+	}
+
+	absContext, err := filepath.Abs(b.contextDir)
+	if err != nil {
+		return state, fmt.Errorf("failed to get absolute context: %w", err)
+	}
+
+	// Check if source is outside the build context
+	relPath, err := filepath.Rel(absContext, absSource)
+	isOutsideContext := err != nil || strings.HasPrefix(relPath, "..")
+
+	var sourceLocal llb.State
+	var sourcePath string
+
+	if isOutsideContext {
+		// Source is outside build context (e.g., fetched source)
+		// Use the parent directory as a new local context
+		sourceDir := filepath.Dir(absSource)
+		sourceLocal = llb.Local("source-" + filepath.Base(sourceDir))
+		sourcePath = filepath.Base(absSource)
+
+		// Register this as an additional local context
+		logging.Debug("Using external source context: %s (from %s)", sourceDir, absSource)
+	} else {
+		// Source is inside build context, use relative path
+		sourceLocal = llb.Local("context")
+		sourcePath = relPath
 	}
 
 	state = state.File(
 		llb.Copy(
-			llb.Local("context"),
+			sourceLocal,
 			sourcePath,
 			prov.Destination,
 		),
@@ -1022,6 +1051,22 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 
 	exportAttrs := buildExportAttributes(imageName, cfg.Labels)
 
+	// Build LocalDirs map, starting with the main context
+	localDirs := map[string]string{
+		"context": contextDir,
+	}
+
+	// Add local contexts for fetched sources
+	for _, source := range cfg.Sources {
+		if source.Path != "" {
+			// Use parent directory as context, file name for path resolution
+			sourceDir := filepath.Dir(source.Path)
+			contextName := "source-" + filepath.Base(sourceDir)
+			localDirs[contextName] = sourceDir
+			logging.Debug("Registering source context: %s -> %s", contextName, sourceDir)
+		}
+	}
+
 	solveOpt := client.SolveOpt{
 		Exports: []client.ExportEntry{
 			{
@@ -1030,10 +1075,8 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 				Attrs:  exportAttrs,
 			},
 		},
-		LocalDirs: map[string]string{
-			"context": contextDir,
-		},
-		Session: createAuthProvider(),
+		LocalDirs: localDirs,
+		Session:   createAuthProvider(),
 	}
 
 	b.configureCacheOptions(&solveOpt, cfg)
