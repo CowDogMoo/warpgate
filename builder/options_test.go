@@ -168,6 +168,22 @@ func TestApplyOverrides(t *testing.T) {
 				// Should not error with nil global config
 			},
 		},
+		{
+			name: "apply tag override",
+			config: &Config{
+				Version: "latest",
+			},
+			opts: BuildOptions{
+				Tags: []string{"v1.2.3"},
+			},
+			globalCfg: &config.Config{},
+			wantErr:   false,
+			checkFunc: func(t *testing.T, cfg *Config) {
+				if cfg.Version != "v1.2.3" {
+					t.Errorf("Expected version 'v1.2.3', got %s", cfg.Version)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -527,6 +543,65 @@ func TestApplyCacheOptions(t *testing.T) {
 			applyCacheOptions(tt.config, tt.opts)
 			if tt.config.NoCache != tt.wantNoCache {
 				t.Errorf("applyCacheOptions() NoCache = %v, want %v", tt.config.NoCache, tt.wantNoCache)
+			}
+		})
+	}
+}
+
+func TestApplyTagOverride(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		config      *Config
+		opts        BuildOptions
+		wantVersion string
+	}{
+		{
+			name: "override version with first tag",
+			config: &Config{
+				Version: "latest",
+			},
+			opts: BuildOptions{
+				Tags: []string{"v1.2.3"},
+			},
+			wantVersion: "v1.2.3",
+		},
+		{
+			name: "use first tag when multiple provided",
+			config: &Config{
+				Version: "latest",
+			},
+			opts: BuildOptions{
+				Tags: []string{"latest-amd64", "v1.0.0", "stable"},
+			},
+			wantVersion: "latest-amd64",
+		},
+		{
+			name: "no override when no tags provided",
+			config: &Config{
+				Version: "latest",
+			},
+			opts:        BuildOptions{},
+			wantVersion: "latest",
+		},
+		{
+			name: "empty tags slice does not override",
+			config: &Config{
+				Version: "v2.0.0",
+			},
+			opts: BuildOptions{
+				Tags: []string{},
+			},
+			wantVersion: "v2.0.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			applyTagOverride(ctx, tt.config, tt.opts)
+			if tt.config.Version != tt.wantVersion {
+				t.Errorf("applyTagOverride() version = %s, want %s", tt.config.Version, tt.wantVersion)
 			}
 		})
 	}
