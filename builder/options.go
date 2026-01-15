@@ -91,11 +91,21 @@ func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, glob
 	applyTargetTypeFilter(config, opts)
 	applyArchitectureOverrides(config, opts, globalCfg)
 	applyRegistryOverride(config, opts, globalCfg)
+	applyTagOverride(ctx, config, opts)
 	applyAMITargetOverrides(config, opts)
 	applyLabelsAndBuildArgs(ctx, config, opts)
 	applyCacheOptions(config, opts)
 
 	return nil
+}
+
+// applyTagOverride applies tag override to set the image version from CLI --tag flag
+func applyTagOverride(ctx context.Context, config *Config, opts BuildOptions) {
+	if len(opts.Tags) == 0 {
+		return
+	}
+	config.Version = opts.Tags[0]
+	logging.DebugContext(ctx, "Overriding version with tag: %s", config.Version)
 }
 
 // applyTargetTypeFilter filters targets based on the target type override

@@ -328,3 +328,109 @@ func TestCalculateBuildContextWithPowerShell(t *testing.T) {
 		t.Error("expected non-empty context path")
 	}
 }
+
+func TestCalculateBuildContextWithDirectorySource(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourceDir := filepath.Join(tmpDir, "my-source")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("failed to create source directory: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(sourceDir, "main.go"), []byte("package main"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{
+				Type:        "file",
+				Source:      sourceDir,
+				Destination: "/app",
+			},
+		},
+	}
+
+	b := &BuildKitBuilder{}
+	ctx, err := b.calculateBuildContext(cfg)
+	if err != nil {
+		t.Fatalf("calculateBuildContext() error = %v", err)
+	}
+
+	// When source is a directory, context should be the directory itself, not its parent
+	absSourceDir, _ := filepath.Abs(sourceDir)
+	if ctx != absSourceDir {
+		t.Errorf("expected context to be source directory %q, got %q", absSourceDir, ctx)
+	}
+}
+
+func TestCalculateBuildContextWithFileSource(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourceFile := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(sourceFile, []byte("key: value"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{
+				Type:        "file",
+				Source:      sourceFile,
+				Destination: "/etc/config.yaml",
+			},
+		},
+	}
+
+	b := &BuildKitBuilder{}
+	ctx, err := b.calculateBuildContext(cfg)
+	if err != nil {
+		t.Fatalf("calculateBuildContext() error = %v", err)
+	}
+
+	// When source is a file, context should be the parent directory
+	absTmpDir, _ := filepath.Abs(tmpDir)
+	if ctx != absTmpDir {
+		t.Errorf("expected context to be parent directory %q, got %q", absTmpDir, ctx)
+	}
+}
+
+func TestCalculateBuildContextWithMixedSources(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sourceDir := filepath.Join(tmpDir, "subdir", "my-source")
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("failed to create source directory: %v", err)
+	}
+
+	sourceFile := filepath.Join(tmpDir, "subdir", "config.yaml")
+	if err := os.WriteFile(sourceFile, []byte("key: value"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{
+				Type:        "file",
+				Source:      sourceDir,
+				Destination: "/app",
+			},
+			{
+				Type:        "file",
+				Source:      sourceFile,
+				Destination: "/etc/config.yaml",
+			},
+		},
+	}
+
+	b := &BuildKitBuilder{}
+	ctx, err := b.calculateBuildContext(cfg)
+	if err != nil {
+		t.Fatalf("calculateBuildContext() error = %v", err)
+	}
+
+	// Common parent should be tmpDir/subdir (parent of config.yaml and my-source directory)
+	expectedCtx := filepath.Join(tmpDir, "subdir")
+	absExpected, _ := filepath.Abs(expectedCtx)
+	if ctx != absExpected {
+		t.Errorf("expected context to be common parent %q, got %q", absExpected, ctx)
+	}
+}
