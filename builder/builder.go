@@ -137,9 +137,20 @@ type Builder interface {
 	Close() error
 }
 
-// ContainerBuilder extends Builder with container-specific operations.
-// It provides a complete interface for building, tagging, pushing, and
-// managing container images.
+// ContainerBuilder defines the interface for building and managing
+// container images.
+//
+// ContainerBuilder implementations must be safe for concurrent use
+// by multiple goroutines.
+//
+// # Methods
+//
+//   - Build: Builds a container image from the provided [Config].
+//   - Push: Pushes the image to a registry with a tag.
+//   - PushDigest: Pushes the image by digest without creating a tag.
+//   - Tag: Adds an additional tag to an existing image.
+//   - Remove: Removes a local image.
+//   - Close: Cleans up any resources held by the builder.
 //
 // Implementations:
 //   - buildkit.BuildKitBuilder: Uses Docker BuildKit for efficient builds
@@ -158,18 +169,38 @@ type Builder interface {
 type ContainerBuilder interface {
 	Builder
 
-	// Push pushes the built image to a registry and returns the digest.
-	// The imageRef should be a fully qualified image reference (e.g., "myimage:latest").
-	// The registry parameter specifies the target registry (e.g., "ghcr.io/myorg").
+	// Push pushes the built image to the specified registry with a tag.
+	//
+	// imageRef should be a valid image reference (e.g., "myimage:latest").
+	// registry specifies the target registry (e.g., "ghcr.io/myorg").
+	//
 	// Returns the pushed image digest (e.g., "sha256:abc123...") on success.
+	// Returns an error if the push fails.
 	Push(ctx context.Context, imageRef, registry string) (string, error)
 
+	// PushDigest pushes the built image by digest without creating a registry tag.
+	//
+	// imageRef should be a fully qualified image reference (e.g., "myimage:latest").
+	// registry specifies the target registry (e.g., "ghcr.io/myorg").
+	//
+	// If imageRef is not fully qualified (does not contain a '/'), this method
+	// will locally tag the image with the registry prefix (registry/imageRef)
+	// before pushing. This temporary tag will persist in the local Docker daemon
+	// after the push completes.
+	//
+	// Returns the pushed image digest (e.g., "sha256:abc123...") on success.
+	// Returns an error if the push fails.
+	PushDigest(ctx context.Context, imageRef, registry string) (string, error)
+
 	// Tag adds an additional tag to an existing image.
+	//
 	// Both imageRef and newTag should be valid image references.
+	// Returns an error if the tagging operation fails.
 	Tag(ctx context.Context, imageRef, newTag string) error
 
-	// Remove removes an image from local storage.
-	// This does not affect images that have been pushed to a registry.
+	// Remove deletes a local image specified by imageRef.
+	//
+	// Returns an error if the image cannot be removed.
 	Remove(ctx context.Context, imageRef string) error
 }
 

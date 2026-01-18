@@ -42,6 +42,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -1259,6 +1260,52 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 
 	logging.WarnContext(ctx, "No digest found for %s", fullImageRef)
 	return "", nil
+}
+
+// PushDigest pushes the built image by digest without creating a registry tag.
+//
+// If imageRef is not fully qualified (does not contain a '/'), this method
+// will locally tag the image with the registry prefix (registry/imageRef)
+// before pushing. This temporary tag will persist in the local Docker daemon
+// after the push completes.
+func (b *BuildKitBuilder) PushDigest(ctx context.Context, imageRef, registry string) (string, error) {
+	logging.InfoContext(ctx, "Pushing image by digest: %s", imageRef)
+
+	fullImageRef := imageRef
+	if registry != "" && !strings.Contains(imageRef, "/") {
+		fullImageRef = fmt.Sprintf("%s/%s", registry, imageRef)
+		if err := b.Tag(ctx, imageRef, fullImageRef); err != nil {
+			return "", fmt.Errorf("failed to tag image %q as %q for registry %q: %w", imageRef, fullImageRef, registry, err)
+		}
+	}
+
+	ref, err := name.ParseReference(fullImageRef)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse image reference %q: %w", fullImageRef, err)
+	}
+
+	img, err := daemon.Image(ref, daemon.WithContext(ctx))
+	if err != nil {
+		return "", fmt.Errorf("failed to load image %q from docker daemon: %w", fullImageRef, err)
+	}
+
+	imageDigest, err := img.Digest()
+	if err != nil {
+		return "", fmt.Errorf("failed to compute digest for image %q: %w", fullImageRef, err)
+	}
+
+	digestRef := ref.Context().Digest(imageDigest.String())
+	logging.InfoContext(ctx, "Pushing digest to: %s", digestRef.String())
+
+	if err := remote.Write(digestRef, img,
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithContext(ctx),
+	); err != nil {
+		return "", fmt.Errorf("failed to push digest %q for image %q to registry %q: %w", imageDigest.String(), fullImageRef, registry, err)
+	}
+
+	logging.InfoContext(ctx, "Image digest: %s", imageDigest.String())
+	return imageDigest.String(), nil
 }
 
 // Tag creates an additional tag for an existing image using the Docker SDK.

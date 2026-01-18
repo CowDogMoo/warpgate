@@ -46,6 +46,7 @@ type buildOptions struct {
 	fromGit         string
 	targetType      string
 	push            bool
+	pushDigest      bool
 	registry        string
 	arch            []string
 	tags            []string
@@ -125,7 +126,8 @@ Examples:
 	buildCmd.Flags().StringVar(&opts.template, "template", "", "Use named template from registry")
 	buildCmd.Flags().StringVar(&opts.fromGit, "from-git", "", "Load template from git URL")
 	buildCmd.Flags().StringVar(&opts.targetType, "target", "", "Override target type (container, ami)")
-	buildCmd.Flags().BoolVar(&opts.push, "push", false, "Push image to registry after build")
+	buildCmd.Flags().BoolVar(&opts.push, "push", false, "Push image to registry with tag after build (mutually exclusive with --push-digest)")
+	buildCmd.Flags().BoolVar(&opts.pushDigest, "push-digest", false, "Push image to registry by digest only without creating a tag. Requires --registry. Mutually exclusive with --push.")
 	buildCmd.Flags().StringVar(&opts.registry, "registry", "", "Registry to push to")
 	buildCmd.Flags().StringSliceVar(&opts.arch, "arch", nil, "Architectures to build (comma-separated)")
 	buildCmd.Flags().StringSliceVarP(&opts.tags, "tag", "t", []string{}, "Additional tags to apply")
@@ -294,6 +296,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 		CacheTo:       opts.cacheTo,
 		NoCache:       opts.noCache,
 		Push:          opts.push,
+		PushDigest:    opts.pushDigest,
 		SaveDigests:   opts.saveDigests,
 		DigestDir:     opts.digestDir,
 		ForceRecreate: opts.forceRecreate,
@@ -316,18 +319,25 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 	if opts.outputManifest != "" {
 		buildDuration := time.Since(startTime)
 		manifest := builder.NewBuildManifest(buildConfig, results, buildDuration)
-		manifest.Pushed = opts.push
+		// Track if any push operation occurred (either --push or --push-digest)
+		manifest.Pushed = opts.push || opts.pushDigest
 		if err := builder.WriteManifest(opts.outputManifest, manifest); err != nil {
 			return fmt.Errorf("failed to write build manifest: %w", err)
 		}
 		logging.InfoContext(ctx, "Build manifest written to: %s", opts.outputManifest)
 	}
 
-	if opts.push && opts.registry != "" {
+	// Perform push operation if either --push or --push-digest was specified
+	if shouldPerformPush(opts) {
 		return service.Push(ctx, *buildConfig, results, builderOpts)
 	}
 
 	return nil
+}
+
+// shouldPerformPush determines if a push operation should be performed based on options
+func shouldPerformPush(opts *buildOptions) bool {
+	return (opts.push || opts.pushDigest) && opts.registry != ""
 }
 
 func loadAndValidateBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*builder.Config, error) {

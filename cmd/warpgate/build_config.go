@@ -59,6 +59,7 @@ func buildOptsToCliOpts(args []string, opts *buildOptions) cli.BuildCLIOptions {
 		CacheTo:       opts.cacheTo,
 		NoCache:       opts.noCache,
 		Push:          opts.push,
+		PushDigest:    opts.pushDigest,
 		SaveDigests:   opts.saveDigests,
 		DigestDir:     opts.digestDir,
 	}

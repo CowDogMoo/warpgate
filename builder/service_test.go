@@ -34,11 +34,12 @@ import (
 
 // mockContainerBuilder implements ContainerBuilder for testing
 type mockContainerBuilder struct {
-	buildFunc  func(ctx context.Context, cfg Config) (*BuildResult, error)
-	pushFunc   func(ctx context.Context, imageRef, registry string) (string, error)
-	tagFunc    func(ctx context.Context, imageRef, newTag string) error
-	removeFunc func(ctx context.Context, imageRef string) error
-	closeFunc  func() error
+	buildFunc      func(ctx context.Context, cfg Config) (*BuildResult, error)
+	pushFunc       func(ctx context.Context, imageRef, registry string) (string, error)
+	pushDigestFunc func(ctx context.Context, imageRef, registry string) (string, error)
+	tagFunc        func(ctx context.Context, imageRef, newTag string) error
+	removeFunc     func(ctx context.Context, imageRef string) error
+	closeFunc      func() error
 }
 
 func (m *mockContainerBuilder) Build(ctx context.Context, cfg Config) (*BuildResult, error) {
@@ -57,6 +58,13 @@ func (m *mockContainerBuilder) Build(ctx context.Context, cfg Config) (*BuildRes
 func (m *mockContainerBuilder) Push(ctx context.Context, imageRef, registry string) (string, error) {
 	if m.pushFunc != nil {
 		return m.pushFunc(ctx, imageRef, registry)
+	}
+	return "sha256:1234567890abcdef", nil
+}
+
+func (m *mockContainerBuilder) PushDigest(ctx context.Context, imageRef, registry string) (string, error) {
+	if m.pushDigestFunc != nil {
+		return m.pushDigestFunc(ctx, imageRef, registry)
 	}
 	return "sha256:1234567890abcdef", nil
 }
@@ -427,6 +435,44 @@ func TestBuildService_PushSingleArch_WithoutDigest(t *testing.T) {
 
 	if !pushCalled {
 		t.Error("pushSingleArch() did not call Push")
+	}
+}
+
+func TestBuildService_PushSingleArch_DigestOnly(t *testing.T) {
+	cfg := &config.Config{}
+	ctx := context.Background()
+	pushDigestCalled := false
+
+	service := NewBuildService(cfg, nil)
+
+	buildConfig := &Config{
+		Name:          "test",
+		Architectures: []string{"amd64"},
+	}
+
+	result := BuildResult{
+		ImageRef:     "test-image:latest",
+		Architecture: "amd64",
+	}
+
+	buildOpts := BuildOptions{
+		Registry:   "ghcr.io/myorg",
+		PushDigest: true,
+	}
+
+	err := service.pushSingleArch(ctx, buildConfig, result, &mockContainerBuilder{
+		pushDigestFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
+			pushDigestCalled = true
+			return "sha256:1234567890abcdef", nil
+		},
+	}, buildOpts)
+
+	if err != nil {
+		t.Errorf("pushSingleArch() error = %v", err)
+	}
+
+	if !pushDigestCalled {
+		t.Error("pushSingleArch() did not call PushDigest")
 	}
 }
 

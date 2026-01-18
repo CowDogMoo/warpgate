@@ -88,12 +88,17 @@ func (v *Validator) validateKeyValueFormats(opts BuildCLIOptions) error {
 
 // validateOptionDependencies validates that dependent options are correctly specified.
 func (v *Validator) validateOptionDependencies(opts BuildCLIOptions) error {
-	if opts.Push && opts.Registry == "" {
-		return fmt.Errorf("--push requires --registry to be specified")
+	// Validate that --push and --push-digest are mutually exclusive
+	if opts.Push && opts.PushDigest {
+		return fmt.Errorf("--push and --push-digest are mutually exclusive: use --push-digest for digest-only push, or --push for tagged push")
 	}
 
-	if opts.SaveDigests && !opts.Push {
-		return fmt.Errorf("--save-digests requires --push to be enabled")
+	if (opts.Push || opts.PushDigest) && opts.Registry == "" {
+		return fmt.Errorf("--push/--push-digest requires --registry to be specified")
+	}
+
+	if opts.SaveDigests && !opts.Push && !opts.PushDigest {
+		return fmt.Errorf("--save-digests requires --push or --push-digest to be enabled")
 	}
 
 	return nil

@@ -55,6 +55,11 @@ func (m *MockContainerBuilder) Push(ctx context.Context, imageRef, destination s
 	return args.String(0), args.Error(1)
 }
 
+func (m *MockContainerBuilder) PushDigest(ctx context.Context, imageRef, destination string) (string, error) {
+	args := m.Called(ctx, imageRef, destination)
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockContainerBuilder) Close() error {
 	args := m.Called()
 	return args.Error(0)
@@ -241,6 +246,7 @@ func TestPushMultiArch(t *testing.T) {
 		name          string
 		results       []builder.BuildResult
 		registry      string
+		pushDigest    bool
 		mockPushSetup func(*MockContainerBuilder, []builder.BuildResult)
 		expectError   bool
 		errorContains string
@@ -291,6 +297,29 @@ func TestPushMultiArch(t *testing.T) {
 			expectError:   true,
 			errorContains: "failed to complete multi-arch push",
 		},
+		{
+			name: "successful multi-arch digest push",
+			results: []builder.BuildResult{
+				{
+					ImageRef:     "localhost/test-image:amd64",
+					Architecture: "amd64",
+					Platform:     "linux/amd64",
+				},
+				{
+					ImageRef:     "localhost/test-image:arm64",
+					Architecture: "arm64",
+					Platform:     "linux/arm64",
+				},
+			},
+			registry:   "ghcr.io/test",
+			pushDigest: true,
+			mockPushSetup: func(m *MockContainerBuilder, results []builder.BuildResult) {
+				for _, result := range results {
+					m.On("PushDigest", mock.Anything, result.ImageRef, mock.Anything).Return("sha256:abcdef1234567890", nil).Once()
+				}
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -305,7 +334,7 @@ func TestPushMultiArch(t *testing.T) {
 			}
 
 			orchestrator := builder.NewBuildOrchestrator(builder.DefaultMaxConcurrency)
-			err := orchestrator.PushMultiArch(ctx, tt.results, tt.registry, mockBuilder)
+			err := orchestrator.PushMultiArch(ctx, tt.results, tt.registry, tt.pushDigest, mockBuilder)
 
 			if tt.expectError {
 				assert.Error(t, err)
