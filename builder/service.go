@@ -205,7 +205,12 @@ func (s *BuildService) executeMultiArchBuild(ctx context.Context, config *Config
 func (s *BuildService) pushSingleArch(ctx context.Context, config *Config, result BuildResult, bldr ContainerBuilder, opts BuildOptions) error {
 	logging.InfoContext(ctx, "Pushing to registry: %s", opts.Registry)
 
-	digest, err := bldr.Push(ctx, result.ImageRef, opts.Registry)
+	pushFn := bldr.Push
+	if opts.PushDigest {
+		pushFn = bldr.PushDigest
+	}
+
+	digest, err := pushFn(ctx, result.ImageRef, opts.Registry)
 	if err != nil {
 		return fmt.Errorf("failed to push image: %w", err)
 	}
@@ -247,7 +252,7 @@ func (s *BuildService) pushMultiArch(ctx context.Context, config *Config, result
 	orchestrator := NewBuildOrchestrator(concurrency)
 
 	// Push individual architecture images
-	if err := orchestrator.PushMultiArch(ctx, results, opts.Registry, bldr); err != nil {
+	if err := orchestrator.PushMultiArch(ctx, results, opts.Registry, opts.PushDigest, bldr); err != nil {
 		return fmt.Errorf("failed to push multi-arch images: %w", err)
 	}
 

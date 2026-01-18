@@ -29,8 +29,10 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
 
-// BuildOptions represents build configuration overrides from CLI or API.
-// These options take precedence over values in the template configuration.
+// BuildOptions specifies options for building and pushing images.
+//
+// BuildOptions is used to configure the behavior of a build and push
+// operation, including cache settings, push modes, and digest saving.
 type BuildOptions struct {
 	// TargetType filters builds to specific target type (container, ami)
 	TargetType string
@@ -56,28 +58,34 @@ type BuildOptions struct {
 	// BuildArgs adds build arguments in key=value format (parsed externally)
 	BuildArgs map[string]string
 
-	// CacheFrom specifies external cache sources for BuildKit
+	// CacheFrom specifies sources to use for build cache.
 	CacheFrom []string
 
-	// CacheTo specifies external cache destinations for BuildKit
+	// CacheTo specifies destinations to store build cache.
 	CacheTo []string
 
-	// NoCache disables all caching
+	// NoCache disables build cache usage if set to true.
 	NoCache bool
 
 	// Variables contains template variable overrides
 	Variables map[string]string
 
-	// Push indicates whether to push after build
+	// Push indicates whether to push the image to the registry after build.
 	Push bool
 
-	// SaveDigests indicates whether to save image digests
+	// PushDigest indicates whether to push the image by digest without tagging.
+	//
+	// When set to true, the image is pushed by digest only, without creating
+	// a registry tag. This mode is mutually exclusive with Push.
+	PushDigest bool
+
+	// SaveDigests indicates whether to save image digests after push.
 	SaveDigests bool
 
-	// DigestDir specifies directory for saving digests
+	// DigestDir specifies the directory to save image digest files.
 	DigestDir string
 
-	// ForceRecreate deletes existing AWS resources before creating new ones (AMI builds only)
+	// ForceRecreate forces container recreation even if up-to-date.
 	ForceRecreate bool
 }
 

@@ -22,35 +22,70 @@ THE SOFTWARE.
 
 package cli
 
-// BuildCLIOptions represents command-line options for the build command.
-// This is the raw CLI input before parsing and validation.
+// BuildCLIOptions defines command-line options for the build command.
+//
+// BuildCLIOptions captures options provided by the user via CLI flags
+// and arguments. These are validated before being passed to the build logic.
 type BuildCLIOptions struct {
-	// Input source (mutually exclusive)
+	// ConfigFile specifies the path to the build configuration file.
 	ConfigFile string
-	Template   string
-	FromGit    string
 
-	// Build options
-	TargetType    string
+	// Template specifies the name of a template to use from the registry.
+	Template string
+
+	// FromGit specifies a git URL to load the template from.
+	FromGit string
+
+	// TargetType specifies the output target type (e.g., "container", "ami").
+	TargetType string
+
+	// Architectures specifies architectures to build (e.g., "amd64", "arm64").
 	Architectures []string
-	Registry      string
-	Tags          []string
-	Region        string
-	InstanceType  string
 
-	// Build customization (unparsed key=value strings)
-	Labels    []string
+	// Registry specifies the registry to push images to.
+	Registry string
+
+	// Tags specifies additional tags to apply to the built image.
+	Tags []string
+
+	// Region specifies AWS region for AMI builds.
+	Region string
+
+	// InstanceType specifies EC2 instance type for AMI builds.
+	InstanceType string
+
+	// Labels specifies image labels (unparsed key=value strings).
+	Labels []string
+
+	// BuildArgs specifies build arguments (unparsed key=value strings).
 	BuildArgs []string
+
+	// Variables specifies template variable overrides (unparsed key=value strings).
 	Variables []string
-	VarFiles  []string
 
-	// Cache options
+	// VarFiles specifies paths to variable files.
+	VarFiles []string
+
+	// CacheFrom specifies sources to use for build cache.
 	CacheFrom []string
-	CacheTo   []string
-	NoCache   bool
 
-	// Post-build actions
-	Push        bool
+	// CacheTo specifies destinations to store build cache.
+	CacheTo []string
+
+	// NoCache disables build cache usage if set to true.
+	NoCache bool
+
+	// Push indicates whether to push the image to the registry after build.
+	Push bool
+
+	// PushDigest indicates whether to push the image by digest without tagging.
+	//
+	// This option is mutually exclusive with Push.
+	PushDigest bool
+
+	// SaveDigests indicates whether to save image digests after push.
 	SaveDigests bool
-	DigestDir   string
+
+	// DigestDir specifies the directory to save image digest files.
+	DigestDir string
 }

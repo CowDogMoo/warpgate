@@ -109,7 +109,7 @@ func TestValidateBuildOptions(t *testing.T) {
 				Push:       true,
 			},
 			wantErr: true,
-			errMsg:  "--push requires --registry",
+			errMsg:  "--push/--push-digest requires --registry",
 		},
 		{
 			name: "push with registry - valid",
@@ -121,19 +121,58 @@ func TestValidateBuildOptions(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "push-digest without registry",
+			opts: BuildCLIOptions{
+				ConfigFile: "warpgate.yaml",
+				PushDigest: true,
+			},
+			wantErr: true,
+			errMsg:  "--push/--push-digest requires --registry",
+		},
+		{
+			name: "push-digest with registry - valid",
+			opts: BuildCLIOptions{
+				ConfigFile: "warpgate.yaml",
+				PushDigest: true,
+				Registry:   "ghcr.io/myorg",
+			},
+			wantErr: false,
+		},
+		{
+			name: "push and push-digest both set - mutually exclusive",
+			opts: BuildCLIOptions{
+				ConfigFile: "warpgate.yaml",
+				Push:       true,
+				PushDigest: true,
+				Registry:   "ghcr.io/myorg",
+			},
+			wantErr: true,
+			errMsg:  "mutually exclusive",
+		},
+		{
 			name: "save-digests without push",
 			opts: BuildCLIOptions{
 				ConfigFile:  "warpgate.yaml",
 				SaveDigests: true,
 			},
 			wantErr: true,
-			errMsg:  "--save-digests requires --push",
+			errMsg:  "--save-digests requires --push or --push-digest",
 		},
 		{
 			name: "save-digests with push - valid",
 			opts: BuildCLIOptions{
 				ConfigFile:  "warpgate.yaml",
 				Push:        true,
+				Registry:    "ghcr.io/myorg",
+				SaveDigests: true,
+			},
+			wantErr: false,
+		},
+		{
+			name: "save-digests with push-digest - valid",
+			opts: BuildCLIOptions{
+				ConfigFile:  "warpgate.yaml",
+				PushDigest:  true,
 				Registry:    "ghcr.io/myorg",
 				SaveDigests: true,
 			},

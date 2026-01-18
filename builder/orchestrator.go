@@ -103,10 +103,15 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 }
 
 // PushMultiArch pushes all architecture-specific images to a registry in parallel.
-func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildResult, registry string, builder ContainerBuilder) error {
+func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildResult, registry string, pushDigest bool, builder ContainerBuilder) error {
 	logging.InfoContext(ctx, "Pushing %d architecture images to %s", len(results), registry)
 
 	g, ctx := errgroup.WithContext(ctx)
+
+	pushFn := builder.Push
+	if pushDigest {
+		pushFn = builder.PushDigest
+	}
 
 	for i := range results {
 		i := i // Capture loop index
@@ -117,7 +122,7 @@ func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildR
 			}
 			logging.InfoContext(ctx, "Pushing %s to %s", result.ImageRef, registry)
 
-			digest, err := builder.Push(ctx, result.ImageRef, registry)
+			digest, err := pushFn(ctx, result.ImageRef, registry)
 			if err != nil {
 				logging.ErrorContext(ctx, "Failed to push %s: %v", result.ImageRef, err)
 				return errors.Wrap("push image", result.ImageRef, err)
