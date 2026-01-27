@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.20
+# syntax=docker/dockerfile:1.21
 
 # Build stage - compile the binary
 FROM golang:1.25-bookworm AS builder
