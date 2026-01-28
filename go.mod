@@ -8,11 +8,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.63.1
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.281.0
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.283.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.53.2
 	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.50.4
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.67.8
-	github.com/docker/cli v29.1.5+incompatible
+	github.com/docker/cli v29.2.0+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/go-git/go-git/v5 v5.16.4
@@ -152,8 +152,8 @@ require (
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260122232226-8e98ce8d340d // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260122232226-8e98ce8d340d // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gotest.tools/v3 v3.5.2 // indirect

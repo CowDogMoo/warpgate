@@ -43,8 +43,8 @@ github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 h1:WKuaxf++XKWlHWu9ECbMlha8WOEG
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4/go.mod h1:ZWy7j6v1vWGmPReu0iSGvRiise4YI5SkR3OHKTZ6Wuc=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.63.1 h1:l65dmgr7tO26EcHe6WMdseRnFLoJ2nqdkPz1nJdXfaw=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.63.1/go.mod h1:wvnXh1w1pGS2UpEvPTKSjXYuxiXhuvob/IMaK2AWvek=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.281.0 h1:9bFLf1b1EQS9JWghInM4cLlfv7bfJCdW5I6dECnWens=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.281.0/go.mod h1:Uy+C+Sc58jozdoL1McQr8bDsEvNFx+/nBY+vpO1HVUY=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.283.0 h1:o1GTyhiyvSEy7uMiD9rImR4SQLrAQ2y6q1HE4cCU8E4=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.283.0/go.mod h1:Uy+C+Sc58jozdoL1McQr8bDsEvNFx+/nBY+vpO1HVUY=
 github.com/aws/aws-sdk-go-v2/service/iam v1.53.2 h1:62G6btFUwAa5uR5iPlnlNVAM0zJSLbWgDfKOfUC7oW4=
 github.com/aws/aws-sdk-go-v2/service/iam v1.53.2/go.mod h1:av9clChrbZbJ5E21msSsiT2oghl2BJHfQGhCkXmhyu8=
 github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.50.4 h1:IBqUVTooFpgoRkTDFupWC3FB92jSXvXg5NFoN/VwZqQ=
@@ -116,8 +116,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5QvfrDyIgxBk=
 github.com/distribution/reference v0.6.0/go.mod h1:BbU0aIcezP1/5jX/8MP0YiH4SdvB5Y4f/wlDRiLyi3E=
-github.com/docker/cli v29.1.5+incompatible h1:GckbANUt3j+lsnQ6eCcQd70mNSOismSHWt8vk2AX8ao=
-github.com/docker/cli v29.1.5+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
+github.com/docker/cli v29.2.0+incompatible h1:9oBd9+YM7rxjZLfyMGxjraKBKE4/nVyvVfN4qNl9XRM=
+github.com/docker/cli v29.2.0+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/distribution v2.8.3+incompatible h1:AtKxIZ36LoNK51+Z6RpzLpddBirtxJnzDrHLEKxTAYk=
 github.com/docker/distribution v2.8.3+incompatible/go.mod h1:J2gT2udsDAN96Uj4KfcMRqY0/ypR+oyYUYmja8H+y+w=
 github.com/docker/docker v28.5.2+incompatible h1:DBX0Y0zAjZbSrm1uzOkdr1onVghKaftjlSWt4AFexzM=
@@ -442,10 +442,10 @@ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8T
 golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 gonum.org/v1/gonum v0.16.0 h1:5+ul4Swaf3ESvrOnidPp4GZbzf0mxVQpDCYUQE7OJfk=
 gonum.org/v1/gonum v0.16.0/go.mod h1:fef3am4MQ93R2HHpKnLk4/Tbh/s0+wqD5nfa6Pnwy4E=
-google.golang.org/genproto/googleapis/api v0.0.0-20260122232226-8e98ce8d340d h1:tUKoKfdZnSjTf5LW7xpG4c6SZ3Ozisn5eumcoTuMEN4=
-google.golang.org/genproto/googleapis/api v0.0.0-20260122232226-8e98ce8d340d/go.mod h1:p3MLuOwURrGBRoEyFHBT3GjUwaCQVKeNqqWxlcISGdw=
-google.golang.org/genproto/googleapis/rpc v0.0.0-20260122232226-8e98ce8d340d h1:xXzuihhT3gL/ntduUZwHECzAn57E8dA6l8SOtYWdD8Q=
-google.golang.org/genproto/googleapis/rpc v0.0.0-20260122232226-8e98ce8d340d/go.mod h1:j9x/tPzZkyxcgEFkiKEEGxfvyumM01BEtsW8xzOahRQ=
+google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409 h1:merA0rdPeUV3YIIfHHcH4qBkiQAc1nfCKSI7lB4cV2M=
+google.golang.org/genproto/googleapis/api v0.0.0-20260128011058-8636f8732409/go.mod h1:fl8J1IvUjCilwZzQowmw2b7HQB2eAuYBabMXzWurF+I=
+google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 h1:H86B94AW+VfJWDqFeEbBPhEtHzJwJfTbgE2lZa54ZAQ=
+google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409/go.mod h1:j9x/tPzZkyxcgEFkiKEEGxfvyumM01BEtsW8xzOahRQ=
 google.golang.org/grpc v1.78.0 h1:K1XZG/yGDJnzMdd/uZHAkVqJE+xIDOcmdSFZkBUicNc=
 google.golang.org/grpc v1.78.0/go.mod h1:I47qjTo4OKbMkjA/aOOwxDIiPSBofUtQUI5EfpWvW7U=
 google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
