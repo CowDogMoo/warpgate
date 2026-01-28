@@ -217,7 +217,7 @@ func createAuthProvider() []session.Attachable {
 	}
 
 	ap := authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
-		ConfigFile: dockerCfg,
+		AuthConfigProvider: authprovider.LoadAuthConfig(dockerCfg),
 	})
 
 	logging.DebugContext(ctx, "Created auth provider from Docker config for base image pulls")
