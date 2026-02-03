@@ -9,6 +9,7 @@
 [![🚨 Semgrep](https://github.com/CowDogMoo/warpgate/actions/workflows/semgrep.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/semgrep.yaml)
 [![Pre-Commit](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/pre-commit.yaml)
 [![Renovate](https://github.com/CowDogMoo/warpgate/actions/workflows/renovate.yaml/badge.svg)](https://github.com/CowDogMoo/warpgate/actions/workflows/renovate.yaml)
+[![codecov](https://codecov.io/github/CowDogMoo/warpgate/graph/badge.svg?token=9W0IPNRA8W)](https://codecov.io/github/CowDogMoo/warpgate)
 
 <p align="center">
   <img src="docs/images/wg-logo.jpeg" alt="Warp Gate Logo" width="100%">
