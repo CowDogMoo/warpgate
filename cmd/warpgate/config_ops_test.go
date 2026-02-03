@@ -268,7 +268,9 @@ func TestRunConfigGet_KnownKey(t *testing.T) {
 
 	err := runConfigGet(cmd, []string{"log.level"})
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close pipe writer: %v", err)
+	}
 	os.Stdout = oldStdout
 
 	if err != nil {
