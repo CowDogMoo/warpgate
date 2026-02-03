@@ -149,7 +149,9 @@ func TestRunConfigShow_WithConfig(t *testing.T) {
 
 	err := runConfigShow(cmd, []string{})
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close pipe writer: %v", err)
+	}
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -192,7 +194,9 @@ func TestRunConfigPath_NoExistingConfig(t *testing.T) {
 
 	err := runConfigPath(cmd, []string{})
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close pipe writer: %v", err)
+	}
 	os.Stdout = oldStdout
 
 	if err != nil {
@@ -232,7 +236,9 @@ func TestRunConfigPath_ExistingConfig(t *testing.T) {
 
 	err := runConfigPath(cmd, []string{})
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close pipe writer: %v", err)
+	}
 	os.Stdout = oldStdout
 
 	if err != nil {
