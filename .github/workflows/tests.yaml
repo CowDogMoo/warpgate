@@ -54,9 +54,10 @@ jobs:
           bash .hooks/run-go-tests.sh coverage
 
       - name: Send the coverage output
-        uses: shogo82148/actions-goveralls@25f5320d970fb565100cf1993ada29be1bb196a1 # v1
+        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5
         with:
-          path-to-profile: coverage-all.out
+          files: coverage-all.out
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   schema-validation:
     name: Validate JSON schema is up to date
