@@ -36,9 +36,9 @@ type VersionManager struct {
 	warpgateVersion *semver.Version
 }
 
-// NewVersionManager creates a new version manager
+// NewVersionManager returns a [VersionManager] that resolves template
+// compatibility against the given semantic version string.
 func NewVersionManager(warpgateVersion string) (*VersionManager, error) {
-	// Parse warpgate version
 	ver, err := semver.NewVersion(warpgateVersion)
 	if err != nil {
 		return nil, fmt.Errorf("invalid warpgate version: %w", err)

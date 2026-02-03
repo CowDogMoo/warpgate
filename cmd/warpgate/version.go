@@ -23,7 +23,6 @@ THE SOFTWARE.
 package main
 
 import (
-	"fmt"
 	"runtime/debug"
 
 	"github.com/spf13/cobra"
@@ -62,8 +61,8 @@ var versionCmd = &cobra.Command{
 	Long:  `Display the version, commit hash, and build date of warpgate.`,
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("warpgate version %s\n", version)
-		fmt.Printf("  commit: %s\n", commit)
-		fmt.Printf("  built:  %s\n", date)
+		cmd.Printf("warpgate version %s\n", version)
+		cmd.Printf("  commit: %s\n", commit)
+		cmd.Printf("  built:  %s\n", date)
 	},
 }

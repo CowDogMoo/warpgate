@@ -64,7 +64,7 @@ const (
 	ErrorLevel
 )
 
-// String returns the string representation of the log level.
+// String implements [fmt.Stringer].
 func (l LogLevel) String() string {
 	switch l {
 	case DebugLevel:

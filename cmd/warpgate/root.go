@@ -145,7 +145,6 @@ type cliOverrides struct {
 // initConfig initializes configuration with proper precedence:
 // CLI Flags > Environment Variables > Config File > Defaults
 func initConfig(cmd *cobra.Command, args []string) error {
-	// 1. Load global config (handles defaults, env vars, and config file)
 	var cfg *config.Config
 	var err error
 	if cfgFile != "" {
@@ -169,7 +168,6 @@ func initConfig(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 2. Create a new Viper instance for flag binding
 	v := viper.New()
 
 	// Set defaults from loaded config (these can be overridden by flags/env)
@@ -178,12 +176,10 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	v.SetDefault("registry.default", cfg.Registry.Default)
 	v.SetDefault("build.default_arch", cfg.Build.DefaultArch)
 
-	// 3. Bind environment variables
 	v.SetEnvPrefix("WARPGATE")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	// 4. Bind Cobra flags to Viper (this enables: flags > env > config > defaults)
-	// Bind root persistent flags
 	if err := v.BindPFlag("log.level", cmd.Root().PersistentFlags().Lookup("log-level")); err != nil {
 		return fmt.Errorf("failed to bind log-level flag: %w", err)
 	}
@@ -191,29 +187,31 @@ func initConfig(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to bind log-format flag: %w", err)
 	}
 
-	// Bind all subcommand flags to Viper for consistent precedence
-	BindCommandFlagsToViper(v, cmd)
+	if err := v.BindPFlag("quiet", cmd.Root().PersistentFlags().Lookup("quiet")); err != nil {
+		return fmt.Errorf("failed to bind quiet flag: %w", err)
+	}
+	if err := v.BindPFlag("verbose", cmd.Root().PersistentFlags().Lookup("verbose")); err != nil {
+		return fmt.Errorf("failed to bind verbose flag: %w", err)
+	}
 
-	// 5. Unmarshal CLI-overridable values using type-safe struct binding
+	BindCommandFlagsToViper(v, cmd)
+	ApplyViperOverrides(v, cmd)
+
 	var overrides cliOverrides
 	if err := v.Unmarshal(&overrides); err != nil {
 		return fmt.Errorf("failed to unmarshal config overrides: %w", err)
 	}
 
-	// 6. Get quiet/verbose flags directly (boolean flags handled separately)
-	quiet, _ := cmd.Flags().GetBool("quiet")
-	verbose, _ := cmd.Flags().GetBool("verbose")
+	quiet := v.GetBool("quiet")
+	verbose := v.GetBool("verbose")
 
-	// 7. Create a context-aware logger with final values
 	logger := logging.NewCustomLoggerWithOptions(overrides.Log.Level, overrides.Log.Format, quiet, verbose)
 
-	// 8. Apply overrides to config using type-safe struct values
 	cfg.Log.Level = overrides.Log.Level
 	cfg.Log.Format = overrides.Log.Format
 	cfg.Registry.Default = overrides.Registry.Default
 	cfg.Build.DefaultArch = overrides.Build.DefaultArch
 
-	// 9. Store config and logger in context
 	ctx := context.WithValue(cmd.Context(), configKey, cfg)
 	ctx = logging.WithLogger(ctx, logger)
 	cmd.SetContext(ctx)
@@ -221,7 +219,7 @@ func initConfig(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// Execute runs the root command
+// Execute invokes the top-level cobra command and returns any error.
 func Execute() error {
 	return rootCmd.Execute()
 }
@@ -281,4 +279,24 @@ func getCommandPath(cmd *cobra.Command) string {
 		return ""
 	}
 	return strings.Join(parts, ".")
+}
+
+// ApplyViperOverrides pushes Viper values (from env vars or config file)
+// back into Cobra flags that were not explicitly set on the command line.
+// This ensures that opts structs populated via pflag see env/config values.
+func ApplyViperOverrides(v *viper.Viper, cmd *cobra.Command) {
+	cmdPath := getCommandPath(cmd)
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			return // explicitly set on CLI — highest precedence
+		}
+		key := strings.ReplaceAll(f.Name, "-", "_")
+		if cmdPath != "" {
+			key = cmdPath + "." + key
+		}
+		if v.IsSet(key) {
+			val := v.GetString(key)
+			_ = cmd.Flags().Set(f.Name, val)
+		}
+	})
 }

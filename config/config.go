@@ -248,11 +248,6 @@ func Load() (*Config, error) {
 	return loadConfigWithViper(func(v *viper.Viper) error {
 		v.SetConfigName("config")
 
-		// Look in these locations (in order of precedence):
-		// 1. XDG config directories (modern, preferred: ~/.config on all Unix-like systems)
-		// 2. Legacy ~/.warpgate directory (backward compatibility)
-		// 3. Current directory
-
 		for _, dir := range getConfigDirs() {
 			v.AddConfigPath(dir)
 		}
@@ -484,8 +479,7 @@ func bindEnvVars(v *viper.Viper) {
 	bind("buildkit.tls_key", "WARPGATE_BUILDKIT_TLS_KEY")
 }
 
-// Get returns the global config instance
-// This is a convenience function that wraps Load()
+// Get is a convenience wrapper around [Load].
 func Get() (*Config, error) {
 	return Load()
 }

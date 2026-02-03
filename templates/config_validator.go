@@ -48,12 +48,12 @@ func NewValidator() *Validator {
 	return &Validator{}
 }
 
-// Validate checks if a configuration is valid with default options
+// Validate checks config using default [ValidationOptions].
 func (v *Validator) Validate(ctx context.Context, config *builder.Config) error {
 	return v.ValidateWithOptions(ctx, config, ValidationOptions{})
 }
 
-// ValidateWithOptions checks if a configuration is valid with custom validation options
+// ValidateWithOptions checks config against the supplied [ValidationOptions].
 func (v *Validator) ValidateWithOptions(ctx context.Context, config *builder.Config, options ValidationOptions) error {
 	v.options = options
 	if config.Name == "" {

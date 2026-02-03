@@ -67,7 +67,7 @@ import (
 // Parser handles parsing of CLI input into structured data.
 type Parser struct{}
 
-// NewParser creates a new CLI parser.
+// NewParser returns a zero-value [Parser] ready for use.
 func NewParser() *Parser {
 	return &Parser{}
 }

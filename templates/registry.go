@@ -155,14 +155,13 @@ func NewTemplateRegistry(ctx context.Context) (*TemplateRegistry, error) {
 	return tr, nil
 }
 
-// List returns all available templates in a repository
+// List returns every template in the named repository, or across
+// all sources when repoName is empty or "all".
 func (tr *TemplateRegistry) List(ctx context.Context, repoName string) ([]TemplateInfo, error) {
-	// Special case: list all templates from all sources
 	if repoName == "" || repoName == "all" {
 		return tr.listAll(ctx)
 	}
 
-	// Try to load from cache first (only for git repos, not local paths)
 	repoURL, ok := tr.repos[repoName]
 	if !ok {
 		return nil, fmt.Errorf("unknown repository: %s", repoName)

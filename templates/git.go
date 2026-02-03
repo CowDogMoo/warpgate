@@ -40,7 +40,8 @@ type GitOperations struct {
 	cacheDir string
 }
 
-// NewGitOperations creates a new git operations handler
+// NewGitOperations returns a [GitOperations] that caches
+// cloned repositories under cacheDir.
 func NewGitOperations(cacheDir string) *GitOperations {
 	return &GitOperations{
 		cacheDir: cacheDir,

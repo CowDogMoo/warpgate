@@ -329,11 +329,6 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 			componentName := config.Name + "-" + fmt.Sprint(index)
 			logging.InfoContext(ctx, "Creating component: %s (index: %d)", prov.Type, index)
 
-			// Determine the version to use:
-			// 1. Use provisioner's ComponentVersion if specified
-			// 2. Fall back to config.Version
-			// 3. Normalize to valid semantic version (AWS requires X.Y.Z format)
-			// 4. Auto-increment if forceRecreate and conflicts exist
 			version := NormalizeSemanticVersion(config.Version)
 			if prov.ComponentVersion != "" {
 				version = NormalizeSemanticVersion(prov.ComponentVersion)

@@ -35,7 +35,8 @@ type Validator struct {
 	pathValidator *templates.PathValidator
 }
 
-// NewValidator creates a new CLI validator.
+// NewValidator returns a [Validator] backed by a default [Parser]
+// and [templates.PathValidator].
 func NewValidator() *Validator {
 	return &Validator{
 		parser:        NewParser(),

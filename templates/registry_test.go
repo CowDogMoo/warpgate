@@ -483,3 +483,77 @@ func TestTemplateRegistryCacheMetadata(t *testing.T) {
 		t.Errorf("Expected description 'Test template', got %q", tmpl.Description)
 	}
 }
+
+func TestTemplateRegistryListUnknownRepo(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "warpgate-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	registry := &TemplateRegistry{
+		repos:         map[string]string{},
+		cacheDir:      tempDir,
+		pathValidator: NewPathValidator(),
+	}
+
+	_, err = registry.List(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("Expected error for unknown repository")
+	}
+
+	expected := "unknown repository: nonexistent"
+	if err.Error() != expected {
+		t.Errorf("Expected error %q, got %q", expected, err.Error())
+	}
+}
+
+func TestTemplateRegistryListLocalRepo(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "warpgate-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
+
+	// Create a local repo structure with templates/
+	repoDir := filepath.Join(tempDir, "local-repo")
+	templatesDir := filepath.Join(repoDir, "templates", "test-tmpl")
+	if err := os.MkdirAll(templatesDir, 0o755); err != nil {
+		t.Fatalf("Failed to create templates dir: %v", err)
+	}
+
+	// Write a minimal warpgate.yaml
+	configContent := []byte("metadata:\n  description: Local test\n  version: 0.1.0\n  author: tester\n  tags:\n    - test\n")
+	if err := os.WriteFile(filepath.Join(templatesDir, "warpgate.yaml"), configContent, 0o644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	registry := &TemplateRegistry{
+		repos: map[string]string{
+			"local": repoDir,
+		},
+		cacheDir:      tempDir,
+		pathValidator: NewPathValidator(),
+	}
+
+	templates, err := registry.List(context.Background(), "local")
+	if err != nil {
+		t.Fatalf("Failed to list local repo: %v", err)
+	}
+
+	if len(templates) != 1 {
+		t.Fatalf("Expected 1 template, got %d", len(templates))
+	}
+
+	if templates[0].Name != "test-tmpl" {
+		t.Errorf("Expected template name 'test-tmpl', got %q", templates[0].Name)
+	}
+}

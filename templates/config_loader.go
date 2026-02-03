@@ -36,7 +36,7 @@ import (
 // Loader handles loading and parsing template configurations
 type Loader struct{}
 
-// NewLoader creates a new config loader
+// NewLoader returns a zero-value [Loader] ready for use.
 func NewLoader() *Loader {
 	return &Loader{}
 }
