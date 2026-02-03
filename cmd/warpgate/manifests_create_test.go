@@ -139,10 +139,7 @@ func TestConvertDigestFilesToManifestEntries(t *testing.T) {
 }
 
 func TestParseMetadata(t *testing.T) {
-	t.Parallel()
-
 	t.Run("empty annotations and labels", func(t *testing.T) {
-		t.Parallel()
 		// Save and restore
 		oldOpts := manifestsCreateOpts
 		manifestsCreateOpts = &manifestsCreateOptions{}
@@ -161,7 +158,6 @@ func TestParseMetadata(t *testing.T) {
 	})
 
 	t.Run("valid annotations and labels", func(t *testing.T) {
-		t.Parallel()
 		oldOpts := manifestsCreateOpts
 		manifestsCreateOpts = &manifestsCreateOptions{
 			annotations: []string{"org.opencontainers.image.version=1.0.0"},
@@ -183,8 +179,6 @@ func TestParseMetadata(t *testing.T) {
 }
 
 func TestHandleDryRun(t *testing.T) {
-	t.Parallel()
-
 	oldOpts := manifestsCreateOpts
 	oldShared := manifestsSharedOpts
 	manifestsCreateOpts = &manifestsCreateOptions{
