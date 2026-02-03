@@ -30,8 +30,6 @@ import (
 )
 
 func TestConfigSubcommands(t *testing.T) {
-	t.Parallel()
-
 	subcommands := configCmd.Commands()
 	names := make(map[string]bool)
 	for _, cmd := range subcommands {
@@ -47,8 +45,6 @@ func TestConfigSubcommands(t *testing.T) {
 }
 
 func TestCompletionSubcommands(t *testing.T) {
-	t.Parallel()
-
 	found := false
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Name() == "completion" {
@@ -62,8 +58,6 @@ func TestCompletionSubcommands(t *testing.T) {
 }
 
 func TestCleanupCommandRegistered(t *testing.T) {
-	t.Parallel()
-
 	found := false
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Name() == "cleanup" {
@@ -77,8 +71,6 @@ func TestCleanupCommandRegistered(t *testing.T) {
 }
 
 func TestConvertCommandRegistered(t *testing.T) {
-	t.Parallel()
-
 	found := false
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Name() == "convert" {
@@ -92,8 +84,6 @@ func TestConvertCommandRegistered(t *testing.T) {
 }
 
 func TestTemplatesCommandRegistered(t *testing.T) {
-	t.Parallel()
-
 	found := false
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Name() == "templates" {
@@ -107,8 +97,6 @@ func TestTemplatesCommandRegistered(t *testing.T) {
 }
 
 func TestManifestsCommandRegistered(t *testing.T) {
-	t.Parallel()
-
 	found := false
 	for _, cmd := range rootCmd.Commands() {
 		if cmd.Name() == "manifests" {
@@ -144,8 +132,6 @@ func TestBindCommandFlagsToViper_Integration(t *testing.T) {
 }
 
 func TestRootCommandSubcommands(t *testing.T) {
-	t.Parallel()
-
 	cmds := rootCmd.Commands()
 	cmdNames := make([]string, 0, len(cmds))
 	for _, c := range cmds {
@@ -168,8 +154,6 @@ func TestRootCommandSubcommands(t *testing.T) {
 }
 
 func TestRootCommandFlags(t *testing.T) {
-	t.Parallel()
-
 	flags := rootCmd.PersistentFlags()
 
 	configFlag := flags.Lookup("config")
