@@ -253,9 +253,18 @@ func BindCommandFlagsToViper(v *viper.Viper, cmd *cobra.Command) {
 	// Bind the command's local flags
 	BindFlagsToViper(v, cmd, cmdPath)
 
+	// Map inherited flag names to their nested Viper config keys
+	// when the flag name collides with a nested config struct.
+	nestedKeyMap := map[string]string{
+		"registry": "registry.default",
+	}
+
 	// Also bind persistent flags from parent commands
 	cmd.InheritedFlags().VisitAll(func(f *pflag.Flag) {
 		key := strings.ReplaceAll(f.Name, "-", "_")
+		if mappedKey, ok := nestedKeyMap[key]; ok {
+			key = mappedKey
+		}
 		if err := v.BindPFlag(key, f); err != nil {
 			// Note: We can't use context-based logging here since this is called during init
 			// Use fmt.Fprintf to stderr instead
