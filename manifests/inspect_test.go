@@ -23,10 +23,22 @@ THE SOFTWARE.
 package manifests
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsMultiArchMediaType(t *testing.T) {
@@ -139,4 +151,301 @@ func TestArchitectureInfo(t *testing.T) {
 		}
 		assert.Empty(t, info.Variant)
 	})
+}
+
+// newTestRegistry creates an in-memory OCI registry for testing and returns
+// the host string (e.g., "localhost:xxxxx") suitable for use with name.NewTag.
+func newTestRegistry(t *testing.T) string {
+	t.Helper()
+	reg := registry.New()
+	srv := httptest.NewServer(reg)
+	t.Cleanup(srv.Close)
+	// Return just the host portion (strip "http://")
+	return srv.Listener.Addr().String()
+}
+
+func TestParseMultiArchManifestFromDescriptor(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid index manifest", func(t *testing.T) {
+		t.Parallel()
+
+		// Build a valid OCI index manifest JSON
+		indexManifest := v1.IndexManifest{
+			SchemaVersion: 2,
+			MediaType:     types.OCIImageIndex,
+			Manifests: []v1.Descriptor{
+				{
+					MediaType: types.OCIManifestSchema1,
+					Size:      1024,
+					Digest: v1.Hash{
+						Algorithm: "sha256",
+						Hex:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					},
+					Platform: &v1.Platform{
+						OS:           "linux",
+						Architecture: "amd64",
+					},
+				},
+				{
+					MediaType: types.OCIManifestSchema1,
+					Size:      2048,
+					Digest: v1.Hash{
+						Algorithm: "sha256",
+						Hex:       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					},
+					Platform: &v1.Platform{
+						OS:           "linux",
+						Architecture: "arm64",
+					},
+				},
+				{
+					MediaType: types.OCIManifestSchema1,
+					Size:      512,
+					Digest: v1.Hash{
+						Algorithm: "sha256",
+						Hex:       "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+					},
+					Platform: &v1.Platform{
+						OS:           "linux",
+						Architecture: "arm",
+						Variant:      "v7",
+					},
+				},
+			},
+			Annotations: map[string]string{
+				"created": "2025-01-01",
+			},
+		}
+
+		manifestBytes, err := json.Marshal(indexManifest)
+		require.NoError(t, err)
+
+		descriptor := &remote.Descriptor{
+			Descriptor: v1.Descriptor{
+				MediaType: types.OCIImageIndex,
+			},
+			Manifest: manifestBytes,
+		}
+
+		info := &ManifestInfo{
+			Annotations: make(map[string]string),
+		}
+
+		err = parseMultiArchManifestFromDescriptor(descriptor, info)
+		require.NoError(t, err)
+
+		assert.Len(t, info.Architectures, 3)
+		assert.Equal(t, "linux", info.Architectures[0].OS)
+		assert.Equal(t, "amd64", info.Architectures[0].Architecture)
+		assert.Equal(t, "arm64", info.Architectures[1].Architecture)
+		assert.Equal(t, "arm", info.Architectures[2].Architecture)
+		assert.Equal(t, "v7", info.Architectures[2].Variant)
+		assert.Equal(t, "2025-01-01", info.Annotations["created"])
+	})
+
+	t.Run("index without platform info", func(t *testing.T) {
+		t.Parallel()
+
+		indexManifest := v1.IndexManifest{
+			SchemaVersion: 2,
+			MediaType:     types.OCIImageIndex,
+			Manifests: []v1.Descriptor{
+				{
+					MediaType: types.OCIManifestSchema1,
+					Size:      1024,
+					Digest:    v1.Hash{Algorithm: "sha256", Hex: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+				},
+			},
+		}
+
+		manifestBytes, err := json.Marshal(indexManifest)
+		require.NoError(t, err)
+
+		descriptor := &remote.Descriptor{
+			Descriptor: v1.Descriptor{MediaType: types.OCIImageIndex},
+			Manifest:   manifestBytes,
+		}
+
+		info := &ManifestInfo{Annotations: make(map[string]string)}
+		err = parseMultiArchManifestFromDescriptor(descriptor, info)
+		require.NoError(t, err)
+
+		assert.Len(t, info.Architectures, 1)
+		assert.Empty(t, info.Architectures[0].OS)
+		assert.Empty(t, info.Architectures[0].Architecture)
+	})
+
+	t.Run("invalid manifest bytes", func(t *testing.T) {
+		t.Parallel()
+
+		descriptor := &remote.Descriptor{
+			Descriptor: v1.Descriptor{MediaType: types.OCIImageIndex},
+			Manifest:   []byte("not valid json"),
+		}
+
+		info := &ManifestInfo{Annotations: make(map[string]string)}
+		err := parseMultiArchManifestFromDescriptor(descriptor, info)
+		assert.Error(t, err)
+	})
+}
+
+func TestInspectManifest_WithInMemoryRegistry(t *testing.T) {
+	t.Parallel()
+
+	host := newTestRegistry(t)
+
+	// Create and push a random image
+	img, err := random.Image(256, 1)
+	require.NoError(t, err)
+
+	ref, err := name.NewTag(fmt.Sprintf("%s/test/myimage:latest", host))
+	require.NoError(t, err)
+
+	err = remote.Write(ref, img)
+	require.NoError(t, err)
+
+	// Now inspect
+	info, err := InspectManifest(context.Background(), InspectOptions{
+		Registry:  host,
+		Namespace: "test",
+		ImageName: "myimage",
+		Tag:       "latest",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "myimage", info.Name)
+	assert.Equal(t, "latest", info.Tag)
+	assert.NotEmpty(t, info.Digest)
+	assert.Len(t, info.Architectures, 1)
+}
+
+func TestInspectManifest_MultiArch_WithInMemoryRegistry(t *testing.T) {
+	t.Parallel()
+
+	host := newTestRegistry(t)
+
+	// Create two random images for different platforms
+	imgAmd64, err := random.Image(256, 1)
+	require.NoError(t, err)
+
+	imgArm64, err := random.Image(256, 1)
+	require.NoError(t, err)
+
+	// Create an image index (multi-arch manifest)
+	idx := mutate.AppendManifests(empty.Index,
+		mutate.IndexAddendum{
+			Add: imgAmd64,
+			Descriptor: v1.Descriptor{
+				Platform: &v1.Platform{OS: "linux", Architecture: "amd64"},
+			},
+		},
+		mutate.IndexAddendum{
+			Add: imgArm64,
+			Descriptor: v1.Descriptor{
+				Platform: &v1.Platform{OS: "linux", Architecture: "arm64"},
+			},
+		},
+	)
+
+	ref, err := name.NewTag(fmt.Sprintf("%s/test/multiarch:latest", host))
+	require.NoError(t, err)
+
+	err = remote.WriteIndex(ref, idx)
+	require.NoError(t, err)
+
+	// Get the raw descriptor and test parsing directly
+	descriptor, err := remote.Get(ref)
+	require.NoError(t, err)
+
+	info := &ManifestInfo{
+		Name:        "multiarch",
+		Tag:         "latest",
+		Annotations: make(map[string]string),
+	}
+
+	// Parse as multi-arch directly (bypassing isMultiArchMediaType check)
+	err = parseMultiArchManifestFromDescriptor(descriptor, info)
+	require.NoError(t, err)
+
+	assert.Len(t, info.Architectures, 2)
+
+	archMap := make(map[string]bool)
+	for _, a := range info.Architectures {
+		archMap[a.Architecture] = true
+	}
+	assert.True(t, archMap["amd64"])
+	assert.True(t, archMap["arm64"])
+}
+
+func TestListTags_WithInMemoryRegistry(t *testing.T) {
+	t.Parallel()
+
+	host := newTestRegistry(t)
+
+	// Push images with different tags
+	img, err := random.Image(256, 1)
+	require.NoError(t, err)
+
+	for _, tag := range []string{"latest", "v1.0", "v2.0"} {
+		ref, err := name.NewTag(fmt.Sprintf("%s/test/myimage:%s", host, tag))
+		require.NoError(t, err)
+		err = remote.Write(ref, img)
+		require.NoError(t, err)
+	}
+
+	tags, err := ListTags(context.Background(), ListOptions{
+		Registry:  host,
+		Namespace: "test",
+		ImageName: "myimage",
+	})
+
+	require.NoError(t, err)
+	assert.Len(t, tags, 3)
+	assert.Contains(t, tags, "latest")
+	assert.Contains(t, tags, "v1.0")
+	assert.Contains(t, tags, "v2.0")
+}
+
+func TestInspectManifest_InvalidReference(t *testing.T) {
+	t.Parallel()
+
+	_, err := InspectManifest(context.Background(), InspectOptions{
+		Registry:  "localhost:99999",
+		Namespace: "test",
+		ImageName: "nonexistent",
+		Tag:       "latest",
+	})
+
+	assert.Error(t, err)
+}
+
+func TestParseSingleArchManifestFromDescriptor_WithInMemoryRegistry(t *testing.T) {
+	t.Parallel()
+
+	host := newTestRegistry(t)
+
+	// Push a single-arch image
+	img, err := random.Image(256, 1)
+	require.NoError(t, err)
+
+	ref, err := name.NewTag(fmt.Sprintf("%s/test/singlearch:latest", host))
+	require.NoError(t, err)
+
+	err = remote.Write(ref, img)
+	require.NoError(t, err)
+
+	// Get the descriptor
+	descriptor, err := remote.Get(ref)
+	require.NoError(t, err)
+
+	info := &ManifestInfo{
+		Annotations: make(map[string]string),
+	}
+
+	err = parseSingleArchManifestFromDescriptor(context.Background(), descriptor, info)
+	require.NoError(t, err)
+
+	assert.Len(t, info.Architectures, 1)
+	assert.NotEmpty(t, info.Architectures[0].Digest)
 }
