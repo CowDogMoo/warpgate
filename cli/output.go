@@ -40,7 +40,8 @@ type OutputFormatter struct {
 	format string // text, json, table
 }
 
-// NewOutputFormatter creates a new output formatter with the specified format.
+// NewOutputFormatter returns an [OutputFormatter] that renders results
+// in the given format (text, json, or table).
 func NewOutputFormatter(format string) *OutputFormatter {
 	return &OutputFormatter{
 		format: format,

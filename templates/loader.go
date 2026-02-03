@@ -334,7 +334,7 @@ func (tl *TemplateLoader) loadFromFileWithVars(ctx context.Context, path string,
 	return cfg, nil
 }
 
-// List returns all available templates from the registry
+// List returns every template from the official registry source.
 func (tl *TemplateLoader) List(ctx context.Context) ([]TemplateInfo, error) {
 	return tl.registry.List(ctx, "official")
 }

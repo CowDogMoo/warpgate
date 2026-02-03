@@ -42,7 +42,8 @@ func NewScaffolder() *Scaffolder {
 	return &Scaffolder{}
 }
 
-// Create creates a new template with default structure.
+// Create scaffolds a template directory under outputDir/name
+// containing a default warpgate.yaml, scripts directory, and README.
 func (s *Scaffolder) Create(ctx context.Context, name, outputDir string) error {
 	templateDir := filepath.Join(outputDir, name)
 	if err := os.MkdirAll(templateDir, config.DirPermReadWriteExec); err != nil {
@@ -68,7 +69,8 @@ func (s *Scaffolder) Create(ctx context.Context, name, outputDir string) error {
 	return nil
 }
 
-// Fork creates a new template by copying and modifying an existing one.
+// Fork copies fromTemplate into outputDir/newName and updates
+// the template metadata to reflect the new name.
 func (s *Scaffolder) Fork(ctx context.Context, fromTemplate, newName, outputDir string) error {
 	logging.InfoContext(ctx, "Forking template from: %s", fromTemplate)
 

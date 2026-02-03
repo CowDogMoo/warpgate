@@ -104,6 +104,11 @@ This command provides tools for creating and pushing multi-architecture
 manifests from digest files generated during separate architecture builds.`,
 		Args: cobra.NoArgs,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if rootCmd.PersistentPreRunE != nil {
+				if err := rootCmd.PersistentPreRunE(cmd, args); err != nil {
+					return err
+				}
+			}
 			if manifestsSharedOpts.registry == "" {
 				return fmt.Errorf("required flag \"registry\" not set")
 			}
@@ -111,7 +116,6 @@ manifests from digest files generated during separate architecture builds.`,
 		},
 	}
 
-	// --- Shared PersistentFlags for all manifests subcommands ---
 	manifestsCmd.PersistentFlags().StringVar(&manifestsSharedOpts.registry, "registry", "", "Container registry (required)")
 	manifestsCmd.PersistentFlags().StringVar(&manifestsSharedOpts.namespace, "namespace", "", "Image namespace/organization")
 	manifestsCmd.PersistentFlags().StringVar(&manifestsSharedOpts.authFile, "auth-file", "", "Path to authentication file")
@@ -195,45 +199,34 @@ Examples:
 		RunE: runManifestsList,
 	}
 
-	// --- Create command flags ---
-	// Required flags (--registry is inherited from parent PersistentFlags)
 	manifestsCreateCmd.Flags().StringVar(&manifestsCreateOpts.name, "name", "", "Image name (required)")
 	_ = manifestsCreateCmd.MarkFlagRequired("name")
 
-	// Optional flags
 	manifestsCreateCmd.Flags().StringSliceVarP(&manifestsCreateOpts.tags, "tag", "t", []string{"latest"}, "Image tags (comma-separated, can specify multiple)")
 	manifestsCreateCmd.Flags().StringVar(&manifestsCreateOpts.digestDir, "digest-dir", ".", "Directory containing digest files")
 
-	// Security & Validation
 	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.verifyRegistry, "verify-registry", true, "Verify digests exist in registry")
 	manifestsCreateCmd.Flags().IntVar(&manifestsCreateOpts.verifyConcurrency, "verify-concurrency", 0, "Number of concurrent digest verifications (default from config: 5)")
 	manifestsCreateCmd.Flags().DurationVar(&manifestsCreateOpts.maxAge, "max-age", 0, "Maximum age of digest files (e.g., 1h, 30m)")
 	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.healthCheck, "health-check", false, "Perform registry health check before operations")
 
-	// Architecture Control
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsCreateOpts.requireArch, "require-arch", nil, "Required architectures (comma-separated)")
 	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.bestEffort, "best-effort", false, "Create manifest with available architectures")
 
-	// OCI metadata
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsCreateOpts.annotations, "annotation", nil, "OCI annotations (key=value, can specify multiple)")
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsCreateOpts.labels, "label", nil, "OCI labels (key=value, can specify multiple)")
 	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.showDiff, "show-diff", false, "Show manifest comparison/diff if manifest exists")
 	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.noProgress, "no-progress", false, "Disable progress indicators")
 
-	// Behavior
 	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.force, "force", false, "Force recreation even if manifest exists")
 	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.dryRun, "dry-run", false, "Preview manifest without pushing")
 	manifestsCreateCmd.Flags().BoolVarP(&manifestsCreateOpts.quiet, "quiet", "q", false, "Only output errors")
 	manifestsCreateCmd.Flags().BoolVarP(&manifestsCreateOpts.verbose, "verbose", "v", false, "Verbose output with detailed progress")
 
-	// --- Inspect command flags ---
-	// (--registry, --namespace, --auth-file inherited from parent PersistentFlags)
 	manifestsInspectCmd.Flags().StringVar(&manifestsInspectOpts.name, "name", "", "Image name (required)")
 	manifestsInspectCmd.Flags().StringSliceVarP(&manifestsInspectOpts.tags, "tag", "t", []string{"latest"}, "Image tag to inspect")
 	_ = manifestsInspectCmd.MarkFlagRequired("name")
 
-	// --- List command flags ---
-	// (--registry, --namespace, --auth-file inherited from parent PersistentFlags)
 	manifestsListCmd.Flags().StringVar(&manifestsListOpts.name, "name", "", "Image name (required)")
 	_ = manifestsListCmd.MarkFlagRequired("name")
 

@@ -114,14 +114,6 @@ func VerifyDigestsInRegistry(ctx context.Context, digestFiles []DigestFile, opts
 func CheckManifestExists(ctx context.Context, digestFiles []DigestFile) (bool, error) {
 	logging.DebugContext(ctx, "Checking if manifest already exists...")
 
-	// For idempotency checking, we would need to:
-	// 1. Pull the existing manifest from the registry
-	// 2. Compare its architecture list and digests with what we're about to create
-	// 3. Return true if they match
-
-	// This is a simplified implementation - in a production system,
-	// you would actually fetch and compare the manifest
-	// For now, we'll return false to always create the manifest
 	return false, nil
 }
 

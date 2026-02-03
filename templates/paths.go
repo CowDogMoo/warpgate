@@ -34,7 +34,7 @@ import (
 // PathValidator handles template path validation and normalization.
 type PathValidator struct{}
 
-// NewPathValidator creates a new path validator.
+// NewPathValidator returns a zero-value [PathValidator] ready for use.
 func NewPathValidator() *PathValidator {
 	return &PathValidator{}
 }

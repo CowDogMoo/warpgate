@@ -23,13 +23,19 @@ THE SOFTWARE.
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
-	// Execute root command
-	// Cobra handles error printing and exit codes automatically
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	rootCmd.SetContext(ctx)
+
 	if err := Execute(); err != nil {
+		stop()
 		os.Exit(1)
 	}
+	stop()
 }

@@ -1034,9 +1034,9 @@ func (b *BuildKitBuilder) makeRelativePath(path string) (string, error) {
 	return relPath, nil
 }
 
-// Build creates a container image using BuildKit's Low-Level Build (LLB) primitives
-// by converting the Warpgate configuration to LLB, executing the build with BuildKit, and
-// loading the resulting image into Docker's image store.
+// Build produces a container image from cfg and loads it into the
+// local Docker image store. Dockerfile-based configs are delegated
+// to [BuildKitBuilder.BuildDockerfile].
 func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
 	if cfg.IsDockerfileBased() {
 		return b.BuildDockerfile(ctx, cfg)
@@ -1308,7 +1308,7 @@ func (b *BuildKitBuilder) PushDigest(ctx context.Context, imageRef, registry str
 	return imageDigest.String(), nil
 }
 
-// Tag creates an additional tag for an existing image using the Docker SDK.
+// Tag applies newTag to the image identified by imageRef.
 func (b *BuildKitBuilder) Tag(ctx context.Context, imageRef, newTag string) error {
 	if err := b.dockerClient.ImageTag(ctx, imageRef, newTag); err != nil {
 		return fmt.Errorf("docker tag failed: %w", err)
@@ -1318,7 +1318,8 @@ func (b *BuildKitBuilder) Tag(ctx context.Context, imageRef, newTag string) erro
 	return nil
 }
 
-// Remove deletes an image from the local Docker image store using the Docker SDK.
+// Remove deletes imageRef from the local Docker image store,
+// pruning child layers.
 func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
 	removeOpts := dockerimage.RemoveOptions{
 		Force:         false,
