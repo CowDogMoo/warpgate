@@ -36,13 +36,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
-// AWSClients holds AWS service clients
+// AWSClients holds AWS service clients.
+// Fields use interfaces to enable testing with mock implementations.
+// Concrete SDK clients satisfy these interfaces via structural typing.
 type AWSClients struct {
-	EC2            *ec2.Client
-	ImageBuilder   *imagebuilder.Client
-	IAM            *iam.Client
-	SSM            *ssm.Client
-	CloudWatchLogs *cloudwatchlogs.Client
+	EC2            EC2API
+	ImageBuilder   ImageBuilderAPI
+	IAM            IAMAPI
+	SSM            SSMAPI
+	CloudWatchLogs CloudWatchLogsAPI
 	Config         aws.Config
 }
 
