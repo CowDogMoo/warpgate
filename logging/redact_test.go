@@ -217,3 +217,117 @@ func TestRedactSensitivePatterns(t *testing.T) {
 		})
 	}
 }
+
+func TestRedactURL_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "URL with username only no password",
+			input: "https://onlyuser@github.com/repo.git",
+			want:  "https://***@github.com/repo.git",
+		},
+		{
+			name:  "URL with path query and fragment",
+			input: "https://user:pass@host.com/path?q=1#frag",
+			want:  "https://***:***@host.com/path?q=1#frag",
+		},
+		{
+			name:  "URL with only query string",
+			input: "https://user:pass@host.com?token=abc",
+			want:  "https://***:***@host.com?token=abc",
+		},
+		{
+			name:  "URL with only fragment",
+			input: "https://user:pass@host.com#section",
+			want:  "https://***:***@host.com#section",
+		},
+		{
+			name:  "plain hostname no credentials",
+			input: "https://github.com",
+			want:  "https://github.com",
+		},
+		{
+			name:  "URL with empty password",
+			input: "https://user:@host.com/path",
+			want:  "https://***:***@host.com/path",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := logging.RedactURL(tt.input)
+			if got != tt.want {
+				t.Errorf("RedactURL(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactSensitivePatterns_AdditionalCases(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "secret pattern",
+			input: "config with secret=mysecretvalue here",
+			want:  "config with secret=*** here",
+		},
+		{
+			name:  "key pattern",
+			input: "using key=12345 for access",
+			want:  "using key=*** for access",
+		},
+		{
+			name:  "credential pattern",
+			input: "credential=abc123 found",
+			want:  "credential=*** found",
+		},
+		{
+			name:  "auth pattern",
+			input: "auth=bearer_token_here",
+			want:  "auth=***",
+		},
+		{
+			name:  "mixed with non-sensitive",
+			input: "host=example.com password=secret123 port=8080",
+			want:  "host=example.com password=*** port=8080",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := logging.RedactSensitivePatterns(tt.input)
+			if got != tt.want {
+				t.Errorf("RedactSensitivePatterns(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSensitiveKey_AdditionalPatterns(t *testing.T) {
+	tests := []struct {
+		key  string
+		want bool
+	}{
+		{"PASSWD_HASH", true},
+		{"my_passwd", true},
+		{"SESSION_TOKEN", true},
+		{"DATABASE_URL", false},
+		{"CONFIG_FILE", false},
+		{"TIMEOUT", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got := logging.IsSensitiveKey(tt.key)
+			if got != tt.want {
+				t.Errorf("IsSensitiveKey(%q) = %v, want %v", tt.key, got, tt.want)
+			}
+		})
+	}
+}

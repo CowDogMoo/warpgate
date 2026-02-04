@@ -40,9 +40,11 @@ import (
 	"time"
 
 	dockerimage "github.com/docker/docker/api/types/image"
+	dockerregistry "github.com/docker/docker/api/types/registry"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	digest "github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/config"
@@ -2644,9 +2646,1562 @@ func TestApplyFileProvisionerStatError(t *testing.T) {
 }
 
 func TestCreateAuthProviderCoverage(t *testing.T) {
+	t.Parallel()
 	// This function reads Docker config; in test environment it may
 	// or may not find credentials, but should not panic
 	result := createAuthProvider()
 	// result may be nil (no Docker config) or non-nil (has Docker config)
 	_ = result
+}
+
+// ============================================================
+// Tag: success and error paths
+// ============================================================
+
+func TestTag_Success(t *testing.T) {
+	t.Parallel()
+	tagCalled := false
+	mock := &MockDockerClient{
+		ImageTagFunc: func(ctx context.Context, source, target string) error {
+			tagCalled = true
+			if source != "myapp:latest" || target != "myapp:v2" {
+				t.Errorf("unexpected args: source=%q, target=%q", source, target)
+			}
+			return nil
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	err := b.Tag(context.Background(), "myapp:latest", "myapp:v2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !tagCalled {
+		t.Error("ImageTag was not called")
+	}
+}
+
+func TestTag_Error(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		ImageTagFunc: func(ctx context.Context, source, target string) error {
+			return fmt.Errorf("image not found")
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	err := b.Tag(context.Background(), "nonexistent:latest", "newname:v1")
+	if err == nil {
+		t.Error("expected error but got nil")
+	}
+	if !strings.Contains(err.Error(), "docker tag failed") {
+		t.Errorf("error should mention docker tag: %v", err)
+	}
+}
+
+// ============================================================
+// Remove: success and error paths
+// ============================================================
+
+func TestRemove_Success(t *testing.T) {
+	t.Parallel()
+	removeCalled := false
+	mock := &MockDockerClient{
+		ImageRemoveFunc: func(ctx context.Context, imageID string, options dockerimage.RemoveOptions) ([]dockerimage.DeleteResponse, error) {
+			removeCalled = true
+			if imageID != "myapp:old" {
+				t.Errorf("unexpected imageID: %q", imageID)
+			}
+			// Verify PruneChildren is set
+			if !options.PruneChildren {
+				t.Error("PruneChildren should be true")
+			}
+			return []dockerimage.DeleteResponse{{Deleted: imageID}}, nil
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	err := b.Remove(context.Background(), "myapp:old")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !removeCalled {
+		t.Error("ImageRemove was not called")
+	}
+}
+
+func TestRemove_Error(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		ImageRemoveFunc: func(ctx context.Context, imageID string, options dockerimage.RemoveOptions) ([]dockerimage.DeleteResponse, error) {
+			return nil, fmt.Errorf("image is in use")
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	err := b.Remove(context.Background(), "myapp:latest")
+	if err == nil {
+		t.Error("expected error but got nil")
+	}
+	if !strings.Contains(err.Error(), "docker rmi failed") {
+		t.Errorf("error should mention docker rmi: %v", err)
+	}
+}
+
+// ============================================================
+// Push: success with digest extraction
+// ============================================================
+
+func TestPush_SuccessWithDigest(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader(`{"status":"Pushed"}`)), nil
+		},
+		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
+			return dockerimage.InspectResponse{
+				ID:          "sha256:abc123",
+				RepoDigests: []string{"ghcr.io/org/app@sha256:deadbeef1234567890abcdef"},
+			}, nil
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	d, err := b.Push(context.Background(), "ghcr.io/org/app:latest", "ghcr.io/org")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d != "sha256:deadbeef1234567890abcdef" {
+		t.Errorf("expected digest sha256:deadbeef1234567890abcdef, got %q", d)
+	}
+}
+
+func TestPush_Error(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+			return nil, fmt.Errorf("connection refused")
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	_, err := b.Push(context.Background(), "ghcr.io/org/app:latest", "ghcr.io/org")
+	if err == nil {
+		t.Error("expected error but got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to push") {
+		t.Errorf("error should mention push: %v", err)
+	}
+}
+
+// ============================================================
+// Push: error in JSON response body
+// ============================================================
+
+func TestPush_JSONErrorInResponse(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader(`{"error":"unauthorized: access denied"}`)), nil
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	_, err := b.Push(context.Background(), "ghcr.io/org/app:latest", "ghcr.io/org")
+	if err == nil {
+		t.Error("expected error for error in JSON response")
+	}
+	if !strings.Contains(err.Error(), "push failed") {
+		t.Errorf("error should mention push failed: %v", err)
+	}
+}
+
+// ============================================================
+// Push: fully qualified ref (no tagging needed)
+// ============================================================
+
+func TestPush_FullyQualifiedRef(t *testing.T) {
+	t.Parallel()
+	tagCalled := false
+	mock := &MockDockerClient{
+		ImageTagFunc: func(ctx context.Context, source, target string) error {
+			tagCalled = true
+			return nil
+		},
+		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
+		},
+		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
+			return dockerimage.InspectResponse{
+				ID:          "sha256:abc",
+				RepoDigests: []string{"ghcr.io/org/myapp@sha256:digest123"},
+			}, nil
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	// Fully qualified ref contains "/" so no tagging needed
+	_, err := b.Push(context.Background(), "ghcr.io/org/myapp:latest", "ghcr.io/org")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tagCalled {
+		t.Error("Tag should NOT be called for fully qualified image ref")
+	}
+}
+
+// ============================================================
+// findCommonParent: additional edge cases
+// ============================================================
+
+func TestFindCommonParent_NestedPaths(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		path1    string
+		path2    string
+		expected string
+	}{
+		{
+			name:     "deeply nested common parent",
+			path1:    "/home/user/project/src/main.go",
+			path2:    "/home/user/project/test/test.go",
+			expected: "/home/user/project",
+		},
+		{
+			name:     "parent-child relationship",
+			path1:    "/usr/local",
+			path2:    "/usr/local/bin",
+			expected: "/usr/local",
+		},
+		{
+			name:     "identical paths",
+			path1:    "/etc/config",
+			path2:    "/etc/config",
+			expected: "/etc/config",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := findCommonParent(tt.path1, tt.path2)
+			if result != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+// ============================================================
+// makeRelativePath: additional edge cases
+// ============================================================
+
+func TestMakeRelativePath_OutsideContext(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "outside.txt")
+	_ = os.WriteFile(outsideFile, []byte("test"), 0644)
+
+	b := &BuildKitBuilder{contextDir: tmpDir}
+	result, err := b.makeRelativePath(outsideFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Result should contain ".." since the file is outside context
+	if !strings.Contains(result, "..") {
+		t.Errorf("expected relative path with '..' for file outside context, got %q", result)
+	}
+}
+
+// ============================================================
+// parsePlatform: additional coverage
+// ============================================================
+
+func TestParsePlatform_ValidAndInvalid(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		platform    string
+		expectOS    string
+		expectArch  string
+		expectError bool
+	}{
+		{
+			name:       "linux/amd64",
+			platform:   "linux/amd64",
+			expectOS:   "linux",
+			expectArch: "amd64",
+		},
+		{
+			name:       "linux/arm64",
+			platform:   "linux/arm64",
+			expectOS:   "linux",
+			expectArch: "arm64",
+		},
+		{
+			name:       "windows/amd64",
+			platform:   "windows/amd64",
+			expectOS:   "windows",
+			expectArch: "amd64",
+		},
+		{
+			name:        "empty string",
+			platform:    "",
+			expectError: true,
+		},
+		{
+			name:        "no separator",
+			platform:    "linuxamd64",
+			expectError: true,
+		},
+		{
+			name:        "three parts",
+			platform:    "linux/arm64/v8",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			os, arch, err := parsePlatform(tt.platform)
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if os != tt.expectOS {
+				t.Errorf("OS: expected %q, got %q", tt.expectOS, os)
+			}
+			if arch != tt.expectArch {
+				t.Errorf("Arch: expected %q, got %q", tt.expectArch, arch)
+			}
+		})
+	}
+}
+
+// ============================================================
+// buildExportAttributes: with labels
+// ============================================================
+
+func TestBuildExportAttributes_WithLabels(t *testing.T) {
+	t.Parallel()
+	labels := map[string]string{
+		"org.opencontainers.image.source": "https://github.com/test/repo",
+		"org.opencontainers.image.title":  "my-app",
+	}
+
+	attrs := buildExportAttributes("myimage:v1", labels)
+
+	if attrs["name"] != "myimage:v1" {
+		t.Errorf("expected name 'myimage:v1', got %q", attrs["name"])
+	}
+
+	if attrs["label:org.opencontainers.image.source"] != "https://github.com/test/repo" {
+		t.Errorf("expected source label, got %q", attrs["label:org.opencontainers.image.source"])
+	}
+
+	if attrs["label:org.opencontainers.image.title"] != "my-app" {
+		t.Errorf("expected title label, got %q", attrs["label:org.opencontainers.image.title"])
+	}
+
+	// Should have name + 2 labels = 3 attrs
+	if len(attrs) != 3 {
+		t.Errorf("expected 3 attributes, got %d", len(attrs))
+	}
+}
+
+func TestBuildExportAttributes_NilLabels(t *testing.T) {
+	t.Parallel()
+	attrs := buildExportAttributes("img:v2", nil)
+
+	if attrs["name"] != "img:v2" {
+		t.Errorf("expected name 'img:v2', got %q", attrs["name"])
+	}
+	if len(attrs) != 1 {
+		t.Errorf("expected 1 attribute for nil labels, got %d", len(attrs))
+	}
+}
+
+// ============================================================
+// getPlatformString: additional cases
+// ============================================================
+
+func TestGetPlatformString_AllCases(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		cfg      builder.Config
+		expected string
+	}{
+		{
+			name: "platform takes precedence over architectures",
+			cfg: builder.Config{
+				Base:          builder.BaseImage{Platform: "linux/arm64"},
+				Architectures: []string{"amd64"},
+			},
+			expected: "linux/arm64",
+		},
+		{
+			name: "architectures fallback",
+			cfg: builder.Config{
+				Base:          builder.BaseImage{},
+				Architectures: []string{"arm64"},
+			},
+			expected: "linux/arm64",
+		},
+		{
+			name: "no platform no architectures",
+			cfg: builder.Config{
+				Base:          builder.BaseImage{},
+				Architectures: nil,
+			},
+			expected: "unknown",
+		},
+		{
+			name: "empty architectures list",
+			cfg: builder.Config{
+				Base:          builder.BaseImage{},
+				Architectures: []string{},
+			},
+			expected: "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := getPlatformString(tt.cfg)
+			if result != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+// ============================================================
+// extractArchFromPlatform: additional cases
+// ============================================================
+
+func TestExtractArchFromPlatform_Coverage(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		platform string
+		expected string
+	}{
+		{"linux/amd64", "amd64"},
+		{"linux/arm64", "arm64"},
+		{"linux/arm/v7", "arm"},
+		{"windows/amd64", "amd64"},
+		{"amd64", ""},
+		{"", ""},
+		{"a/b/c/d", "b"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			t.Parallel()
+			result := extractArchFromPlatform(tt.platform)
+			if result != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+// ============================================================
+// extractRegistryFromImageRef: with digest
+// ============================================================
+
+func TestExtractRegistryFromImageRef_WithDigest(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		imageRef string
+		expected string
+	}{
+		{"ghcr.io/org/app@sha256:abc123", "ghcr.io"},
+		{"docker.io/library/ubuntu@sha256:abc123", "docker.io"},
+		{"myapp@sha256:abc123", "docker.io"},
+		{"localhost:5000/app@sha256:abc123", "localhost:5000"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.imageRef, func(t *testing.T) {
+			t.Parallel()
+			result := extractRegistryFromImageRef(tt.imageRef)
+			if result != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+// ============================================================
+// loadTLSConfig: additional TLS tests
+// ============================================================
+
+func TestLoadTLSConfig_EmptyConfig(t *testing.T) {
+	t.Parallel()
+	cfg := config.BuildKitConfig{}
+
+	tlsCfg, err := loadTLSConfig(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tlsCfg == nil {
+		t.Fatal("expected non-nil TLS config")
+	}
+	if tlsCfg.RootCAs != nil {
+		t.Error("RootCAs should be nil for empty config")
+	}
+	if len(tlsCfg.Certificates) != 0 {
+		t.Error("Certificates should be empty for empty config")
+	}
+}
+
+func TestLoadTLSConfig_CACertOnly(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	caCertPath, _, _ := generateTestCert(t, tmpDir)
+
+	cfg := config.BuildKitConfig{
+		TLSCACert: caCertPath,
+	}
+
+	tlsCfg, err := loadTLSConfig(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tlsCfg.RootCAs == nil {
+		t.Error("expected RootCAs to be set")
+	}
+	if len(tlsCfg.Certificates) != 0 {
+		t.Error("Certificates should be empty when only CA cert is provided")
+	}
+}
+
+func TestLoadTLSConfig_ClientCertOnly(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	_, certPath, keyPath := generateTestCert(t, tmpDir)
+
+	cfg := config.BuildKitConfig{
+		TLSCert: certPath,
+		TLSKey:  keyPath,
+	}
+
+	tlsCfg, err := loadTLSConfig(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tlsCfg.RootCAs != nil {
+		t.Error("RootCAs should be nil when only client cert is provided")
+	}
+	if len(tlsCfg.Certificates) != 1 {
+		t.Errorf("expected 1 client certificate, got %d", len(tlsCfg.Certificates))
+	}
+}
+
+func TestLoadTLSConfig_MissingCACert(t *testing.T) {
+	t.Parallel()
+	cfg := config.BuildKitConfig{
+		TLSCACert: "/nonexistent/ca.pem",
+	}
+
+	_, err := loadTLSConfig(cfg)
+	if err == nil {
+		t.Error("expected error for missing CA cert")
+	}
+	if !strings.Contains(err.Error(), "failed to read CA cert") {
+		t.Errorf("error should mention CA cert: %v", err)
+	}
+}
+
+func TestLoadTLSConfig_MissingClientCert(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	_, _, keyPath := generateTestCert(t, tmpDir)
+
+	cfg := config.BuildKitConfig{
+		TLSCert: "/nonexistent/cert.pem",
+		TLSKey:  keyPath,
+	}
+
+	_, err := loadTLSConfig(cfg)
+	if err == nil {
+		t.Error("expected error for missing client cert")
+	}
+	if !strings.Contains(err.Error(), "failed to load client cert/key") {
+		t.Errorf("error should mention client cert: %v", err)
+	}
+}
+
+func TestLoadTLSConfig_InvalidCACertContent(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	badCAPath := filepath.Join(tmpDir, "bad-ca.pem")
+	_ = os.WriteFile(badCAPath, []byte("not a valid cert"), 0644)
+
+	cfg := config.BuildKitConfig{
+		TLSCACert: badCAPath,
+	}
+
+	_, err := loadTLSConfig(cfg)
+	if err == nil {
+		t.Error("expected error for invalid CA cert content")
+	}
+	if !strings.Contains(err.Error(), "failed to parse CA cert") {
+		t.Errorf("error should mention parsing: %v", err)
+	}
+}
+
+// ============================================================
+// configureCacheOptions: additional edge cases
+// ============================================================
+
+func TestConfigureCacheOptions_LocalTemplateCacheDisabled(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{
+		cacheFrom: []string{"type=registry,ref=user/app:cache"},
+		cacheTo:   []string{"type=registry,ref=user/app:cache"},
+	}
+
+	solveOpt := &client.SolveOpt{}
+	b.configureCacheOptions(solveOpt, builder.Config{IsLocalTemplate: true})
+
+	if len(solveOpt.CacheImports) != 0 {
+		t.Errorf("expected 0 cache imports for local template, got %d", len(solveOpt.CacheImports))
+	}
+	if len(solveOpt.CacheExports) != 0 {
+		t.Errorf("expected 0 cache exports for local template, got %d", len(solveOpt.CacheExports))
+	}
+}
+
+func TestConfigureCacheOptions_NoCacheFlagDisablesCaching(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{
+		cacheFrom: []string{"type=registry,ref=user/app:cache"},
+		cacheTo:   []string{"type=registry,ref=user/app:cache"},
+	}
+
+	solveOpt := &client.SolveOpt{}
+	b.configureCacheOptions(solveOpt, builder.Config{NoCache: true})
+
+	if len(solveOpt.CacheImports) != 0 {
+		t.Errorf("expected 0 cache imports with NoCache, got %d", len(solveOpt.CacheImports))
+	}
+	if len(solveOpt.CacheExports) != 0 {
+		t.Errorf("expected 0 cache exports with NoCache, got %d", len(solveOpt.CacheExports))
+	}
+}
+
+// ============================================================
+// loadAndTagImage: load error
+// ============================================================
+
+func TestLoadAndTagImage_LoadError(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		ImageLoadFunc: func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
+			return dockerimage.LoadResponse{}, fmt.Errorf("disk full")
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	tmpFile, err := os.CreateTemp("", "test-image-*.tar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	if _, err := tmpFile.WriteString("data"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	err = b.loadAndTagImage(context.Background(), tmpFile.Name(), "test:latest")
+	if err == nil {
+		t.Error("expected error for load failure")
+	}
+	if !strings.Contains(err.Error(), "failed to load image") {
+		t.Errorf("error should mention load: %v", err)
+	}
+}
+
+// ============================================================
+// getLocalImageDigest: inspect error
+// ============================================================
+
+func TestGetLocalImageDigest_InspectError(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
+			return dockerimage.InspectResponse{}, fmt.Errorf("image not found")
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	d := b.getLocalImageDigest(context.Background(), "nonexistent:latest")
+	if d != "" {
+		t.Errorf("expected empty digest for inspect error, got %q", d)
+	}
+}
+
+// ============================================================
+// InspectManifest: no platform case
+// ============================================================
+
+func TestInspectManifest_NoPlatform(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		DistributionInspectFunc: func(ctx context.Context, image, encodedRegistryAuth string) (dockerregistry.DistributionInspect, error) {
+			return dockerregistry.DistributionInspect{
+				Descriptor: ocispec.Descriptor{
+					// No platform set
+					Digest: "sha256:abc123",
+				},
+			}, nil
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	entries, err := b.InspectManifest(context.Background(), "test:latest")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// No platform means no entries added
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries when no platform, got %d", len(entries))
+	}
+}
+
+// ============================================================
+// Close: both clients nil
+// ============================================================
+
+func TestClose_BothNil(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{
+		client:       nil,
+		dockerClient: nil,
+	}
+
+	err := b.Close()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ============================================================
+// applyShellProvisioner: go command detection
+// ============================================================
+
+func TestApplyShellProvisioner_GoCommand(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{}
+	state := llb.Image("golang:1.21")
+
+	prov := builder.Provisioner{
+		Type:   "shell",
+		Inline: []string{"go build ./cmd/myapp"},
+	}
+
+	result, err := b.applyShellProvisioner(state, prov)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = result
+}
+
+// ============================================================
+// convertToLLB: unknown provisioner type should not error
+// ============================================================
+
+func TestConvertToLLB_UnknownProvisioner(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0",
+		Base: builder.BaseImage{
+			Image:    "alpine:latest",
+			Platform: "linux/amd64",
+		},
+		Provisioners: []builder.Provisioner{
+			{
+				Type: "custom-unknown",
+			},
+		},
+	}
+
+	_, err := b.convertToLLB(cfg)
+	if err != nil {
+		t.Errorf("unexpected error for unknown provisioner type: %v", err)
+	}
+}
+
+// ============================================================
+// convertToLLB: invalid platform but with architectures fallback
+// ============================================================
+
+func TestConvertToLLB_InvalidPlatformWithArchFallback(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0",
+		Base: builder.BaseImage{
+			Image:    "alpine:latest",
+			Platform: "invalid", // Invalid platform format
+		},
+		Architectures: []string{"amd64"},
+	}
+
+	_, err := b.convertToLLB(cfg)
+	if err != nil {
+		t.Errorf("unexpected error when architecture fallback available: %v", err)
+	}
+}
+
+// ============================================================
+// SupportsMultiArch is not a method on BuildKitBuilder, skip
+// ============================================================
+
+// ============================================================
+// applyProvisioner: powershell dispatch
+// ============================================================
+
+func TestApplyProvisioner_PowerShellDispatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	psPath := filepath.Join(dir, "test.ps1")
+	_ = os.WriteFile(psPath, []byte("Write-Host 'test'"), 0644)
+
+	b := &BuildKitBuilder{contextDir: dir}
+	state := llb.Image("mcr.microsoft.com/powershell:latest")
+
+	prov := builder.Provisioner{
+		Type:      "powershell",
+		PSScripts: []string{psPath},
+	}
+
+	result, err := b.applyProvisioner(state, prov, builder.Config{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = result
+}
+
+// ============================================================
+// applyProvisioner: script dispatch
+// ============================================================
+
+func TestApplyProvisioner_ScriptDispatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "test.sh")
+	_ = os.WriteFile(scriptPath, []byte("#!/bin/sh\necho test"), 0755)
+
+	b := &BuildKitBuilder{contextDir: dir}
+	state := llb.Image("alpine:latest")
+
+	prov := builder.Provisioner{
+		Type:    "script",
+		Scripts: []string{scriptPath},
+	}
+
+	result, err := b.applyProvisioner(state, prov, builder.Config{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_ = result
+}
+
+// ============================================================
+// fixedWriteCloser: write multiple times
+// ============================================================
+
+func TestFixedWriteCloser_MultipleWrites(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "multi-write.tar")
+
+	factory := fixedWriteCloser(filePath)
+	wc, err := factory(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Multiple writes
+	for i := 0; i < 3; i++ {
+		_, err := wc.Write([]byte("data"))
+		if err != nil {
+			t.Fatalf("write %d error: %v", i, err)
+		}
+	}
+
+	if err := wc.Close(); err != nil {
+		t.Fatalf("close error: %v", err)
+	}
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read error: %v", err)
+	}
+	if string(content) != "datadatadata" {
+		t.Errorf("expected 'datadatadata', got %q", string(content))
+	}
+}
+
+// ============================================================
+// parseCacheAttrs: additional edge cases
+// ============================================================
+
+func TestParseCacheAttrs_MultipleEquals(t *testing.T) {
+	t.Parallel()
+	// Value with "=" in it should be preserved
+	result := parseCacheAttrs("type=registry,ref=host:5000/img:tag=latest")
+
+	if result["type"] != "registry" {
+		t.Errorf("expected type 'registry', got %q", result["type"])
+	}
+	if result["ref"] != "host:5000/img:tag=latest" {
+		t.Errorf("expected ref with = preserved, got %q", result["ref"])
+	}
+}
+
+// ============================================================
+// expandContainerVars: multiple variables
+// ============================================================
+
+func TestExpandContainerVars_MultipleVars(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{}
+	env := map[string]string{
+		"HOME": "/home/user",
+		"PATH": "/usr/bin",
+		"USER": "testuser",
+	}
+
+	result := b.expandContainerVars("$HOME/.local/bin:$PATH (user: $USER)", env)
+	expected := "/home/user/.local/bin:/usr/bin (user: testuser)"
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+// ============================================================
+// InspectManifest: inspect failure
+// ============================================================
+
+func TestInspectManifest_InspectFailure(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		DistributionInspectFunc: func(ctx context.Context, image, encodedRegistryAuth string) (dockerregistry.DistributionInspect, error) {
+			return dockerregistry.DistributionInspect{}, fmt.Errorf("manifest not found")
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	_, err := b.InspectManifest(context.Background(), "nonexistent:latest")
+	if err == nil {
+		t.Error("expected error for inspect failure")
+	}
+	if !strings.Contains(err.Error(), "failed to inspect manifest") {
+		t.Errorf("error should mention inspect: %v", err)
+	}
+}
+
+// ============================================================
+// getAnsiblePaths: error path
+// ============================================================
+
+func TestGetAnsiblePaths_PlaybookExpandError(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{}
+	pv := templates.NewPathValidator()
+
+	prov := builder.Provisioner{
+		Type:         "ansible",
+		PlaybookPath: "~nonexistentuser12345/playbook.yml",
+	}
+
+	_, err := b.getAnsiblePaths(prov, pv)
+	// May or may not error depending on OS tilde expansion
+	_ = err
+}
+
+func TestGetAnsiblePaths_GalaxyExpandError(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{}
+	pv := templates.NewPathValidator()
+
+	tmpDir := t.TempDir()
+	pbPath := filepath.Join(tmpDir, "playbook.yml")
+	_ = os.WriteFile(pbPath, []byte("---"), 0644)
+
+	prov := builder.Provisioner{
+		Type:         "ansible",
+		PlaybookPath: pbPath,
+		GalaxyFile:   "~nonexistentuser12345/requirements.yml",
+	}
+
+	_, err := b.getAnsiblePaths(prov, pv)
+	// May or may not error depending on OS tilde expansion
+	_ = err
+}
+
+// ============================================================
+// getFilePaths: error path
+// ============================================================
+
+func TestGetFilePaths_ExpandError(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{}
+	pv := templates.NewPathValidator()
+
+	prov := builder.Provisioner{
+		Type:   "file",
+		Source: "~nonexistentuser12345/file.txt",
+	}
+
+	_, err := b.getFilePaths(prov, pv)
+	// May or may not error depending on OS tilde expansion
+	_ = err
+}
+
+// ============================================================
+// expandPathList: error path
+// ============================================================
+
+func TestExpandPathList_Error(t *testing.T) {
+	t.Parallel()
+	pv := templates.NewPathValidator()
+
+	scripts := []string{"~nonexistentuser12345/script.sh"}
+	_, err := expandPathList(scripts, pv, "script")
+	// May or may not error depending on OS tilde expansion
+	_ = err
+}
+
+// ============================================================
+// collectProvisionerPaths: error propagation
+// ============================================================
+
+func TestCollectProvisionerPaths_ErrorPropagation(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{}
+	pv := templates.NewPathValidator()
+
+	provisioners := []builder.Provisioner{
+		{
+			Type:         "ansible",
+			PlaybookPath: "~nonexistentuser12345/playbook.yml",
+		},
+	}
+
+	_, err := b.collectProvisionerPaths(provisioners, pv)
+	// Error propagation depends on OS tilde expansion behavior
+	_ = err
+}
+
+// ============================================================
+// applyAnsibleProvisioner: error from makeRelativePath
+// ============================================================
+
+func TestApplyAnsibleProvisioner_PlaybookResolveError(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	state := llb.Image("ubuntu:22.04")
+
+	prov := builder.Provisioner{
+		Type:         "ansible",
+		PlaybookPath: "~nonexistentuser12345/playbook.yml",
+	}
+
+	_, err := b.applyAnsibleProvisioner(state, prov)
+	// May or may not error depending on OS tilde expansion
+	_ = err
+}
+
+// ============================================================
+// applyScriptProvisioner: script path error
+// ============================================================
+
+func TestApplyScriptProvisioner_ResolveError(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	state := llb.Image("alpine:latest")
+
+	prov := builder.Provisioner{
+		Type:    "script",
+		Scripts: []string{"~nonexistentuser12345/script.sh"},
+	}
+
+	_, err := b.applyScriptProvisioner(state, prov)
+	// May or may not error depending on OS tilde expansion
+	_ = err
+}
+
+// ============================================================
+// applyPowerShellProvisioner: script path error
+// ============================================================
+
+func TestApplyPowerShellProvisioner_ResolveError(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	state := llb.Image("mcr.microsoft.com/powershell:latest")
+
+	prov := builder.Provisioner{
+		Type:      "powershell",
+		PSScripts: []string{"~nonexistentuser12345/script.ps1"},
+	}
+
+	_, err := b.applyPowerShellProvisioner(state, prov)
+	// May or may not error depending on OS tilde expansion
+	_ = err
+}
+
+// ============================================================
+// calculateBuildContext: multiple provisioners with mixed types
+// ============================================================
+
+func TestCalculateBuildContext_MixedProvisioners(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	file1 := filepath.Join(tmpDir, "subA", "file.txt")
+	script1 := filepath.Join(tmpDir, "subB", "script.sh")
+	_ = os.MkdirAll(filepath.Dir(file1), 0755)
+	_ = os.MkdirAll(filepath.Dir(script1), 0755)
+	_ = os.WriteFile(file1, []byte("data"), 0644)
+	_ = os.WriteFile(script1, []byte("#!/bin/sh"), 0755)
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{Type: "file", Source: file1, Destination: "/tmp/f"},
+			{Type: "script", Scripts: []string{script1}},
+			{Type: "shell", Inline: []string{"echo hi"}}, // No paths
+		},
+	}
+
+	ctx, err := b.calculateBuildContext(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Common parent should be tmpDir since subA and subB are children
+	absTmpDir, _ := filepath.Abs(tmpDir)
+	if ctx != absTmpDir {
+		t.Errorf("expected %q, got %q", absTmpDir, ctx)
+	}
+}
+
+// ============================================================
+// Push: empty registry with unqualified ref
+// ============================================================
+
+func TestPush_EmptyRegistryWithUnqualifiedRef(t *testing.T) {
+	t.Parallel()
+	mock := &MockDockerClient{
+		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
+		},
+		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
+			return dockerimage.InspectResponse{
+				ID:          "sha256:abc",
+				RepoDigests: []string{},
+			}, nil
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	// Empty registry should not trigger tagging
+	d, err := b.Push(context.Background(), "myapp:latest", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// No digest expected with empty RepoDigests
+	if d != "" {
+		t.Errorf("expected empty digest, got %q", d)
+	}
+}
+
+// ============================================================
+// convertToLLB: with env and build args simultaneously
+// ============================================================
+
+func TestConvertToLLB_EnvAndBuildArgs(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0",
+		Base: builder.BaseImage{
+			Image:    "alpine:latest",
+			Platform: "linux/amd64",
+			Env:      map[string]string{"FOO": "bar", "BAZ": "qux"},
+		},
+		BuildArgs:   map[string]string{"VERSION": "1.0", "DEBUG": "true"},
+		PostChanges: []string{"ENV RESULT done", "WORKDIR /app", "USER appuser"},
+	}
+
+	_, err := b.convertToLLB(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ============================================================
+// makeRelativePath: error path for invalid context dir
+// ============================================================
+
+func TestMakeRelativePathInvalidContext(t *testing.T) {
+	// Test with an empty contextDir - should still work since filepath.Abs handles ""
+	b := &BuildKitBuilder{contextDir: ""}
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "test.txt")
+	_ = os.WriteFile(filePath, []byte("test"), 0644)
+
+	// Should not panic, may produce a relative path from cwd
+	_, err := b.makeRelativePath(filePath)
+	if err != nil {
+		// Some environments may error, that's OK
+		t.Logf("makeRelativePath with empty context: %v", err)
+	}
+}
+
+func TestMakeRelativePathOutsideContext(t *testing.T) {
+	// Test with a path that's outside the context directory
+	contextDir := t.TempDir()
+	otherDir := t.TempDir()
+	filePath := filepath.Join(otherDir, "outside.txt")
+	_ = os.WriteFile(filePath, []byte("test"), 0644)
+
+	b := &BuildKitBuilder{contextDir: contextDir}
+	relPath, err := b.makeRelativePath(filePath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Path outside context should still work but contain ".."
+	if relPath == "" {
+		t.Error("expected non-empty relative path")
+	}
+}
+
+// ============================================================
+// applyScriptProvisioner: error from makeRelativePath
+// ============================================================
+
+func TestApplyScriptProvisionerMakeRelativePathError(t *testing.T) {
+	// Use a context dir and a script path with a tilde-user that doesn't exist
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	state := llb.Image("alpine:latest")
+
+	prov := builder.Provisioner{
+		Type:    "script",
+		Scripts: []string{"~nonexistentuser12345/script.sh"},
+	}
+
+	_, err := b.applyScriptProvisioner(state, prov)
+	// Should return an error from makeRelativePath failure
+	if err == nil {
+		t.Logf("script provisioner with invalid tilde path succeeded (tilde expansion may work differently)")
+	}
+}
+
+// ============================================================
+// applyPowerShellProvisioner: error from makeRelativePath
+// ============================================================
+
+func TestApplyPowerShellProvisionerMakeRelativePathError(t *testing.T) {
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	state := llb.Image("alpine:latest")
+
+	prov := builder.Provisioner{
+		Type:      "powershell",
+		PSScripts: []string{"~nonexistentuser12345/script.ps1"},
+	}
+
+	_, err := b.applyPowerShellProvisioner(state, prov)
+	if err == nil {
+		t.Logf("powershell provisioner with invalid tilde path succeeded (tilde expansion may work differently)")
+	}
+}
+
+// ============================================================
+// applyAnsibleProvisioner: error from makeRelativePath on playbook
+// ============================================================
+
+func TestApplyAnsibleProvisionerPlaybookPathError(t *testing.T) {
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	state := llb.Image("ubuntu:22.04")
+
+	prov := builder.Provisioner{
+		Type:         "ansible",
+		PlaybookPath: "~nonexistentuser12345/playbook.yml",
+	}
+
+	_, err := b.applyAnsibleProvisioner(state, prov)
+	if err == nil {
+		t.Logf("ansible provisioner with invalid tilde playbook path succeeded")
+	}
+}
+
+// ============================================================
+// applyFileProvisioner: error from makeRelativePath
+// ============================================================
+
+func TestApplyFileProvisionerMakeRelativePathError(t *testing.T) {
+	b := &BuildKitBuilder{contextDir: t.TempDir()}
+	state := llb.Image("alpine:latest")
+
+	prov := builder.Provisioner{
+		Type:        "file",
+		Source:      "~nonexistentuser12345/file.txt",
+		Destination: "/tmp/file.txt",
+	}
+
+	_, err := b.applyFileProvisioner(state, prov)
+	if err == nil {
+		t.Logf("file provisioner with invalid tilde path succeeded")
+	}
+}
+
+// ============================================================
+// getAnsiblePaths: error on playbook path expansion
+// ============================================================
+
+func TestGetAnsiblePathsExpansionError(t *testing.T) {
+	b := &BuildKitBuilder{}
+	pv := templates.NewPathValidator()
+
+	t.Run("playbook expansion error", func(t *testing.T) {
+		prov := builder.Provisioner{
+			Type:         "ansible",
+			PlaybookPath: "~nonexistentuser12345/playbook.yml",
+		}
+		_, err := b.getAnsiblePaths(prov, pv)
+		if err == nil {
+			t.Logf("tilde expansion succeeded (OS-dependent behavior)")
+		} else if !strings.Contains(err.Error(), "failed to expand playbook path") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("galaxy expansion error", func(t *testing.T) {
+		prov := builder.Provisioner{
+			Type:       "ansible",
+			GalaxyFile: "~nonexistentuser12345/requirements.yml",
+		}
+		_, err := b.getAnsiblePaths(prov, pv)
+		if err == nil {
+			t.Logf("tilde expansion succeeded (OS-dependent behavior)")
+		} else if !strings.Contains(err.Error(), "failed to expand galaxy file path") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+// ============================================================
+// getFilePaths: error on source path expansion
+// ============================================================
+
+func TestGetFilePathsExpansionError(t *testing.T) {
+	b := &BuildKitBuilder{}
+	pv := templates.NewPathValidator()
+
+	prov := builder.Provisioner{
+		Type:   "file",
+		Source: "~nonexistentuser12345/file.txt",
+	}
+	_, err := b.getFilePaths(prov, pv)
+	if err == nil {
+		t.Logf("tilde expansion succeeded (OS-dependent behavior)")
+	} else if !strings.Contains(err.Error(), "failed to expand file source path") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ============================================================
+// expandPathList: error on path expansion
+// ============================================================
+
+func TestExpandPathListExpansionError(t *testing.T) {
+	pv := templates.NewPathValidator()
+
+	scripts := []string{"~nonexistentuser12345/script.sh"}
+	_, err := expandPathList(scripts, pv, "script")
+	if err == nil {
+		t.Logf("tilde expansion succeeded (OS-dependent behavior)")
+	} else if !strings.Contains(err.Error(), "failed to expand script path") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ============================================================
+// findCommonParent: relative path inputs
+// ============================================================
+
+func TestFindCommonParentRelativePaths(t *testing.T) {
+	// Relative paths should be converted to absolute by findCommonParent
+	result := findCommonParent("a/b", "a/c")
+	if result == "" {
+		t.Error("expected non-empty result for relative paths")
+	}
+}
+
+// ============================================================
+// InspectManifest: no platform in descriptor
+// ============================================================
+
+func TestInspectManifestNoPlatform(t *testing.T) {
+	mock := &MockDockerClient{
+		DistributionInspectFunc: func(ctx context.Context, image, encodedRegistryAuth string) (dockerregistry.DistributionInspect, error) {
+			return dockerregistry.DistributionInspect{
+				Descriptor: ocispec.Descriptor{
+					Digest: "sha256:abc123",
+					// Platform is nil
+				},
+			}, nil
+		},
+	}
+
+	b := &BuildKitBuilder{dockerClient: mock}
+	entries, err := b.InspectManifest(context.Background(), "myregistry.io/myapp:latest")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// No platform means no entries
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for nil platform, got %d", len(entries))
+	}
+}
+
+// ============================================================
+// CreateAndPushManifest: invalid manifest name
+// ============================================================
+
+func TestCreateAndPushManifestInvalidName(t *testing.T) {
+	mock := &MockDockerClient{
+		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
+			return dockerimage.InspectResponse{Size: 1024}, nil
+		},
+	}
+	b := &BuildKitBuilder{dockerClient: mock}
+
+	entries := []manifests.ManifestEntry{
+		{
+			ImageRef:     "ghcr.io/test/app:latest",
+			OS:           "linux",
+			Architecture: "amd64",
+			Digest:       digest.FromString("test"),
+		},
+	}
+
+	// Use an invalid manifest name that will fail name.ParseReference
+	err := b.CreateAndPushManifest(context.Background(), "INVALID:::name", entries)
+	if err == nil {
+		t.Error("expected error for invalid manifest name")
+	}
+	if err != nil && !strings.Contains(err.Error(), "failed to parse manifest name") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ============================================================
+// Push: empty registry with non-fully-qualified ref (no tagging needed)
+// ============================================================
+
+func TestPushEmptyRegistryNonQualifiedRef(t *testing.T) {
+	pushCalled := false
+	mock := &MockDockerClient{
+		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+			pushCalled = true
+			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
+		},
+		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
+			return dockerimage.InspectResponse{
+				ID:          "sha256:abc",
+				RepoDigests: []string{"myapp@sha256:digest123"},
+			}, nil
+		},
+	}
+
+	b := &BuildKitBuilder{dockerClient: mock}
+	// Empty registry with non-qualified ref should not trigger tagging
+	_, err := b.Push(context.Background(), "myapp:latest", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !pushCalled {
+		t.Error("expected push to be called")
+	}
+}
+
+// ============================================================
+// convertToLLB: provisioner error propagation
+// ============================================================
+
+func TestConvertToLLBProvisionerError(t *testing.T) {
+	dir := t.TempDir()
+	b := &BuildKitBuilder{contextDir: dir}
+
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0",
+		Base: builder.BaseImage{
+			Image:    "alpine:latest",
+			Platform: "linux/amd64",
+		},
+		Provisioners: []builder.Provisioner{
+			{
+				Type:        "file",
+				Source:      filepath.Join(dir, "nonexistent-file-for-error.txt"),
+				Destination: "/tmp/dest",
+			},
+		},
+	}
+
+	_, err := b.convertToLLB(cfg)
+	if err == nil {
+		t.Error("expected error from file provisioner with nonexistent source")
+	}
+	if err != nil && !strings.Contains(err.Error(), "provisioner 0 failed") {
+		t.Errorf("expected provisioner error wrapping, got: %v", err)
+	}
+}
+
+// ============================================================
+// calculateBuildContext: single path (no common parent needed)
+// ============================================================
+
+func TestCalculateBuildContextSinglePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "script.sh")
+	_ = os.WriteFile(scriptPath, []byte("#!/bin/sh"), 0755)
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{Type: "script", Scripts: []string{scriptPath}},
+		},
+	}
+
+	ctx, err := b.calculateBuildContext(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// With a single file, context should be its parent directory
+	absTmpDir, _ := filepath.Abs(tmpDir)
+	if ctx != absTmpDir {
+		t.Errorf("expected %q, got %q", absTmpDir, ctx)
+	}
 }

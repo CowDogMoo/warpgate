@@ -597,6 +597,121 @@ func TestProvisionersMatch(t *testing.T) {
 	}
 }
 
+func TestParseBuildFileNotFound(t *testing.T) {
+	parser := NewHCLParser()
+	_, err := parser.ParseBuildFile("/nonexistent/path/docker.pkr.hcl")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read build file")
+}
+
+func TestParseSourceBlocksNotFound(t *testing.T) {
+	parser := NewHCLParser()
+	err := parser.ParseSourceBlocks("/nonexistent/path/sources.pkr.hcl")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read build file")
+}
+
+func TestParseSourceBlocksInvalidHCL(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourcePath := filepath.Join(tmpDir, "bad.pkr.hcl")
+	err := os.WriteFile(sourcePath, []byte(`source "docker" { invalid syntax`), 0644)
+	require.NoError(t, err)
+
+	parser := NewHCLParser()
+	err = parser.ParseSourceBlocks(sourcePath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse HCL")
+}
+
+func TestParseSourceBlocksSkipMissingLabels(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Source with only one label (needs at least 2)
+	sourcePath := filepath.Join(tmpDir, "sources.pkr.hcl")
+	// Source blocks require 2 labels, so use a variable block to test skip behavior
+	content := `variable "test" {
+  default = "hello"
+}`
+	err := os.WriteFile(sourcePath, []byte(content), 0644)
+	require.NoError(t, err)
+
+	parser := NewHCLParser()
+	err = parser.ParseSourceBlocks(sourcePath)
+	assert.NoError(t, err)
+	assert.Nil(t, parser.GetDockerSource())
+	assert.Nil(t, parser.GetAMISource())
+}
+
+func TestExtractBuildName(t *testing.T) {
+	tmpDir := t.TempDir()
+	buildPath := filepath.Join(tmpDir, "docker.pkr.hcl")
+	content := `build {
+  name = "my-build"
+  provisioner "shell" {
+    inline = ["echo hello"]
+  }
+}`
+	err := os.WriteFile(buildPath, []byte(content), 0644)
+	require.NoError(t, err)
+
+	parser := NewHCLParser()
+	builds, err := parser.ParseBuildFile(buildPath)
+	require.NoError(t, err)
+	require.Len(t, builds, 1)
+	assert.Equal(t, "my-build", builds[0].Name)
+}
+
+func TestParseAMISourceBlockWithVolumeSize(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourcePath := filepath.Join(tmpDir, "ami.pkr.hcl")
+	content := `source "amazon-ebs" "ubuntu" {
+  instance_type = "t3.large"
+  region        = "us-east-1"
+  ami_name      = "test-ami"
+  subnet_id     = "subnet-12345"
+
+  launch_block_device_mappings {
+    volume_size = 100
+  }
+}`
+	err := os.WriteFile(sourcePath, []byte(content), 0644)
+	require.NoError(t, err)
+
+	parser := NewHCLParser()
+	err = parser.ParseSourceBlocks(sourcePath)
+	require.NoError(t, err)
+
+	amiSrc := parser.GetAMISource()
+	require.NotNil(t, amiSrc)
+	assert.Equal(t, "t3.large", amiSrc.InstanceType)
+	assert.Equal(t, "us-east-1", amiSrc.Region)
+	assert.Equal(t, "test-ami", amiSrc.AMIName)
+	assert.Equal(t, "subnet-12345", amiSrc.SubnetID)
+	assert.Equal(t, 100, amiSrc.VolumeSize)
+}
+
+func TestParseDockerSourceBlockWithCommit(t *testing.T) {
+	tmpDir := t.TempDir()
+	sourcePath := filepath.Join(tmpDir, "docker.pkr.hcl")
+	content := `source "docker" "test" {
+  image      = "centos:7"
+  commit     = true
+  platform   = "linux/arm64"
+}`
+	err := os.WriteFile(sourcePath, []byte(content), 0644)
+	require.NoError(t, err)
+
+	parser := NewHCLParser()
+	err = parser.ParseSourceBlocks(sourcePath)
+	require.NoError(t, err)
+
+	dockerSrc := parser.GetDockerSource()
+	require.NotNil(t, dockerSrc)
+	assert.True(t, dockerSrc.Commit)
+	assert.Equal(t, "centos:7", dockerSrc.Image)
+	assert.Equal(t, "linux/arm64", dockerSrc.Platform)
+	assert.Equal(t, "test", dockerSrc.Name)
+}
+
 func TestBuildTargetsWithAMISource(t *testing.T) {
 	tmpDir := t.TempDir()
 

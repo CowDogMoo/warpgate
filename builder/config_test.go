@@ -450,6 +450,20 @@ func TestConfigWithArchOverrides(t *testing.T) {
 	assert.Len(t, amd64Override.Provisioners, 1)
 }
 
+func TestUnmarshalYAMLDecodeError(t *testing.T) {
+	t.Parallel()
+
+	// Provide YAML where a field has the wrong type to trigger a decode error
+	yamlContent := `
+name: 123
+version: true
+base: "not-a-map"
+`
+	var cfg Config
+	err := yaml.Unmarshal([]byte(yamlContent), &cfg)
+	assert.Error(t, err, "expected decode error for invalid field types")
+}
+
 func TestDeprecatedPostProcessorsField(t *testing.T) {
 	tests := []struct {
 		name        string

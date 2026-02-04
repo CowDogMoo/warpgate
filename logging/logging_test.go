@@ -470,3 +470,177 @@ func TestPrintContext(t *testing.T) {
 	// Just ensure it doesn't panic - Print goes to stdout
 	logging.PrintContext(ctx, "test print output\n")
 }
+
+func TestCustomLogger_ColorOutput_AllLevels(t *testing.T) {
+	// Test that ColorOutput mode writes colored output for all log levels.
+	// This exercises the formatMessage ColorOutput branches.
+	tests := []struct {
+		name    string
+		logFunc func(*logging.CustomLogger)
+		prefix  string
+	}{
+		{
+			name:    "debug level color output",
+			logFunc: func(l *logging.CustomLogger) { l.Debug("debug msg") },
+			prefix:  "DEBUG",
+		},
+		{
+			name:    "info level color output",
+			logFunc: func(l *logging.CustomLogger) { l.Info("info msg") },
+			prefix:  "INFO",
+		},
+		{
+			name:    "warn level color output",
+			logFunc: func(l *logging.CustomLogger) { l.Warn("warn msg") },
+			prefix:  "WARN",
+		},
+		{
+			name:    "error level color output",
+			logFunc: func(l *logging.CustomLogger) { l.Error("error msg") },
+			prefix:  "ERROR",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			logger := logging.NewCustomLoggerWithOptions("debug", "color", false, true)
+			logger.ConsoleWriter = buf
+
+			tt.logFunc(logger)
+
+			output := buf.String()
+			if output == "" {
+				t.Error("expected output to be written to buffer")
+			}
+			// The color output should contain the level prefix somewhere
+			// (color codes wrap it but the text is still present)
+			if !bytes.Contains(buf.Bytes(), []byte(tt.prefix)) {
+				t.Errorf("expected output to contain %q, got %q", tt.prefix, output)
+			}
+		})
+	}
+}
+
+func TestCustomLogger_PlainOutput_NoColorPrefix(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLoggerWithOptions("debug", "plain", false, true)
+	logger.ConsoleWriter = buf
+
+	logger.Info("plain message")
+
+	output := buf.String()
+	if output == "" {
+		t.Error("expected output to be written")
+	}
+	// Plain output should contain the message without [INFO] prefix
+	if !bytes.Contains(buf.Bytes(), []byte("plain message")) {
+		t.Errorf("expected output to contain 'plain message', got %q", output)
+	}
+}
+
+func TestCustomLogger_QuietMode_OnlyErrors(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelDebug)
+	logger.ConsoleWriter = buf
+	logger.SetQuiet(true)
+
+	logger.Debug("debug should not appear")
+	logger.Info("info should not appear")
+	logger.Warn("warn should not appear")
+	output := buf.String()
+	if output != "" {
+		t.Errorf("expected no output in quiet mode for non-error, got %q", output)
+	}
+
+	logger.Error("error should appear")
+	output = buf.String()
+	if !bytes.Contains(buf.Bytes(), []byte("error should appear")) {
+		t.Errorf("expected error to appear in quiet mode, got %q", output)
+	}
+}
+
+func TestCustomLogger_VerboseMode_ShowsDebug(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelDebug)
+	logger.ConsoleWriter = buf
+	logger.SetVerbose(true)
+
+	logger.Debug("verbose debug message")
+
+	output := buf.String()
+	if !bytes.Contains(buf.Bytes(), []byte("verbose debug message")) {
+		t.Errorf("expected debug message in verbose mode, got %q", output)
+	}
+}
+
+func TestCustomLogger_DefaultMode_HidesDebug(t *testing.T) {
+	// Default mode (not verbose, not quiet) should hide debug messages
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelDebug)
+	logger.ConsoleWriter = buf
+	// Default: verbose=false, quiet=false
+
+	logger.Debug("debug should be hidden")
+	output := buf.String()
+	if output != "" {
+		t.Errorf("expected debug to be hidden in default mode, got %q", output)
+	}
+
+	logger.Info("info should appear")
+	output = buf.String()
+	if !bytes.Contains(buf.Bytes(), []byte("info should appear")) {
+		t.Errorf("expected info to appear in default mode, got %q", output)
+	}
+}
+
+func TestCustomLogger_NilConsoleWriter(t *testing.T) {
+	// When ConsoleWriter is nil, log should not panic
+	logger := logging.NewCustomLogger(slog.LevelInfo)
+	logger.ConsoleWriter = nil
+
+	// These should not panic
+	logger.Info("test with nil writer")
+	logger.Error("error with nil writer")
+}
+
+func TestNewCustomLoggerWithOptions_PlainFormat(t *testing.T) {
+	logger := logging.NewCustomLoggerWithOptions("info", "plain", false, false)
+	if logger.OutputType != logging.PlainOutput {
+		t.Errorf("expected PlainOutput for 'plain' format, got %v", logger.OutputType)
+	}
+}
+
+func TestNewCustomLoggerWithOptions_VerboseOverridesLevel(t *testing.T) {
+	// When verbose is set and level is already debug, it should stay debug
+	logger := logging.NewCustomLoggerWithOptions("debug", "text", false, true)
+	if logger.LogLevel != slog.LevelDebug {
+		t.Errorf("expected LevelDebug, got %v", logger.LogLevel)
+	}
+	if !logger.Verbose {
+		t.Error("expected verbose to be true")
+	}
+}
+
+func TestNewCustomLoggerWithOptions_UnknownFormat(t *testing.T) {
+	// Unknown format should default to PlainOutput
+	logger := logging.NewCustomLoggerWithOptions("info", "unknown-format", false, false)
+	if logger.OutputType != logging.PlainOutput {
+		t.Errorf("expected PlainOutput for unknown format, got %v", logger.OutputType)
+	}
+}
+
+func TestCustomLogger_ErrorWithFormatArgs(t *testing.T) {
+	// Test Error with an error value that has format args
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelError)
+	logger.ConsoleWriter = buf
+
+	err := errors.New("base error: %s placeholder")
+	logger.Error(err, "extra arg")
+
+	output := buf.String()
+	if output == "" {
+		t.Error("expected output from Error with error and args")
+	}
+}

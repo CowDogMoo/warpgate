@@ -934,6 +934,82 @@ func TestPopulateInstanceNetwork(t *testing.T) {
 	})
 }
 
+func TestDisplayEC2Status_Formatting(t *testing.T) {
+	t.Parallel()
+
+	t.Run("all fields populated", func(t *testing.T) {
+		t.Parallel()
+		monitor := &BuildMonitor{imageName: "test-image"}
+		launchTime := time.Now().Add(-10 * time.Minute)
+		status := &EC2InstanceStatus{
+			InstanceID:       "i-0abcdef1234567890",
+			State:            "running",
+			InstanceType:     "m5.xlarge",
+			PrivateIP:        "10.0.1.100",
+			PublicIP:         "54.123.45.67",
+			AvailabilityZone: "us-east-1b",
+			LaunchTime:       &launchTime,
+		}
+
+		// displayEC2Status logs output; verify it does not panic
+		assert.NotPanics(t, func() {
+			monitor.displayEC2Status(context.Background(), status)
+		})
+	})
+
+	t.Run("minimal fields", func(t *testing.T) {
+		t.Parallel()
+		monitor := &BuildMonitor{imageName: "test-image"}
+		status := &EC2InstanceStatus{
+			InstanceID:   "i-minimal",
+			State:        "pending",
+			InstanceType: "t3.micro",
+		}
+
+		assert.NotPanics(t, func() {
+			monitor.displayEC2Status(context.Background(), status)
+		})
+	})
+}
+
+func TestGetSSMCommandOutput_NoInvocations(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.ssm.ListCommandInvocationsFunc = func(ctx context.Context, params *ssm.ListCommandInvocationsInput, optFns ...func(*ssm.Options)) (*ssm.ListCommandInvocationsOutput, error) {
+		return &ssm.ListCommandInvocationsOutput{
+			CommandInvocations: []ssmtypes.CommandInvocation{},
+		}, nil
+	}
+
+	monitor := NewBuildMonitor(clients, "test-image", MonitorConfig{})
+	monitor.instanceID = "i-noinvocations"
+
+	entries, err := monitor.GetSSMCommandOutput(context.Background())
+
+	assert.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
+func TestStreamCloudWatchLogs_EmptyStreams(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.cloudWatchLogs.DescribeLogStreamsFunc = func(ctx context.Context, params *cloudwatchlogs.DescribeLogStreamsInput, optFns ...func(*cloudwatchlogs.Options)) (*cloudwatchlogs.DescribeLogStreamsOutput, error) {
+		return &cloudwatchlogs.DescribeLogStreamsOutput{
+			LogStreams: []cwltypes.LogStream{},
+		}, nil
+	}
+
+	monitor := NewBuildMonitor(clients, "test-image", MonitorConfig{StreamLogs: true})
+	entries, err := monitor.StreamCloudWatchLogs(context.Background())
+
+	assert.NoError(t, err)
+	assert.Nil(t, entries)
+}
+
 func TestDisplayLogEntry(t *testing.T) {
 	t.Parallel()
 

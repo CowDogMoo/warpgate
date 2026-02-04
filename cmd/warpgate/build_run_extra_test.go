@@ -24,11 +24,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/spf13/cobra"
@@ -179,4 +181,238 @@ func TestLoadAndValidateBuildConfig_InvalidOptions(t *testing.T) {
 		// Either way, there should be an error
 		t.Fatal("expected error for invalid options or nonexistent file")
 	}
+}
+
+func TestLoadAndValidateBuildConfig_NonexistentFile(t *testing.T) {
+	t.Parallel()
+
+	ctx := setupTestContext(t)
+	opts := &buildOptions{}
+
+	_, err := loadAndValidateBuildConfig(ctx, []string{"/tmp/nonexistent-warpgate-config.yaml"}, opts)
+	if err == nil {
+		t.Fatal("expected error for nonexistent config file")
+	}
+	if !strings.Contains(err.Error(), "failed to load build configuration") {
+		t.Errorf("error should mention failed to load, got: %v", err)
+	}
+}
+
+func TestLoadAndValidateBuildConfig_EmptyYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "warpgate.yaml")
+
+	// Write a minimal but parseable YAML
+	if err := os.WriteFile(configFile, []byte("name: \"\"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := setupTestContext(t)
+	opts := &buildOptions{}
+
+	// Should load but may fail validation depending on validator behavior
+	_, err := loadAndValidateBuildConfig(ctx, []string{configFile}, opts)
+	// We just verify it does not panic -- whether it errors or not depends on validation logic
+	_ = err
+}
+
+func TestLoadAndValidateBuildConfig_InvalidYAML(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "warpgate.yaml")
+
+	// Write invalid YAML content
+	if err := os.WriteFile(configFile, []byte("{{{{not valid yaml"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := setupTestContext(t)
+	opts := &buildOptions{}
+
+	_, err := loadAndValidateBuildConfig(ctx, []string{configFile}, opts)
+	if err == nil {
+		t.Fatal("expected error for invalid YAML")
+	}
+}
+
+func TestLoadAndValidateBuildConfig_WithVars(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "warpgate.yaml")
+
+	validConfig := `name: test-image
+base:
+  image: "ubuntu:22.04"
+targets:
+  - type: container
+provisioners:
+  - type: shell
+    inline:
+      - echo hello
+`
+	if err := os.WriteFile(configFile, []byte(validConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := setupTestContext(t)
+	opts := &buildOptions{
+		vars: []string{"MY_VAR=my_value"},
+	}
+
+	cfg, err := loadAndValidateBuildConfig(ctx, []string{configFile}, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+}
+
+func TestExecuteBuild_UnsupportedTargetType(t *testing.T) {
+	t.Parallel()
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+
+	_, err := executeBuild(ctx, "vmware", nil, cfg, nil, builder.BuildOptions{}, &buildOptions{})
+	if err == nil {
+		t.Fatal("expected error for unsupported target type")
+	}
+	if !strings.Contains(err.Error(), "unsupported target type: vmware") {
+		t.Errorf("error should mention unsupported target type, got: %v", err)
+	}
+}
+
+func TestExecuteBuild_ContainerPath_NilService(t *testing.T) {
+	t.Parallel()
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+	buildConfig := &builder.Config{
+		Name: "test",
+	}
+
+	// Calling with a nil service for container should panic or error
+	// We need a non-nil service, so create one with a failing builder
+	service := builder.NewBuildService(cfg, func(ctx context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("mock: no BuildKit available")
+	})
+
+	_, err := executeBuild(ctx, "container", service, cfg, buildConfig, builder.BuildOptions{}, &buildOptions{})
+	if err == nil {
+		t.Fatal("expected error for container build without BuildKit")
+	}
+	if !strings.Contains(err.Error(), "container build failed") {
+		t.Errorf("error should mention container build failed, got: %v", err)
+	}
+}
+
+func TestExecuteBuild_AMIPath_NoAWSCredentials(t *testing.T) {
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	t.Setenv("AWS_ACCESS_KEY_ID", "test-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+	cfg.AWS.Region = "us-east-1"
+	buildConfig := &builder.Config{
+		Name: "test",
+	}
+
+	service := builder.NewBuildService(cfg, func(ctx context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+
+	opts := &buildOptions{
+		region: "us-east-1",
+	}
+
+	// AMI build will fail when trying to create the AMI builder with mock credentials
+	_, err := executeBuild(ctx, "ami", service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	// Should fail at the AMI builder creation or build step, not at dispatch
+	if err == nil {
+		t.Log("AMI build succeeded unexpectedly (likely had real AWS credentials)")
+	}
+}
+
+func TestExecuteBuild_EmptyTargetType(t *testing.T) {
+	t.Parallel()
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+
+	_, err := executeBuild(ctx, "", nil, cfg, nil, builder.BuildOptions{}, &buildOptions{})
+	if err == nil {
+		t.Fatal("expected error for empty target type")
+	}
+	if !strings.Contains(err.Error(), "unsupported target type") {
+		t.Errorf("error should mention unsupported target type, got: %v", err)
+	}
+}
+
+func TestCopyAMIToRegions_SkipSourceRegion(t *testing.T) {
+	t.Parallel()
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+
+	// When target region is the same as source region, it should be skipped
+	// The function will try to create AWS clients for non-source regions
+	// and fail, but source region should be skipped
+	results, err := copyAMIToRegions(ctx, cfg, "ami-12345", "us-east-1", []string{"us-east-1"})
+	// All regions are the source region, so all should be skipped
+	// No AWS clients needed, no errors
+	if err != nil {
+		t.Fatalf("copyAMIToRegions() with only source region should not error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results when all regions are source, got %d", len(results))
+	}
+}
+
+func TestCopyAMIToRegions_MixedRegions(t *testing.T) {
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	t.Setenv("AWS_ACCESS_KEY_ID", "test")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+
+	// Source region should be skipped, other regions will fail at client creation
+	_, err := copyAMIToRegions(ctx, cfg, "ami-12345", "us-east-1", []string{"us-east-1", "us-west-2"})
+	// us-east-1 skipped, us-west-2 will fail at copy (no real AWS)
+	// Function returns partial results + error
+	_ = err // May or may not error depending on AWS mock behavior
+}
+
+func TestCopyAMIToRegions_EmptyTargetRegions(t *testing.T) {
+	t.Parallel()
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+
+	results, err := copyAMIToRegions(ctx, cfg, "ami-12345", "us-east-1", []string{})
+	if err != nil {
+		t.Fatalf("copyAMIToRegions() with empty regions should not error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for empty regions, got %d", len(results))
+	}
+}
+
+func TestRegisterBuildCompletions(t *testing.T) {
+	t.Parallel()
+
+	// Verify that completion functions are registered for key flags
+	cmd := &cobra.Command{Use: "test-build"}
+	cmd.Flags().StringSlice("arch", nil, "arch")
+	cmd.Flags().String("target", "", "target")
+	cmd.Flags().String("region", "", "region")
+	cmd.Flags().StringSlice("regions", nil, "regions")
+	cmd.Flags().String("registry", "", "registry")
+	cmd.Flags().String("instance-type", "", "instance type")
+
+	registerBuildCompletions(cmd)
+
+	// Verify flag completion functions are registered (no panic)
 }

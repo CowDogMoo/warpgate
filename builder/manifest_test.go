@@ -248,6 +248,26 @@ func TestWriteManifestValidation(t *testing.T) {
 	}
 }
 
+func TestWriteManifestUnwritableDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a read-only directory
+	readOnlyDir := filepath.Join(tmpDir, "readonly")
+	require.NoError(t, os.Mkdir(readOnlyDir, 0555))
+
+	manifestPath := filepath.Join(readOnlyDir, "nested", "build.json")
+
+	manifest := &BuildManifest{
+		Template: "test",
+		Version:  "1.0.0",
+		Builds:   []ManifestBuild{},
+	}
+
+	err := WriteManifest(manifestPath, manifest)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create manifest directory")
+}
+
 func TestWriteManifestFilePermissions(t *testing.T) {
 	tmpDir := t.TempDir()
 	manifestPath := filepath.Join(tmpDir, "perms-test.json")

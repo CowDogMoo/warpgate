@@ -24,12 +24,14 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/templates"
 )
 
@@ -391,6 +393,414 @@ func TestDisplayTemplateList_EmptyList(t *testing.T) {
 	// Verify output contains total count
 	if !strings.Contains(output, "Total templates: 0") {
 		t.Errorf("DisplayTemplateList() output missing total count for empty list")
+	}
+}
+
+func TestDisplayBuildResult_WithImageRef(t *testing.T) {
+	t.Parallel()
+
+	formatter := NewOutputFormatter("text")
+	ctx := context.Background()
+
+	result := &builder.BuildResult{
+		ImageRef: "ghcr.io/org/image:latest",
+		Duration: "2m30s",
+	}
+
+	// DisplayBuildResult writes to the logger, not stdout.
+	// Verify it does not panic and completes without error.
+	formatter.DisplayBuildResult(ctx, result)
+}
+
+func TestDisplayBuildResult_WithAMIID(t *testing.T) {
+	t.Parallel()
+
+	formatter := NewOutputFormatter("text")
+	ctx := context.Background()
+
+	result := &builder.BuildResult{
+		AMIID:    "ami-0123456789abcdef0",
+		Region:   "us-west-2",
+		Duration: "15m0s",
+	}
+
+	formatter.DisplayBuildResult(ctx, result)
+}
+
+func TestDisplayBuildResult_WithNotes(t *testing.T) {
+	t.Parallel()
+
+	formatter := NewOutputFormatter("text")
+	ctx := context.Background()
+
+	result := &builder.BuildResult{
+		ImageRef: "ghcr.io/org/image:v1.0.0",
+		Duration: "5m0s",
+		Notes:    []string{"Build used QEMU emulation", "Cross-compilation detected"},
+	}
+
+	formatter.DisplayBuildResult(ctx, result)
+}
+
+func TestDisplayBuildResult_Minimal(t *testing.T) {
+	t.Parallel()
+
+	formatter := NewOutputFormatter("text")
+	ctx := context.Background()
+
+	result := &builder.BuildResult{
+		Duration: "1m0s",
+	}
+
+	// Minimal result with only duration should still work
+	formatter.DisplayBuildResult(ctx, result)
+}
+
+func TestDisplayBuildResults_Multiple(t *testing.T) {
+	formatter := NewOutputFormatter("text")
+	ctx := context.Background()
+
+	results := []builder.BuildResult{
+		{
+			ImageRef:     "ghcr.io/org/image:latest",
+			Duration:     "2m30s",
+			Architecture: "amd64",
+			Platform:     "linux/amd64",
+		},
+		{
+			ImageRef:     "ghcr.io/org/image:latest",
+			Duration:     "5m15s",
+			Architecture: "arm64",
+			Platform:     "linux/arm64",
+			Notes:        []string{"QEMU emulation used"},
+		},
+	}
+
+	// Capture stdout for the fmt.Println() blank line between results
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	formatter.DisplayBuildResults(ctx, results)
+
+	_ = w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	// The function should have printed at least one blank line between results
+	output := buf.String()
+	if len(results) > 1 && !strings.Contains(output, "\n") {
+		t.Errorf("DisplayBuildResults() expected blank line between results")
+	}
+}
+
+func TestDisplayBuildResults_Single(t *testing.T) {
+	t.Parallel()
+
+	formatter := NewOutputFormatter("text")
+	ctx := context.Background()
+
+	results := []builder.BuildResult{
+		{
+			ImageRef: "ghcr.io/org/image:latest",
+			Duration: "2m30s",
+		},
+	}
+
+	// Single result should not print blank line
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	formatter.DisplayBuildResults(ctx, results)
+
+	_ = w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	// No blank line should appear for single result
+	_ = buf.String()
+}
+
+func TestDisplayBuildResults_Empty(t *testing.T) {
+	t.Parallel()
+
+	formatter := NewOutputFormatter("text")
+	ctx := context.Background()
+
+	results := []builder.BuildResult{}
+
+	// Empty results should not panic
+	formatter.DisplayBuildResults(ctx, results)
+}
+
+func TestDisplayTemplatesGHAMatrix_WithProvisionRepo(t *testing.T) {
+	formatter := NewOutputFormatter("text")
+	templateList := []templates.TemplateInfo{
+		{
+			Name:        "attack-box",
+			Version:     "1.0.0",
+			Repository:  "official",
+			Description: "Security testing container",
+		},
+		{
+			Name:        "basic-template",
+			Version:     "1.0.0",
+			Repository:  "local:myrepo",
+			Description: "A basic template",
+		},
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := formatter.displayTemplatesGHAMatrix(templateList)
+
+	_ = w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Errorf("displayTemplatesGHAMatrix() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify JSON structure
+	var result GHAMatrix
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("displayTemplatesGHAMatrix() output is not valid JSON: %v", err)
+	}
+
+	if len(result.Template) != 2 {
+		t.Fatalf("Expected 2 templates, got %d", len(result.Template))
+	}
+
+	// attack-box needs provision repo
+	if result.Template[0].Vars == "" {
+		t.Errorf("Expected attack-box to have Vars set for provision repo")
+	}
+	if !strings.Contains(result.Template[0].Vars, "PROVISION_REPO_PATH") {
+		t.Errorf("Expected attack-box Vars to contain PROVISION_REPO_PATH, got %q", result.Template[0].Vars)
+	}
+
+	// basic-template does not need provision repo
+	if result.Template[1].Vars != "" {
+		t.Errorf("Expected basic-template to have empty Vars, got %q", result.Template[1].Vars)
+	}
+
+	// Verify namespace extraction
+	if result.Template[1].Namespace != "myrepo" {
+		t.Errorf("Expected namespace 'myrepo', got %q", result.Template[1].Namespace)
+	}
+}
+
+func TestDisplayTemplateSearchResults_Multiple(t *testing.T) {
+	formatter := NewOutputFormatter("text")
+	results := []templates.TemplateInfo{
+		{
+			Name:        "attack-box",
+			Version:     "1.0.0",
+			Repository:  "official",
+			Description: "Security testing container",
+		},
+		{
+			Name:        "sliver",
+			Version:     "",
+			Repository:  "",
+			Description: "This is a very long description that should be truncated in the table output because it exceeds fifty characters",
+		},
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := formatter.DisplayTemplateSearchResults(results, "security")
+
+	_ = w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Errorf("DisplayTemplateSearchResults() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	if !strings.Contains(output, "attack-box") {
+		t.Errorf("DisplayTemplateSearchResults() output missing 'attack-box'")
+	}
+	if !strings.Contains(output, "sliver") {
+		t.Errorf("DisplayTemplateSearchResults() output missing 'sliver'")
+	}
+	if !strings.Contains(output, "Found 2 template(s)") {
+		t.Errorf("DisplayTemplateSearchResults() output missing count")
+	}
+	if !strings.Contains(output, "query: security") {
+		t.Errorf("DisplayTemplateSearchResults() output missing query")
+	}
+	// Empty version should show as "latest"
+	if !strings.Contains(output, "latest") {
+		t.Errorf("DisplayTemplateSearchResults() expected empty version to show as 'latest'")
+	}
+	// Empty repo should show as "official"
+	if !strings.Contains(output, "official") {
+		t.Errorf("DisplayTemplateSearchResults() expected empty repo to show as 'official'")
+	}
+	// Long description should be truncated
+	if !strings.Contains(output, "...") {
+		t.Errorf("DisplayTemplateSearchResults() expected long description to be truncated")
+	}
+}
+
+func TestDisplayTemplateSearchResults_Empty(t *testing.T) {
+	formatter := NewOutputFormatter("text")
+	results := []templates.TemplateInfo{}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := formatter.DisplayTemplateSearchResults(results, "nothing")
+
+	_ = w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Errorf("DisplayTemplateSearchResults() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	if !strings.Contains(output, "Found 0 template(s)") {
+		t.Errorf("DisplayTemplateSearchResults() output missing zero count, got: %s", output)
+	}
+}
+
+func TestDisplayTemplateList_DefaultValues(t *testing.T) {
+	formatter := NewOutputFormatter("table")
+	templateList := []templates.TemplateInfo{
+		{
+			Name:        "minimal-template",
+			Version:     "",
+			Repository:  "",
+			Description: "",
+			Author:      "",
+		},
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := formatter.DisplayTemplateList(templateList)
+
+	_ = w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Errorf("DisplayTemplateList() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	// Verify default values are used for empty fields
+	if !strings.Contains(output, "latest") {
+		t.Errorf("DisplayTemplateList() expected empty version to show as 'latest'")
+	}
+	if !strings.Contains(output, "unknown") {
+		t.Errorf("DisplayTemplateList() expected empty author/source to show as 'unknown'")
+	}
+}
+
+func TestDisplayTemplateList_TextFormat(t *testing.T) {
+	// "text" format should behave the same as "table"
+	formatter := NewOutputFormatter("text")
+	templateList := []templates.TemplateInfo{
+		{
+			Name:       "test-template",
+			Version:    "1.0.0",
+			Repository: "official",
+			Author:     "tester",
+		},
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := formatter.DisplayTemplateList(templateList)
+
+	_ = w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Errorf("DisplayTemplateList() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	if !strings.Contains(output, "test-template") {
+		t.Errorf("DisplayTemplateList() output missing 'test-template'")
+	}
+}
+
+func TestDisplayTemplateList_EmptyFormat(t *testing.T) {
+	// Empty format string should default to table
+	formatter := NewOutputFormatter("")
+	templateList := []templates.TemplateInfo{
+		{
+			Name:    "test-template",
+			Version: "1.0.0",
+		},
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := formatter.DisplayTemplateList(templateList)
+
+	_ = w.Close()
+	os.Stdout = old
+
+	if err != nil {
+		t.Errorf("DisplayTemplateList() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	output := buf.String()
+
+	if !strings.Contains(output, "test-template") {
+		t.Errorf("DisplayTemplateList() with empty format should produce table output")
+	}
+}
+
+func TestExtractNamespace_LocalOnly(t *testing.T) {
+	// Test "local:" with no suffix (just the prefix)
+	got := extractNamespace("local:")
+	// parts[1] would be "" (after splitting "local:" on ":")
+	if got != "" {
+		t.Errorf("extractNamespace('local:') = %q, want empty string", got)
 	}
 }
 

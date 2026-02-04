@@ -23,9 +23,13 @@ THE SOFTWARE.
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/viper"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestLoad_Defaults tests that defaults work without a config file
@@ -472,5 +476,572 @@ func verifyNonCredentialFieldsLoaded(t *testing.T, config *Config) {
 	}
 	if config.AWS.Region != "us-west-2" {
 		t.Errorf("Expected region 'us-west-2', got '%s'", config.AWS.Region)
+	}
+}
+
+// TestIsNotFoundError_Various tests IsNotFoundError with different error types
+func TestIsNotFoundError_Various(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "ErrConfigNotFound",
+			err:  ErrConfigNotFound,
+			want: true,
+		},
+		{
+			name: "wrapped ErrConfigNotFound",
+			err:  fmt.Errorf("something: %w", ErrConfigNotFound),
+			want: true,
+		},
+		{
+			name: "viper ConfigFileNotFoundError",
+			err:  viper.ConfigFileNotFoundError{},
+			want: true,
+		},
+		{
+			name: "generic error",
+			err:  fmt.Errorf("some other error"),
+			want: false,
+		},
+		{
+			name: "os.ErrNotExist",
+			err:  os.ErrNotExist,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := IsNotFoundError(tt.err)
+			if got != tt.want {
+				t.Errorf("IsNotFoundError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPopulateAWSCredentials_EnvVarsSet tests that AWS credentials are populated from env vars
+func TestPopulateAWSCredentials_EnvVarsSet(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIATEST123")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secrettest456")
+	t.Setenv("AWS_SESSION_TOKEN", "sessiontest789")
+
+	cfg := &Config{}
+	populateAWSCredentials(cfg)
+
+	if cfg.AWS.AccessKeyID != "AKIATEST123" {
+		t.Errorf("Expected AccessKeyID 'AKIATEST123', got '%s'", cfg.AWS.AccessKeyID)
+	}
+	if cfg.AWS.SecretAccessKey != "secrettest456" {
+		t.Errorf("Expected SecretAccessKey 'secrettest456', got '%s'", cfg.AWS.SecretAccessKey)
+	}
+	if cfg.AWS.SessionToken != "sessiontest789" {
+		t.Errorf("Expected SessionToken 'sessiontest789', got '%s'", cfg.AWS.SessionToken)
+	}
+}
+
+// TestPopulateAWSCredentials_EnvVarsEmpty tests that empty env vars result in empty fields
+func TestPopulateAWSCredentials_EnvVarsEmpty(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+
+	cfg := &Config{}
+	populateAWSCredentials(cfg)
+
+	if cfg.AWS.AccessKeyID != "" {
+		t.Errorf("Expected empty AccessKeyID, got '%s'", cfg.AWS.AccessKeyID)
+	}
+	if cfg.AWS.SecretAccessKey != "" {
+		t.Errorf("Expected empty SecretAccessKey, got '%s'", cfg.AWS.SecretAccessKey)
+	}
+	if cfg.AWS.SessionToken != "" {
+		t.Errorf("Expected empty SessionToken, got '%s'", cfg.AWS.SessionToken)
+	}
+}
+
+// TestBindEnvVars_RegistryOverride tests that env vars override config via bindEnvVars
+func TestBindEnvVars_RegistryOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `registry:
+  default: ghcr.io
+log:
+  level: info
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	t.Setenv("WARPGATE_REGISTRY_DEFAULT", "quay.io")
+	t.Setenv("WARPGATE_LOG_LEVEL", "warn")
+	t.Setenv("WARPGATE_BUILD_TIMEOUT", "6h")
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.Registry.Default != "quay.io" {
+		t.Errorf("Expected registry 'quay.io' from env var, got '%s'", config.Registry.Default)
+	}
+	if config.Log.Level != "warn" {
+		t.Errorf("Expected log level 'warn' from env var, got '%s'", config.Log.Level)
+	}
+	if config.Build.Timeout != "6h" {
+		t.Errorf("Expected build timeout '6h' from env var, got '%s'", config.Build.Timeout)
+	}
+}
+
+// TestLoad_FindsConfigInCurrentDir tests Load finds config.yaml in current directory
+func TestLoad_FindsConfigInCurrentDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `log:
+  level: warn
+  format: json
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	originalDir, _ := os.Getwd()
+	defer func() {
+		_ = os.Chdir(originalDir)
+	}()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	config, err := Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.Log.Level != "warn" {
+		t.Errorf("Expected log level 'warn', got '%s'", config.Log.Level)
+	}
+	if config.Log.Format != "json" {
+		t.Errorf("Expected log format 'json', got '%s'", config.Log.Format)
+	}
+}
+
+// TestLoad_NoConfigFile tests Load with no config file returns defaults + ErrConfigNotFound
+func TestLoad_NoConfigFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalDir, _ := os.Getwd()
+	defer func() {
+		_ = os.Chdir(originalDir)
+	}()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	config, err := Load()
+	if !IsNotFoundError(err) {
+		t.Fatalf("Expected ErrConfigNotFound, got %v", err)
+	}
+	// Should still return valid config with defaults
+	if config == nil {
+		t.Fatal("Expected non-nil config even when no file found")
+	}
+	if config.Log.Level != "info" {
+		t.Errorf("Expected default log level 'info', got '%s'", config.Log.Level)
+	}
+}
+
+// TestLoadFromPath_ConvertConfig tests loading convert-specific configuration
+func TestLoadFromPath_ConvertConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `convert:
+  default_version: "2.0.0"
+  default_license: Apache-2.0
+  warpgate_version: ">=2.0.0"
+  ami_instance_type: c5.xlarge
+  ami_volume_size: 100
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.Convert.DefaultVersion != "2.0.0" {
+		t.Errorf("Expected convert default version '2.0.0', got '%s'", config.Convert.DefaultVersion)
+	}
+	if config.Convert.DefaultLicense != "Apache-2.0" {
+		t.Errorf("Expected convert default license 'Apache-2.0', got '%s'", config.Convert.DefaultLicense)
+	}
+	if config.Convert.WarpgateVersion != ">=2.0.0" {
+		t.Errorf("Expected warpgate version '>=2.0.0', got '%s'", config.Convert.WarpgateVersion)
+	}
+	if config.Convert.AMIInstanceType != "c5.xlarge" {
+		t.Errorf("Expected AMI instance type 'c5.xlarge', got '%s'", config.Convert.AMIInstanceType)
+	}
+	if config.Convert.AMIVolumeSize != 100 {
+		t.Errorf("Expected AMI volume size 100, got %d", config.Convert.AMIVolumeSize)
+	}
+}
+
+// TestLoadFromPath_ManifestsConfig tests loading manifests configuration
+func TestLoadFromPath_ManifestsConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `manifests:
+  verify_concurrency: 10
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.Manifests.VerifyConcurrency != 10 {
+		t.Errorf("Expected verify concurrency 10, got %d", config.Manifests.VerifyConcurrency)
+	}
+}
+
+// TestLoadFromPath_TemplatesLocalPaths tests loading templates local paths
+func TestLoadFromPath_TemplatesLocalPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `templates:
+  local_paths:
+    - /opt/templates
+    - ~/my-templates
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if len(config.Templates.LocalPaths) != 2 {
+		t.Errorf("Expected 2 local paths, got %d", len(config.Templates.LocalPaths))
+	}
+}
+
+// TestLoadFromPath_InvalidYAML tests LoadFromPath with malformed YAML
+func TestLoadFromPath_InvalidYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Write invalid YAML
+	configContent := `registry:
+  default: [invalid yaml syntax
+    broken: nesting
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	_, err := LoadFromPath(configPath)
+	if err == nil {
+		t.Error("Expected error for invalid YAML, got nil")
+	}
+}
+
+// TestLoadFromPath_NonexistentFile tests LoadFromPath with a file that does not exist
+func TestLoadFromPath_NonexistentFile(t *testing.T) {
+	_, err := LoadFromPath("/nonexistent/path/to/config.yaml")
+	if err == nil {
+		t.Error("Expected error for nonexistent file, got nil")
+	}
+}
+
+// TestLoad_WithConfigInXDGDir tests Load finds config in XDG config directory
+func TestLoad_WithConfigInXDGDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "warpgate")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
+	}
+
+	configContent := `log:
+  level: error
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Change to a different dir so Load doesn't find config in current dir
+	emptyDir := t.TempDir()
+	originalDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(originalDir) }()
+	if err := os.Chdir(emptyDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	config, err := Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.Log.Level != "error" {
+		t.Errorf("Expected log level 'error', got '%s'", config.Log.Level)
+	}
+}
+
+// loadDefaultConfig loads a config with all defaults for testing.
+func loadDefaultConfig(t *testing.T) *Config {
+	t.Helper()
+	tmpDir := t.TempDir()
+	originalDir, _ := os.Getwd()
+	defer func() {
+		_ = os.Chdir(originalDir)
+	}()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	config, err := Load()
+	if err != nil && !IsNotFoundError(err) {
+		t.Fatalf("Failed to load defaults: %v", err)
+	}
+	return config
+}
+
+// TestLoad_UnmarshalWithAllDefaults tests that defaults cover all config sections
+func TestLoad_UnmarshalWithAllDefaults(t *testing.T) {
+	config := loadDefaultConfig(t)
+
+	t.Run("AWS AMI defaults", func(t *testing.T) {
+		assert.Equal(t, "t3.medium", config.AWS.AMI.InstanceType)
+		assert.Equal(t, 8, config.AWS.AMI.VolumeSize)
+		assert.Equal(t, "/dev/sda1", config.AWS.AMI.DeviceName)
+		assert.Equal(t, "gp3", config.AWS.AMI.VolumeType)
+		assert.Equal(t, 30, config.AWS.AMI.PollingIntervalSec)
+		assert.Equal(t, 30, config.AWS.AMI.BuildTimeoutMin)
+	})
+
+	t.Run("container defaults", func(t *testing.T) {
+		assert.Equal(t, "linux/amd64", config.Container.DefaultPlatform)
+		assert.Equal(t, "ubuntu", config.Container.DefaultBaseImage)
+		assert.Equal(t, "latest", config.Container.DefaultBaseVersion)
+		assert.Len(t, config.Container.DefaultPlatforms, 2)
+	})
+
+	t.Run("convert defaults", func(t *testing.T) {
+		assert.Equal(t, "1.0.0", config.Convert.DefaultVersion)
+		assert.Equal(t, "MIT", config.Convert.DefaultLicense)
+	})
+
+	t.Run("manifests defaults", func(t *testing.T) {
+		assert.Equal(t, 5, config.Manifests.VerifyConcurrency)
+	})
+
+	t.Run("build defaults", func(t *testing.T) {
+		assert.Equal(t, 2, config.Build.Concurrency)
+		assert.Equal(t, 3, config.Build.QEMUSlowdownFactor)
+		assert.Equal(t, 2, config.Build.ParallelismLimit)
+		assert.InDelta(t, 0.5, config.Build.CPUFraction, 0.001)
+		assert.Equal(t, 10, config.Build.BaselineBuildTimeMin)
+	})
+}
+
+// TestBindEnvVars_ContainerRuntime tests that container runtime env var override works
+func TestBindEnvVars_ContainerRuntime(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `container:
+  runtime: /usr/bin/runc
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	t.Setenv("WARPGATE_CONTAINER_RUNTIME", "/custom/bin/crun")
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.Container.Runtime != "/custom/bin/crun" {
+		t.Errorf("Expected container runtime '/custom/bin/crun' from env var, got '%s'", config.Container.Runtime)
+	}
+}
+
+// TestBindEnvVars_AWSRegionOverride tests that AWS_REGION env var overrides config
+func TestBindEnvVars_AWSRegionOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `aws:
+  region: us-west-2
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	t.Setenv("AWS_REGION", "eu-west-1")
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.AWS.Region != "eu-west-1" {
+		t.Errorf("Expected AWS region 'eu-west-1' from env var, got '%s'", config.AWS.Region)
+	}
+}
+
+// TestPopulateAWSCredentials_Unset tests that unset env vars result in empty fields
+func TestPopulateAWSCredentials_Unset(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+
+	// Also unset them to test the "not set at all" case
+	// t.Setenv already handles cleanup, but let's be explicit
+	cfg := &Config{
+		AWS: AWSConfig{
+			AccessKeyID:     "should-be-overwritten",
+			SecretAccessKey: "should-be-overwritten",
+			SessionToken:    "should-be-overwritten",
+		},
+	}
+	populateAWSCredentials(cfg)
+
+	if cfg.AWS.AccessKeyID != "" {
+		t.Errorf("Expected empty AccessKeyID, got '%s'", cfg.AWS.AccessKeyID)
+	}
+	if cfg.AWS.SecretAccessKey != "" {
+		t.Errorf("Expected empty SecretAccessKey, got '%s'", cfg.AWS.SecretAccessKey)
+	}
+	if cfg.AWS.SessionToken != "" {
+		t.Errorf("Expected empty SessionToken, got '%s'", cfg.AWS.SessionToken)
+	}
+}
+
+// TestLoadFromPath_AWSAMIConfig tests loading AMI-specific configuration from file
+func TestLoadFromPath_AWSAMIConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `aws:
+  region: us-east-1
+  ami:
+    instance_type: m5.large
+    volume_size: 50
+    device_name: /dev/xvda
+    volume_type: gp2
+    polling_interval_sec: 60
+    build_timeout_min: 120
+    instance_profile_name: my-profile
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.AWS.AMI.InstanceType != "m5.large" {
+		t.Errorf("Expected instance type 'm5.large', got '%s'", config.AWS.AMI.InstanceType)
+	}
+	if config.AWS.AMI.VolumeSize != 50 {
+		t.Errorf("Expected volume size 50, got %d", config.AWS.AMI.VolumeSize)
+	}
+	if config.AWS.AMI.InstanceProfileName != "my-profile" {
+		t.Errorf("Expected instance profile 'my-profile', got '%s'", config.AWS.AMI.InstanceProfileName)
+	}
+}
+
+// TestLoadFromPath_BuildKitConfig tests loading BuildKit configuration from file
+func TestLoadFromPath_BuildKitConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `buildkit:
+  endpoint: tcp://buildkitd:1234
+  tls_enabled: true
+  tls_ca_cert: /path/to/ca.pem
+  tls_cert: /path/to/cert.pem
+  tls_key: /path/to/key.pem
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.BuildKit.Endpoint != "tcp://buildkitd:1234" {
+		t.Errorf("Expected endpoint 'tcp://buildkitd:1234', got '%s'", config.BuildKit.Endpoint)
+	}
+	if !config.BuildKit.TLSEnabled {
+		t.Error("Expected TLS to be enabled")
+	}
+	if config.BuildKit.TLSCACert != "/path/to/ca.pem" {
+		t.Errorf("Expected TLS CA cert path, got '%s'", config.BuildKit.TLSCACert)
+	}
+}
+
+// TestDetectOCIRuntime_ReturnsValidPathOrEmpty tests DetectOCIRuntime behavior
+func TestDetectOCIRuntime_ReturnsValidPathOrEmpty(t *testing.T) {
+	t.Parallel()
+
+	runtime := DetectOCIRuntime()
+
+	if runtime == "" {
+		// On systems without crun/runc (e.g., macOS), empty is valid
+		t.Log("No OCI runtime detected (expected on macOS)")
+		return
+	}
+
+	// If a runtime is found, it should be an absolute path
+	if !filepath.IsAbs(runtime) {
+		t.Errorf("Expected absolute path, got %q", runtime)
+	}
+
+	// Verify the file exists
+	info, err := os.Stat(runtime)
+	if err != nil {
+		t.Errorf("Detected runtime path does not exist: %s", runtime)
+		return
+	}
+
+	// Should be a regular file
+	if !info.Mode().IsRegular() {
+		t.Errorf("Detected runtime is not a regular file: %s", runtime)
+	}
+
+	// Should be executable
+	if info.Mode()&0111 == 0 {
+		t.Errorf("Detected runtime is not executable: %s", runtime)
 	}
 }

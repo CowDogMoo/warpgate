@@ -216,3 +216,85 @@ func TestParseDigestFile_NoDigestPrefix(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid filename format")
 }
+
+func TestParseDigestFile_NoTxtSuffix(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "digest-myimage-amd64.json")
+	require.NoError(t, os.WriteFile(filePath, []byte(
+		"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+	), 0644))
+
+	_, err := ParseDigestFile(filePath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid filename format")
+}
+
+func TestSaveDigestToFile_ReadOnlyDirectory(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	// Use a path under /dev/null or similar that cannot be a directory
+	// On most systems writing to a file under a non-writable path will fail
+	err := SaveDigestToFile(ctx, "test", "amd64",
+		"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+		"/dev/null/impossible-dir")
+	assert.Error(t, err)
+}
+
+func TestSaveDigestToFile_SpecialCharactersInName(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	err := SaveDigestToFile(ctx, "my-image-with-dashes", "arm-v7",
+		"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+		dir)
+	require.NoError(t, err)
+
+	// Verify file exists with correct name
+	expectedFile := filepath.Join(dir, "digest-my-image-with-dashes-arm-v7.txt")
+	content, err := os.ReadFile(expectedFile)
+	require.NoError(t, err)
+	assert.Equal(t, "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", string(content))
+}
+
+func TestParseDigestFile_NonexistentFile(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseDigestFile("/nonexistent/path/digest-test-amd64.txt")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read file")
+}
+
+func TestDiscoverDigestFiles_EmptyDirectory(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	digestFiles, err := DiscoverDigestFiles(context.Background(), DiscoveryOptions{
+		ImageName: "noimage",
+		Directory: tmpDir,
+	})
+
+	require.NoError(t, err)
+	assert.Nil(t, digestFiles)
+}
+
+func TestParseDigestFile_HyphenatedImageName(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "digest-my-cool-image-amd64.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte(
+		"sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+	), 0644))
+
+	df, err := ParseDigestFile(filePath)
+	require.NoError(t, err)
+	assert.Equal(t, "amd64", df.Architecture)
+	assert.Equal(t, "my-cool-image", df.ImageName)
+}
