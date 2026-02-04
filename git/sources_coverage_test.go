@@ -35,11 +35,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testCommitOpts = &git.CommitOptions{
-	Author: &object.Signature{
-		Name:  "Test User",
-		Email: "test@example.com",
-	},
+func newTestCommitOpts() *git.CommitOptions {
+	return &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+		},
+	}
 }
 
 func TestFetchSource_NoValidSourceType(t *testing.T) {
@@ -99,7 +101,7 @@ func TestCheckoutRef_InvalidRef(t *testing.T) {
 	require.NoError(t, err)
 	_, err = worktree.Add("README.md")
 	require.NoError(t, err)
-	_, err = worktree.Commit("initial commit", testCommitOpts)
+	_, err = worktree.Commit("initial commit", newTestCommitOpts())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -130,7 +132,7 @@ func TestCheckoutRef_ValidBranch(t *testing.T) {
 	require.NoError(t, err)
 	_, err = worktree.Add("README.md")
 	require.NoError(t, err)
-	_, err = worktree.Commit("initial commit", testCommitOpts)
+	_, err = worktree.Commit("initial commit", newTestCommitOpts())
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -158,7 +160,7 @@ func TestCheckoutRef_ValidCommitHash(t *testing.T) {
 	require.NoError(t, err)
 	_, err = worktree.Add("README.md")
 	require.NoError(t, err)
-	commitHash, err := worktree.Commit("initial commit", testCommitOpts)
+	commitHash, err := worktree.Commit("initial commit", newTestCommitOpts())
 	require.NoError(t, err)
 
 	ctx := context.Background()
