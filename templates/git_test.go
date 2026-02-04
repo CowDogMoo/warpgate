@@ -694,6 +694,10 @@ func createTestGitRepoGoGit(t *testing.T) (repoURL string) {
 func createTestGitRepoWithTemplates(t *testing.T) string {
 	t.Helper()
 
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Skipping test: git not found in PATH")
+	}
+
 	bareDir := filepath.Join(t.TempDir(), "bare.git")
 	workDir := filepath.Join(t.TempDir(), "work")
 
