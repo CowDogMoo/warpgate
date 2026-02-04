@@ -2017,7 +2017,7 @@ func TestNewDockerClientAdapter_WrapsClient(t *testing.T) {
 	if err != nil {
 		t.Skipf("Docker not available, skipping: %v", err)
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	adapter := newDockerClientAdapter(cli)
 	if adapter == nil {
@@ -2025,7 +2025,7 @@ func TestNewDockerClientAdapter_WrapsClient(t *testing.T) {
 	}
 
 	// Verify it satisfies the DockerClient interface
-	var _ DockerClient = adapter
+	_ = DockerClient(adapter)
 }
 
 // ============================================================

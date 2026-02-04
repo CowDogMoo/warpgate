@@ -1076,7 +1076,7 @@ func TestGetAuthor_OnlyEmail(t *testing.T) {
 	defer func() { _ = os.Setenv("HOME", originalHome) }()
 
 	author := reader.GetAuthor(ctx)
-	assert.Equal(t, "<only@email.com>", author)
+	assert.Equal(t, "only@email.com", author)
 }
 
 func TestCheckoutRef_ValidTag(t *testing.T) {
