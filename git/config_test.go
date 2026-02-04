@@ -210,6 +210,67 @@ func TestTryIncludedConfig(t *testing.T) {
 	})
 }
 
+// TestGetAuthor_NoGitConfig tests the GetAuthor path where no .gitconfig exists.
+func TestGetAuthor_NoGitConfig(t *testing.T) {
+	reader := NewConfigReader()
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	// No .gitconfig file exists in tmpDir
+	originalHome := os.Getenv("HOME")
+	t.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", originalHome) }()
+
+	author := reader.GetAuthor(ctx)
+	assert.Empty(t, author, "expected empty author when no .gitconfig exists")
+}
+
+// TestGetAuthor_IncludedConfigNoUserSection tests the path where included config
+// has no [user] section.
+func TestGetAuthor_IncludedConfigNoUserSection(t *testing.T) {
+	reader := NewConfigReader()
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+
+	// Create included config WITHOUT user section
+	includedPath := filepath.Join(tmpDir, "included.gitconfig")
+	includedContent := "[core]\n\tautocrlf = true\n"
+	require.NoError(t, os.WriteFile(includedPath, []byte(includedContent), 0644))
+
+	// Create main config with only name, referencing included config
+	mainContent := "[user]\n\tname = Main User\n[include]\n\tpath = " + includedPath + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".gitconfig"), []byte(mainContent), 0644))
+
+	originalHome := os.Getenv("HOME")
+	t.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", originalHome) }()
+
+	// Since included config has no user section, email stays empty
+	author := reader.GetAuthor(ctx)
+	assert.Equal(t, "Main User", author)
+}
+
+// TestGetAuthor_IncludedConfigEmptyPath tests the path where include section
+// exists but path is empty.
+func TestGetAuthor_IncludedConfigEmptyPath(t *testing.T) {
+	reader := NewConfigReader()
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+
+	// Create main config with include section but empty path
+	mainContent := "[user]\n\tname = User Only\n[include]\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, ".gitconfig"), []byte(mainContent), 0644))
+
+	originalHome := os.Getenv("HOME")
+	t.Setenv("HOME", tmpDir)
+	defer func() { _ = os.Setenv("HOME", originalHome) }()
+
+	author := reader.GetAuthor(ctx)
+	assert.Equal(t, "User Only", author)
+}
+
 func TestGetAuthor(t *testing.T) {
 	// Not parallel - modifies HOME
 	reader := NewConfigReader()

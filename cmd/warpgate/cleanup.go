@@ -27,6 +27,7 @@ import (
 	"fmt"
 
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
+	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/spf13/cobra"
 )
@@ -105,15 +106,10 @@ func registerCleanupCompletions(cmd *cobra.Command) {
 	})
 }
 
-func runCleanup(cmd *cobra.Command, opts *cleanupOptions) error {
-	ctx := cmd.Context()
-	cfg := configFromContext(cmd)
-	if cfg == nil {
-		return fmt.Errorf("configuration not initialized")
-	}
-
+// validateCleanupInputs validates cleanup options and resolves the AWS region.
+func validateCleanupInputs(cfg *config.Config, opts *cleanupOptions) (string, error) {
 	if opts.buildName == "" && !opts.all {
-		return fmt.Errorf("either specify a build name or use --all flag")
+		return "", fmt.Errorf("either specify a build name or use --all flag")
 	}
 
 	region := opts.region
@@ -121,7 +117,22 @@ func runCleanup(cmd *cobra.Command, opts *cleanupOptions) error {
 		region = cfg.AWS.Region
 	}
 	if region == "" {
-		return fmt.Errorf("AWS region must be specified (--region flag or in config)")
+		return "", fmt.Errorf("AWS region must be specified (--region flag or in config)")
+	}
+
+	return region, nil
+}
+
+func runCleanup(cmd *cobra.Command, opts *cleanupOptions) error {
+	ctx := cmd.Context()
+	cfg := configFromContext(cmd)
+	if cfg == nil {
+		return fmt.Errorf("configuration not initialized")
+	}
+
+	region, err := validateCleanupInputs(cfg, opts)
+	if err != nil {
+		return err
 	}
 
 	logging.InfoContext(ctx, "Connecting to AWS in region: %s", region)

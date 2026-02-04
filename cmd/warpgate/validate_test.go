@@ -24,6 +24,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,5 +84,89 @@ func TestRunValidate_InvalidYAML(t *testing.T) {
 	err := runValidate(cmd, []string{invalidFile})
 	if err == nil {
 		t.Fatal("expected error for invalid YAML")
+	}
+}
+
+func TestRunValidate_ValidConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	validFile := filepath.Join(tmpDir, "warpgate.yaml")
+
+	validConfig := `name: test-image
+base:
+  image: "ubuntu:22.04"
+targets:
+  - type: container
+provisioners:
+  - type: shell
+    inline:
+      - echo hello
+`
+	if err := os.WriteFile(validFile, []byte(validConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "validate"}
+	cmd.SetContext(ctx)
+
+	// Save and restore global
+	oldSyntaxOnly := syntaxOnly
+	defer func() { syntaxOnly = oldSyntaxOnly }()
+	syntaxOnly = true
+
+	err := runValidate(cmd, []string{validFile})
+	if err != nil {
+		t.Fatalf("runValidate() unexpected error for valid config: %v", err)
+	}
+}
+
+func TestRunValidate_SyntaxOnlyMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "warpgate.yaml")
+
+	// Config referencing nonexistent files -- should pass in syntax-only mode
+	config := `name: test-image
+base:
+  image: "ubuntu:22.04"
+targets:
+  - type: container
+provisioners:
+  - type: script
+    scripts:
+      - /nonexistent/script.sh
+`
+	if err := os.WriteFile(configFile, []byte(config), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "validate"}
+	cmd.SetContext(ctx)
+
+	oldSyntaxOnly := syntaxOnly
+	defer func() { syntaxOnly = oldSyntaxOnly }()
+	syntaxOnly = true
+
+	err := runValidate(cmd, []string{configFile})
+	if err != nil {
+		t.Fatalf("runValidate() with --syntax-only should pass even with nonexistent files: %v", err)
+	}
+}
+
+func TestRunValidate_EmptyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	emptyFile := filepath.Join(tmpDir, "warpgate.yaml")
+
+	if err := os.WriteFile(emptyFile, []byte(""), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "validate"}
+	cmd.SetContext(ctx)
+
+	err := runValidate(cmd, []string{emptyFile})
+	if err == nil {
+		t.Fatal("expected error for empty config file")
 	}
 }

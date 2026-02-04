@@ -29,8 +29,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -603,4 +606,256 @@ func TestGitOperations_URLVariations(t *testing.T) {
 			assert.NotContains(t, path, ".git")
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Helper: create a local bare git repo with a commit, tag, and branch
+// using go-git (no shell required).
+// ---------------------------------------------------------------------------
+
+// createTestGitRepoGoGit creates a bare git repo with a tag and branch,
+// returning a file:// URL suitable for cloning with go-git's built-in transport.
+func createTestGitRepoGoGit(t *testing.T) (repoURL string) {
+	t.Helper()
+
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	workDir := filepath.Join(t.TempDir(), "work")
+
+	// Init bare repo
+	_, err := git.PlainInit(bareDir, true)
+	require.NoError(t, err)
+
+	// Init work dir separately (can't clone empty bare repo)
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+
+	// Use file:// URL to force go-git's built-in transport (avoids shelling out to git)
+	_, err = repo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"file://" + bareDir},
+	})
+	require.NoError(t, err)
+
+	w, err := repo.Worktree()
+	require.NoError(t, err)
+
+	// Create a file and commit
+	err = os.WriteFile(filepath.Join(workDir, "README.md"), []byte("# Test repo"), 0644)
+	require.NoError(t, err)
+
+	_, err = w.Add("README.md")
+	require.NoError(t, err)
+
+	commitHash, err := w.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@test.com",
+			When:  time.Now(),
+		},
+	})
+	require.NoError(t, err)
+
+	// Create a tag
+	_, err = repo.CreateTag("v1.0.0", commitHash, nil)
+	require.NoError(t, err)
+
+	// Create a branch
+	err = w.Checkout(&git.CheckoutOptions{
+		Branch: "refs/heads/dev-branch",
+		Create: true,
+	})
+	require.NoError(t, err)
+
+	err = os.WriteFile(filepath.Join(workDir, "dev.txt"), []byte("dev content"), 0644)
+	require.NoError(t, err)
+	_, err = w.Add("dev.txt")
+	require.NoError(t, err)
+	_, err = w.Commit("dev commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@test.com",
+			When:  time.Now(),
+		},
+	})
+	require.NoError(t, err)
+
+	// Push all to bare using file:// transport
+	err = repo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []gitconfig.RefSpec{"refs/heads/*:refs/heads/*", "refs/tags/*:refs/tags/*"},
+	})
+	require.NoError(t, err)
+
+	return "file://" + bareDir
+}
+
+// createTestGitRepoWithTemplates creates a bare repo that contains a templates/
+// directory with a warpgate.yaml inside, returning a file:// URL.
+func createTestGitRepoWithTemplates(t *testing.T) string {
+	t.Helper()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("Skipping test: git not found in PATH")
+	}
+
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	workDir := filepath.Join(t.TempDir(), "work")
+
+	_, err := git.PlainInit(bareDir, true)
+	require.NoError(t, err)
+
+	repo, err := git.PlainInit(workDir, false)
+	require.NoError(t, err)
+
+	_, err = repo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"file://" + bareDir},
+	})
+	require.NoError(t, err)
+
+	w, err := repo.Worktree()
+	require.NoError(t, err)
+
+	// Create templates directory
+	tmplDir := filepath.Join(workDir, "templates", "test-tmpl")
+	require.NoError(t, os.MkdirAll(tmplDir, 0755))
+	tmplContent := "metadata:\n  description: Test template\n  version: 1.0.0\n  author: tester\n  tags:\n    - test\n"
+	require.NoError(t, os.WriteFile(filepath.Join(tmplDir, "warpgate.yaml"), []byte(tmplContent), 0644))
+
+	_, err = w.Add("templates")
+	require.NoError(t, err)
+	_, err = w.Commit("add templates", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@test.com",
+			When:  time.Now(),
+		},
+	})
+	require.NoError(t, err)
+
+	err = repo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []gitconfig.RefSpec{"refs/heads/*:refs/heads/*"},
+	})
+	require.NoError(t, err)
+
+	return "file://" + bareDir
+}
+
+// savedPATH is captured at init time, before any test can modify the env.
+var savedPATH = os.Getenv("PATH")
+
+// ensurePATH restores the PATH env var if it was cleared by other test cleanups.
+func ensurePATH(t *testing.T) {
+	t.Helper()
+	if os.Getenv("PATH") == "" && savedPATH != "" {
+		t.Setenv("PATH", savedPATH)
+		t.Cleanup(func() {
+			// no-op: we just need PATH available during this test
+		})
+	}
+}
+
+func TestCheckoutVersionTagAndBranch(t *testing.T) {
+	ensurePATH(t)
+	repoURL := createTestGitRepoGoGit(t)
+
+	// Test 1: Clone with tag version -- exercises clone() -> cloneWithRetry() -> checkoutVersion()
+	cacheDir1 := t.TempDir()
+	gitOps1 := NewGitOperations(cacheDir1)
+	ctx := context.Background()
+	path, err := gitOps1.clone(ctx, repoURL, "v1.0.0", filepath.Join(cacheDir1, "tag-clone"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, path)
+
+	// Test 2: Clone with branch version -- exercises the tag-fail->branch-retry path
+	cacheDir2 := t.TempDir()
+	gitOps2 := NewGitOperations(cacheDir2)
+	path2, err := gitOps2.clone(ctx, repoURL, "dev-branch", filepath.Join(cacheDir2, "branch-clone"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, path2)
+
+	// Test 3: Directly test checkoutVersion with a cloned repo that has local refs
+	cloneDir := filepath.Join(t.TempDir(), "full-clone")
+	repo, err := git.PlainClone(cloneDir, false, &git.CloneOptions{
+		URL:  repoURL,
+		Tags: git.AllTags,
+	})
+	require.NoError(t, err)
+
+	// Checkout a tag (succeeds on first try)
+	err = checkoutVersion(repo, "v1.0.0")
+	assert.NoError(t, err)
+
+	// Checkout nonexistent version - should fail both tag and branch path
+	err = checkoutVersion(repo, "nonexistent-version-xyz")
+	assert.Error(t, err)
+}
+
+func TestCloneWithSpecificTag(t *testing.T) {
+	ensurePATH(t)
+	repoURL := createTestGitRepoGoGit(t)
+	cacheDir := t.TempDir()
+	gitOps := NewGitOperations(cacheDir)
+	ctx := context.Background()
+
+	path, err := gitOps.CloneOrUpdate(ctx, repoURL, "v1.0.0")
+	require.NoError(t, err)
+	assert.NotEmpty(t, path)
+	assert.True(t, dirExists(path))
+}
+
+func TestCloneWithBranch(t *testing.T) {
+	ensurePATH(t)
+	repoURL := createTestGitRepoGoGit(t)
+	cacheDir := t.TempDir()
+	gitOps := NewGitOperations(cacheDir)
+	ctx := context.Background()
+
+	path, err := gitOps.CloneOrUpdate(ctx, repoURL, "dev-branch")
+	require.NoError(t, err)
+	assert.NotEmpty(t, path)
+	assert.True(t, dirExists(path))
+}
+
+func TestCloneInvalidURL(t *testing.T) {
+	cacheDir := t.TempDir()
+	gitOps := NewGitOperations(cacheDir)
+	ctx := context.Background()
+
+	_, err := gitOps.CloneOrUpdate(ctx, "https://nonexistent-host-that-does-not-resolve.invalid/repo.git", "")
+	assert.Error(t, err)
+}
+
+func TestPullUpdatesAlreadyUpToDate(t *testing.T) {
+	ensurePATH(t)
+	repoURL := createTestGitRepoGoGit(t)
+	cacheDir := t.TempDir()
+	gitOps := NewGitOperations(cacheDir)
+	ctx := context.Background()
+
+	path, err := gitOps.CloneOrUpdate(ctx, repoURL, "")
+	require.NoError(t, err)
+
+	err = gitOps.pullUpdates(ctx, path)
+	assert.NoError(t, err)
+}
+
+func TestPullUpdatesNotARepo(t *testing.T) {
+	cacheDir := t.TempDir()
+	gitOps := NewGitOperations(cacheDir)
+	ctx := context.Background()
+
+	err := gitOps.pullUpdates(ctx, t.TempDir())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to open repository")
+}
+
+func TestIsSpecificVersionCoverage(t *testing.T) {
+	assert.False(t, isSpecificVersion(""))
+	assert.False(t, isSpecificVersion("main"))
+	assert.False(t, isSpecificVersion("master"))
+	assert.True(t, isSpecificVersion("v1.0.0"))
+	assert.True(t, isSpecificVersion("dev-branch"))
+	assert.True(t, isSpecificVersion("latest"))
 }
