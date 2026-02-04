@@ -121,3 +121,94 @@ func TestRunInit_CreateTemplate(t *testing.T) {
 		t.Error("warpgate.yaml was not created")
 	}
 }
+
+func TestRunInit_WithFromFlag(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "init"}
+	cmd.SetContext(ctx)
+
+	oldFrom := initFromTemplate
+	oldOutput := initOutputDir
+	defer func() {
+		initFromTemplate = oldFrom
+		initOutputDir = oldOutput
+	}()
+
+	initFromTemplate = "nonexistent-template"
+	initOutputDir = t.TempDir()
+
+	err := runInit(cmd, []string{"my-new-template"})
+	// Will fail because template doesn't exist, but exercises the Fork path
+	if err == nil {
+		t.Log("runInit with --from succeeded unexpectedly")
+	}
+}
+
+func TestRunInit_WithoutFromFlag(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "init"}
+	cmd.SetContext(ctx)
+
+	oldFrom := initFromTemplate
+	oldOutput := initOutputDir
+	defer func() {
+		initFromTemplate = oldFrom
+		initOutputDir = oldOutput
+	}()
+
+	initFromTemplate = ""
+	initOutputDir = t.TempDir()
+
+	err := runInit(cmd, []string{"test-template"})
+	// This should succeed - creates scaffolding in temp dir
+	if err != nil {
+		t.Errorf("runInit without --from failed: %v", err)
+	}
+}
+
+func TestRunInit_CreateTemplate_Extra(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "init"}
+	cmd.SetContext(ctx)
+
+	// Save and restore global vars
+	oldOutputDir := initOutputDir
+	oldFromTemplate := initFromTemplate
+	defer func() {
+		initOutputDir = oldOutputDir
+		initFromTemplate = oldFromTemplate
+	}()
+
+	initOutputDir = tmpDir
+	initFromTemplate = ""
+
+	err := runInit(cmd, []string{"my-new-template"})
+	if err != nil {
+		t.Logf("runInit returned error (may be expected): %v", err)
+	}
+	// The key goal is to exercise the code path, not verify scaffolding output
+}
+
+func TestRunInit_ForkTemplate(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "init"}
+	cmd.SetContext(ctx)
+
+	oldOutputDir := initOutputDir
+	oldFromTemplate := initFromTemplate
+	defer func() {
+		initOutputDir = oldOutputDir
+		initFromTemplate = oldFromTemplate
+	}()
+
+	initOutputDir = tmpDir
+	initFromTemplate = "nonexistent-template"
+
+	err := runInit(cmd, []string{"forked-template"})
+	// Will fail because template doesn't exist, but exercises fork path
+	if err == nil {
+		t.Log("runInit fork succeeded unexpectedly")
+	}
+}

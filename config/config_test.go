@@ -1045,3 +1045,106 @@ func TestDetectOCIRuntime_ReturnsValidPathOrEmpty(t *testing.T) {
 		t.Errorf("Detected runtime is not executable: %s", runtime)
 	}
 }
+
+// TestIntegration_ConfigPrecedence tests the full precedence chain:
+// Defaults < Config File < Environment Variables
+func TestIntegration_ConfigPrecedence(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Create config file with some values
+	configContent := `registry:
+  default: ghcr.io/fromfile
+log:
+  level: info
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	// Set environment variable to override registry
+	if err := os.Setenv("WARPGATE_REGISTRY_DEFAULT", "docker.io/fromenv"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_REGISTRY_DEFAULT: %v", err)
+	}
+	if err := os.Setenv("WARPGATE_LOG_LEVEL", "debug"); err != nil {
+		t.Fatalf("Failed to set WARPGATE_LOG_LEVEL: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("WARPGATE_REGISTRY_DEFAULT"); err != nil {
+			t.Logf("Failed to unset WARPGATE_REGISTRY_DEFAULT: %v", err)
+		}
+		if err := os.Unsetenv("WARPGATE_LOG_LEVEL"); err != nil {
+			t.Logf("Failed to unset WARPGATE_LOG_LEVEL: %v", err)
+		}
+	}()
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Environment variable should win over config file
+	if config.Registry.Default != "docker.io/fromenv" {
+		t.Errorf("Expected registry 'docker.io/fromenv', got '%s'", config.Registry.Default)
+	}
+
+	if config.Log.Level != "debug" {
+		t.Errorf("Expected log level 'debug', got '%s'", config.Log.Level)
+	}
+
+	// Values not set anywhere should have defaults
+	// Template cache dir should have default value
+	if config.Templates.CacheDir == "" {
+		t.Error("Expected templates cache dir to have a default value")
+	}
+}
+
+// TestIntegration_RealWorldScenario tests a realistic user scenario
+func TestIntegration_RealWorldScenario(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Simulate a user's config (credentials NOT in config file)
+	configContent := `registry:
+  default: ghcr.io/myorg
+
+build:
+  default_arch:
+    - amd64
+    - arm64
+  parallel_builds: true
+
+log:
+  level: info
+  format: color
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	config, err := LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Verify all values loaded correctly
+	if config.Registry.Default != "ghcr.io/myorg" {
+		t.Errorf("Expected registry 'ghcr.io/myorg', got '%s'", config.Registry.Default)
+	}
+
+	if len(config.Build.DefaultArch) != 2 {
+		t.Errorf("Expected 2 architectures, got %d", len(config.Build.DefaultArch))
+	}
+
+	if !config.Build.ParallelBuilds {
+		t.Error("Expected parallel builds to be enabled")
+	}
+
+	if config.Log.Level != "info" {
+		t.Errorf("Expected log level 'info', got '%s'", config.Log.Level)
+	}
+
+	if config.Log.Format != "color" {
+		t.Errorf("Expected log format 'color', got '%s'", config.Log.Format)
+	}
+}

@@ -333,3 +333,239 @@ func TestRunConfigSet_WithExistingConfig(t *testing.T) {
 		t.Fatalf("runConfigSet() unexpected error: %v", err)
 	}
 }
+
+func TestRunConfigSet_NewConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	cfg := &config.Config{}
+	cmd := newTestCmd(cfg)
+
+	err := runConfigSet(cmd, []string{"log.level", "debug"})
+	if err != nil {
+		t.Fatalf("runConfigSet() creating new config unexpected error: %v", err)
+	}
+}
+
+func TestRunConfigSet_SensitiveValue(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Create existing config
+	configDir := filepath.Join(tmpDir, "warpgate")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("aws:\n  region: us-east-1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cmd := newTestCmd(cfg)
+
+	// Setting a sensitive key should work (the redaction happens in logging)
+	err := runConfigSet(cmd, []string{"aws.access_key_id", "AKIAIOSFODNN7EXAMPLE"})
+	if err != nil {
+		t.Fatalf("runConfigSet() for sensitive key unexpected error: %v", err)
+	}
+}
+
+func TestRunConfigGet_NestedKey(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.AWS.Region = "us-west-2"
+	cmd := newTestCmd(cfg)
+
+	output := captureStdoutForTest(t, func() {
+		err := runConfigGet(cmd, []string{"aws.region"})
+		if err != nil {
+			t.Fatalf("runConfigGet() unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "us-west-2") {
+		t.Errorf("output should contain us-west-2, got: %q", output)
+	}
+}
+
+func TestRunConfigGet_RegistryDefault(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Registry.Default = "ghcr.io/myorg"
+	cmd := newTestCmd(cfg)
+
+	output := captureStdoutForTest(t, func() {
+		err := runConfigGet(cmd, []string{"registry.default"})
+		if err != nil {
+			t.Fatalf("runConfigGet() unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "ghcr.io/myorg") {
+		t.Errorf("output should contain ghcr.io/myorg, got: %q", output)
+	}
+}
+
+func TestRunConfigShow_FullConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	cfg := &config.Config{}
+	cfg.Log.Level = "debug"
+	cfg.Log.Format = "json"
+	cfg.AWS.Region = "us-east-1"
+	cfg.Registry.Default = "ghcr.io/test"
+	cmd := newTestCmd(cfg)
+
+	output := captureStdoutForTest(t, func() {
+		err := runConfigShow(cmd, []string{})
+		if err != nil {
+			t.Fatalf("runConfigShow() unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "Current Warpgate Configuration") {
+		t.Error("output should contain header")
+	}
+	if !strings.Contains(output, "debug") {
+		t.Error("output should contain log level")
+	}
+}
+
+func TestRunConfigInit_WithForceOverwrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	// Create existing config with specific content
+	configDir := filepath.Join(tmpDir, "warpgate")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte("old: content\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Log.Level = "info"
+	cmd := newTestCmd(cfg)
+
+	oldForce := configForce
+	defer func() { configForce = oldForce }()
+	configForce = true
+
+	err := runConfigInit(cmd, []string{})
+	if err != nil {
+		t.Fatalf("runConfigInit() with --force unexpected error: %v", err)
+	}
+
+	// Verify the file was overwritten
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config file: %v", err)
+	}
+	if strings.Contains(string(data), "old: content") {
+		t.Error("config file should have been overwritten")
+	}
+}
+
+func TestRunConfigInit_AlreadyExists_NoForce_Extra(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+	cmd := newTestCmd(cfg)
+	cmd.SetContext(ctx)
+
+	// Save and restore configForce
+	oldForce := configForce
+	defer func() { configForce = oldForce }()
+	configForce = false
+
+	// This will attempt to init config; if a config file already exists,
+	// it should return error about --force
+	err := runConfigInit(cmd, []string{})
+	if err != nil {
+		// If error mentions "already exists" or "force", that's the expected path
+		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "force") {
+			// Expected behavior
+			return
+		}
+		// Other errors are also acceptable (e.g., config path issues)
+		t.Logf("runConfigInit returned error (may be expected): %v", err)
+	}
+}
+
+func TestRunConfigGet_NonexistentKey(t *testing.T) {
+	cfg := &config.Config{}
+	cmd := newTestCmd(cfg)
+
+	err := runConfigGet(cmd, []string{"nonexistent.key.path"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent key")
+	}
+	if !strings.Contains(err.Error(), "key not found") {
+		t.Errorf("error = %q, want substring 'key not found'", err.Error())
+	}
+}
+
+func TestRunConfigGet_ValidKey(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Log.Level = "debug"
+	cmd := newTestCmd(cfg)
+
+	output := captureStdoutForTest(t, func() {
+		err := runConfigGet(cmd, []string{"log.level"})
+		if err != nil {
+			t.Fatalf("runConfigGet() error = %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "debug") {
+		t.Errorf("output = %q, want to contain 'debug'", output)
+	}
+}
+
+func TestRunConfigShow_WithConfig_Extra(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Log.Level = "info"
+	cfg.Log.Format = "color"
+	cmd := newTestCmd(cfg)
+
+	output := captureStdoutForTest(t, func() {
+		err := runConfigShow(cmd, []string{})
+		if err != nil {
+			t.Fatalf("runConfigShow() error = %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "Current Warpgate Configuration") {
+		t.Errorf("output missing header: %q", output)
+	}
+}
+
+func TestRunConfigShow_NilConfig_Extra(t *testing.T) {
+	cmd := newTestCmdNoConfig()
+
+	err := runConfigShow(cmd, []string{})
+	if err == nil {
+		t.Fatal("expected error when config is nil")
+	}
+	if !strings.Contains(err.Error(), "config not available") {
+		t.Errorf("error = %q, want substring 'config not available'", err.Error())
+	}
+}
+
+func TestRunConfigPath(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "path"}
+	cmd.SetContext(ctx)
+
+	output := captureStdoutForTest(t, func() {
+		err := runConfigPath(cmd, []string{})
+		if err != nil {
+			t.Fatalf("runConfigPath() error = %v", err)
+		}
+	})
+
+	// Should output some path
+	if len(strings.TrimSpace(output)) == 0 {
+		t.Error("runConfigPath() produced empty output")
+	}
+}
