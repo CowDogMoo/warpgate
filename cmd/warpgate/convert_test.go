@@ -108,8 +108,6 @@ func TestResolveTemplatePath_NonexistentDir(t *testing.T) {
 }
 
 func TestDetermineOutputPath_Default(t *testing.T) {
-	t.Parallel()
-
 	tmpDir := t.TempDir()
 
 	// Save and restore convertOpts
@@ -129,8 +127,6 @@ func TestDetermineOutputPath_Default(t *testing.T) {
 }
 
 func TestDetermineOutputPath_CustomOutput(t *testing.T) {
-	t.Parallel()
-
 	tmpDir := t.TempDir()
 	outputFile := filepath.Join(tmpDir, "custom.yaml")
 
@@ -149,8 +145,6 @@ func TestDetermineOutputPath_CustomOutput(t *testing.T) {
 }
 
 func TestDetermineOutputPath_DirectoryAsOutput(t *testing.T) {
-	t.Parallel()
-
 	tmpDir := t.TempDir()
 
 	oldOpts := *convertOpts
