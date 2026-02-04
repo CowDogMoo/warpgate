@@ -57,6 +57,10 @@ type ClientConfig struct {
 	SessionToken    string
 }
 
+// loadAWSConfig is the function used to load AWS SDK configuration.
+// It can be overridden in tests to avoid calling the real AWS SDK.
+var loadAWSConfig = config.LoadDefaultConfig
+
 // NewAWSClients creates a new set of AWS clients with the given configuration
 func NewAWSClients(ctx context.Context, cfg ClientConfig) (*AWSClients, error) {
 	var optFns []func(*config.LoadOptions) error
@@ -82,7 +86,7 @@ func NewAWSClients(ctx context.Context, cfg ClientConfig) (*AWSClients, error) {
 	}
 
 	// Load AWS config
-	awsCfg, err := config.LoadDefaultConfig(ctx, optFns...)
+	awsCfg, err := loadAWSConfig(ctx, optFns...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}

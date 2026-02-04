@@ -865,6 +865,288 @@ func TestConvertWithNestedPostProcessors(t *testing.T) {
 	assert.True(t, containerTarget.Push)
 }
 
+func TestProvisionersMatchDirect(t *testing.T) {
+	converter, err := NewPackerConverter(PackerConverterOptions{})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		p1       []builder.Provisioner
+		p2       []builder.Provisioner
+		expected bool
+	}{
+		{
+			name:     "empty lists match",
+			p1:       []builder.Provisioner{},
+			p2:       []builder.Provisioner{},
+			expected: true,
+		},
+		{
+			name:     "both nil match",
+			p1:       nil,
+			p2:       nil,
+			expected: true,
+		},
+		{
+			name:     "same shell types match",
+			p1:       []builder.Provisioner{{Type: "shell"}},
+			p2:       []builder.Provisioner{{Type: "shell"}},
+			expected: true,
+		},
+		{
+			name:     "same ansible types and playbook match",
+			p1:       []builder.Provisioner{{Type: "ansible", PlaybookPath: "/playbook.yml"}},
+			p2:       []builder.Provisioner{{Type: "ansible", PlaybookPath: "/playbook.yml"}},
+			expected: true,
+		},
+		{
+			name:     "different lengths do not match",
+			p1:       []builder.Provisioner{{Type: "shell"}},
+			p2:       []builder.Provisioner{{Type: "shell"}, {Type: "ansible"}},
+			expected: false,
+		},
+		{
+			name:     "different types do not match",
+			p1:       []builder.Provisioner{{Type: "shell"}},
+			p2:       []builder.Provisioner{{Type: "ansible"}},
+			expected: false,
+		},
+		{
+			name:     "different ansible playbook paths do not match",
+			p1:       []builder.Provisioner{{Type: "ansible", PlaybookPath: "/path1.yml"}},
+			p2:       []builder.Provisioner{{Type: "ansible", PlaybookPath: "/path2.yml"}},
+			expected: false,
+		},
+		{
+			name: "multiple provisioners match",
+			p1: []builder.Provisioner{
+				{Type: "shell"},
+				{Type: "ansible", PlaybookPath: "/playbook.yml"},
+			},
+			p2: []builder.Provisioner{
+				{Type: "shell"},
+				{Type: "ansible", PlaybookPath: "/playbook.yml"},
+			},
+			expected: true,
+		},
+		{
+			name:     "non-ansible types only check type",
+			p1:       []builder.Provisioner{{Type: "file", PlaybookPath: "/path1"}},
+			p2:       []builder.Provisioner{{Type: "file", PlaybookPath: "/path2"}},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := converter.provisionersMatch(tt.p1, tt.p2)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestConvertWithAMIProvisioners(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create README.md
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test AMI"), 0644)
+	require.NoError(t, err)
+
+	// Create ami.pkr.hcl (no docker.pkr.hcl so AMI provisioners become primary)
+	amiContent := `build {
+  provisioner "shell" {
+    inline = ["yum update -y"]
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "ami.pkr.hcl"), []byte(amiContent), 0644)
+	require.NoError(t, err)
+
+	converter, err := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+	require.NoError(t, err)
+
+	config, err := converter.Convert(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// When no docker provisioners exist, AMI provisioners should be used
+	assert.Len(t, config.Provisioners, 1)
+	assert.Equal(t, "shell", config.Provisioners[0].Type)
+	assert.Contains(t, config.Provisioners[0].Inline, "yum update -y")
+}
+
+func TestConvertWithDifferentDockerAndAMIProvisioners(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test"), 0644)
+	require.NoError(t, err)
+
+	// Create docker.pkr.hcl
+	dockerContent := `build {
+  provisioner "shell" {
+    inline = ["apt-get update"]
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "docker.pkr.hcl"), []byte(dockerContent), 0644)
+	require.NoError(t, err)
+
+	// Create ami.pkr.hcl with different provisioners
+	amiContent := `build {
+  provisioner "shell" {
+    inline = ["yum update -y"]
+  }
+  provisioner "ansible" {
+    playbook_file = "/playbook.yml"
+  }
+}`
+	err = os.WriteFile(filepath.Join(tmpDir, "ami.pkr.hcl"), []byte(amiContent), 0644)
+	require.NoError(t, err)
+
+	converter, err := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test",
+		License:     "MIT",
+		Version:     "1.0.0",
+	})
+	require.NoError(t, err)
+
+	config, err := converter.Convert(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Docker provisioners should be used (primary), even though AMI differs
+	assert.Len(t, config.Provisioners, 1)
+	assert.Equal(t, "shell", config.Provisioners[0].Type)
+}
+
+func TestExtractDockerTargetConfigWithIgnoredPostProcessors(t *testing.T) {
+	converter, err := NewPackerConverter(PackerConverterOptions{})
+	require.NoError(t, err)
+
+	builds := []PackerBuild{
+		{
+			PostProcessors: []PackerPostProcessor{
+				{Type: "manifest"},
+				{Type: "compress"},
+				{Type: "checksum"},
+			},
+		},
+	}
+
+	registry, tags, push := converter.extractDockerTargetConfig(context.Background(), builds)
+	assert.Empty(t, registry)
+	assert.Nil(t, tags)
+	assert.False(t, push)
+}
+
+func TestConvertWithDefaultVersionAndLicense(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte("# Test"), 0644)
+	require.NoError(t, err)
+
+	// Convert with no version/license specified - should use config defaults
+	converter, err := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+		Author:      "Test",
+	})
+	require.NoError(t, err)
+
+	config, err := converter.Convert(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, config)
+
+	// Version and license should come from global config defaults
+	assert.NotEmpty(t, config.Metadata.Version)
+	assert.NotEmpty(t, config.Metadata.License)
+}
+
+func TestExtractDescription_ReadmeWithDashItems(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	readmeContent := `# My Template
+
+- Feature 1
+- Feature 2
+
+Actual description after list items.`
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(readmeContent), 0644)
+	require.NoError(t, err)
+
+	converter, err := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+	})
+	require.NoError(t, err)
+
+	result := converter.extractDescription(context.Background())
+	// Should skip the dash lines and get the actual description
+	assert.Equal(t, "Actual description after list items.", result)
+}
+
+func TestExtractDescription_ReadmeWithMultipleHeaders(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	readmeContent := `# Main Header
+
+## Sub Header
+
+Description under subheader.`
+	err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(readmeContent), 0644)
+	require.NoError(t, err)
+
+	converter, err := NewPackerConverter(PackerConverterOptions{
+		TemplateDir: tmpDir,
+	})
+	require.NoError(t, err)
+
+	result := converter.extractDescription(context.Background())
+	// Should skip headers (lines starting with #) after the first one
+	assert.Equal(t, "Description under subheader.", result)
+}
+
+func TestParseAnsibleExtraArgsEdgeCases(t *testing.T) {
+	converter, err := NewPackerConverter(PackerConverterOptions{})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		args     []string
+		expected map[string]string
+	}{
+		{
+			name:     "trailing -e without value",
+			args:     []string{"-e"},
+			expected: map[string]string{},
+		},
+		{
+			name:     "trailing --extra-vars without value",
+			args:     []string{"--extra-vars"},
+			expected: map[string]string{},
+		},
+		{
+			name:     "-e with value missing equals",
+			args:     []string{"-e", "noequalshere"},
+			expected: map[string]string{},
+		},
+		{
+			name:     "nil args",
+			args:     nil,
+			expected: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := converter.parseAnsibleExtraArgs(tt.args)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestExtractDockerTargetConfig(t *testing.T) {
 	converter, err := NewPackerConverter(PackerConverterOptions{})
 	require.NoError(t, err)

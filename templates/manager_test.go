@@ -26,6 +26,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/config"
@@ -370,5 +371,230 @@ func TestRemoveFromRepositories_NotFound(t *testing.T) {
 
 	if len(manager.config.Templates.Repositories) != 1 {
 		t.Error("removeFromRepositories() should not modify repositories when key not found")
+	}
+}
+
+func TestAddGitRepository_InvalidURL(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			Repositories: make(map[string]string),
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	err := manager.AddGitRepository(ctx, "bad", "not-a-url-at-all")
+	if err == nil {
+		t.Fatal("AddGitRepository() expected error for non-URL string, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid Git URL") {
+		t.Errorf("AddGitRepository() error = %v, want error containing 'invalid Git URL'", err)
+	}
+}
+
+func TestAddGitRepository_PlaceholderURL(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			Repositories: make(map[string]string),
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	err := manager.AddGitRepository(ctx, "placeholder", "https://example.com/user/repo.git")
+	if err == nil {
+		t.Fatal("AddGitRepository() expected error for placeholder URL, got nil")
+	}
+	if !strings.Contains(err.Error(), "placeholder") {
+		t.Errorf("AddGitRepository() error = %v, want error containing 'placeholder'", err)
+	}
+}
+
+func TestAddGitRepository_DuplicateName(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			Repositories: map[string]string{
+				"existing": "https://github.com/acme/templates.git",
+			},
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	// Same name, different URL should error
+	err := manager.AddGitRepository(ctx, "existing", "https://github.com/acme/different.git")
+	if err == nil {
+		t.Fatal("AddGitRepository() expected error for duplicate name with different URL, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("AddGitRepository() error = %v, want error containing 'already exists'", err)
+	}
+}
+
+func TestAddGitRepository_NilRepositories(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			Repositories: nil,
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	// This will fail at saveConfigValue, but the repositories map should be initialized
+	_ = manager.AddGitRepository(ctx, "test", "https://github.com/acme/templates.git")
+
+	if manager.config.Templates.Repositories == nil {
+		t.Error("AddGitRepository() should initialize nil repositories map")
+	}
+}
+
+func TestAddLocalPath_Expansion(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			LocalPaths: []string{},
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	// Test with non-existent path (should fail validation)
+	err := manager.AddLocalPath(ctx, filepath.Join(tmpDir, "nonexistent"))
+	if err == nil {
+		t.Error("AddLocalPath() expected error for non-existent path, got nil")
+	}
+}
+
+func TestAddLocalPath_AlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	// Skip if config file doesn't exist
+	configPath, err := config.ConfigFile("config.yaml")
+	if err != nil || !fileExists(configPath) {
+		t.Skip("Skipping test that requires config file persistence")
+	}
+
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			LocalPaths: []string{tmpDir},
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	// Adding same path again should not error (warn only)
+	err = manager.AddLocalPath(ctx, tmpDir)
+	if err != nil {
+		t.Errorf("AddLocalPath() with duplicate path error = %v, want nil (warn only)", err)
+	}
+
+	// Should still have only one entry
+	if len(manager.config.Templates.LocalPaths) != 1 {
+		t.Errorf("AddLocalPath() local_paths length = %d, want 1", len(manager.config.Templates.LocalPaths))
+	}
+}
+
+func TestRemoveSource_FromLocalPaths(t *testing.T) {
+	t.Parallel()
+
+	// Skip if config file doesn't exist
+	configPath, err := config.ConfigFile("config.yaml")
+	if err != nil || !fileExists(configPath) {
+		t.Skip("Skipping test that requires config file persistence")
+	}
+
+	tmpDir := t.TempDir()
+	keepPath := filepath.Join(tmpDir, "keep")
+	removePath := filepath.Join(tmpDir, "remove")
+	_ = os.MkdirAll(keepPath, 0755)
+	_ = os.MkdirAll(removePath, 0755)
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			LocalPaths:   []string{keepPath, removePath},
+			Repositories: map[string]string{},
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	err = manager.RemoveSource(ctx, removePath)
+	if err != nil {
+		t.Errorf("RemoveSource() error = %v", err)
+	}
+
+	if len(manager.config.Templates.LocalPaths) != 1 {
+		t.Errorf("RemoveSource() local_paths length = %d, want 1", len(manager.config.Templates.LocalPaths))
+	}
+	if manager.config.Templates.LocalPaths[0] != keepPath {
+		t.Errorf("RemoveSource() remaining path = %s, want %s", manager.config.Templates.LocalPaths[0], keepPath)
+	}
+}
+
+func TestRemoveSource_FromRepos(t *testing.T) {
+	t.Parallel()
+
+	// Skip if config file doesn't exist
+	configPath, err := config.ConfigFile("config.yaml")
+	if err != nil || !fileExists(configPath) {
+		t.Skip("Skipping test that requires config file persistence")
+	}
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			LocalPaths: []string{},
+			Repositories: map[string]string{
+				"keep":   "https://github.com/keep/repo.git",
+				"remove": "https://github.com/remove/repo.git",
+			},
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	err = manager.RemoveSource(ctx, "remove")
+	if err != nil {
+		t.Errorf("RemoveSource() error = %v", err)
+	}
+
+	if len(manager.config.Templates.Repositories) != 1 {
+		t.Errorf("RemoveSource() repositories length = %d, want 1", len(manager.config.Templates.Repositories))
+	}
+	if _, exists := manager.config.Templates.Repositories["remove"]; exists {
+		t.Error("RemoveSource() did not remove 'remove' repository")
+	}
+}
+
+func TestRemoveSource_NotFoundEmpty(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		Templates: config.TemplatesConfig{
+			LocalPaths:   []string{"/some/path"},
+			Repositories: map[string]string{"repo": "https://github.com/repo/repo.git"},
+		},
+	}
+	manager := NewManager(cfg)
+	ctx := context.Background()
+
+	err := manager.RemoveSource(ctx, "does-not-exist-anywhere")
+	if err == nil {
+		t.Error("RemoveSource() expected error for non-existent source, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("RemoveSource() error = %v, want error containing 'not found'", err)
 	}
 }

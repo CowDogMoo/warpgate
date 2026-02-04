@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -301,9 +302,12 @@ func TestBatchDeleteComponents_Success(t *testing.T) {
 	clients, mocks := newMockAWSClients()
 	bo := NewBatchOperations(clients)
 
+	var mu sync.Mutex
 	var deletedARNs []string
 	mocks.imageBuilder.DeleteComponentFunc = func(ctx context.Context, params *imagebuilder.DeleteComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteComponentOutput, error) {
+		mu.Lock()
 		deletedARNs = append(deletedARNs, aws.ToString(params.ComponentBuildVersionArn))
+		mu.Unlock()
 		return &imagebuilder.DeleteComponentOutput{}, nil
 	}
 

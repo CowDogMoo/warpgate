@@ -309,6 +309,190 @@ func TestCacheFile_WithoutXDGCacheHome(t *testing.T) {
 	}
 }
 
+// TestGetConfigHome_WithXDGConfigHome tests getConfigHome with XDG_CONFIG_HOME set
+func TestGetConfigHome_WithXDGConfigHome(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	result := getConfigHome()
+	if result != tmpDir {
+		t.Errorf("Expected %s, got %s", tmpDir, result)
+	}
+}
+
+// TestGetConfigHome_WithoutXDGConfigHome tests getConfigHome falls back to ~/.config
+func TestGetConfigHome_WithoutXDGConfigHome(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	result := getConfigHome()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("Cannot get home directory")
+	}
+
+	expected := filepath.Join(home, ".config")
+	if result != expected {
+		t.Errorf("Expected %s, got %s", expected, result)
+	}
+}
+
+// TestGetCacheHome_WithXDGCacheHome tests getCacheHome with XDG_CACHE_HOME set
+func TestGetCacheHome_WithXDGCacheHome(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", tmpDir)
+
+	result := getCacheHome()
+	if result != tmpDir {
+		t.Errorf("Expected %s, got %s", tmpDir, result)
+	}
+}
+
+// TestGetCacheHome_WithoutXDGCacheHome tests getCacheHome falls back to ~/.cache
+func TestGetCacheHome_WithoutXDGCacheHome(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", "")
+
+	result := getCacheHome()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("Cannot get home directory")
+	}
+
+	expected := filepath.Join(home, ".cache")
+	if result != expected {
+		t.Errorf("Expected %s, got %s", expected, result)
+	}
+}
+
+// TestGetConfigDirs_LegacyPath tests that legacy ~/.warpgate is always included
+func TestGetConfigDirs_LegacyPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	dirs := GetConfigDirs()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("Cannot get home directory")
+	}
+
+	legacyPath := filepath.Join(home, ".warpgate")
+	found := false
+	for _, dir := range dirs {
+		if dir == legacyPath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected legacy path %s in dirs %v", legacyPath, dirs)
+	}
+}
+
+// TestGetConfigDirs_EmptyXDGConfigDirs tests that empty entries in XDG_CONFIG_DIRS are skipped
+func TestGetConfigDirs_EmptyXDGConfigDirs(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "freebsd" && runtime.GOOS != "openbsd" {
+		t.Skip("XDG_CONFIG_DIRS only applies on Linux/BSD")
+	}
+
+	// Set XDG_CONFIG_DIRS with empty entries (simulates trailing colons)
+	t.Setenv("XDG_CONFIG_DIRS", ":/tmp/custom:")
+
+	dirs := GetConfigDirs()
+
+	// Should include /tmp/custom/warpgate but not empty entries
+	foundCustom := false
+	for _, dir := range dirs {
+		if dir == "/tmp/custom/warpgate" {
+			foundCustom = true
+		}
+		// Verify no empty-based paths
+		if dir == "/warpgate" || dir == "warpgate" {
+			t.Errorf("Found entry from empty XDG_CONFIG_DIRS component: %s", dir)
+		}
+	}
+	if !foundCustom {
+		t.Errorf("Expected to find /tmp/custom/warpgate in dirs %v", dirs)
+	}
+}
+
+// TestConfigFile_NestedSubdirectory tests ConfigFile with deeply nested path
+func TestConfigFile_NestedSubdirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	path, err := ConfigFile("deep/nested/sub/config.yaml")
+	if err != nil {
+		t.Fatalf("ConfigFile failed: %v", err)
+	}
+
+	expected := filepath.Join(tmpDir, "warpgate", "deep", "nested", "sub", "config.yaml")
+	if path != expected {
+		t.Errorf("Expected path %s, got %s", expected, path)
+	}
+
+	// Verify all parent directories were created
+	dir := filepath.Dir(path)
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("Parent directory not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("Expected %s to be a directory", dir)
+	}
+}
+
+// TestCacheFile_NestedSubdirectory tests CacheFile with deeply nested path
+func TestCacheFile_NestedSubdirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", tmpDir)
+
+	path, err := CacheFile("deep/nested/cache.db")
+	if err != nil {
+		t.Fatalf("CacheFile failed: %v", err)
+	}
+
+	expected := filepath.Join(tmpDir, "warpgate", "deep", "nested", "cache.db")
+	if path != expected {
+		t.Errorf("Expected path %s, got %s", expected, path)
+	}
+
+	dir := filepath.Dir(path)
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("Parent directory not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("Expected %s to be a directory", dir)
+	}
+}
+
+// TestGetConfigDirs_CountAndOrder verifies the number and order of config directories
+func TestGetConfigDirs_CountAndOrder(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	dirs := GetConfigDirs()
+
+	// Should have at least 2 entries: XDG config home + legacy path
+	if len(dirs) < 2 {
+		t.Errorf("Expected at least 2 config dirs, got %d: %v", len(dirs), dirs)
+	}
+
+	// First should be XDG based
+	expectedFirst := filepath.Join(tmpDir, "warpgate")
+	if dirs[0] != expectedFirst {
+		t.Errorf("Expected first dir to be %s, got %s", expectedFirst, dirs[0])
+	}
+
+	// Second should be legacy
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("Cannot get home directory")
+	}
+	expectedSecond := filepath.Join(home, ".warpgate")
+	if dirs[1] != expectedSecond {
+		t.Errorf("Expected second dir to be %s, got %s", expectedSecond, dirs[1])
+	}
+}
+
 // TestCacheFile_CreatesParentDirs tests that CacheFile creates parent directories
 func TestCacheFile_CreatesParentDirs(t *testing.T) {
 	tmpDir := t.TempDir()

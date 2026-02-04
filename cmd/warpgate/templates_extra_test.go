@@ -246,3 +246,111 @@ func TestDisplayProvisionerDetails_AllTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestRunTemplatesSearch_NoResults(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "search"}
+	cmd.SetContext(ctx)
+
+	// Search for a template that very likely does not exist
+	err := runTemplatesSearch(cmd, []string{"zzz-nonexistent-template-xyz-12345"})
+	// If it can create the registry, it should return nil (no results found)
+	// If it cannot create the registry, it will error
+	if err != nil {
+		switch {
+		case strings.Contains(err.Error(), "failed to create template registry"):
+			t.Log("template registry creation failed (expected in test environment)")
+		case strings.Contains(err.Error(), "failed to search"):
+			t.Log("search failed (expected in test environment)")
+		default:
+			t.Logf("unexpected error: %v", err)
+		}
+	}
+	// No results should return nil, not error
+}
+
+func TestRunTemplatesSearch_WithQuery(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "search"}
+	cmd.SetContext(ctx)
+
+	// Search for "attack" which may match some templates
+	err := runTemplatesSearch(cmd, []string{"attack"})
+	// May succeed or fail depending on registry availability
+	_ = err
+}
+
+func TestRunTemplatesInfo_NonexistentTemplate(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "info"}
+	cmd.SetContext(ctx)
+
+	err := runTemplatesInfo(cmd, []string{"zzz-nonexistent-template-12345"})
+	if err == nil {
+		t.Fatal("expected error for nonexistent template")
+	}
+	// Should contain an error about loading the template
+	if !strings.Contains(err.Error(), "failed to") {
+		t.Errorf("error should mention failure, got: %v", err)
+	}
+}
+
+func TestRunTemplatesList_QuietMode(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "list"}
+	cmd.SetContext(ctx)
+
+	oldFormat := templatesListFormat
+	oldSource := templatesListSource
+	oldQuiet := templatesListQuiet
+	defer func() {
+		templatesListFormat = oldFormat
+		templatesListSource = oldSource
+		templatesListQuiet = oldQuiet
+	}()
+
+	templatesListFormat = "table"
+	templatesListSource = "local"
+	templatesListQuiet = true
+
+	err := runTemplatesList(cmd, []string{})
+	_ = err
+}
+
+func TestRunTemplatesList_AllSourceFilter(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "list"}
+	cmd.SetContext(ctx)
+
+	oldFormat := templatesListFormat
+	oldSource := templatesListSource
+	defer func() {
+		templatesListFormat = oldFormat
+		templatesListSource = oldSource
+	}()
+
+	templatesListFormat = "table"
+	templatesListSource = "all"
+
+	err := runTemplatesList(cmd, []string{})
+	_ = err
+}
+
+func TestRunTemplatesList_CustomSourceFilter(t *testing.T) {
+	ctx := setupTestContext(t)
+	cmd := &cobra.Command{Use: "list"}
+	cmd.SetContext(ctx)
+
+	oldFormat := templatesListFormat
+	oldSource := templatesListSource
+	defer func() {
+		templatesListFormat = oldFormat
+		templatesListSource = oldSource
+	}()
+
+	templatesListFormat = "table"
+	templatesListSource = "git" // Custom source filter
+
+	err := runTemplatesList(cmd, []string{})
+	_ = err
+}

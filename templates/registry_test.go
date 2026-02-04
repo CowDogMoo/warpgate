@@ -26,6 +26,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -509,6 +510,316 @@ func TestTemplateRegistryListUnknownRepo(t *testing.T) {
 	expected := "unknown repository: nonexistent"
 	if err.Error() != expected {
 		t.Errorf("Expected error %q, got %q", expected, err.Error())
+	}
+}
+
+func TestDiscoverTemplates(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	// Create templates directory structure with two templates
+	tmplDir1 := filepath.Join(tmpDir, "templates", "tmpl-one")
+	tmplDir2 := filepath.Join(tmpDir, "templates", "tmpl-two")
+	tmplDir3 := filepath.Join(tmpDir, "templates", "no-config")
+	if err := os.MkdirAll(tmplDir1, 0o755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+	if err := os.MkdirAll(tmplDir2, 0o755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+	if err := os.MkdirAll(tmplDir3, 0o755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+
+	// Write valid warpgate.yaml for tmpl-one
+	config1 := []byte("metadata:\n  description: Template one\n  version: 1.0.0\n  author: tester\n  tags:\n    - test\n")
+	if err := os.WriteFile(filepath.Join(tmplDir1, "warpgate.yaml"), config1, 0o644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	// Write valid warpgate.yaml for tmpl-two
+	config2 := []byte("metadata:\n  description: Template two\n  version: 2.0.0\n  author: tester\n  tags:\n    - other\n")
+	if err := os.WriteFile(filepath.Join(tmplDir2, "warpgate.yaml"), config2, 0o644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	// tmpl-three has no warpgate.yaml and should be skipped
+
+	registry := &TemplateRegistry{
+		repos:         map[string]string{},
+		cacheDir:      t.TempDir(),
+		pathValidator: NewPathValidator(),
+	}
+
+	templates, err := registry.discoverTemplates(tmpDir)
+	if err != nil {
+		t.Fatalf("discoverTemplates() error = %v", err)
+	}
+
+	if len(templates) != 2 {
+		t.Fatalf("discoverTemplates() returned %d templates, want 2", len(templates))
+	}
+
+	// Verify template names (order may vary)
+	names := map[string]bool{}
+	for _, tmpl := range templates {
+		names[tmpl.Name] = true
+	}
+	if !names["tmpl-one"] {
+		t.Error("discoverTemplates() missing tmpl-one")
+	}
+	if !names["tmpl-two"] {
+		t.Error("discoverTemplates() missing tmpl-two")
+	}
+}
+
+func TestDiscoverTemplates_NoTemplatesDir(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	registry := &TemplateRegistry{
+		repos:         map[string]string{},
+		cacheDir:      t.TempDir(),
+		pathValidator: NewPathValidator(),
+	}
+
+	_, err := registry.discoverTemplates(tmpDir)
+	if err == nil {
+		t.Fatal("discoverTemplates() expected error for missing templates dir, got nil")
+	}
+}
+
+func TestLoadTemplateInfo_Valid(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "warpgate.yaml")
+
+	content := []byte("metadata:\n  description: Test desc\n  version: 1.0.0\n  author: Test Author\n  tags:\n    - foo\n    - bar\n")
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	registry := &TemplateRegistry{
+		pathValidator: NewPathValidator(),
+	}
+
+	info, err := registry.loadTemplateInfo(configPath, "my-template")
+	if err != nil {
+		t.Fatalf("loadTemplateInfo() error = %v", err)
+	}
+
+	if info.Name != "my-template" {
+		t.Errorf("loadTemplateInfo() Name = %q, want %q", info.Name, "my-template")
+	}
+	if info.Description != "Test desc" {
+		t.Errorf("loadTemplateInfo() Description = %q, want %q", info.Description, "Test desc")
+	}
+	if info.Version != "1.0.0" {
+		t.Errorf("loadTemplateInfo() Version = %q, want %q", info.Version, "1.0.0")
+	}
+	if info.Author != "Test Author" {
+		t.Errorf("loadTemplateInfo() Author = %q, want %q", info.Author, "Test Author")
+	}
+	if len(info.Tags) != 2 {
+		t.Errorf("loadTemplateInfo() Tags length = %d, want 2", len(info.Tags))
+	}
+}
+
+func TestLoadTemplateInfo_InvalidYAML(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "warpgate.yaml")
+
+	content := []byte("this is: [not: valid: yaml: {{{")
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	registry := &TemplateRegistry{
+		pathValidator: NewPathValidator(),
+	}
+
+	_, err := registry.loadTemplateInfo(configPath, "bad")
+	if err == nil {
+		t.Fatal("loadTemplateInfo() expected error for invalid YAML, got nil")
+	}
+}
+
+func TestLoadTemplateInfo_NonExistentFile(t *testing.T) {
+	t.Parallel()
+
+	registry := &TemplateRegistry{
+		pathValidator: NewPathValidator(),
+	}
+
+	_, err := registry.loadTemplateInfo("/nonexistent/path/warpgate.yaml", "missing")
+	if err == nil {
+		t.Fatal("loadTemplateInfo() expected error for non-existent file, got nil")
+	}
+}
+
+func TestUpdateCache_UnknownRepo(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	registry := &TemplateRegistry{
+		repos:         map[string]string{},
+		cacheDir:      tmpDir,
+		pathValidator: NewPathValidator(),
+	}
+
+	err := registry.UpdateCache(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("UpdateCache() expected error for unknown repo, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown repository") {
+		t.Errorf("UpdateCache() error = %v, want error containing 'unknown repository'", err)
+	}
+}
+
+func TestUpdateAllCaches_EmptyRepos(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	registry := &TemplateRegistry{
+		repos:         map[string]string{},
+		cacheDir:      tmpDir,
+		pathValidator: NewPathValidator(),
+	}
+
+	err := registry.UpdateAllCaches(context.Background())
+	// With no repos, should succeed with no errors
+	if err != nil {
+		t.Errorf("UpdateAllCaches() with empty repos error = %v, want nil", err)
+	}
+}
+
+func TestScanLocalPaths_ValidPaths(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+
+	// Create a local path with templates
+	localPath := filepath.Join(tmpDir, "local-templates")
+	tmplDir := filepath.Join(localPath, "templates", "my-tmpl")
+	if err := os.MkdirAll(tmplDir, 0o755); err != nil {
+		t.Fatalf("Failed to create dir: %v", err)
+	}
+	content := []byte("metadata:\n  description: Local template\n  version: 1.0.0\n  author: tester\n  tags:\n    - local\n")
+	if err := os.WriteFile(filepath.Join(tmplDir, "warpgate.yaml"), content, 0o644); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	registry := &TemplateRegistry{
+		repos:         map[string]string{},
+		localPaths:    []string{localPath},
+		cacheDir:      t.TempDir(),
+		pathValidator: NewPathValidator(),
+	}
+
+	templates := registry.scanLocalPaths(context.Background())
+
+	if len(templates) != 1 {
+		t.Fatalf("scanLocalPaths() returned %d templates, want 1", len(templates))
+	}
+	if templates[0].Name != "my-tmpl" {
+		t.Errorf("scanLocalPaths() template name = %q, want %q", templates[0].Name, "my-tmpl")
+	}
+	if !strings.Contains(templates[0].Repository, "local:") {
+		t.Errorf("scanLocalPaths() repository = %q, want prefix 'local:'", templates[0].Repository)
+	}
+}
+
+func TestScanLocalPaths_InvalidPaths(t *testing.T) {
+	t.Parallel()
+
+	registry := &TemplateRegistry{
+		repos:         map[string]string{},
+		localPaths:    []string{"/nonexistent/path/that/does/not/exist"},
+		cacheDir:      t.TempDir(),
+		pathValidator: NewPathValidator(),
+	}
+
+	// Should not panic, just return empty
+	templates := registry.scanLocalPaths(context.Background())
+	if len(templates) != 0 {
+		t.Errorf("scanLocalPaths() with invalid paths returned %d templates, want 0", len(templates))
+	}
+}
+
+func TestScanLocalPaths_GitURL(t *testing.T) {
+	t.Parallel()
+
+	registry := &TemplateRegistry{
+		repos:         map[string]string{},
+		localPaths:    []string{"https://github.com/user/repo.git"},
+		cacheDir:      t.TempDir(),
+		pathValidator: NewPathValidator(),
+	}
+
+	// Git URLs should be skipped by scanLocalPaths
+	templates := registry.scanLocalPaths(context.Background())
+	if len(templates) != 0 {
+		t.Errorf("scanLocalPaths() with git URL returned %d templates, want 0", len(templates))
+	}
+}
+
+func TestCacheSaveAndLoad(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	registry := &TemplateRegistry{
+		repos: map[string]string{
+			"test": "https://github.com/test/repo.git",
+		},
+		cacheDir:      tmpDir,
+		pathValidator: NewPathValidator(),
+	}
+
+	templates := []TemplateInfo{
+		{Name: "tmpl-a", Description: "Template A", Version: "1.0.0", Tags: []string{"a"}},
+		{Name: "tmpl-b", Description: "Template B", Version: "2.0.0", Tags: []string{"b"}},
+	}
+
+	// Save
+	err := registry.saveCache("test-repo", templates)
+	if err != nil {
+		t.Fatalf("saveCache() error = %v", err)
+	}
+
+	// Load
+	cache, err := registry.loadCache("test-repo")
+	if err != nil {
+		t.Fatalf("loadCache() error = %v", err)
+	}
+
+	if cache == nil {
+		t.Fatal("loadCache() returned nil")
+	}
+	if len(cache.Templates) != 2 {
+		t.Errorf("loadCache() Templates length = %d, want 2", len(cache.Templates))
+	}
+	if cache.Templates["tmpl-a"].Description != "Template A" {
+		t.Errorf("loadCache() tmpl-a description = %q, want %q", cache.Templates["tmpl-a"].Description, "Template A")
+	}
+}
+
+func TestLoadCache_NonExistent(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	registry := &TemplateRegistry{
+		cacheDir:      tmpDir,
+		pathValidator: NewPathValidator(),
+	}
+
+	_, err := registry.loadCache("does-not-exist")
+	if err == nil {
+		t.Fatal("loadCache() expected error for non-existent cache, got nil")
 	}
 }
 

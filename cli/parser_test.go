@@ -24,6 +24,9 @@ package cli
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseKeyValue(t *testing.T) {
@@ -376,5 +379,112 @@ func TestValidateKeyValueFormat(t *testing.T) {
 				t.Errorf("ValidateKeyValueFormat() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseLabelsAndBuildArgs(t *testing.T) {
+	parser := NewParser()
+
+	tests := []struct {
+		name          string
+		labels        []string
+		buildArgs     []string
+		wantLabels    map[string]string
+		wantBuildArgs map[string]string
+		wantErr       bool
+		errContains   string
+	}{
+		{
+			name:      "both valid labels and build args",
+			labels:    []string{"env=prod", "version=1.0"},
+			buildArgs: []string{"GO_VERSION=1.25", "DEBUG=true"},
+			wantLabels: map[string]string{
+				"env":     "prod",
+				"version": "1.0",
+			},
+			wantBuildArgs: map[string]string{
+				"GO_VERSION": "1.25",
+				"DEBUG":      "true",
+			},
+			wantErr: false,
+		},
+		{
+			name:          "empty labels and build args",
+			labels:        []string{},
+			buildArgs:     []string{},
+			wantLabels:    nil,
+			wantBuildArgs: nil,
+			wantErr:       false,
+		},
+		{
+			name:          "nil labels and build args",
+			labels:        nil,
+			buildArgs:     nil,
+			wantLabels:    nil,
+			wantBuildArgs: nil,
+			wantErr:       false,
+		},
+		{
+			name:        "invalid label format",
+			labels:      []string{"invalid-label"},
+			buildArgs:   []string{"KEY=val"},
+			wantErr:     true,
+			errContains: "failed to parse labels",
+		},
+		{
+			name:        "invalid build-arg format",
+			labels:      []string{"key=val"},
+			buildArgs:   []string{"nobuildarg"},
+			wantErr:     true,
+			errContains: "failed to parse build-args",
+		},
+		{
+			name:      "labels only",
+			labels:    []string{"maintainer=team"},
+			buildArgs: nil,
+			wantLabels: map[string]string{
+				"maintainer": "team",
+			},
+			wantBuildArgs: nil,
+			wantErr:       false,
+		},
+		{
+			name:       "build args only",
+			labels:     nil,
+			buildArgs:  []string{"ARCH=amd64"},
+			wantLabels: nil,
+			wantBuildArgs: map[string]string{
+				"ARCH": "amd64",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotLabels, gotBuildArgs, err := parser.ParseLabelsAndBuildArgs(tt.labels, tt.buildArgs)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			assertMapEqual(t, tt.wantLabels, gotLabels, "labels")
+			assertMapEqual(t, tt.wantBuildArgs, gotBuildArgs, "buildArgs")
+		})
+	}
+}
+
+func assertMapEqual(t *testing.T, want, got map[string]string, name string) {
+	t.Helper()
+	if want == nil {
+		assert.Nil(t, got, "ParseLabelsAndBuildArgs() %s should be nil", name)
+		return
+	}
+	for key, wantVal := range want {
+		assert.Equal(t, wantVal, got[key], "ParseLabelsAndBuildArgs() %s[%s]", name, key)
 	}
 }

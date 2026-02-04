@@ -290,6 +290,178 @@ func TestExtractRepoName(t *testing.T) {
 	}
 }
 
+func TestIsGitURL_SSHURLs(t *testing.T) {
+	t.Parallel()
+
+	pv := NewPathValidator()
+
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{
+			name:  "git@ with github",
+			input: "git@github.com:user/repo.git",
+			want:  true,
+		},
+		{
+			name:  "git@ with gitlab",
+			input: "git@gitlab.com:group/project.git",
+			want:  true,
+		},
+		{
+			name:  "git@ with custom host",
+			input: "git@git.mycompany.com:team/repo.git",
+			want:  true,
+		},
+		{
+			name:  "git@ with port-like path",
+			input: "git@host.com:2222/user/repo.git",
+			want:  true,
+		},
+		{
+			name:  "not git@ prefix",
+			input: "notgit@github.com:user/repo.git",
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := pv.IsGitURL(tt.input); got != tt.want {
+				t.Errorf("IsGitURL(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExpandPath_EnvVars(t *testing.T) {
+	// Set a test environment variable
+	t.Setenv("WARPGATE_TEST_VAR", "/custom/path")
+
+	result, err := ExpandPath("${WARPGATE_TEST_VAR}/templates")
+	if err != nil {
+		t.Fatalf("ExpandPath() error = %v", err)
+	}
+
+	if result != "/custom/path/templates" {
+		t.Errorf("ExpandPath() = %q, want %q", result, "/custom/path/templates")
+	}
+}
+
+func TestExpandPath_TildeOnly(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("Cannot determine home dir")
+	}
+
+	result, err := ExpandPath("~")
+	if err != nil {
+		t.Fatalf("ExpandPath(~) error = %v", err)
+	}
+
+	if result != home {
+		t.Errorf("ExpandPath(~) = %q, want %q", result, home)
+	}
+}
+
+func TestNormalizePath_RepositoryName(t *testing.T) {
+	t.Parallel()
+
+	pv := NewPathValidator()
+
+	// A simple name without path indicators should be returned as-is
+	result, err := pv.NormalizePath("official")
+	if err != nil {
+		t.Fatalf("NormalizePath() error = %v", err)
+	}
+	if result != "official" {
+		t.Errorf("NormalizePath() = %q, want %q", result, "official")
+	}
+}
+
+func TestValidateLocalPath_NonExistent(t *testing.T) {
+	t.Parallel()
+
+	pv := NewPathValidator()
+
+	err := pv.ValidateLocalPath("/definitely/not/a/real/path/xyz")
+	if err == nil {
+		t.Fatal("ValidateLocalPath() expected error for non-existent path, got nil")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("ValidateLocalPath() error = %v, want error containing 'does not exist'", err)
+	}
+}
+
+func TestValidateLocalPath_FileInsteadOfDir(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "testfile.txt")
+	if err := os.WriteFile(tmpFile, []byte("content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	pv := NewPathValidator()
+
+	err := pv.ValidateLocalPath(tmpFile)
+	if err == nil {
+		t.Fatal("ValidateLocalPath() expected error for file instead of dir, got nil")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Errorf("ValidateLocalPath() error = %v, want error containing 'not a directory'", err)
+	}
+}
+
+func TestMustExpandPath(t *testing.T) {
+	t.Parallel()
+
+	// MustExpandPath with a valid path should not panic
+	home, _ := os.UserHomeDir()
+	result := MustExpandPath("~/test")
+	expected := filepath.Join(home, "test")
+	if result != expected {
+		t.Errorf("MustExpandPath(~/test) = %q, want %q", result, expected)
+	}
+}
+
+func TestFileExistsAndDirExists(t *testing.T) {
+	t.Parallel()
+
+	pv := NewPathValidator()
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create file: %v", err)
+	}
+
+	// FileExists should work for both files and dirs
+	if !pv.FileExists(tmpFile) {
+		t.Error("FileExists() returned false for existing file")
+	}
+	if !pv.FileExists(tmpDir) {
+		t.Error("FileExists() returned false for existing directory")
+	}
+	if pv.FileExists(filepath.Join(tmpDir, "nonexistent")) {
+		t.Error("FileExists() returned true for non-existent path")
+	}
+
+	// DirExists should only work for dirs
+	if !pv.DirExists(tmpDir) {
+		t.Error("DirExists() returned false for existing directory")
+	}
+	if pv.DirExists(tmpFile) {
+		t.Error("DirExists() returned true for file")
+	}
+	if pv.DirExists(filepath.Join(tmpDir, "nonexistent")) {
+		t.Error("DirExists() returned true for non-existent path")
+	}
+}
+
 func TestExtractRepoName_GitSSHFormat(t *testing.T) {
 	tests := []struct {
 		name   string

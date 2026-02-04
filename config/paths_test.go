@@ -32,11 +32,7 @@ import (
 )
 
 func TestGetCacheDir(t *testing.T) {
-	t.Parallel()
-
 	t.Run("creates directory with subdirectory", func(t *testing.T) {
-		t.Parallel()
-
 		result, err := GetCacheDir("test-subdir")
 		require.NoError(t, err)
 		assert.NotEmpty(t, result)
@@ -52,11 +48,48 @@ func TestGetCacheDir(t *testing.T) {
 	})
 
 	t.Run("returned path ends with subdirectory", func(t *testing.T) {
-		t.Parallel()
-
 		result, err := GetCacheDir("my-cache")
 		require.NoError(t, err)
 		assert.Equal(t, "my-cache", filepath.Base(result))
+
+		_ = os.RemoveAll(result)
+	})
+
+	t.Run("uses custom cache dir from config", func(t *testing.T) {
+		// Create a config file with custom cache directory
+		tmpDir := t.TempDir()
+		configDir := filepath.Join(tmpDir, "config")
+		require.NoError(t, os.MkdirAll(configDir, 0755))
+
+		customCacheDir := filepath.Join(tmpDir, "custom-cache")
+		configPath := filepath.Join(configDir, "config.yaml")
+		configContent := "templates:\n  cache_dir: " + customCacheDir + "\n"
+		require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
+
+		// Change to directory with config so Load() picks it up
+		originalDir, _ := os.Getwd()
+		defer func() { _ = os.Chdir(originalDir) }()
+		require.NoError(t, os.Chdir(configDir))
+
+		result, err := GetCacheDir("templates")
+		require.NoError(t, err)
+
+		// Should use the custom cache dir from config
+		assert.Contains(t, result, customCacheDir)
+		assert.Equal(t, "templates", filepath.Base(result))
+
+		_ = os.RemoveAll(result)
+	})
+
+	t.Run("falls back to default when no config", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		originalDir, _ := os.Getwd()
+		defer func() { _ = os.Chdir(originalDir) }()
+		require.NoError(t, os.Chdir(tmpDir))
+
+		result, err := GetCacheDir("fallback-test")
+		require.NoError(t, err)
+		assert.Contains(t, result, "fallback-test")
 
 		_ = os.RemoveAll(result)
 	})

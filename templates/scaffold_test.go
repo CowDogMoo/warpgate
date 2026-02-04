@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cowdogmoo/warpgate/v3/builder"
 )
 
 func TestNewScaffolder(t *testing.T) {
@@ -294,6 +296,140 @@ func TestCreate_MultipleTemplates(t *testing.T) {
 
 	if len(entries) != len(templates) {
 		t.Errorf("Created %d entries, want %d", len(entries), len(templates))
+	}
+}
+
+func TestSaveTemplateConfig(t *testing.T) {
+	t.Parallel()
+
+	scaffolder := NewScaffolder()
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "warpgate.yaml")
+
+	cfg := &builder.Config{
+		Metadata: builder.Metadata{
+			Name:        "saved-template",
+			Version:     "1.0.0",
+			Description: "A saved template",
+			Author:      "Test Author",
+		},
+		Name:    "saved-template",
+		Version: "latest",
+	}
+
+	err := scaffolder.saveTemplateConfig(cfg, configPath)
+	if err != nil {
+		t.Fatalf("saveTemplateConfig() error = %v", err)
+	}
+
+	// Verify file was created
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		t.Fatal("saveTemplateConfig() did not create file")
+	}
+
+	// Verify content is valid YAML with schema comment
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Failed to read config: %v", err)
+	}
+
+	configStr := string(content)
+	if !strings.Contains(configStr, "saved-template") {
+		t.Error("saveTemplateConfig() output missing template name")
+	}
+	if !strings.Contains(configStr, builder.SchemaComment) {
+		t.Error("saveTemplateConfig() output missing schema comment")
+	}
+}
+
+func TestPrintNextSteps(t *testing.T) {
+	t.Parallel()
+
+	scaffolder := NewScaffolder()
+	ctx := context.Background()
+
+	// printNextSteps should not panic
+	scaffolder.printNextSteps(ctx, "/tmp/test-template", "/tmp/test-template/scripts")
+}
+
+func TestFork_ValidFork(t *testing.T) {
+	t.Parallel()
+
+	// Create a source template that can be loaded
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "src")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("Failed to create src dir: %v", err)
+	}
+
+	content := `metadata:
+  name: source-template
+  version: 1.0.0
+  description: Source template
+  author: Original Author
+  license: MIT
+  requires:
+    warpgate: ">=1.0.0"
+
+name: source-template
+version: latest
+base:
+  image: alpine:latest
+  pull: true
+provisioners:
+  - type: shell
+    inline:
+      - echo "source"
+targets:
+  - type: container
+    platforms:
+      - linux/amd64
+    tags:
+      - latest
+`
+	if err := os.WriteFile(filepath.Join(srcDir, "warpgate.yaml"), []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write source config: %v", err)
+	}
+
+	scaffolder := NewScaffolder()
+	ctx := context.Background()
+	outputDir := filepath.Join(tmpDir, "output")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatalf("Failed to create output dir: %v", err)
+	}
+
+	// Fork using the source template path
+	err := scaffolder.Fork(ctx, filepath.Join(srcDir, "warpgate.yaml"), "forked-template", outputDir)
+	if err != nil {
+		t.Fatalf("Fork() error = %v", err)
+	}
+
+	// Verify forked directory was created
+	forkedDir := filepath.Join(outputDir, "forked-template")
+	if _, err := os.Stat(forkedDir); os.IsNotExist(err) {
+		t.Fatal("Fork() did not create forked template directory")
+	}
+
+	// Verify warpgate.yaml was created
+	forkedConfig := filepath.Join(forkedDir, "warpgate.yaml")
+	if _, err := os.Stat(forkedConfig); os.IsNotExist(err) {
+		t.Fatal("Fork() did not create warpgate.yaml")
+	}
+
+	// Verify README was created
+	forkedReadme := filepath.Join(forkedDir, "README.md")
+	if _, err := os.Stat(forkedReadme); os.IsNotExist(err) {
+		t.Fatal("Fork() did not create README.md")
+	}
+
+	// Verify config content has forked metadata
+	configContent, err := os.ReadFile(forkedConfig)
+	if err != nil {
+		t.Fatalf("Failed to read forked config: %v", err)
+	}
+	configStr := string(configContent)
+	if !strings.Contains(configStr, "forked-template") {
+		t.Error("Forked config does not contain new name")
 	}
 }
 

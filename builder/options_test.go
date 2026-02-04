@@ -445,6 +445,23 @@ func TestApplyLabelsAndBuildArgs(t *testing.T) {
 		wantBuildArgLen int
 	}{
 		{
+			name: "nil labels and build args maps get initialized",
+			config: &Config{
+				Labels:    nil,
+				BuildArgs: nil,
+			},
+			opts: BuildOptions{
+				Labels: map[string]string{
+					"app": "myapp",
+				},
+				BuildArgs: map[string]string{
+					"VERSION": "2.0",
+				},
+			},
+			wantLabelsLen:   1,
+			wantBuildArgLen: 1,
+		},
+		{
 			name: "add labels and build args",
 			config: &Config{
 				Labels:    map[string]string{},

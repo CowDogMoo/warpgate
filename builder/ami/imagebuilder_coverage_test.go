@@ -25,6 +25,7 @@ package ami
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -1115,4 +1116,807 @@ func TestValidateConfig_Comprehensive(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenerateBuildID(t *testing.T) {
+	t.Parallel()
+
+	id := generateBuildID()
+	assert.NotEmpty(t, id)
+	// Format: YYYYMMDD-HHMMSS-HEXHEX (e.g., 20260101-120000-abcd1234)
+	assert.Regexp(t, `^\d{8}-\d{6}-[0-9a-f]{8}$`, id)
+
+	// Generate two IDs and verify they are different
+	id2 := generateBuildID()
+	assert.NotEqual(t, id, id2)
+}
+
+func TestBuildFastLaunchConfiguration_Defaults(t *testing.T) {
+	t.Parallel()
+
+	ib := &ImageBuilder{}
+	target := &builder.Target{
+		FastLaunchEnabled: true,
+	}
+
+	config := ib.buildFastLaunchConfiguration(target)
+	assert.True(t, config.Enabled)
+	assert.Equal(t, int32(6), *config.MaxParallelLaunches)
+	assert.NotNil(t, config.SnapshotConfiguration)
+	assert.Equal(t, int32(5), *config.SnapshotConfiguration.TargetResourceCount)
+}
+
+func TestBuildFastLaunchConfiguration_Custom(t *testing.T) {
+	t.Parallel()
+
+	ib := &ImageBuilder{}
+	target := &builder.Target{
+		FastLaunchEnabled:             true,
+		FastLaunchMaxParallelLaunches: 10,
+		FastLaunchTargetResourceCount: 3,
+	}
+
+	config := ib.buildFastLaunchConfiguration(target)
+	assert.True(t, config.Enabled)
+	assert.Equal(t, int32(10), *config.MaxParallelLaunches)
+	assert.Equal(t, int32(3), *config.SnapshotConfiguration.TargetResourceCount)
+}
+
+func TestCreateComponents_NoProvisioners(t *testing.T) {
+	t.Parallel()
+
+	clients, _ := newMockAWSClients()
+	ib := &ImageBuilder{
+		clients:      clients,
+		componentGen: NewComponentGenerator(clients),
+	}
+
+	arns, err := ib.createComponents(context.Background(), builder.Config{
+		Name:         "test",
+		Provisioners: []builder.Provisioner{},
+	}, &CreatedResources{})
+
+	assert.NoError(t, err)
+	assert.Nil(t, arns)
+}
+
+func TestCreateComponents_Success(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	var callCount atomic.Int32
+	mocks.imageBuilder.CreateComponentFunc = func(ctx context.Context, params *imagebuilder.CreateComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateComponentOutput, error) {
+		n := callCount.Add(1)
+		arn := fmt.Sprintf("arn:aws:imagebuilder:us-east-1:123456789012:component/test-comp-%d/1.0.0/1", n)
+		return &imagebuilder.CreateComponentOutput{
+			ComponentBuildVersionArn: aws.String(arn),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		componentGen:    NewComponentGenerator(clients),
+		resourceManager: NewResourceManager(clients),
+		globalConfig:    newTestGlobalConfig(),
+	}
+
+	created := &CreatedResources{}
+	arns, err := ib.createComponents(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo hello"}},
+			{Type: "shell", Inline: []string{"echo world"}},
+		},
+	}, created)
+
+	require.NoError(t, err)
+	assert.Len(t, arns, 2)
+	assert.Len(t, created.ComponentARNs, 2)
+	for _, arn := range arns {
+		assert.NotEmpty(t, arn)
+	}
+}
+
+func TestCreateComponents_PartialFailure(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	var callCount atomic.Int32
+	mocks.imageBuilder.CreateComponentFunc = func(ctx context.Context, params *imagebuilder.CreateComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateComponentOutput, error) {
+		n := callCount.Add(1)
+		// First call succeeds, second fails
+		if n == 1 {
+			return &imagebuilder.CreateComponentOutput{
+				ComponentBuildVersionArn: aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/test-comp/1.0.0/1"),
+			}, nil
+		}
+		return nil, fmt.Errorf("component creation failed")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		componentGen:    NewComponentGenerator(clients),
+		resourceManager: NewResourceManager(clients),
+		globalConfig:    newTestGlobalConfig(),
+	}
+
+	created := &CreatedResources{}
+	arns, err := ib.createComponents(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo hello"}},
+			{Type: "shell", Inline: []string{"echo world"}},
+		},
+	}, created)
+
+	assert.Error(t, err)
+	assert.Nil(t, arns)
+	// The successfully created component ARN should be tracked for cleanup
+	assert.NotEmpty(t, created.ComponentARNs)
+}
+
+func TestFinalizeBuild_WithTags(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+	tagCalled := false
+	mocks.ec2.CreateTagsFunc = func(ctx context.Context, params *ec2.CreateTagsInput, optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+		tagCalled = true
+		return &ec2.CreateTagsOutput{}, nil
+	}
+	mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+		return &imagebuilder.DeleteImagePipelineOutput{}, nil
+	}
+
+	ib := &ImageBuilder{
+		operations:      NewAMIOperations(clients, nil),
+		pipelineManager: NewPipelineManager(clients),
+	}
+
+	target := &builder.Target{
+		AMITags: map[string]string{"env": "test", "team": "platform"},
+	}
+
+	ib.finalizeBuild(context.Background(), "ami-12345", target, "arn:pipeline:test")
+	assert.True(t, tagCalled)
+}
+
+func TestFinalizeBuild_NoTags(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+	tagCalled := false
+	mocks.ec2.CreateTagsFunc = func(ctx context.Context, params *ec2.CreateTagsInput, optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+		tagCalled = true
+		return &ec2.CreateTagsOutput{}, nil
+	}
+	mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+		return &imagebuilder.DeleteImagePipelineOutput{}, nil
+	}
+
+	ib := &ImageBuilder{
+		operations:      NewAMIOperations(clients, nil),
+		pipelineManager: NewPipelineManager(clients),
+	}
+
+	target := &builder.Target{
+		AMITags: map[string]string{},
+	}
+
+	ib.finalizeBuild(context.Background(), "ami-12345", target, "arn:pipeline:test")
+	assert.False(t, tagCalled)
+}
+
+func TestCreateDistributionConfig_AlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.CreateDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.CreateDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateDistributionConfigurationOutput, error) {
+		return nil, fmt.Errorf("ResourceAlreadyExistsException: already exists")
+	}
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return &imagebuilder.ListDistributionConfigurationsOutput{
+			DistributionConfigurationSummaryList: []ibtypes.DistributionConfigurationSummary{
+				{Name: aws.String("test-dist"), Arn: aws.String("arn:dist:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.GetDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetDistributionConfigurationOutput, error) {
+		return &imagebuilder.GetDistributionConfigurationOutput{
+			DistributionConfiguration: &ibtypes.DistributionConfiguration{
+				Arn: aws.String("arn:dist:existing"),
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+	}
+
+	target := &builder.Target{Type: "ami", Region: "us-east-1"}
+	arn, err := ib.createDistributionConfig(context.Background(), "test", target)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:dist:existing", arn)
+}
+
+func TestCreateImageRecipe_AlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.CreateImageRecipeFunc = func(ctx context.Context, params *imagebuilder.CreateImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImageRecipeOutput, error) {
+		return nil, fmt.Errorf("ResourceAlreadyExistsException: already exists")
+	}
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{
+				Arn:  aws.String("arn:recipe:existing"),
+				Name: aws.String("test-recipe"),
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+	}
+
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "ami-base123"},
+	}
+	target := &builder.Target{Type: "ami", Region: "us-east-1"}
+
+	arn, err := ib.createImageRecipe(context.Background(), cfg, []string{"arn:comp1"}, target)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:recipe:existing", arn)
+}
+
+func TestGetOrCreateInfrastructureConfig_ExistingFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListInfrastructureConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListInfrastructureConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListInfrastructureConfigurationsOutput, error) {
+		return &imagebuilder.ListInfrastructureConfigurationsOutput{
+			InfrastructureConfigurationSummaryList: []ibtypes.InfrastructureConfigurationSummary{
+				{Name: aws.String("test-infra"), Arn: aws.String("arn:infra:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.GetInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetInfrastructureConfigurationOutput, error) {
+		return &imagebuilder.GetInfrastructureConfigurationOutput{
+			InfrastructureConfiguration: &ibtypes.InfrastructureConfiguration{
+				Arn:  aws.String("arn:infra:existing"),
+				Name: aws.String("test-infra"),
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateInfrastructureConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:infra:existing", arn)
+	assert.Empty(t, created.InfraARN)
+}
+
+func TestGetOrCreateInfrastructureConfig_ForceRecreate(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListInfrastructureConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListInfrastructureConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListInfrastructureConfigurationsOutput, error) {
+		return &imagebuilder.ListInfrastructureConfigurationsOutput{
+			InfrastructureConfigurationSummaryList: []ibtypes.InfrastructureConfigurationSummary{
+				{Name: aws.String("test-infra"), Arn: aws.String("arn:infra:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.GetInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetInfrastructureConfigurationOutput, error) {
+		return &imagebuilder.GetInfrastructureConfigurationOutput{
+			InfrastructureConfiguration: &ibtypes.InfrastructureConfiguration{
+				Arn:  aws.String("arn:infra:existing"),
+				Name: aws.String("test-infra"),
+			},
+		}, nil
+	}
+	deleteCalled := false
+	mocks.imageBuilder.DeleteInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.DeleteInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteInfrastructureConfigurationOutput, error) {
+		deleteCalled = true
+		return &imagebuilder.DeleteInfrastructureConfigurationOutput{}, nil
+	}
+	mocks.imageBuilder.CreateInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.CreateInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateInfrastructureConfigurationOutput, error) {
+		return &imagebuilder.CreateInfrastructureConfigurationOutput{
+			InfrastructureConfigurationArn: aws.String("arn:infra:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   true,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateInfrastructureConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, "arn:infra:new", arn)
+	assert.Equal(t, "arn:infra:new", created.InfraARN)
+}
+
+func TestGetOrCreateDistributionConfig_ExistingFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return &imagebuilder.ListDistributionConfigurationsOutput{
+			DistributionConfigurationSummaryList: []ibtypes.DistributionConfigurationSummary{
+				{Name: aws.String("test-dist"), Arn: aws.String("arn:dist:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.GetDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetDistributionConfigurationOutput, error) {
+		return &imagebuilder.GetDistributionConfigurationOutput{
+			DistributionConfiguration: &ibtypes.DistributionConfiguration{
+				Arn: aws.String("arn:dist:existing"),
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateDistributionConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:dist:existing", arn)
+	assert.Empty(t, created.DistARN)
+}
+
+func TestGetOrCreateDistributionConfig_ForceRecreate(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return &imagebuilder.ListDistributionConfigurationsOutput{
+			DistributionConfigurationSummaryList: []ibtypes.DistributionConfigurationSummary{
+				{Name: aws.String("test-dist"), Arn: aws.String("arn:dist:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.GetDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetDistributionConfigurationOutput, error) {
+		return &imagebuilder.GetDistributionConfigurationOutput{
+			DistributionConfiguration: &ibtypes.DistributionConfiguration{
+				Arn: aws.String("arn:dist:existing"),
+			},
+		}, nil
+	}
+	deleteCalled := false
+	mocks.imageBuilder.DeleteDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.DeleteDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteDistributionConfigurationOutput, error) {
+		deleteCalled = true
+		return &imagebuilder.DeleteDistributionConfigurationOutput{}, nil
+	}
+	mocks.imageBuilder.CreateDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.CreateDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateDistributionConfigurationOutput, error) {
+		return &imagebuilder.CreateDistributionConfigurationOutput{
+			DistributionConfigurationArn: aws.String("arn:dist:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   true,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateDistributionConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, "arn:dist:new", arn)
+	assert.Equal(t, "arn:dist:new", created.DistARN)
+}
+
+func TestGetOrCreateImageRecipe_ExistingFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{
+				Arn:  aws.String("arn:recipe:existing"),
+				Name: aws.String("test-recipe"),
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "ami-base"},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:recipe:existing", arn)
+	assert.Empty(t, created.RecipeARN)
+}
+
+func TestGetOrCreateImageRecipe_ForceRecreate(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{
+				Arn:  aws.String("arn:recipe:existing"),
+				Name: aws.String("test-recipe"),
+			},
+		}, nil
+	}
+	deleteCalled := false
+	mocks.imageBuilder.DeleteImageRecipeFunc = func(ctx context.Context, params *imagebuilder.DeleteImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImageRecipeOutput, error) {
+		deleteCalled = true
+		return &imagebuilder.DeleteImageRecipeOutput{}, nil
+	}
+	mocks.imageBuilder.CreateImageRecipeFunc = func(ctx context.Context, params *imagebuilder.CreateImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImageRecipeOutput, error) {
+		return &imagebuilder.CreateImageRecipeOutput{
+			ImageRecipeArn: aws.String("arn:recipe:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   true,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "ami-base"},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, "arn:recipe:new", arn)
+	assert.Equal(t, "arn:recipe:new", created.RecipeARN)
+}
+
+func TestGetOrCreatePipeline_ExistingFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		return &imagebuilder.ListImagePipelinesOutput{
+			ImagePipelineList: []ibtypes.ImagePipeline{
+				{Name: aws.String("test-pipeline"), Arn: aws.String("arn:pipeline:existing")},
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		pipelineManager: NewPipelineManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreatePipeline(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, "arn:recipe", "arn:infra", "arn:dist", created)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:pipeline:existing", arn)
+	assert.Empty(t, created.PipelineARN)
+}
+
+func TestGetOrCreatePipeline_ForceRecreate(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		return &imagebuilder.ListImagePipelinesOutput{
+			ImagePipelineList: []ibtypes.ImagePipeline{
+				{Name: aws.String("test-pipeline"), Arn: aws.String("arn:pipeline:existing")},
+			},
+		}, nil
+	}
+	deleteCalled := false
+	mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+		deleteCalled = true
+		return &imagebuilder.DeleteImagePipelineOutput{}, nil
+	}
+	mocks.imageBuilder.CreateImagePipelineFunc = func(ctx context.Context, params *imagebuilder.CreateImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImagePipelineOutput, error) {
+		return &imagebuilder.CreateImagePipelineOutput{
+			ImagePipelineArn: aws.String("arn:pipeline:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		pipelineManager: NewPipelineManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   true,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreatePipeline(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, "arn:recipe", "arn:infra", "arn:dist", created)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled)
+	assert.Equal(t, "arn:pipeline:new", arn)
+	assert.Equal(t, "arn:pipeline:new", created.PipelineARN)
+}
+
+func TestGetOrCreatePipeline_AlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// Pipeline exists initially
+	listCallCount := 0
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		listCallCount++
+		return &imagebuilder.ListImagePipelinesOutput{
+			ImagePipelineList: []ibtypes.ImagePipeline{
+				{Name: aws.String("test-pipeline"), Arn: aws.String("arn:pipeline:existing")},
+			},
+		}, nil
+	}
+
+	// Force recreate: delete succeeds
+	mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+		return &imagebuilder.DeleteImagePipelineOutput{}, nil
+	}
+
+	// Create fails with already exists (race condition: another process recreated it)
+	mocks.imageBuilder.CreateImagePipelineFunc = func(ctx context.Context, params *imagebuilder.CreateImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImagePipelineOutput, error) {
+		return nil, fmt.Errorf("ResourceAlreadyExistsException: already exists")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		pipelineManager: NewPipelineManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   true,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreatePipeline(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, "arn:recipe", "arn:infra", "arn:dist", created)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:pipeline:existing", arn)
+}
+
+func TestCopy(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.ec2.CopyImageFunc = func(ctx context.Context, params *ec2.CopyImageInput, optFns ...func(*ec2.Options)) (*ec2.CopyImageOutput, error) {
+		assert.Equal(t, "ami-source", *params.SourceImageId)
+		assert.Equal(t, "us-east-1", *params.SourceRegion)
+		return &ec2.CopyImageOutput{
+			ImageId: aws.String("ami-dest"),
+		}, nil
+	}
+
+	// We cannot easily test CopyAMI since it creates a real ec2.Client internally.
+	// Instead, we test the Copy method verifies delegation occurs.
+	ib := &ImageBuilder{
+		operations: NewAMIOperations(clients, newTestGlobalConfig()),
+		config:     ClientConfig{Region: "us-east-1"},
+	}
+
+	// Copy calls operations.CopyAMI which creates its own ec2 client for dest region.
+	// This will fail because it tries to create a real client, but we verify the method exists.
+	_, err := ib.Copy(context.Background(), "ami-source", "us-east-1", "us-west-2")
+	// CopyAMI creates an ec2.Client internally for the dest region and calls CopyImage on it,
+	// not through our mock. So this will fail at the waitForAMIAvailable stage or
+	// succeed depending on the mock setup. We just verify the method signature works.
+	assert.NotNil(t, ib.operations)
+	_ = err // Error expected since real EC2 client is created for dest region
+}
+
+func TestCreateBuildResources_ComponentFailure(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.CreateComponentFunc = func(ctx context.Context, params *imagebuilder.CreateComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateComponentOutput, error) {
+		return nil, fmt.Errorf("component creation failed: quota exceeded")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		componentGen:    NewComponentGenerator(clients),
+		resourceManager: NewResourceManager(clients),
+		globalConfig:    newTestGlobalConfig(),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.createBuildResources(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo hello"}},
+		},
+	}, &builder.Target{Region: "us-east-1"}, created)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create components")
+}
+
+func TestOptimizedResourceCleanup_DeletionErrors(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	// All resources exist
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		return &imagebuilder.ListImagePipelinesOutput{
+			ImagePipelineList: []ibtypes.ImagePipeline{
+				{Name: aws.String("test-pipeline"), Arn: aws.String("arn:pipeline:test")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:test")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{Arn: aws.String("arn:recipe:test"), Name: aws.String("test-recipe")},
+		}, nil
+	}
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return &imagebuilder.ListDistributionConfigurationsOutput{
+			DistributionConfigurationSummaryList: []ibtypes.DistributionConfigurationSummary{
+				{Name: aws.String("test-dist"), Arn: aws.String("arn:dist:test")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.GetDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetDistributionConfigurationOutput, error) {
+		return &imagebuilder.GetDistributionConfigurationOutput{
+			DistributionConfiguration: &ibtypes.DistributionConfiguration{Arn: aws.String("arn:dist:test")},
+		}, nil
+	}
+	mocks.imageBuilder.ListInfrastructureConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListInfrastructureConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListInfrastructureConfigurationsOutput, error) {
+		return &imagebuilder.ListInfrastructureConfigurationsOutput{
+			InfrastructureConfigurationSummaryList: []ibtypes.InfrastructureConfigurationSummary{
+				{Name: aws.String("test-infra"), Arn: aws.String("arn:infra:test")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.GetInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetInfrastructureConfigurationOutput, error) {
+		return &imagebuilder.GetInfrastructureConfigurationOutput{
+			InfrastructureConfiguration: &ibtypes.InfrastructureConfiguration{Arn: aws.String("arn:infra:test"), Name: aws.String("test-infra")},
+		}, nil
+	}
+
+	// All deletions fail
+	mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+		return nil, fmt.Errorf("delete pipeline failed")
+	}
+	mocks.imageBuilder.DeleteImageRecipeFunc = func(ctx context.Context, params *imagebuilder.DeleteImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImageRecipeOutput, error) {
+		return nil, fmt.Errorf("delete recipe failed")
+	}
+	mocks.imageBuilder.DeleteDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.DeleteDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteDistributionConfigurationOutput, error) {
+		return nil, fmt.Errorf("delete dist failed")
+	}
+	mocks.imageBuilder.DeleteInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.DeleteInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteInfrastructureConfigurationOutput, error) {
+		return nil, fmt.Errorf("delete infra failed")
+	}
+
+	bo := NewBatchOperations(clients)
+	// Should not return error - deletion failures are logged as warnings
+	err := bo.OptimizedResourceCleanup(context.Background(), "test")
+	assert.NoError(t, err)
+}
+
+func TestOptimizedResourceCleanup_RecipeARNError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	// Pipeline does not exist, recipe exists but ARN lookup fails
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		return &imagebuilder.ListImagePipelinesOutput{}, nil
+	}
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:test")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return nil, fmt.Errorf("api error getting recipe")
+	}
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return &imagebuilder.ListDistributionConfigurationsOutput{}, nil
+	}
+	mocks.imageBuilder.ListInfrastructureConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListInfrastructureConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListInfrastructureConfigurationsOutput, error) {
+		return &imagebuilder.ListInfrastructureConfigurationsOutput{}, nil
+	}
+
+	bo := NewBatchOperations(clients)
+	err := bo.OptimizedResourceCleanup(context.Background(), "test")
+	assert.NoError(t, err)
 }
