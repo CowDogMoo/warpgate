@@ -420,7 +420,7 @@ var savedPATH = os.Getenv("PATH")
 func ensurePATH(t *testing.T) {
 	t.Helper()
 	if os.Getenv("PATH") == "" && savedPATH != "" {
-		os.Setenv("PATH", savedPATH)
+		t.Setenv("PATH", savedPATH)
 		t.Cleanup(func() {
 			// no-op: we just need PATH available during this test
 		})

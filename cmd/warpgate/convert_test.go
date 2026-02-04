@@ -210,7 +210,6 @@ func TestWriteConvertedTemplate_WriteFile(t *testing.T) {
 }
 
 func TestDisplayConversionSummary(t *testing.T) {
-	t.Parallel()
 
 	cfg := &builder.Config{
 		Name: "test-template",

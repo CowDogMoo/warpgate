@@ -368,7 +368,6 @@ func TestRegisterCleanupCompletions(t *testing.T) {
 }
 
 func TestRunVersionCleanup_NoComponents(t *testing.T) {
-	t.Parallel()
 
 	// runVersionCleanup calls getComponentNames which calls manager.ListComponentsByPrefix
 	// Without a real manager, we test the flow indirectly
