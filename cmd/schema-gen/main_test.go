@@ -700,10 +700,20 @@ func TestRunSchemaDefinitionsContainExpectedTypes(t *testing.T) {
 // up from the current test file location until go.mod is found.
 func projectRoot(t *testing.T) string {
 	t.Helper()
-	// Start from the known location of this test file
-	dir := "/Users/l/cowdogmoo/warpgate"
-	if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
-		t.Fatalf("could not find project root at %s: %v", dir, err)
+	// Start from the directory of this test file and walk up
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not determine test file location")
 	}
-	return dir
+	dir := filepath.Dir(filename)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not find project root (go.mod) in any parent directory")
+		}
+		dir = parent
+	}
 }
