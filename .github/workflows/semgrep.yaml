@@ -46,11 +46,10 @@ jobs:
       - name: Run Semgrep analysis
         uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
         with:
-          config: >- # more at semgrep.dev/explore
+          config: >-
             p/security-audit
             p/secrets
-            p/docker
-            p/dockerfile
-            p/terraform
             p/ci
             p/supply-chain
+            p/golang
+            p/trailofbits-go
