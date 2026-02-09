@@ -52,16 +52,16 @@ Warp Gate follows [Semantic Versioning](https://semver.org/):
 
 ### Version Decision Matrix
 
-| Change Type | Example | Version |
-| --- | --- | --- |
-| Remove features/templates | Deleted legacy Packer templates | **MAJOR** |
-| Change configuration format | New template YAML schema | **MAJOR** |
-| Breaking API changes | Renamed CLI commands | **MAJOR** |
-| New features/capabilities | Added new provisioner | **MINOR** |
-| Non-breaking enhancements | Additional template options | **MINOR** |
-| Bug fixes | Fixed build errors | **PATCH** |
-| Documentation updates | Updated README | **PATCH** |
-| Dependency updates (non-breaking) | Updated Go dependencies | **PATCH** |
+| Change Type                  | Example                    | Version   |
+| ---------------------------- | -------------------------- | --------- |
+| Remove features/templates    | Deleted legacy templates   | **MAJOR** |
+| Change configuration format  | New template YAML schema   | **MAJOR** |
+| Breaking API changes         | Renamed CLI commands       | **MAJOR** |
+| New features/capabilities    | Added new provisioner      | **MINOR** |
+| Non-breaking enhancements    | Additional template opts   | **MINOR** |
+| Bug fixes                    | Fixed build errors         | **PATCH** |
+| Documentation updates        | Updated README             | **PATCH** |
+| Dependency updates (compat)  | Updated Go dependencies    | **PATCH** |
 
 ### Checking What Changed
 
@@ -319,7 +319,7 @@ on:
 **Workflow:**
 
 1. Tag push triggers the workflow
-2. Fetches all tags and sets up Go 1.25.6
+2. Fetches all tags and sets up Go 1.25.7
 3. Runs goreleaser with `.goreleaser.yaml` config
 4. Builds binaries for:
    - **OS**: linux, darwin
@@ -379,11 +379,11 @@ Use this checklist for major releases:
 
 ### Tag Naming Convention
 
-| Release Type | Tag Format | Example | When to Use |
-| --- | --- | --- | --- |
-| Stable | `vMAJOR.MINOR.PATCH` | `v3.0.0` | Production releases |
-| Pre-release | `vX.Y.Z-beta.N` | `v3.0.0-beta.1` | Testing before stable |
-| Release Candidate | `vX.Y.Z-rc.N` | `v3.0.0-rc.1` | Final testing |
+| Release Type | Tag Format           | Example         | When to Use         |
+| ------------ | -------------------- | --------------- | ------------------- |
+| Stable       | `vMAJOR.MINOR.PATCH` | `v3.0.0`        | Production releases |
+| Pre-release  | `vX.Y.Z-beta.N`      | `v3.0.0-beta.1` | Pre-stable testing  |
+| RC           | `vX.Y.Z-rc.N`        | `v3.0.0-rc.1`   | Final testing       |
 
 ### Creating Tags
 
