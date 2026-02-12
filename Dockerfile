@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.21
 
 # Build stage - compile the binary
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 # Install build dependencies for CGO
 RUN apt-get update && apt-get install -y \
