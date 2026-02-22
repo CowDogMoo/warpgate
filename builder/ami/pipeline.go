@@ -70,37 +70,37 @@ type WorkflowStepLog struct {
 
 func (e *BuildFailureError) Error() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Build failed with status %s after %s\n", e.Status, e.Duration))
+	fmt.Fprintf(&sb, "Build failed with status %s after %s\n", e.Status, e.Duration)
 
 	if e.Details != nil {
 		if e.Details.Reason != "" {
-			sb.WriteString(fmt.Sprintf("\nReason: %s\n", e.Details.Reason))
+			fmt.Fprintf(&sb, "\nReason: %s\n", e.Details.Reason)
 		}
 		if e.Details.FailedStep != "" {
-			sb.WriteString(fmt.Sprintf("Failed Step: %s\n", e.Details.FailedStep))
+			fmt.Fprintf(&sb, "Failed Step: %s\n", e.Details.FailedStep)
 		}
 		if e.Details.FailedComponent != "" {
-			sb.WriteString(fmt.Sprintf("Failed Component: %s\n", e.Details.FailedComponent))
+			fmt.Fprintf(&sb, "Failed Component: %s\n", e.Details.FailedComponent)
 		}
 		if e.Details.ErrorMessage != "" {
-			sb.WriteString(fmt.Sprintf("Error Message: %s\n", e.Details.ErrorMessage))
+			fmt.Fprintf(&sb, "Error Message: %s\n", e.Details.ErrorMessage)
 		}
 		if len(e.Details.WorkflowStepLogs) > 0 {
 			sb.WriteString("\nWorkflow Step Details:\n")
 			for _, step := range e.Details.WorkflowStepLogs {
-				sb.WriteString(fmt.Sprintf("  - %s: %s\n", step.StepName, step.Status))
+				fmt.Fprintf(&sb, "  - %s: %s\n", step.StepName, step.Status)
 				if step.Message != "" {
-					sb.WriteString(fmt.Sprintf("    Message: %s\n", step.Message))
+					fmt.Fprintf(&sb, "    Message: %s\n", step.Message)
 				}
 			}
 		}
 		if e.Details.LogsURL != "" {
-			sb.WriteString(fmt.Sprintf("\nView full logs: %s\n", e.Details.LogsURL))
+			fmt.Fprintf(&sb, "\nView full logs: %s\n", e.Details.LogsURL)
 		}
 	}
 
 	if e.Remediation != "" {
-		sb.WriteString(fmt.Sprintf("\nRemediation: %s\n", e.Remediation))
+		fmt.Fprintf(&sb, "\nRemediation: %s\n", e.Remediation)
 	}
 
 	return sb.String()

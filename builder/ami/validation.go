@@ -72,7 +72,7 @@ func (v *ValidationResult) String() string {
 	if len(v.Errors) > 0 {
 		sb.WriteString("Errors:\n")
 		for _, e := range v.Errors {
-			sb.WriteString(fmt.Sprintf("  - %s\n", e))
+			fmt.Fprintf(&sb, "  - %s\n", e)
 		}
 		sb.WriteString("\n")
 	}
@@ -80,7 +80,7 @@ func (v *ValidationResult) String() string {
 	if len(v.Warnings) > 0 {
 		sb.WriteString("Warnings:\n")
 		for _, w := range v.Warnings {
-			sb.WriteString(fmt.Sprintf("  - %s\n", w))
+			fmt.Fprintf(&sb, "  - %s\n", w)
 		}
 		sb.WriteString("\n")
 	}
@@ -88,7 +88,7 @@ func (v *ValidationResult) String() string {
 	if len(v.Info) > 0 {
 		sb.WriteString("Info:\n")
 		for _, i := range v.Info {
-			sb.WriteString(fmt.Sprintf("  - %s\n", i))
+			fmt.Fprintf(&sb, "  - %s\n", i)
 		}
 	}
 
