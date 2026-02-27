@@ -7095,3 +7095,218 @@ func TestCalculateBuildContextSinglePath(t *testing.T) {
 		t.Errorf("expected %q, got %q", absTmpDir, ctx)
 	}
 }
+
+// TestMatchesPlatform tests the matchesPlatform helper function
+func TestMatchesPlatform(t *testing.T) {
+	tests := []struct {
+		name        string
+		pattern     string
+		platform    string
+		currentArch string
+		expected    bool
+	}{
+		// Exact platform matches
+		{"exact linux/amd64 match", "linux/amd64", "linux/amd64", "amd64", true},
+		{"exact linux/arm64 match", "linux/arm64", "linux/arm64", "arm64", true},
+		{"platform mismatch", "linux/arm64", "linux/amd64", "amd64", false},
+
+		// Architecture-only patterns
+		{"arch only amd64 match", "amd64", "linux/amd64", "amd64", true},
+		{"arch only arm64 match", "arm64", "linux/arm64", "arm64", true},
+		{"arch only mismatch", "arm64", "linux/amd64", "amd64", false},
+
+		// Packer-style patterns (docker.amd64)
+		{"packer style amd64 match", "docker.amd64", "linux/amd64", "amd64", true},
+		{"packer style arm64 match", "docker.arm64", "linux/arm64", "arm64", true},
+		{"packer style mismatch", "docker.arm64", "linux/amd64", "amd64", false},
+		{"packer style with prefix", "mybuilder.amd64", "linux/amd64", "amd64", true},
+
+		// Edge cases
+		{"empty pattern", "", "linux/amd64", "amd64", false},
+		{"empty platform", "amd64", "", "", false},
+		{"both empty", "", "", "", true}, // empty == empty
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := matchesPlatform(tt.pattern, tt.platform, tt.currentArch)
+			if result != tt.expected {
+				t.Errorf("matchesPlatform(%q, %q, %q) = %v, want %v",
+					tt.pattern, tt.platform, tt.currentArch, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestShouldApplyProvisioner tests the shouldApplyProvisioner function
+func TestShouldApplyProvisioner(t *testing.T) {
+	tests := []struct {
+		name     string
+		prov     builder.Provisioner
+		platform string
+		expected bool
+	}{
+		// No filtering (empty Only/Except)
+		{
+			name:     "no filtering applies",
+			prov:     builder.Provisioner{Type: "shell"},
+			platform: "linux/amd64",
+			expected: true,
+		},
+
+		// Only list tests
+		{
+			name: "only amd64 on amd64 applies",
+			prov: builder.Provisioner{
+				Type: "shell",
+				Only: []string{"amd64"},
+			},
+			platform: "linux/amd64",
+			expected: true,
+		},
+		{
+			name: "only amd64 on arm64 skips",
+			prov: builder.Provisioner{
+				Type: "shell",
+				Only: []string{"amd64"},
+			},
+			platform: "linux/arm64",
+			expected: false,
+		},
+		{
+			name: "only full platform match",
+			prov: builder.Provisioner{
+				Type: "shell",
+				Only: []string{"linux/amd64"},
+			},
+			platform: "linux/amd64",
+			expected: true,
+		},
+		{
+			name: "only multiple archs first matches",
+			prov: builder.Provisioner{
+				Type: "shell",
+				Only: []string{"amd64", "arm64"},
+			},
+			platform: "linux/amd64",
+			expected: true,
+		},
+		{
+			name: "only multiple archs second matches",
+			prov: builder.Provisioner{
+				Type: "shell",
+				Only: []string{"amd64", "arm64"},
+			},
+			platform: "linux/arm64",
+			expected: true,
+		},
+		{
+			name: "only packer style match",
+			prov: builder.Provisioner{
+				Type: "shell",
+				Only: []string{"docker.amd64"},
+			},
+			platform: "linux/amd64",
+			expected: true,
+		},
+
+		// Except list tests
+		{
+			name: "except arm64 on amd64 applies",
+			prov: builder.Provisioner{
+				Type:   "shell",
+				Except: []string{"arm64"},
+			},
+			platform: "linux/amd64",
+			expected: true,
+		},
+		{
+			name: "except arm64 on arm64 skips",
+			prov: builder.Provisioner{
+				Type:   "shell",
+				Except: []string{"arm64"},
+			},
+			platform: "linux/arm64",
+			expected: false,
+		},
+		{
+			name: "except full platform match",
+			prov: builder.Provisioner{
+				Type:   "shell",
+				Except: []string{"linux/arm64"},
+			},
+			platform: "linux/arm64",
+			expected: false,
+		},
+		{
+			name: "except packer style match",
+			prov: builder.Provisioner{
+				Type:   "shell",
+				Except: []string{"docker.arm64"},
+			},
+			platform: "linux/arm64",
+			expected: false,
+		},
+
+		// Combined Only + Except tests
+		{
+			name: "only and except combined passes",
+			prov: builder.Provisioner{
+				Type:   "shell",
+				Only:   []string{"amd64", "arm64"},
+				Except: []string{"arm64"},
+			},
+			platform: "linux/amd64",
+			expected: true,
+		},
+		{
+			name: "only and except combined blocks by except",
+			prov: builder.Provisioner{
+				Type:   "shell",
+				Only:   []string{"amd64", "arm64"},
+				Except: []string{"arm64"},
+			},
+			platform: "linux/arm64",
+			expected: false,
+		},
+		{
+			name: "only blocks before except checked",
+			prov: builder.Provisioner{
+				Type:   "shell",
+				Only:   []string{"arm64"},
+				Except: []string{"amd64"},
+			},
+			platform: "linux/amd64",
+			expected: false,
+		},
+
+		// Edge cases
+		{
+			name: "empty platform with only",
+			prov: builder.Provisioner{
+				Type: "shell",
+				Only: []string{"amd64"},
+			},
+			platform: "",
+			expected: false,
+		},
+		{
+			name: "empty platform no filtering",
+			prov: builder.Provisioner{
+				Type: "shell",
+			},
+			platform: "",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := shouldApplyProvisioner(tt.prov, tt.platform)
+			if result != tt.expected {
+				t.Errorf("shouldApplyProvisioner(prov, %q) = %v, want %v\n  Only=%v Except=%v",
+					tt.platform, result, tt.expected, tt.prov.Only, tt.prov.Except)
+			}
+		})
+	}
+}
