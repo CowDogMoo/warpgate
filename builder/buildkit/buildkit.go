@@ -376,9 +376,68 @@ func (b *BuildKitBuilder) convertToLLB(cfg builder.Config) (llb.State, error) {
 	return state, nil
 }
 
+// matchesPlatform checks if a pattern matches the given platform.
+// Supports: "amd64", "linux/amd64", "docker.amd64" (Packer-style)
+func matchesPlatform(pattern, platform, currentArch string) bool {
+	if pattern == platform {
+		return true
+	}
+	if pattern == currentArch {
+		return true
+	}
+	// Packer-style: "docker.amd64" -> extract "amd64"
+	if strings.Contains(pattern, ".") {
+		parts := strings.Split(pattern, ".")
+		if parts[len(parts)-1] == currentArch {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldApplyProvisioner determines if a provisioner should run on the given platform.
+func shouldApplyProvisioner(prov builder.Provisioner, platform string) bool {
+	if len(prov.Only) == 0 && len(prov.Except) == 0 {
+		return true
+	}
+
+	currentArch := extractArchFromPlatform(platform)
+
+	// Check Only list - provisioner runs only if platform matches one of the patterns
+	if len(prov.Only) > 0 {
+		matched := false
+		for _, pattern := range prov.Only {
+			if matchesPlatform(pattern, platform, currentArch) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	// Check Except list - provisioner is skipped if platform matches any pattern
+	for _, pattern := range prov.Except {
+		if matchesPlatform(pattern, platform, currentArch) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // applyProvisioner applies a provisioner to the LLB state.
 func (b *BuildKitBuilder) applyProvisioner(state llb.State, prov builder.Provisioner, cfg builder.Config) (llb.State, error) {
 	ctx := context.Background()
+
+	// Check platform filtering
+	if !shouldApplyProvisioner(prov, cfg.Base.Platform) {
+		logging.DebugContext(ctx, "Skipping %s provisioner: platform %s filtered by only=%v except=%v",
+			prov.Type, cfg.Base.Platform, prov.Only, prov.Except)
+		return state, nil
+	}
+
 	switch prov.Type {
 	case "shell":
 		return b.applyShellProvisioner(state, prov)
