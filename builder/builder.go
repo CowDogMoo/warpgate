@@ -202,6 +202,9 @@ type ContainerBuilder interface {
 	//
 	// Returns an error if the image cannot be removed.
 	Remove(ctx context.Context, imageRef string) error
+
+	// SetCacheOptions configures external cache sources and destinations.
+	SetCacheOptions(ctx context.Context, cacheFrom, cacheTo []string)
 }
 
 // AMIBuilder extends Builder with AWS AMI-specific operations.
