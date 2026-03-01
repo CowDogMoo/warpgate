@@ -35,12 +35,13 @@ import (
 
 // mockContainerBuilder implements ContainerBuilder for testing
 type mockContainerBuilder struct {
-	buildFunc      func(ctx context.Context, cfg Config) (*BuildResult, error)
-	pushFunc       func(ctx context.Context, imageRef, registry string) (string, error)
-	pushDigestFunc func(ctx context.Context, imageRef, registry string) (string, error)
-	tagFunc        func(ctx context.Context, imageRef, newTag string) error
-	removeFunc     func(ctx context.Context, imageRef string) error
-	closeFunc      func() error
+	buildFunc           func(ctx context.Context, cfg Config) (*BuildResult, error)
+	pushFunc            func(ctx context.Context, imageRef, registry string) (string, error)
+	pushDigestFunc      func(ctx context.Context, imageRef, registry string) (string, error)
+	tagFunc             func(ctx context.Context, imageRef, newTag string) error
+	removeFunc          func(ctx context.Context, imageRef string) error
+	closeFunc           func() error
+	setCacheOptionsFunc func(ctx context.Context, cacheFrom, cacheTo []string)
 }
 
 func (m *mockContainerBuilder) Build(ctx context.Context, cfg Config) (*BuildResult, error) {
@@ -89,6 +90,12 @@ func (m *mockContainerBuilder) Close() error {
 		return m.closeFunc()
 	}
 	return nil
+}
+
+func (m *mockContainerBuilder) SetCacheOptions(ctx context.Context, cacheFrom, cacheTo []string) {
+	if m.setCacheOptionsFunc != nil {
+		m.setCacheOptionsFunc(ctx, cacheFrom, cacheTo)
+	}
 }
 
 func (m *mockContainerBuilder) SupportsMultiArch() bool {

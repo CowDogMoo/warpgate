@@ -173,6 +173,8 @@ func (s *BuildService) executeSingleArchBuild(ctx context.Context, config *Confi
 		config.Base.Platform = fmt.Sprintf("linux/%s", config.Architectures[0])
 	}
 
+	bldr.SetCacheOptions(ctx, opts.CacheFrom, opts.CacheTo)
+
 	result, err := bldr.Build(ctx, *config)
 	if err != nil {
 		return nil, fmt.Errorf("container build failed: %w", err)
@@ -185,7 +187,8 @@ func (s *BuildService) executeSingleArchBuild(ctx context.Context, config *Confi
 func (s *BuildService) executeMultiArchBuild(ctx context.Context, config *Config, bldr ContainerBuilder, opts BuildOptions) ([]BuildResult, error) {
 	logging.InfoContext(ctx, "Executing multi-arch build for %d architectures: %v", len(config.Architectures), config.Architectures)
 
-	// Use configured concurrency
+	bldr.SetCacheOptions(ctx, opts.CacheFrom, opts.CacheTo)
+
 	concurrency := DefaultMaxConcurrency
 	if s.globalConfig != nil && s.globalConfig.Build.Concurrency > 0 {
 		concurrency = s.globalConfig.Build.Concurrency
