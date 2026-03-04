@@ -70,6 +70,10 @@ func (m *MockContainerBuilder) Remove(ctx context.Context, imageRef string) erro
 	return args.Error(0)
 }
 
+func (m *MockContainerBuilder) SetCacheOptions(ctx context.Context, cacheFrom, cacheTo []string) {
+	m.Called(ctx, cacheFrom, cacheTo)
+}
+
 func TestNewBuildOrchestrator(t *testing.T) {
 	tests := []struct {
 		name               string
