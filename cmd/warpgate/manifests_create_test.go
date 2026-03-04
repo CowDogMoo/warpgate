@@ -829,6 +829,9 @@ func (m *mockManifestBuilder) Close() error {
 	return nil
 }
 
+func (m *mockManifestBuilder) SetCacheOptions(_ context.Context, _, _ []string) {
+}
+
 func TestVerifyDigestsInRegistry_ConcurrencyFromConfigFallback(t *testing.T) {
 	// When CLI verifyConcurrency is 0 and config has a value, it should use config value.
 	// When both are 0, it should use default of 5.

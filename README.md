@@ -1,6 +1,6 @@
 # Warp Gate
 
-**Build container images and AWS AMIs with speed, simplicity, and security.**
+**Declarative container and AMI builder.**
 
 [![License](https://img.shields.io/github/license/CowDogMoo/warpgate?label=License&style=flat&color=blue&logo=github)](https://github.com/CowDogMoo/warpgate/blob/main/LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/CowDogMoo/warpgate?logo=go)](https://go.dev/)
@@ -43,13 +43,13 @@ building for multiple architectures simultaneously.
 
 Before using Warp Gate, ensure you have the following installed:
 
-| Requirement        | Version | Notes                                     |
-| ------------------ | ------- | ----------------------------------------- |
-| **Go**             | 1.25+   | Required for `go install`                 |
-| **Docker**         | 20.10+  | Required for container builds             |
-| **Docker Buildx**  | 0.8+    | Required for multi-arch builds            |
-| **AWS CLI** (opt.) | 2.x     | Required for AMI builds                   |
-| **Ansible** (opt.) | 2.9+    | Required for Ansible provisioner          |
+| Requirement        | Version | Notes                            |
+| ------------------ | ------- | -------------------------------- |
+| **Go**             | 1.25+   | Required for `go install`        |
+| **Docker**         | 20.10+  | Required for container builds    |
+| **Docker Buildx**  | 0.8+    | Required for multi-arch builds   |
+| **AWS CLI** (opt.) | 2.x     | Required for AMI builds          |
+| **Ansible** (opt.) | 2.9+    | Required for Ansible provisioner |
 
 ```bash
 # Verify Docker Buildx is available
@@ -222,14 +222,14 @@ warpgate config show
 
 Warp Gate supports the following environment variables:
 
-| Variable | Description | Default |
-| --- | --- | --- |
-| `WARPGATE_LOG_LEVEL` | Log verbosity (debug/info/etc) | `info` |
-| `WARPGATE_LOG_FORMAT` | Log format (text, json, color) | `color` |
-| `WARPGATE_REGISTRY_DEFAULT` | Default container registry | `ghcr.io` |
-| `WARPGATE_BUILD_DEFAULT_ARCH` | Default build architectures | `amd64` |
-| `AWS_REGION` | AWS region for AMI builds | - |
-| `AWS_PROFILE` | AWS credentials profile | - |
+| Variable                      | Description                    | Default   |
+| ----------------------------- | ------------------------------ | --------- |
+| `WARPGATE_LOG_LEVEL`          | Log verbosity (debug/info/etc) | `info`    |
+| `WARPGATE_LOG_FORMAT`         | Log format (text, json, color) | `color`   |
+| `WARPGATE_REGISTRY_DEFAULT`   | Default container registry     | `ghcr.io` |
+| `WARPGATE_BUILD_DEFAULT_ARCH` | Default build architectures    | `amd64`   |
+| `AWS_REGION`                  | AWS region for AMI builds      | -         |
+| `AWS_PROFILE`                 | AWS credentials profile        | -         |
 
 ### Example Configuration
 
