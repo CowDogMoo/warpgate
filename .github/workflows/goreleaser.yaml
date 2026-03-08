@@ -6,7 +6,7 @@ on:
       - "*"
 
 env:
-  GO_VERSION: 1.26.0
+  GO_VERSION: 1.26.1
 
 jobs:
   goreleaser:
