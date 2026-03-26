@@ -2772,6 +2772,58 @@ func TestPush_WithRegistryPrefix(t *testing.T) {
 	}
 }
 
+func TestProcessPushResponse(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantError bool
+		errorMsg  string
+	}{
+		{
+			name:      "successful push with progress",
+			input:     "{\"status\":\"Pushing\",\"progressDetail\":{\"current\":100,\"total\":200},\"progress\":\"[==> ]\",\"id\":\"abc123\"}\n{\"status\":\"Pushed\",\"progressDetail\":{},\"id\":\"abc123\"}\n",
+			wantError: false,
+		},
+		{
+			name:      "push error in stream",
+			input:     "{\"error\":\"denied: access forbidden\"}\n",
+			wantError: true,
+			errorMsg:  "denied: access forbidden",
+		},
+		{
+			name:      "empty response",
+			input:     "",
+			wantError: false,
+		},
+		{
+			name:      "status only messages",
+			input:     "{\"status\":\"The push refers to repository [ghcr.io/test/image]\"}\n{\"status\":\"latest: digest: sha256:abc123\"}\n",
+			wantError: false,
+		},
+		{
+			name:      "malformed JSON in stream continues processing",
+			input:     "[invalid]\n{\"status\":\"Pushed\",\"id\":\"abc123\"}\n",
+			wantError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := strings.NewReader(tt.input)
+			err := processPushResponse(context.Background(), resp)
+			if tt.wantError {
+				if err == nil {
+					t.Error("expected error but got nil")
+				} else if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("expected error containing %q, got %q", tt.errorMsg, err.Error())
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestPush_InspectFailsAfterPush(t *testing.T) {
 	mock := &MockDockerClient{
 		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
