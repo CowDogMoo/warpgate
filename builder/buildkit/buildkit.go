@@ -1334,7 +1334,7 @@ func processPushResponse(ctx context.Context, resp io.Reader) error {
 		var msg pushStatusMessage
 		if err := decoder.Decode(&msg); err != nil {
 			logging.WarnContext(ctx, "Failed to decode push response line: %v", err)
-			continue
+			break
 		}
 
 		if msg.Error != "" {

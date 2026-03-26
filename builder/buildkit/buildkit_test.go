@@ -2800,6 +2800,11 @@ func TestProcessPushResponse(t *testing.T) {
 			input:     "{\"status\":\"The push refers to repository [ghcr.io/test/image]\"}\n{\"status\":\"latest: digest: sha256:abc123\"}\n",
 			wantError: false,
 		},
+		{
+			name:      "malformed JSON in stream continues processing",
+			input:     "[invalid]\n{\"status\":\"Pushed\",\"id\":\"abc123\"}\n",
+			wantError: false,
+		},
 	}
 
 	for _, tt := range tests {
