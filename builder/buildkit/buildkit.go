@@ -1289,16 +1289,8 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		}
 	}()
 
-	buf := new(strings.Builder)
-	if _, err := io.Copy(buf, resp); err != nil {
-		logging.WarnContext(ctx, "Failed to read push response: %v", err)
-	} else {
-		output := buf.String()
-		logging.DebugContext(ctx, "Push response: %s", output)
-
-		if strings.Contains(output, "\"error\"") {
-			return "", fmt.Errorf("push failed: %s", output)
-		}
+	if err := processPushResponse(ctx, resp); err != nil {
+		return "", err
 	}
 
 	inspect, err := b.dockerClient.ImageInspect(ctx, fullImageRef)
@@ -1319,6 +1311,43 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 
 	logging.WarnContext(ctx, "No digest found for %s", fullImageRef)
 	return "", nil
+}
+
+// pushStatusMessage represents a single status line from the Docker push JSON stream.
+type pushStatusMessage struct {
+	Status         string                    `json:"status"`
+	ID             string                    `json:"id"`
+	Progress       string                    `json:"progress"`
+	Error          string                    `json:"error"`
+	ErrorDetail    *struct{ Message string } `json:"errorDetail"`
+	ProgressDetail *struct {
+		Current int64 `json:"current"`
+		Total   int64 `json:"total"`
+	} `json:"progressDetail"`
+}
+
+// processPushResponse reads the Docker push JSON stream, logs human-readable
+// progress, and returns an error if the stream reports one.
+func processPushResponse(ctx context.Context, resp io.Reader) error {
+	decoder := json.NewDecoder(resp)
+	for decoder.More() {
+		var msg pushStatusMessage
+		if err := decoder.Decode(&msg); err != nil {
+			logging.WarnContext(ctx, "Failed to decode push response line: %v", err)
+			break
+		}
+
+		if msg.Error != "" {
+			return fmt.Errorf("push failed: %s", msg.Error)
+		}
+
+		if msg.ID != "" && msg.Progress != "" {
+			logging.DebugContext(ctx, "%s %s: %s", msg.Status, msg.ID, msg.Progress)
+		} else if msg.Status != "" {
+			logging.InfoContext(ctx, "%s %s", msg.Status, msg.ID)
+		}
+	}
+	return nil
 }
 
 // PushDigest pushes the built image by digest without creating a registry tag.
