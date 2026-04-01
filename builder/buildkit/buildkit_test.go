@@ -40,11 +40,11 @@ import (
 	"testing"
 	"time"
 
-	dockerimage "github.com/docker/docker/api/types/image"
-	dockerregistry "github.com/docker/docker/api/types/registry"
-	dockerclient "github.com/docker/docker/client"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	dockerimage "github.com/moby/moby/api/types/image"
+	dockerregistry "github.com/moby/moby/api/types/registry"
+	dockerclient "github.com/moby/moby/client"
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
@@ -472,7 +472,7 @@ func TestPush(t *testing.T) {
 			imageRef: "myregistry.io/myapp:latest",
 			registry: "myregistry.io",
 			setupMock: func(m *MockDockerClient) {
-				m.ImagePushFunc = func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+				m.ImagePushFunc = func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 					return io.NopCloser(strings.NewReader(`{"status":"Pushed"}`)), nil
 				}
 				m.ImageInspectFunc = func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -490,7 +490,7 @@ func TestPush(t *testing.T) {
 			imageRef: "myregistry.io/myapp:latest",
 			registry: "myregistry.io",
 			setupMock: func(m *MockDockerClient) {
-				m.ImagePushFunc = func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+				m.ImagePushFunc = func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 					return nil, fmt.Errorf("authentication required")
 				}
 			},
@@ -501,7 +501,7 @@ func TestPush(t *testing.T) {
 			imageRef: "myregistry.io/myapp:latest",
 			registry: "myregistry.io",
 			setupMock: func(m *MockDockerClient) {
-				m.ImagePushFunc = func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+				m.ImagePushFunc = func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 					return io.NopCloser(strings.NewReader(`{"error":"unauthorized"}`)), nil
 				}
 			},
@@ -601,7 +601,7 @@ func TestRemove(t *testing.T) {
 			name:     "successful removal",
 			imageRef: "myapp:latest",
 			setupMock: func(m *MockDockerClient) {
-				m.ImageRemoveFunc = func(ctx context.Context, imageID string, options dockerimage.RemoveOptions) ([]dockerimage.DeleteResponse, error) {
+				m.ImageRemoveFunc = func(ctx context.Context, imageID string, options ImageRemoveOptions) ([]dockerimage.DeleteResponse, error) {
 					return []dockerimage.DeleteResponse{{Deleted: imageID}}, nil
 				}
 			},
@@ -611,7 +611,7 @@ func TestRemove(t *testing.T) {
 			name:     "removal failure - image in use",
 			imageRef: "myapp:latest",
 			setupMock: func(m *MockDockerClient) {
-				m.ImageRemoveFunc = func(ctx context.Context, imageID string, options dockerimage.RemoveOptions) ([]dockerimage.DeleteResponse, error) {
+				m.ImageRemoveFunc = func(ctx context.Context, imageID string, options ImageRemoveOptions) ([]dockerimage.DeleteResponse, error) {
 					return nil, fmt.Errorf("conflict: unable to remove repository reference")
 				}
 			},
@@ -718,8 +718,8 @@ func TestLoadAndTagImage(t *testing.T) {
 			name:      "successful load",
 			imageName: "myapp:latest",
 			setupMock: func(m *MockDockerClient) {
-				m.ImageLoadFunc = func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
-					return dockerimage.LoadResponse{
+				m.ImageLoadFunc = func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
+					return ImageLoadResponse{
 						Body: io.NopCloser(strings.NewReader(`{"stream":"Loaded image: myapp:latest"}`)),
 					}, nil
 				}
@@ -730,8 +730,8 @@ func TestLoadAndTagImage(t *testing.T) {
 			name:      "load failure",
 			imageName: "myapp:latest",
 			setupMock: func(m *MockDockerClient) {
-				m.ImageLoadFunc = func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
-					return dockerimage.LoadResponse{}, fmt.Errorf("failed to load image")
+				m.ImageLoadFunc = func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
+					return ImageLoadResponse{}, fmt.Errorf("failed to load image")
 				}
 			},
 			expectError: true,
@@ -1703,9 +1703,9 @@ func TestLoadAndTagImage_Success(t *testing.T) {
 
 	loadCalled := false
 	mock := &MockDockerClient{
-		ImageLoadFunc: func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
+		ImageLoadFunc: func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
 			loadCalled = true
-			return dockerimage.LoadResponse{
+			return ImageLoadResponse{
 				Body: io.NopCloser(strings.NewReader(`{"stream":"Loaded image: test:latest\n"}`)),
 			}, nil
 		},
@@ -1729,8 +1729,8 @@ func TestLoadAndTagImage_LoadErrorFromMock(t *testing.T) {
 	}
 
 	mock := &MockDockerClient{
-		ImageLoadFunc: func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
-			return dockerimage.LoadResponse{}, fmt.Errorf("load failed")
+		ImageLoadFunc: func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
+			return ImageLoadResponse{}, fmt.Errorf("load failed")
 		},
 	}
 
@@ -2013,7 +2013,7 @@ func TestToDockerSDKAuth_DockerIO(t *testing.T) {
 
 func TestNewDockerClientAdapter_WrapsClient(t *testing.T) {
 	// Create a real docker client (may fail on CI, but we test the adapter logic)
-	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	cli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		t.Skipf("Docker not available, skipping: %v", err)
 	}
@@ -2654,8 +2654,8 @@ func TestLoadAndTagImage_ImageInspectError(t *testing.T) {
 	}
 
 	mock := &MockDockerClient{
-		ImageLoadFunc: func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
-			return dockerimage.LoadResponse{
+		ImageLoadFunc: func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
+			return ImageLoadResponse{
 				Body: io.NopCloser(strings.NewReader(`{"stream":"Loaded"}`)),
 			}, nil
 		},
@@ -2678,9 +2678,9 @@ func TestLoadAndTagImage_ResponseReadError(t *testing.T) {
 	}
 
 	mock := &MockDockerClient{
-		ImageLoadFunc: func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
+		ImageLoadFunc: func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
 			// Return a reader that errors on read
-			return dockerimage.LoadResponse{
+			return ImageLoadResponse{
 				Body: io.NopCloser(&failingReader{}),
 			}, nil
 		},
@@ -2707,7 +2707,7 @@ func (r *failingReader) Read(p []byte) (n int, err error) {
 
 func TestPush_ImagePushError(t *testing.T) {
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return nil, fmt.Errorf("push denied")
 		},
 	}
@@ -2724,7 +2724,7 @@ func TestPush_ImagePushError(t *testing.T) {
 
 func TestPush_ResponseContainsError(t *testing.T) {
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"error":"unauthorized"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -2745,7 +2745,7 @@ func TestPush_ResponseContainsError(t *testing.T) {
 func TestPush_WithRegistryPrefix(t *testing.T) {
 	pushCalled := false
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			pushCalled = true
 			return io.NopCloser(strings.NewReader(`{"status":"pushed"}`)), nil
 		},
@@ -2826,7 +2826,7 @@ func TestProcessPushResponse(t *testing.T) {
 
 func TestPush_InspectFailsAfterPush(t *testing.T) {
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"status":"pushed"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -4656,7 +4656,7 @@ func TestPushUnqualifiedImageRef(t *testing.T) {
 			tagCalled = true
 			return nil
 		},
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -4974,7 +4974,7 @@ func TestPushTagFailure(t *testing.T) {
 
 func TestPushInspectFailsAfterPush(t *testing.T) {
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -4999,7 +4999,7 @@ func TestPushInspectFailsAfterPush(t *testing.T) {
 
 func TestPushNoDigestInRepoDigests(t *testing.T) {
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -5076,8 +5076,8 @@ func TestApplyProvisionerAnsibleDispatch(t *testing.T) {
 
 func TestLoadAndTagImageSuccessWithResponse(t *testing.T) {
 	mock := &MockDockerClient{
-		ImageLoadFunc: func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
-			return dockerimage.LoadResponse{
+		ImageLoadFunc: func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
+			return ImageLoadResponse{
 				Body: io.NopCloser(strings.NewReader(`{"stream":"Loaded image: test:latest"}`)),
 			}, nil
 		},
@@ -5206,7 +5206,7 @@ func TestCloseDockerClientError(t *testing.T) {
 
 func TestPushReadResponseFailure(t *testing.T) {
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(&errorReader{}), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -5239,7 +5239,7 @@ func (r *errorReader) Read(p []byte) (n int, err error) {
 
 func TestPushRepoDigestMalformed(t *testing.T) {
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -5386,8 +5386,8 @@ func TestApplyAnsibleProvisionerGalaxyError(t *testing.T) {
 
 func TestLoadAndTagImageReadResponseError(t *testing.T) {
 	mock := &MockDockerClient{
-		ImageLoadFunc: func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
-			return dockerimage.LoadResponse{
+		ImageLoadFunc: func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
+			return ImageLoadResponse{
 				Body: io.NopCloser(&errorReader{}),
 			}, nil
 		},
@@ -5649,7 +5649,7 @@ func TestRemove_Success(t *testing.T) {
 	t.Parallel()
 	removeCalled := false
 	mock := &MockDockerClient{
-		ImageRemoveFunc: func(ctx context.Context, imageID string, options dockerimage.RemoveOptions) ([]dockerimage.DeleteResponse, error) {
+		ImageRemoveFunc: func(ctx context.Context, imageID string, options ImageRemoveOptions) ([]dockerimage.DeleteResponse, error) {
 			removeCalled = true
 			if imageID != "myapp:old" {
 				t.Errorf("unexpected imageID: %q", imageID)
@@ -5675,7 +5675,7 @@ func TestRemove_Success(t *testing.T) {
 func TestRemove_Error(t *testing.T) {
 	t.Parallel()
 	mock := &MockDockerClient{
-		ImageRemoveFunc: func(ctx context.Context, imageID string, options dockerimage.RemoveOptions) ([]dockerimage.DeleteResponse, error) {
+		ImageRemoveFunc: func(ctx context.Context, imageID string, options ImageRemoveOptions) ([]dockerimage.DeleteResponse, error) {
 			return nil, fmt.Errorf("image is in use")
 		},
 	}
@@ -5697,7 +5697,7 @@ func TestRemove_Error(t *testing.T) {
 func TestPush_SuccessWithDigest(t *testing.T) {
 	t.Parallel()
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"status":"Pushed"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -5721,7 +5721,7 @@ func TestPush_SuccessWithDigest(t *testing.T) {
 func TestPush_Error(t *testing.T) {
 	t.Parallel()
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return nil, fmt.Errorf("connection refused")
 		},
 	}
@@ -5743,7 +5743,7 @@ func TestPush_Error(t *testing.T) {
 func TestPush_JSONErrorInResponse(t *testing.T) {
 	t.Parallel()
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"error":"unauthorized: access denied"}`)), nil
 		},
 	}
@@ -5770,7 +5770,7 @@ func TestPush_FullyQualifiedRef(t *testing.T) {
 			tagCalled = true
 			return nil
 		},
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -6250,8 +6250,8 @@ func TestConfigureCacheOptions_NoCacheFlagDisablesCaching(t *testing.T) {
 func TestLoadAndTagImage_LoadError(t *testing.T) {
 	t.Parallel()
 	mock := &MockDockerClient{
-		ImageLoadFunc: func(ctx context.Context, input io.Reader) (dockerimage.LoadResponse, error) {
-			return dockerimage.LoadResponse{}, fmt.Errorf("disk full")
+		ImageLoadFunc: func(ctx context.Context, input io.Reader) (ImageLoadResponse, error) {
+			return ImageLoadResponse{}, fmt.Errorf("disk full")
 		},
 	}
 	b := &BuildKitBuilder{dockerClient: mock}
@@ -6753,7 +6753,7 @@ func TestCalculateBuildContext_MixedProvisioners(t *testing.T) {
 func TestPush_EmptyRegistryWithUnqualifiedRef(t *testing.T) {
 	t.Parallel()
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
 		},
 		ImageInspectFunc: func(ctx context.Context, imageID string) (dockerimage.InspectResponse, error) {
@@ -7065,7 +7065,7 @@ func TestCreateAndPushManifestInvalidName(t *testing.T) {
 func TestPushEmptyRegistryNonQualifiedRef(t *testing.T) {
 	pushCalled := false
 	mock := &MockDockerClient{
-		ImagePushFunc: func(ctx context.Context, image string, options dockerimage.PushOptions) (io.ReadCloser, error) {
+		ImagePushFunc: func(ctx context.Context, image string, options ImagePushOptions) (io.ReadCloser, error) {
 			pushCalled = true
 			return io.NopCloser(strings.NewReader(`{"status":"ok"}`)), nil
 		},

@@ -17,9 +17,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	dockerregistry "github.com/docker/docker/api/types/registry"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	dockerregistry "github.com/moby/moby/api/types/registry"
 
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
