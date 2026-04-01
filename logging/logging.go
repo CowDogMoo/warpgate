@@ -38,6 +38,10 @@ import (
 	"github.com/fatih/color"
 )
 
+// colorMu serializes access to the fatih/color package functions which use
+// global state that is not safe for concurrent use across goroutines.
+var colorMu sync.Mutex
+
 // LogLevel represents the severity level of a log message
 type LogLevel int
 
@@ -99,6 +103,10 @@ func (l *CustomLogger) formatMessage(level LogLevel, message string, args ...int
 	if l.OutputType != ColorOutput {
 		return formattedMsg
 	}
+
+	// Serialize access to fatih/color global state
+	colorMu.Lock()
+	defer colorMu.Unlock()
 
 	// Apply colored level prefix for color output
 	switch level {
