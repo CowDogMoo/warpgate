@@ -48,7 +48,9 @@ func TestAdapter_ImagePush(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/images/") && strings.Contains(r.URL.Path, "/push") {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"status":"pushing"}`)
+			if _, err := fmt.Fprintln(w, `{"status":"pushing"}`); err != nil {
+				t.Errorf("writing push response: %v", err)
+			}
 			return
 		}
 		http.NotFound(w, r)
@@ -108,7 +110,9 @@ func TestAdapter_ImageRemove(t *testing.T) {
 func TestAdapter_ImageRemove_Error(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintln(w, `{"message":"no such image"}`)
+		if _, err := fmt.Fprintln(w, `{"message":"no such image"}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
 	}))
 
 	ctx := context.Background()
@@ -121,7 +125,9 @@ func TestAdapter_ImageLoad(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/images/load") {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintln(w, `{"stream":"Loaded image: test:latest"}`)
+			if _, err := fmt.Fprintln(w, `{"stream":"Loaded image: test:latest"}`); err != nil {
+				t.Errorf("writing load response: %v", err)
+			}
 			return
 		}
 		http.NotFound(w, r)
