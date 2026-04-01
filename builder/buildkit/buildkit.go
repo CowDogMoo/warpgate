@@ -36,9 +36,6 @@ import (
 	"time"
 
 	dockerconfig "github.com/docker/cli/cli/config"
-	dockercontainer "github.com/docker/docker/api/types/container"
-	dockerimage "github.com/docker/docker/api/types/image"
-	dockerclient "github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -47,6 +44,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	dockerclient "github.com/moby/moby/client"
 
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -142,13 +140,13 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 
 	logging.InfoContext(ctx, "BuildKit client connected (version %s)", info.BuildkitVersion.Version)
 
-	dockerCli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	dockerCli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		_ = c.Close()
 		return nil, errors.Wrap("create Docker client", "", err)
 	}
 
-	_, err = dockerCli.Ping(ctx)
+	_, err = dockerCli.Ping(ctx, dockerclient.PingOptions{})
 	if err != nil {
 		_ = c.Close()
 		_ = dockerCli.Close()
@@ -271,7 +269,7 @@ func parseCacheAttrs(cacheSpec string) map[string]string {
 //   - containerName: The full container name (e.g., "buildx_buildkit_default0")
 //   - error: Non-nil if no builder found or Docker communication fails
 func detectBuildxBuilder(ctx context.Context) (string, string, error) {
-	dockerCli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	dockerCli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create Docker client: %w\n\nPlease install Docker Desktop or Docker Engine", err)
 	}
@@ -281,19 +279,19 @@ func detectBuildxBuilder(ctx context.Context) (string, string, error) {
 		}
 	}()
 
-	_, err = dockerCli.Ping(ctx)
+	_, err = dockerCli.Ping(ctx, dockerclient.PingOptions{})
 	if err != nil {
 		return "", "", fmt.Errorf("cannot connect to Docker daemon: %w\n\nPlease ensure Docker is running", err)
 	}
 
-	containers, err := dockerCli.ContainerList(ctx, dockercontainer.ListOptions{
+	result, err := dockerCli.ContainerList(ctx, dockerclient.ContainerListOptions{
 		All: true,
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	for _, container := range containers {
+	for _, container := range result.Items {
 		if container.State != "running" {
 			continue
 		}
@@ -1274,7 +1272,7 @@ func (b *BuildKitBuilder) Push(ctx context.Context, imageRef, registry string) (
 		registryAuth = ""
 	}
 
-	pushOpts := dockerimage.PushOptions{
+	pushOpts := ImagePushOptions{
 		RegistryAuth: registryAuth,
 	}
 
@@ -1409,7 +1407,7 @@ func (b *BuildKitBuilder) Tag(ctx context.Context, imageRef, newTag string) erro
 // Remove deletes imageRef from the local Docker image store,
 // pruning child layers.
 func (b *BuildKitBuilder) Remove(ctx context.Context, imageRef string) error {
-	removeOpts := dockerimage.RemoveOptions{
+	removeOpts := ImageRemoveOptions{
 		Force:         false,
 		PruneChildren: true,
 	}

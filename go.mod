@@ -13,7 +13,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.51.4
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.4
 	github.com/docker/cli v29.3.1+incompatible
-	github.com/docker/docker v28.5.2+incompatible
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.17.1
 	github.com/google/go-containerregistry v0.21.3
@@ -21,6 +20,8 @@ require (
 	github.com/invopop/jsonschema v0.13.0
 	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/moby/buildkit v0.29.0
+	github.com/moby/moby/api v1.54.0
+	github.com/moby/moby/client v0.3.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/spf13/cobra v1.10.2
@@ -106,10 +107,7 @@ require (
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
-	github.com/moby/moby/api v1.54.0 // indirect
-	github.com/moby/moby/client v0.3.0 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
-	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
 	github.com/morikuni/aec v1.1.0 // indirect
 	github.com/onsi/gomega v1.39.1 // indirect
