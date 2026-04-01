@@ -152,7 +152,9 @@ func TestAdapter_ImageLoad(t *testing.T) {
 func TestAdapter_ImageLoad_Error(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, `{"message":"server error"}`)
+		if _, err := fmt.Fprintln(w, `{"message":"server error"}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
 	}))
 
 	ctx := context.Background()
@@ -187,7 +189,9 @@ func TestAdapter_ImageInspect(t *testing.T) {
 func TestAdapter_ImageInspect_Error(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintln(w, `{"message":"no such image"}`)
+		if _, err := fmt.Fprintln(w, `{"message":"no such image"}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
 	}))
 
 	ctx := context.Background()
@@ -225,7 +229,9 @@ func TestAdapter_ImageInspectWithRaw(t *testing.T) {
 func TestAdapter_ImageInspectWithRaw_Error(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintln(w, `{"message":"no such image"}`)
+		if _, err := fmt.Fprintln(w, `{"message":"no such image"}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
 	}))
 
 	ctx := context.Background()
@@ -253,7 +259,9 @@ func TestAdapter_DistributionInspect(t *testing.T) {
 func TestAdapter_DistributionInspect_Error(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintln(w, `{"message":"not found"}`)
+		if _, err := fmt.Fprintln(w, `{"message":"not found"}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
 	}))
 
 	ctx := context.Background()
@@ -288,7 +296,9 @@ func TestAdapter_ContainerList(t *testing.T) {
 func TestAdapter_ContainerList_Error(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, `{"message":"server error"}`)
+		if _, err := fmt.Fprintln(w, `{"message":"server error"}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
 	}))
 
 	ctx := context.Background()
@@ -317,7 +327,9 @@ func TestAdapter_Ping(t *testing.T) {
 func TestAdapter_Ping_Error(t *testing.T) {
 	adapter := newTestAdapter(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, `{"message":"daemon not ready"}`)
+		if _, err := fmt.Fprintln(w, `{"message":"daemon not ready"}`); err != nil {
+			t.Errorf("writing error response: %v", err)
+		}
 	}))
 
 	ctx := context.Background()
