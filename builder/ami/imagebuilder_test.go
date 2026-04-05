@@ -36,6 +36,8 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
 	ibtypes "github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/stretchr/testify/assert"
@@ -2290,6 +2292,90 @@ func TestGetOrCreatePipeline_NotFound(t *testing.T) {
 	assert.True(t, createCalled)
 	assert.Equal(t, "arn:pipeline:new", arn)
 	assert.Equal(t, "arn:pipeline:new", created.PipelineARN)
+}
+
+func TestResolveSSMParameterARN(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		parentImage    string
+		getParamFunc   func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error)
+		expectedResult string
+		expectError    bool
+	}{
+		{
+			name:           "non-SSM ARN returns unchanged",
+			parentImage:    "ami-0123456789abcdef0",
+			expectedResult: "ami-0123456789abcdef0",
+		},
+		{
+			name:           "SSM ARN without parameter path returns unchanged",
+			parentImage:    "arn:aws:ssm:us-east-1:123456789012:something-else",
+			expectedResult: "arn:aws:ssm:us-east-1:123456789012:something-else",
+		},
+		{
+			name:        "valid SSM parameter ARN resolves to AMI ID",
+			parentImage: "arn:aws:ssm:us-east-1:123456789012:parameter/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64",
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return &ssm.GetParameterOutput{
+					Parameter: &ssmtypes.Parameter{
+						Value: aws.String("ami-resolved123"),
+					},
+				}, nil
+			},
+			expectedResult: "ami-resolved123",
+		},
+		{
+			name:        "SSM GetParameter error returns error",
+			parentImage: "arn:aws:ssm:us-east-1:123456789012:parameter/nonexistent",
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return nil, fmt.Errorf("ParameterNotFound")
+			},
+			expectError: true,
+		},
+		{
+			name:        "SSM parameter with nil value returns original",
+			parentImage: "arn:aws:ssm:us-east-1:123456789012:parameter/empty-param",
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return &ssm.GetParameterOutput{
+					Parameter: &ssmtypes.Parameter{},
+				}, nil
+			},
+			expectedResult: "arn:aws:ssm:us-east-1:123456789012:parameter/empty-param",
+		},
+		{
+			name:        "SSM parameter with nil parameter returns original",
+			parentImage: "arn:aws:ssm:us-east-1:123456789012:parameter/nil-param",
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return &ssm.GetParameterOutput{}, nil
+			},
+			expectedResult: "arn:aws:ssm:us-east-1:123456789012:parameter/nil-param",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			clients, mocks := newMockAWSClients()
+			if tc.getParamFunc != nil {
+				mocks.ssm.GetParameterFunc = tc.getParamFunc
+			}
+
+			ib := &ImageBuilder{
+				clients: clients,
+			}
+
+			result, err := ib.resolveSSMParameterARN(context.Background(), tc.parentImage)
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedResult, result)
+		})
+	}
 }
 
 func TestCopy(t *testing.T) {
