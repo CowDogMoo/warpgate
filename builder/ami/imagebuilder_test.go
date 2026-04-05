@@ -1464,6 +1464,122 @@ func TestCreateImageRecipe_MissingParentImage(t *testing.T) {
 	assert.Contains(t, err.Error(), "parent image")
 }
 
+func TestCreateImageRecipe_SSMResolutionError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.ssm.GetParameterFunc = func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+		return nil, fmt.Errorf("ParameterNotFound: parameter not found")
+	}
+
+	ib := &ImageBuilder{
+		clients:      clients,
+		globalConfig: newTestGlobalConfig(),
+	}
+
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "arn:aws:ssm:us-east-1:123456789012:parameter/bad/param"},
+	}
+	target := &builder.Target{Type: "ami", Region: "us-east-1"}
+
+	_, err := ib.createImageRecipe(context.Background(), cfg, []string{"arn:comp1"}, target)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to resolve SSM parameter")
+}
+
+func TestGetOrCreateInfrastructureConfig_GetError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListInfrastructureConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListInfrastructureConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListInfrastructureConfigurationsOutput, error) {
+		return nil, fmt.Errorf("AccessDenied: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.getOrCreateInfrastructureConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for existing infrastructure config")
+}
+
+func TestGetOrCreateDistributionConfig_GetError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return nil, fmt.Errorf("AccessDenied: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.getOrCreateDistributionConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for existing distribution config")
+}
+
+func TestGetOrCreateImageRecipe_GetError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return nil, fmt.Errorf("AccessDenied: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for existing image recipe")
+}
+
+func TestGetOrCreatePipeline_GetError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		return nil, fmt.Errorf("AccessDenied: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		pipelineManager: NewPipelineManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.getOrCreatePipeline(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, "arn:recipe", "arn:infra", "arn:dist", created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for existing pipeline")
+}
+
 func TestValidateConfig_Comprehensive(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

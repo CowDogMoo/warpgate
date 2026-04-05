@@ -535,12 +535,7 @@ func (b *ImageBuilder) resolveSSMParameterARN(ctx context.Context, parentImage s
 		return parentImage, nil
 	}
 
-	parts := strings.SplitN(parentImage, ":parameter", 2)
-	if len(parts) != 2 {
-		return parentImage, nil
-	}
-
-	paramName := parts[1]
+	paramName := parentImage[strings.Index(parentImage, ":parameter")+len(":parameter"):]
 	logging.InfoContext(ctx, "Resolving SSM parameter to AMI ID: %s", paramName)
 
 	ssmOutput, err := b.clients.SSM.GetParameter(ctx, &ssm.GetParameterInput{
