@@ -1856,6 +1856,41 @@ func TestGetOrCreateInfrastructureConfig_ForceRecreate(t *testing.T) {
 	assert.Equal(t, "arn:infra:new", created.InfraARN)
 }
 
+func TestGetOrCreateInfrastructureConfig_NotFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// Return empty list so GetInfrastructureConfig returns ErrNotFound
+	mocks.imageBuilder.ListInfrastructureConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListInfrastructureConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListInfrastructureConfigurationsOutput, error) {
+		return &imagebuilder.ListInfrastructureConfigurationsOutput{
+			InfrastructureConfigurationSummaryList: []ibtypes.InfrastructureConfigurationSummary{},
+		}, nil
+	}
+	createCalled := false
+	mocks.imageBuilder.CreateInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.CreateInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateInfrastructureConfigurationOutput, error) {
+		createCalled = true
+		return &imagebuilder.CreateInfrastructureConfigurationOutput{
+			InfrastructureConfigurationArn: aws.String("arn:infra:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateInfrastructureConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, createCalled)
+	assert.Equal(t, "arn:infra:new", arn)
+	assert.Equal(t, "arn:infra:new", created.InfraARN)
+}
+
 func TestGetOrCreateDistributionConfig_ExistingFound(t *testing.T) {
 	t.Parallel()
 
@@ -1933,6 +1968,40 @@ func TestGetOrCreateDistributionConfig_ForceRecreate(t *testing.T) {
 	arn, err := ib.getOrCreateDistributionConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
 	require.NoError(t, err)
 	assert.True(t, deleteCalled)
+	assert.Equal(t, "arn:dist:new", arn)
+	assert.Equal(t, "arn:dist:new", created.DistARN)
+}
+
+func TestGetOrCreateDistributionConfig_NotFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return &imagebuilder.ListDistributionConfigurationsOutput{
+			DistributionConfigurationSummaryList: []ibtypes.DistributionConfigurationSummary{},
+		}, nil
+	}
+	createCalled := false
+	mocks.imageBuilder.CreateDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.CreateDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateDistributionConfigurationOutput, error) {
+		createCalled = true
+		return &imagebuilder.CreateDistributionConfigurationOutput{
+			DistributionConfigurationArn: aws.String("arn:dist:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateDistributionConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, createCalled)
 	assert.Equal(t, "arn:dist:new", arn)
 	assert.Equal(t, "arn:dist:new", created.DistARN)
 }
@@ -2024,6 +2093,44 @@ func TestGetOrCreateImageRecipe_ForceRecreate(t *testing.T) {
 	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
 	require.NoError(t, err)
 	assert.True(t, deleteCalled)
+	assert.Equal(t, "arn:recipe:new", arn)
+	assert.Equal(t, "arn:recipe:new", created.RecipeARN)
+}
+
+func TestGetOrCreateImageRecipe_NotFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{},
+		}, nil
+	}
+	createCalled := false
+	mocks.imageBuilder.CreateImageRecipeFunc = func(ctx context.Context, params *imagebuilder.CreateImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImageRecipeOutput, error) {
+		createCalled = true
+		return &imagebuilder.CreateImageRecipeOutput{
+			ImageRecipeArn: aws.String("arn:recipe:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "ami-base"},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, createCalled)
 	assert.Equal(t, "arn:recipe:new", arn)
 	assert.Equal(t, "arn:recipe:new", created.RecipeARN)
 }
@@ -2145,6 +2252,44 @@ func TestGetOrCreatePipeline_AlreadyExists(t *testing.T) {
 	}, "arn:recipe", "arn:infra", "arn:dist", created)
 	require.NoError(t, err)
 	assert.Equal(t, "arn:pipeline:existing", arn)
+}
+
+func TestGetOrCreatePipeline_NotFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		return &imagebuilder.ListImagePipelinesOutput{
+			ImagePipelineList: []ibtypes.ImagePipeline{},
+		}, nil
+	}
+	createCalled := false
+	mocks.imageBuilder.CreateImagePipelineFunc = func(ctx context.Context, params *imagebuilder.CreateImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImagePipelineOutput, error) {
+		createCalled = true
+		return &imagebuilder.CreateImagePipelineOutput{
+			ImagePipelineArn: aws.String("arn:pipeline:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		pipelineManager: NewPipelineManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreatePipeline(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, "arn:recipe", "arn:infra", "arn:dist", created)
+	require.NoError(t, err)
+	assert.True(t, createCalled)
+	assert.Equal(t, "arn:pipeline:new", arn)
+	assert.Equal(t, "arn:pipeline:new", created.PipelineARN)
 }
 
 func TestCopy(t *testing.T) {
