@@ -419,6 +419,64 @@ func TestListComponents_GetComponentError_Skipped(t *testing.T) {
 	assert.Equal(t, 2, getCallCount)
 }
 
+func TestListComponents_ListBuildVersionsError_Skipped(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+	cleaner := NewResourceCleaner(clients)
+
+	mocks.imageBuilder.ListComponentsFunc = func(ctx context.Context, params *imagebuilder.ListComponentsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentsOutput, error) {
+		return &imagebuilder.ListComponentsOutput{
+			ComponentVersionList: []ibtypes.ComponentVersion{
+				{
+					Name:    aws.String("comp"),
+					Arn:     aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/comp/1.0.0"),
+					Version: aws.String("1.0.0"),
+				},
+			},
+		}, nil
+	}
+
+	mocks.imageBuilder.ListComponentBuildVersionsFunc = func(ctx context.Context, params *imagebuilder.ListComponentBuildVersionsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentBuildVersionsOutput, error) {
+		return nil, fmt.Errorf("throttled")
+	}
+
+	resources, err := cleaner.listComponents(context.Background())
+	assert.NoError(t, err)
+	assert.Empty(t, resources)
+}
+
+func TestListComponents_NilBuildVersionArn_Skipped(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+	cleaner := NewResourceCleaner(clients)
+
+	mocks.imageBuilder.ListComponentsFunc = func(ctx context.Context, params *imagebuilder.ListComponentsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentsOutput, error) {
+		return &imagebuilder.ListComponentsOutput{
+			ComponentVersionList: []ibtypes.ComponentVersion{
+				{
+					Name:    aws.String("comp"),
+					Arn:     aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/comp/1.0.0"),
+					Version: aws.String("1.0.0"),
+				},
+			},
+		}, nil
+	}
+
+	mocks.imageBuilder.ListComponentBuildVersionsFunc = func(ctx context.Context, params *imagebuilder.ListComponentBuildVersionsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentBuildVersionsOutput, error) {
+		return &imagebuilder.ListComponentBuildVersionsOutput{
+			ComponentSummaryList: []ibtypes.ComponentSummary{
+				{Arn: nil},
+			},
+		}, nil
+	}
+
+	resources, err := cleaner.listComponents(context.Background())
+	assert.NoError(t, err)
+	assert.Empty(t, resources)
+}
+
 func TestListComponents_APIError(t *testing.T) {
 	t.Parallel()
 
