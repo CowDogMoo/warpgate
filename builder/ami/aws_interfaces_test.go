@@ -368,7 +368,15 @@ func (m *MockIAMClient) ListAttachedRolePolicies(ctx context.Context, params *ia
 
 // MockSSMClient implements SSMAPI for testing.
 type MockSSMClient struct {
+	GetParameterFunc           func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error)
 	ListCommandInvocationsFunc func(ctx context.Context, params *ssm.ListCommandInvocationsInput, optFns ...func(*ssm.Options)) (*ssm.ListCommandInvocationsOutput, error)
+}
+
+func (m *MockSSMClient) GetParameter(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+	if m.GetParameterFunc != nil {
+		return m.GetParameterFunc(ctx, params, optFns...)
+	}
+	return &ssm.GetParameterOutput{}, nil
 }
 
 func (m *MockSSMClient) ListCommandInvocations(ctx context.Context, params *ssm.ListCommandInvocationsInput, optFns ...func(*ssm.Options)) (*ssm.ListCommandInvocationsOutput, error) {

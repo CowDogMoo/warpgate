@@ -26,12 +26,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
@@ -525,6 +528,31 @@ func parseVolumeType(volumeTypeStr string) types.EbsVolumeType {
 	return types.EbsVolumeTypeGp3
 }
 
+// resolveSSMParameterARN resolves a full SSM parameter ARN to its value (an AMI ID).
+// If the input is not an SSM parameter ARN, it is returned unchanged.
+func (b *ImageBuilder) resolveSSMParameterARN(ctx context.Context, parentImage string) (string, error) {
+	if !strings.HasPrefix(parentImage, "arn:aws:ssm:") || !strings.Contains(parentImage, ":parameter/") {
+		return parentImage, nil
+	}
+
+	paramName := parentImage[strings.Index(parentImage, ":parameter")+len(":parameter"):]
+	logging.InfoContext(ctx, "Resolving SSM parameter to AMI ID: %s", paramName)
+
+	ssmOutput, err := b.clients.SSM.GetParameter(ctx, &ssm.GetParameterInput{
+		Name: aws.String(paramName),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve SSM parameter %q to AMI ID: %w", paramName, err)
+	}
+
+	if ssmOutput.Parameter != nil && ssmOutput.Parameter.Value != nil {
+		logging.InfoContext(ctx, "Resolved parent image to AMI: %s", *ssmOutput.Parameter.Value)
+		return *ssmOutput.Parameter.Value, nil
+	}
+
+	return parentImage, nil
+}
+
 func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Config, componentARNs []string, target *builder.Target) (string, error) {
 	logging.InfoContext(ctx, "Creating image recipe")
 
@@ -535,6 +563,12 @@ func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Con
 			return "", fmt.Errorf("parent image (base AMI) must be specified in template config or global config (aws.ami.default_parent_image)")
 		}
 	}
+
+	resolved, err := b.resolveSSMParameterARN(ctx, parentImage)
+	if err != nil {
+		return "", err
+	}
+	parentImage = resolved
 
 	components := make([]types.ComponentConfiguration, 0, len(componentARNs))
 	for _, arn := range componentARNs {
@@ -619,7 +653,7 @@ func (b *ImageBuilder) getOrCreateInfrastructureConfig(ctx context.Context, name
 	infraName := fmt.Sprintf("%s-infra", name)
 
 	existing, err := b.resourceManager.GetInfrastructureConfig(ctx, infraName)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return "", fmt.Errorf("failed to check for existing infrastructure config: %w", err)
 	}
 
@@ -648,7 +682,7 @@ func (b *ImageBuilder) getOrCreateDistributionConfig(ctx context.Context, name s
 	distName := fmt.Sprintf("%s-dist", name)
 
 	existing, err := b.resourceManager.GetDistributionConfig(ctx, distName)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return "", fmt.Errorf("failed to check for existing distribution config: %w", err)
 	}
 
@@ -678,7 +712,7 @@ func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builde
 	normalizedVersion := NormalizeSemanticVersion(config.Version)
 
 	existing, err := b.resourceManager.GetImageRecipe(ctx, recipeName, normalizedVersion)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return "", fmt.Errorf("failed to check for existing image recipe: %w", err)
 	}
 
@@ -707,7 +741,7 @@ func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.C
 	pipelineName := fmt.Sprintf("%s-pipeline", config.Name)
 
 	existing, err := b.resourceManager.GetImagePipeline(ctx, pipelineName)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return "", fmt.Errorf("failed to check for existing pipeline: %w", err)
 	}
 
