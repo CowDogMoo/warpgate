@@ -296,24 +296,37 @@ func (c *ResourceCleaner) listComponents(ctx context.Context) ([]ResourceInfo, e
 		}
 
 		for _, comp := range output.ComponentVersionList {
-			// Get component details to check tags
-			getInput := &imagebuilder.GetComponentInput{
-				ComponentBuildVersionArn: comp.Arn,
-			}
-			detail, err := c.clients.ImageBuilder.GetComponent(ctx, getInput)
+			// ListComponents returns version ARNs (.../name/1.0.0) but
+			// GetComponent and DeleteComponent require build version ARNs
+			// (.../name/1.0.0/1). Resolve via ListComponentBuildVersions.
+			buildVersions, err := c.clients.ImageBuilder.ListComponentBuildVersions(ctx, &imagebuilder.ListComponentBuildVersionsInput{
+				ComponentVersionArn: comp.Arn,
+			})
 			if err != nil {
-				continue // Skip if we can't get details
+				continue
 			}
 
-			if detail.Component != nil && detail.Component.Tags != nil {
-				if buildName, ok := detail.Component.Tags["warpgate:name"]; ok {
-					resources = append(resources, ResourceInfo{
-						Type:      "Component",
-						Name:      aws.ToString(comp.Name),
-						ARN:       aws.ToString(comp.Arn),
-						BuildName: buildName,
-						Version:   aws.ToString(comp.Version),
-					})
+			for _, bv := range buildVersions.ComponentSummaryList {
+				if bv.Arn == nil {
+					continue
+				}
+				detail, err := c.clients.ImageBuilder.GetComponent(ctx, &imagebuilder.GetComponentInput{
+					ComponentBuildVersionArn: bv.Arn,
+				})
+				if err != nil {
+					continue
+				}
+
+				if detail.Component != nil && detail.Component.Tags != nil {
+					if buildName, ok := detail.Component.Tags["warpgate:name"]; ok {
+						resources = append(resources, ResourceInfo{
+							Type:      "Component",
+							Name:      aws.ToString(comp.Name),
+							ARN:       aws.ToString(bv.Arn),
+							BuildName: buildName,
+							Version:   aws.ToString(comp.Version),
+						})
+					}
 				}
 			}
 		}

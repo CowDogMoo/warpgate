@@ -831,9 +831,10 @@ func TestLogBuildProgress(t *testing.T) {
 	clients, _ := newMockAWSClients()
 	pm := NewPipelineManager(clients)
 
-	pm.logBuildProgress(types.ImageStatusBuilding, 5*time.Minute, true)
-	pm.logBuildProgress(types.ImageStatusBuilding, 5*time.Minute, false)
-	pm.logBuildProgress(types.ImageStatus("UNKNOWN"), 5*time.Minute, true)
+	ctx := context.Background()
+	pm.logBuildProgress(ctx, types.ImageStatusBuilding, 5*time.Minute, true)
+	pm.logBuildProgress(ctx, types.ImageStatusBuilding, 5*time.Minute, false)
+	pm.logBuildProgress(ctx, types.ImageStatus("UNKNOWN"), 5*time.Minute, true)
 }
 
 func TestInitMonitorIfEnabled(t *testing.T) {
@@ -843,7 +844,7 @@ func TestInitMonitorIfEnabled(t *testing.T) {
 		t.Parallel()
 		clients, _ := newMockAWSClients()
 		pm := NewPipelineManager(clients)
-		pm.initMonitorIfEnabled("test-image")
+		pm.initMonitorIfEnabled(context.Background(), "test-image")
 		assert.Nil(t, pm.monitor)
 	})
 
@@ -851,7 +852,7 @@ func TestInitMonitorIfEnabled(t *testing.T) {
 		t.Parallel()
 		clients, _ := newMockAWSClients()
 		pm := NewPipelineManagerWithMonitor(clients, MonitorConfig{StreamLogs: true})
-		pm.initMonitorIfEnabled("")
+		pm.initMonitorIfEnabled(context.Background(), "")
 		assert.Nil(t, pm.monitor)
 	})
 
@@ -859,7 +860,7 @@ func TestInitMonitorIfEnabled(t *testing.T) {
 		t.Parallel()
 		clients, _ := newMockAWSClients()
 		pm := NewPipelineManagerWithMonitor(clients, MonitorConfig{StreamLogs: true})
-		pm.initMonitorIfEnabled("test-image")
+		pm.initMonitorIfEnabled(context.Background(), "test-image")
 		assert.NotNil(t, pm.monitor)
 	})
 }

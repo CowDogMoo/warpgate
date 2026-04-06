@@ -195,7 +195,7 @@ func (m *PipelineManager) WaitForPipelineCompletionWithImageName(ctx context.Con
 		stageStartTimes: make(map[types.ImageStatus]time.Time),
 	}
 
-	m.initMonitorIfEnabled(imageName)
+	m.initMonitorIfEnabled(ctx, imageName)
 
 	for {
 		select {
@@ -221,10 +221,8 @@ type pipelineWaitState struct {
 }
 
 // initMonitorIfEnabled initializes the build monitor if monitoring is configured
-func (m *PipelineManager) initMonitorIfEnabled(imageName string) {
+func (m *PipelineManager) initMonitorIfEnabled(ctx context.Context, imageName string) {
 	if (m.monitorConfig.StreamLogs || m.monitorConfig.ShowEC2Status) && imageName != "" {
-		// Create a background context since we don't have one passed in
-		ctx := context.Background()
 		m.monitor = NewBuildMonitor(m.clients, imageName, m.monitorConfig)
 		logging.InfoContext(ctx, "Build monitoring enabled (logs: %v, EC2 status: %v)",
 			m.monitorConfig.StreamLogs, m.monitorConfig.ShowEC2Status)
@@ -245,7 +243,7 @@ func (m *PipelineManager) processPipelineTick(ctx context.Context, imageARN stri
 		state.stageStartTimes[status] = time.Now()
 	}
 
-	m.logBuildProgress(status, elapsed, status != state.lastStatus)
+	m.logBuildProgress(ctx, status, elapsed, status != state.lastStatus)
 	state.lastStatus = status
 
 	if m.monitor != nil && (status == types.ImageStatusBuilding || status == types.ImageStatusCreating) {
@@ -256,11 +254,8 @@ func (m *PipelineManager) processPipelineTick(ctx context.Context, imageARN stri
 }
 
 // logBuildProgress logs build stage or periodic progress updates
-func (m *PipelineManager) logBuildProgress(status types.ImageStatus, elapsed time.Duration, statusChanged bool) {
+func (m *PipelineManager) logBuildProgress(ctx context.Context, status types.ImageStatus, elapsed time.Duration, statusChanged bool) {
 	estimatedRemaining := m.estimateRemainingTime(status, elapsed)
-
-	// Create a background context since we don't have one passed in
-	ctx := context.Background()
 
 	if statusChanged {
 		stageInfo := m.formatBuildStage(status)

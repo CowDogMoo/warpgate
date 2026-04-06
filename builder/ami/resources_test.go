@@ -1101,3 +1101,51 @@ func TestErrNotFoundSentinel(t *testing.T) {
 	err := fmt.Errorf("infrastructure configuration %q: %w", "test", ErrNotFound)
 	assert.True(t, errors.Is(err, ErrNotFound))
 }
+
+func TestIsErrNotFound(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "exact sentinel",
+			err:      ErrNotFound,
+			expected: true,
+		},
+		{
+			name:     "properly wrapped with fmt.Errorf",
+			err:      fmt.Errorf("config %q: %w", "test", ErrNotFound),
+			expected: true,
+		},
+		{
+			name:     "wrapped with errors.Join",
+			err:      errors.Join(errors.New("context"), ErrNotFound),
+			expected: true,
+		},
+		{
+			name:     "string concatenation fallback",
+			err:      errors.New("resource 'test': " + ErrNotFound.Error()),
+			expected: true,
+		},
+		{
+			name:     "unrelated error",
+			err:      errors.New("access denied"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.expected, IsErrNotFound(tt.err))
+		})
+	}
+}

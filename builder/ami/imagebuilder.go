@@ -26,7 +26,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -653,7 +652,7 @@ func (b *ImageBuilder) getOrCreateInfrastructureConfig(ctx context.Context, name
 	infraName := fmt.Sprintf("%s-infra", name)
 
 	existing, err := b.resourceManager.GetInfrastructureConfig(ctx, infraName)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !IsErrNotFound(err) {
 		return "", fmt.Errorf("failed to check for existing infrastructure config: %w", err)
 	}
 
@@ -682,7 +681,7 @@ func (b *ImageBuilder) getOrCreateDistributionConfig(ctx context.Context, name s
 	distName := fmt.Sprintf("%s-dist", name)
 
 	existing, err := b.resourceManager.GetDistributionConfig(ctx, distName)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !IsErrNotFound(err) {
 		return "", fmt.Errorf("failed to check for existing distribution config: %w", err)
 	}
 
@@ -712,7 +711,7 @@ func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builde
 	normalizedVersion := NormalizeSemanticVersion(config.Version)
 
 	existing, err := b.resourceManager.GetImageRecipe(ctx, recipeName, normalizedVersion)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !IsErrNotFound(err) {
 		return "", fmt.Errorf("failed to check for existing image recipe: %w", err)
 	}
 
@@ -741,7 +740,7 @@ func (b *ImageBuilder) getOrCreatePipeline(ctx context.Context, config builder.C
 	pipelineName := fmt.Sprintf("%s-pipeline", config.Name)
 
 	existing, err := b.resourceManager.GetImagePipeline(ctx, pipelineName)
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if err != nil && !IsErrNotFound(err) {
 		return "", fmt.Errorf("failed to check for existing pipeline: %w", err)
 	}
 

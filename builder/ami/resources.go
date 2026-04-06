@@ -35,8 +35,19 @@ import (
 )
 
 // ErrNotFound is returned when a requested resource does not exist.
-// Use errors.Is(err, ami.ErrNotFound) to check for this error.
+// Use IsErrNotFound(err) to check for this error.
 var ErrNotFound = errors.New("resource not found")
+
+// IsErrNotFound reports whether err represents a resource-not-found condition.
+func IsErrNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
+	return strings.Contains(err.Error(), ErrNotFound.Error())
+}
 
 // ResourceManager handles idempotent creation and management of Image Builder resources
 type ResourceManager struct {
@@ -480,7 +491,7 @@ func (m *ResourceManager) cleanupResource(ctx context.Context, typeName string, 
 // Helper functions to get ARNs
 func (m *ResourceManager) getPipelineARN(ctx context.Context, name string) (string, error) {
 	pipeline, err := m.GetImagePipeline(ctx, name)
-	if errors.Is(err, ErrNotFound) {
+	if IsErrNotFound(err) {
 		return "", nil // Not found is not an error for ARN lookup
 	}
 	if err != nil {
@@ -491,7 +502,7 @@ func (m *ResourceManager) getPipelineARN(ctx context.Context, name string) (stri
 
 func (m *ResourceManager) getRecipeARN(ctx context.Context, name string) (string, error) {
 	recipe, err := m.GetImageRecipe(ctx, name, "")
-	if errors.Is(err, ErrNotFound) {
+	if IsErrNotFound(err) {
 		return "", nil // Not found is not an error for ARN lookup
 	}
 	if err != nil {
@@ -502,7 +513,7 @@ func (m *ResourceManager) getRecipeARN(ctx context.Context, name string) (string
 
 func (m *ResourceManager) getDistConfigARN(ctx context.Context, name string) (string, error) {
 	dist, err := m.GetDistributionConfig(ctx, name)
-	if errors.Is(err, ErrNotFound) {
+	if IsErrNotFound(err) {
 		return "", nil // Not found is not an error for ARN lookup
 	}
 	if err != nil {
@@ -513,7 +524,7 @@ func (m *ResourceManager) getDistConfigARN(ctx context.Context, name string) (st
 
 func (m *ResourceManager) getInfraConfigARN(ctx context.Context, name string) (string, error) {
 	infra, err := m.GetInfrastructureConfig(ctx, name)
-	if errors.Is(err, ErrNotFound) {
+	if IsErrNotFound(err) {
 		return "", nil // Not found is not an error for ARN lookup
 	}
 	if err != nil {
