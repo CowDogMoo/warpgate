@@ -24,11 +24,14 @@ concurrency:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   semgrep:
     name: 🚨 Semgrep Analysis
     runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
 
     steps:
       - name: Generate Token
@@ -44,12 +47,28 @@ jobs:
           token: "${{ steps.app-token.outputs.token }}"
 
       - name: Run Semgrep analysis
-        uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
+        run: |
+          semgrep scan \
+            --config p/security-audit \
+            --config p/secrets \
+            --config p/ci \
+            --config p/supply-chain \
+            --config p/golang \
+            --config p/trailofbits-go \
+            --sarif \
+            --output semgrep-results.sarif \
+            || true
+          # Semgrep exits non-zero when findings exist; findings are
+          # reported via SARIF upload, so we only fail if no output was
+          # produced (indicating a real error).
+          if [ ! -s semgrep-results.sarif ]; then
+            echo "::error::Semgrep failed to produce SARIF output"
+            exit 1
+          fi
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@5c8a8a642e79153f5d047b10ec1cba1d1cc65699 # v3
+        if: always()
         with:
-          config: >-
-            p/security-audit
-            p/secrets
-            p/ci
-            p/supply-chain
-            p/golang
-            p/trailofbits-go
+          sarif_file: semgrep-results.sarif
+          category: semgrep

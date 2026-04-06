@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	dockerregistry "github.com/docker/docker/api/types/registry"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	dockerregistry "github.com/moby/moby/api/types/registry"
 )
 
 // TestToDockerSDKAuth tests the conversion from DefaultKeychain to Docker SDK format

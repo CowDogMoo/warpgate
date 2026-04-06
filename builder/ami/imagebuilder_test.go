@@ -36,6 +36,8 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
 	ibtypes "github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/stretchr/testify/assert"
@@ -1462,6 +1464,122 @@ func TestCreateImageRecipe_MissingParentImage(t *testing.T) {
 	assert.Contains(t, err.Error(), "parent image")
 }
 
+func TestCreateImageRecipe_SSMResolutionError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.ssm.GetParameterFunc = func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+		return nil, fmt.Errorf("ParameterNotFound: parameter not found")
+	}
+
+	ib := &ImageBuilder{
+		clients:      clients,
+		globalConfig: newTestGlobalConfig(),
+	}
+
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "arn:aws:ssm:us-east-1:123456789012:parameter/bad/param"},
+	}
+	target := &builder.Target{Type: "ami", Region: "us-east-1"}
+
+	_, err := ib.createImageRecipe(context.Background(), cfg, []string{"arn:comp1"}, target)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to resolve SSM parameter")
+}
+
+func TestGetOrCreateInfrastructureConfig_GetError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListInfrastructureConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListInfrastructureConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListInfrastructureConfigurationsOutput, error) {
+		return nil, fmt.Errorf("AccessDenied: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.getOrCreateInfrastructureConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for existing infrastructure config")
+}
+
+func TestGetOrCreateDistributionConfig_GetError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return nil, fmt.Errorf("AccessDenied: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.getOrCreateDistributionConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for existing distribution config")
+}
+
+func TestGetOrCreateImageRecipe_GetError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return nil, fmt.Errorf("AccessDenied: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for existing image recipe")
+}
+
+func TestGetOrCreatePipeline_GetError(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		return nil, fmt.Errorf("AccessDenied: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		pipelineManager: NewPipelineManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+	}
+
+	created := &CreatedResources{}
+	_, err := ib.getOrCreatePipeline(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, "arn:recipe", "arn:infra", "arn:dist", created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to check for existing pipeline")
+}
+
 func TestValidateConfig_Comprehensive(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -1856,6 +1974,41 @@ func TestGetOrCreateInfrastructureConfig_ForceRecreate(t *testing.T) {
 	assert.Equal(t, "arn:infra:new", created.InfraARN)
 }
 
+func TestGetOrCreateInfrastructureConfig_NotFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// Return empty list so GetInfrastructureConfig returns ErrNotFound
+	mocks.imageBuilder.ListInfrastructureConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListInfrastructureConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListInfrastructureConfigurationsOutput, error) {
+		return &imagebuilder.ListInfrastructureConfigurationsOutput{
+			InfrastructureConfigurationSummaryList: []ibtypes.InfrastructureConfigurationSummary{},
+		}, nil
+	}
+	createCalled := false
+	mocks.imageBuilder.CreateInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.CreateInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateInfrastructureConfigurationOutput, error) {
+		createCalled = true
+		return &imagebuilder.CreateInfrastructureConfigurationOutput{
+			InfrastructureConfigurationArn: aws.String("arn:infra:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateInfrastructureConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, createCalled)
+	assert.Equal(t, "arn:infra:new", arn)
+	assert.Equal(t, "arn:infra:new", created.InfraARN)
+}
+
 func TestGetOrCreateDistributionConfig_ExistingFound(t *testing.T) {
 	t.Parallel()
 
@@ -1933,6 +2086,40 @@ func TestGetOrCreateDistributionConfig_ForceRecreate(t *testing.T) {
 	arn, err := ib.getOrCreateDistributionConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
 	require.NoError(t, err)
 	assert.True(t, deleteCalled)
+	assert.Equal(t, "arn:dist:new", arn)
+	assert.Equal(t, "arn:dist:new", created.DistARN)
+}
+
+func TestGetOrCreateDistributionConfig_NotFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListDistributionConfigurationsFunc = func(ctx context.Context, params *imagebuilder.ListDistributionConfigurationsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListDistributionConfigurationsOutput, error) {
+		return &imagebuilder.ListDistributionConfigurationsOutput{
+			DistributionConfigurationSummaryList: []ibtypes.DistributionConfigurationSummary{},
+		}, nil
+	}
+	createCalled := false
+	mocks.imageBuilder.CreateDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.CreateDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateDistributionConfigurationOutput, error) {
+		createCalled = true
+		return &imagebuilder.CreateDistributionConfigurationOutput{
+			DistributionConfigurationArn: aws.String("arn:dist:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateDistributionConfig(context.Background(), "test", &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, createCalled)
 	assert.Equal(t, "arn:dist:new", arn)
 	assert.Equal(t, "arn:dist:new", created.DistARN)
 }
@@ -2024,6 +2211,44 @@ func TestGetOrCreateImageRecipe_ForceRecreate(t *testing.T) {
 	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
 	require.NoError(t, err)
 	assert.True(t, deleteCalled)
+	assert.Equal(t, "arn:recipe:new", arn)
+	assert.Equal(t, "arn:recipe:new", created.RecipeARN)
+}
+
+func TestGetOrCreateImageRecipe_NotFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{},
+		}, nil
+	}
+	createCalled := false
+	mocks.imageBuilder.CreateImageRecipeFunc = func(ctx context.Context, params *imagebuilder.CreateImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImageRecipeOutput, error) {
+		createCalled = true
+		return &imagebuilder.CreateImageRecipeOutput{
+			ImageRecipeArn: aws.String("arn:recipe:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "ami-base"},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, createCalled)
 	assert.Equal(t, "arn:recipe:new", arn)
 	assert.Equal(t, "arn:recipe:new", created.RecipeARN)
 }
@@ -2145,6 +2370,128 @@ func TestGetOrCreatePipeline_AlreadyExists(t *testing.T) {
 	}, "arn:recipe", "arn:infra", "arn:dist", created)
 	require.NoError(t, err)
 	assert.Equal(t, "arn:pipeline:existing", arn)
+}
+
+func TestGetOrCreatePipeline_NotFound(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImagePipelinesFunc = func(ctx context.Context, params *imagebuilder.ListImagePipelinesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelinesOutput, error) {
+		return &imagebuilder.ListImagePipelinesOutput{
+			ImagePipelineList: []ibtypes.ImagePipeline{},
+		}, nil
+	}
+	createCalled := false
+	mocks.imageBuilder.CreateImagePipelineFunc = func(ctx context.Context, params *imagebuilder.CreateImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImagePipelineOutput, error) {
+		createCalled = true
+		return &imagebuilder.CreateImagePipelineOutput{
+			ImagePipelineArn: aws.String("arn:pipeline:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		pipelineManager: NewPipelineManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreatePipeline(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+	}, "arn:recipe", "arn:infra", "arn:dist", created)
+	require.NoError(t, err)
+	assert.True(t, createCalled)
+	assert.Equal(t, "arn:pipeline:new", arn)
+	assert.Equal(t, "arn:pipeline:new", created.PipelineARN)
+}
+
+func TestResolveSSMParameterARN(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		parentImage    string
+		getParamFunc   func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error)
+		expectedResult string
+		expectError    bool
+	}{
+		{
+			name:           "non-SSM ARN returns unchanged",
+			parentImage:    "ami-0123456789abcdef0",
+			expectedResult: "ami-0123456789abcdef0",
+		},
+		{
+			name:           "SSM ARN without parameter path returns unchanged",
+			parentImage:    "arn:aws:ssm:us-east-1:123456789012:something-else",
+			expectedResult: "arn:aws:ssm:us-east-1:123456789012:something-else",
+		},
+		{
+			name:        "valid SSM parameter ARN resolves to AMI ID",
+			parentImage: "arn:aws:ssm:us-east-1:123456789012:parameter/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64",
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return &ssm.GetParameterOutput{
+					Parameter: &ssmtypes.Parameter{
+						Value: aws.String("ami-resolved123"),
+					},
+				}, nil
+			},
+			expectedResult: "ami-resolved123",
+		},
+		{
+			name:        "SSM GetParameter error returns error",
+			parentImage: "arn:aws:ssm:us-east-1:123456789012:parameter/nonexistent",
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return nil, fmt.Errorf("ParameterNotFound")
+			},
+			expectError: true,
+		},
+		{
+			name:        "SSM parameter with nil value returns original",
+			parentImage: "arn:aws:ssm:us-east-1:123456789012:parameter/empty-param",
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return &ssm.GetParameterOutput{
+					Parameter: &ssmtypes.Parameter{},
+				}, nil
+			},
+			expectedResult: "arn:aws:ssm:us-east-1:123456789012:parameter/empty-param",
+		},
+		{
+			name:        "SSM parameter with nil parameter returns original",
+			parentImage: "arn:aws:ssm:us-east-1:123456789012:parameter/nil-param",
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return &ssm.GetParameterOutput{}, nil
+			},
+			expectedResult: "arn:aws:ssm:us-east-1:123456789012:parameter/nil-param",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			clients, mocks := newMockAWSClients()
+			if tc.getParamFunc != nil {
+				mocks.ssm.GetParameterFunc = tc.getParamFunc
+			}
+
+			ib := &ImageBuilder{
+				clients: clients,
+			}
+
+			result, err := ib.resolveSSMParameterARN(context.Background(), tc.parentImage)
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedResult, result)
+		})
+	}
 }
 
 func TestCopy(t *testing.T) {
