@@ -1254,10 +1254,12 @@ func TestEstimateProgress(t *testing.T) {
 		assert.Equal(t, 0.0, p)
 	})
 
-	t.Run("BUILDING includes completed stage weights", func(t *testing.T) {
+	t.Run("BUILDING includes only observed prior stage weights", func(t *testing.T) {
 		t.Parallel()
 		state := &pipelineWaitState{
 			stageStartTimes: map[types.ImageStatus]time.Time{
+				types.ImageStatusPending:  time.Now().Add(-10 * time.Minute),
+				types.ImageStatusCreating: time.Now().Add(-8 * time.Minute),
 				types.ImageStatusBuilding: time.Now(),
 			},
 		}
@@ -1265,6 +1267,18 @@ func TestEstimateProgress(t *testing.T) {
 		// PENDING(0.05) + CREATING(0.10) = 0.15 base, plus some BUILDING interpolation
 		assert.Greater(t, p, 0.15)
 		assert.LessOrEqual(t, p, 0.99)
+	})
+
+	t.Run("BUILDING with skipped prior stages has no inflated base", func(t *testing.T) {
+		t.Parallel()
+		state := &pipelineWaitState{
+			stageStartTimes: map[types.ImageStatus]time.Time{
+				types.ImageStatusBuilding: time.Now(),
+			},
+		}
+		p := pm.estimateProgress(types.ImageStatusBuilding, 30*time.Second, state)
+		// No prior stages observed, so only BUILDING interpolation (near 0)
+		assert.Less(t, p, 0.05)
 	})
 
 	t.Run("long elapsed caps within stage at 95%", func(t *testing.T) {
@@ -1284,7 +1298,12 @@ func TestEstimateProgress(t *testing.T) {
 		t.Parallel()
 		state := &pipelineWaitState{
 			stageStartTimes: map[types.ImageStatus]time.Time{
-				types.ImageStatusIntegrating: time.Now().Add(-1 * time.Hour),
+				types.ImageStatusPending:      time.Now().Add(-2 * time.Hour),
+				types.ImageStatusCreating:     time.Now().Add(-2 * time.Hour),
+				types.ImageStatusBuilding:     time.Now().Add(-2 * time.Hour),
+				types.ImageStatusTesting:      time.Now().Add(-2 * time.Hour),
+				types.ImageStatusDistributing: time.Now().Add(-2 * time.Hour),
+				types.ImageStatusIntegrating:  time.Now().Add(-1 * time.Hour),
 			},
 		}
 		p := pm.estimateProgress(types.ImageStatusIntegrating, 2*time.Hour, state)

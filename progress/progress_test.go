@@ -142,7 +142,7 @@ func TestRenderTTY(t *testing.T) {
 
 	// Progress bar block characters must be present.
 	assert.Contains(t, output, "█")
-	assert.Contains(t, output, "░")
+	assert.Contains(t, output, "[")
 
 	// Stages should appear.
 	assert.Contains(t, output, "Building")

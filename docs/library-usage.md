@@ -288,10 +288,10 @@ display.Stop() // final render
 Output (updated in-place every 500ms):
 
 ```text
-[1/4] goad-dc-base           [██████████████░░░░░░░░░░░] Building       18m14s  ~19m0s remaining
-[2/4] goad-dc-base-2016      [██████████████░░░░░░░░░░░] Building       18m14s  ~19m0s remaining
-[3/4] goad-member-base       [██████████████░░░░░░░░░░░] Building       18m14s  ~19m0s remaining
-[4/4] goad-mssql-base        [██████████████░░░░░░░░░░░] Building       18m14s  ~19m0s remaining
+[1/4] goad-dc-base           [██████████████           ] Building       18m14s  ~19m0s remaining
+[2/4] goad-dc-base-2016      [██████████████           ] Building       18m14s  ~19m0s remaining
+[3/4] goad-member-base       [██████████████           ] Building       18m14s  ~19m0s remaining
+[4/4] goad-mssql-base        [██████████████           ] Building       18m14s  ~19m0s remaining
 ```
 
 ### Built-in Progress Estimation

@@ -66,8 +66,9 @@ const (
 	// filledChar is the Unicode block element used for completed progress.
 	filledChar = "█"
 
-	// emptyChar is the Unicode block element used for remaining progress.
-	emptyChar = "░"
+	// emptyChar is the character used for remaining progress. A space
+	// provides maximum visual contrast against the filled block.
+	emptyChar = " "
 
 	// labelWidth is the fixed width to which labels are padded.
 	labelWidth = 24
@@ -87,17 +88,6 @@ const (
 	// ansiClearToEnd clears from the cursor to the end of the screen, removing
 	// any orphaned lines caused by external newlines (e.g. keypresses).
 	ansiClearToEnd = "\033[J"
-
-	// ansiEnterAltScreen switches to the alternate screen buffer. All output
-	// on the alternate screen is discarded when leaving, giving the display
-	// an isolated canvas immune to external log output and keypress echo.
-	ansiEnterAltScreen = "\033[?1049h"
-
-	// ansiLeaveAltScreen restores the main screen buffer.
-	ansiLeaveAltScreen = "\033[?1049l"
-
-	// ansiHome moves the cursor to row 1, column 1.
-	ansiHome = "\033[H"
 )
 
 // Bar represents a single tracked build or operation within a Display. It
@@ -174,11 +164,6 @@ type Display struct {
 	// restoreTerminal is called by Stop to restore the terminal's original
 	// input settings after echo suppression. Nil when echo was not suppressed.
 	restoreTerminal func()
-
-	// altScreen is true when the display is using the alternate screen buffer.
-	// This is activated by Start on TTY displays to isolate rendering from
-	// external output (log lines, keypress echo).
-	altScreen bool
 }
 
 // NewDisplay creates a Display that writes to w. The isTTY flag is inferred by
@@ -297,8 +282,7 @@ func (d *Display) Start(interval time.Duration) {
 	d.stopCh = make(chan struct{})
 	ch := d.stopCh
 	if d.isTTY {
-		_, _ = fmt.Fprint(d.writer, ansiEnterAltScreen+ansiHideCursor)
-		d.altScreen = true
+		_, _ = fmt.Fprint(d.writer, ansiHideCursor)
 		d.restoreTerminal = suppressEcho()
 	}
 	d.mu.Unlock()
@@ -327,24 +311,17 @@ func (d *Display) Stop() {
 	d.stopCh = nil
 	restore := d.restoreTerminal
 	d.restoreTerminal = nil
-	wasAltScreen := d.altScreen
-	d.altScreen = false
 	d.mu.Unlock()
 
 	if ch != nil {
 		close(ch)
 	}
 
-	if wasAltScreen {
-		// Leave the alternate screen, restoring the main screen.
-		d.mu.Lock()
-		_, _ = fmt.Fprint(d.writer, ansiShowCursor+ansiLeaveAltScreen)
-		d.rendered = 0
-		d.mu.Unlock()
-	}
-
-	// Print final bar state on the main screen.
+	// Final render to show latest state, then show cursor.
 	d.Render()
+	d.mu.Lock()
+	_, _ = fmt.Fprint(d.writer, ansiShowCursor)
+	d.mu.Unlock()
 
 	if restore != nil {
 		restore()
@@ -374,29 +351,38 @@ func (d *Display) Render() {
 }
 
 // renderTTY performs in-place rewrite of all bar lines using ANSI escape codes.
-// When the alternate screen buffer is active, it draws from the home position
-// for a fully isolated render. Otherwise it uses cursor-up rewind for inline
-// rendering. It must be called with d.mu held.
+// It uses cursor-up rewind to overwrite previously rendered lines, combined with
+// clear-to-end to remove any orphaned content. To minimize scrollback pollution,
+// it skips the rewrite entirely when all formatted lines are identical to the
+// previous frame. It must be called with d.mu held.
 func (d *Display) renderTTY() {
-	if d.altScreen {
-		// Alternate screen: move to home position and clear. No cursor-up
-		// math needed — the alternate screen is a clean, isolated canvas.
-		_, _ = fmt.Fprint(d.writer, ansiHome+ansiClearToEnd)
-	} else {
-		_, _ = fmt.Fprint(d.writer, ansiHideCursor)
-		for i := 0; i < d.rendered; i++ {
-			_, _ = fmt.Fprint(d.writer, ansiCursorUp)
+	// Build all lines first to check for changes.
+	lines := make([]string, len(d.bars))
+	changed := d.rendered != len(d.bars)
+	for i, b := range d.bars {
+		lines[i] = d.formatBar(b)
+		if !changed {
+			b.mu.Lock()
+			if lines[i] != b.lastRendered {
+				changed = true
+			}
+			b.mu.Unlock()
 		}
-		_, _ = fmt.Fprint(d.writer, ansiClearToEnd)
+	}
+	if !changed {
+		return
 	}
 
-	for _, b := range d.bars {
-		line := d.formatBar(b)
-		_, _ = fmt.Fprint(d.writer, ansiClearLine+line+"\n")
+	for i := 0; i < d.rendered; i++ {
+		_, _ = fmt.Fprint(d.writer, ansiCursorUp)
 	}
+	_, _ = fmt.Fprint(d.writer, ansiClearToEnd)
 
-	if !d.altScreen {
-		_, _ = fmt.Fprint(d.writer, ansiShowCursor)
+	for i, b := range d.bars {
+		_, _ = fmt.Fprint(d.writer, ansiClearLine+lines[i]+"\n")
+		b.mu.Lock()
+		b.lastRendered = lines[i]
+		b.mu.Unlock()
 	}
 
 	d.rendered = len(d.bars)

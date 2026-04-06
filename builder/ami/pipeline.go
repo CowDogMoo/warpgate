@@ -398,6 +398,8 @@ func (m *PipelineManager) estimateProgress(currentStatus types.ImageStatus, elap
 	}
 
 	// Sum progress for completed stages + interpolate within current stage.
+	// Only count prior stages that were actually observed (present in
+	// stageStartTimes) to avoid inflated progress when stages are skipped.
 	var progress float64
 	for _, s := range stages {
 		if s.status == currentStatus {
@@ -408,14 +410,16 @@ func (m *PipelineManager) estimateProgress(currentStatus types.ImageStatus, elap
 			}
 			stageElapsed := time.Since(stageStart)
 			fraction := float64(stageElapsed) / float64(s.duration)
-			if fraction > 1.0 {
-				fraction = 0.95 // cap at 95% within stage to avoid premature 100%
+			if fraction > 0.95 {
+				fraction = 0.95 // cap within stage to avoid premature 100%
 			}
 			progress += s.weight * fraction
 			break
 		}
-		// This stage is completed — add its full weight.
-		progress += s.weight
+		// Only add weight for stages we actually observed.
+		if _, seen := state.stageStartTimes[s.status]; seen {
+			progress += s.weight
+		}
 	}
 
 	if progress > 0.99 {
