@@ -1074,3 +1074,146 @@ func TestBuildFailureErrorImplementsError(t *testing.T) {
 	assert.NotEmpty(t, err.Error())
 	assert.True(t, strings.Contains(err.Error(), "FAILED"))
 }
+
+// TestStatusCallbackInvoked verifies that StatusCallback is called on each poll
+// tick and that StageChanged is correctly set on stage transitions.
+func TestStatusCallbackInvoked(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// Sequence of statuses returned by consecutive GetImage calls.
+	statuses := []types.ImageStatus{
+		types.ImageStatusPending,
+		types.ImageStatusPending,  // repeat — StageChanged should be false
+		types.ImageStatusBuilding, // transition — StageChanged should be true
+	}
+	callIdx := 0
+	mocks.imageBuilder.GetImageFunc = func(ctx context.Context, params *imagebuilder.GetImageInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageOutput, error) {
+		status := statuses[callIdx]
+		callIdx++
+		return &imagebuilder.GetImageOutput{
+			Image: &types.Image{
+				State: &types.ImageState{Status: status},
+			},
+		}, nil
+	}
+
+	var updates []StatusUpdate
+	pm := NewPipelineManagerWithMonitor(clients, MonitorConfig{
+		StatusCallback: func(u StatusUpdate) {
+			updates = append(updates, u)
+		},
+	})
+
+	state := &pipelineWaitState{
+		startTime:       time.Now(),
+		stageStartTimes: make(map[types.ImageStatus]time.Time),
+	}
+	ctx := context.Background()
+
+	// Tick 1: PENDING (first time — StageChanged=true).
+	_, err := pm.processPipelineTick(ctx, "arn:image", state)
+	require.NoError(t, err)
+
+	// Tick 2: PENDING again (StageChanged=false).
+	_, err = pm.processPipelineTick(ctx, "arn:image", state)
+	require.NoError(t, err)
+
+	// Tick 3: BUILDING (StageChanged=true).
+	_, err = pm.processPipelineTick(ctx, "arn:image", state)
+	require.NoError(t, err)
+
+	require.Len(t, updates, 3)
+
+	assert.Equal(t, string(types.ImageStatusPending), updates[0].Stage)
+	assert.True(t, updates[0].StageChanged, "first tick of PENDING should be StageChanged=true")
+
+	assert.Equal(t, string(types.ImageStatusPending), updates[1].Stage)
+	assert.False(t, updates[1].StageChanged, "repeated PENDING tick should be StageChanged=false")
+
+	assert.Equal(t, string(types.ImageStatusBuilding), updates[2].Stage)
+	assert.True(t, updates[2].StageChanged, "transition to BUILDING should be StageChanged=true")
+}
+
+// TestStatusCallbackNilSafe verifies that a nil StatusCallback causes no panic.
+func TestStatusCallbackNilSafe(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+	mocks.imageBuilder.GetImageFunc = func(ctx context.Context, params *imagebuilder.GetImageInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageOutput, error) {
+		return &imagebuilder.GetImageOutput{
+			Image: &types.Image{
+				State: &types.ImageState{Status: types.ImageStatusBuilding},
+			},
+		}, nil
+	}
+
+	// StatusCallback is intentionally left nil.
+	pm := NewPipelineManagerWithMonitor(clients, MonitorConfig{})
+
+	state := &pipelineWaitState{
+		startTime:       time.Now(),
+		stageStartTimes: make(map[types.ImageStatus]time.Time),
+	}
+
+	// Should not panic.
+	require.NotPanics(t, func() {
+		_, _ = pm.processPipelineTick(context.Background(), "arn:image", state)
+	})
+}
+
+// TestStatusCallbackTerminalStates verifies that the callback fires for
+// AVAILABLE and FAILED statuses and that StageLabel contains expected text.
+func TestStatusCallbackTerminalStates(t *testing.T) {
+	t.Parallel()
+
+	terminalCases := []struct {
+		status        types.ImageStatus
+		expectedLabel string
+		setupWorkflow bool
+	}{
+		{types.ImageStatusAvailable, "AVAILABLE", false},
+		{types.ImageStatusFailed, "FAILED", true},
+	}
+
+	for _, tc := range terminalCases {
+		tc := tc
+		t.Run(string(tc.status), func(t *testing.T) {
+			t.Parallel()
+
+			clients, mocks := newMockAWSClients()
+			mocks.imageBuilder.GetImageFunc = func(ctx context.Context, params *imagebuilder.GetImageInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageOutput, error) {
+				return &imagebuilder.GetImageOutput{
+					Image: &types.Image{
+						State: &types.ImageState{Status: tc.status},
+					},
+				}, nil
+			}
+			if tc.setupWorkflow {
+				mocks.imageBuilder.ListWorkflowExecutionsFunc = func(ctx context.Context, params *imagebuilder.ListWorkflowExecutionsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListWorkflowExecutionsOutput, error) {
+					return &imagebuilder.ListWorkflowExecutionsOutput{}, nil
+				}
+			}
+
+			var captured *StatusUpdate
+			pm := NewPipelineManagerWithMonitor(clients, MonitorConfig{
+				StatusCallback: func(u StatusUpdate) {
+					copy := u
+					captured = &copy
+				},
+			})
+
+			state := &pipelineWaitState{
+				startTime:       time.Now(),
+				stageStartTimes: make(map[types.ImageStatus]time.Time),
+			}
+
+			_, _ = pm.processPipelineTick(context.Background(), "arn:image", state)
+
+			require.NotNil(t, captured, "StatusCallback should have been called")
+			assert.Equal(t, string(tc.status), captured.Stage)
+			assert.Contains(t, captured.StageLabel, tc.expectedLabel)
+		})
+	}
+}

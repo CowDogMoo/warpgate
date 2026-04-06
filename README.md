@@ -95,6 +95,11 @@ docker images | grep attack-box
 - **[Template Repositories](docs/template-repositories.md)** - Repository
   management and discovery
 
+### Library Usage
+
+- **[Library Usage Guide](docs/library-usage.md)** - Using warpgate as a Go
+  module: container builds, AMI builds, StatusCallback API, and progress bars
+
 ### Reference
 
 - **[Commands Reference](docs/commands.md)** - Complete CLI documentation

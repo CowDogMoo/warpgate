@@ -243,7 +243,19 @@ func (m *PipelineManager) processPipelineTick(ctx context.Context, imageARN stri
 		state.stageStartTimes[status] = time.Now()
 	}
 
-	m.logBuildProgress(ctx, status, elapsed, status != state.lastStatus)
+	statusChanged := status != state.lastStatus
+	m.logBuildProgress(ctx, status, elapsed, statusChanged)
+
+	if m.monitorConfig.StatusCallback != nil {
+		m.monitorConfig.StatusCallback(StatusUpdate{
+			Stage:              string(status),
+			StageLabel:         m.formatBuildStage(status),
+			Elapsed:            elapsed,
+			EstimatedRemaining: m.estimateRemainingTime(status, elapsed),
+			StageChanged:       statusChanged,
+		})
+	}
+
 	state.lastStatus = status
 
 	if m.monitor != nil && (status == types.ImageStatusBuilding || status == types.ImageStatusCreating) {
