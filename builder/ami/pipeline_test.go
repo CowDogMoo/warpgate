@@ -835,6 +835,9 @@ func TestLogBuildProgress(t *testing.T) {
 	pm.logBuildProgress(ctx, types.ImageStatusBuilding, 5*time.Minute, true)
 	pm.logBuildProgress(ctx, types.ImageStatusBuilding, 5*time.Minute, false)
 	pm.logBuildProgress(ctx, types.ImageStatus("UNKNOWN"), 5*time.Minute, true)
+	// Cover the else branch where statusChanged=false and estimatedRemaining=0
+	// (an unknown status returns 0 from estimateRemainingTime).
+	pm.logBuildProgress(ctx, types.ImageStatus("UNKNOWN"), 5*time.Minute, false)
 }
 
 func TestInitMonitorIfEnabled(t *testing.T) {

@@ -87,6 +87,17 @@ const (
 	// ansiClearToEnd clears from the cursor to the end of the screen, removing
 	// any orphaned lines caused by external newlines (e.g. keypresses).
 	ansiClearToEnd = "\033[J"
+
+	// ansiEnterAltScreen switches to the alternate screen buffer. All output
+	// on the alternate screen is discarded when leaving, giving the display
+	// an isolated canvas immune to external log output and keypress echo.
+	ansiEnterAltScreen = "\033[?1049h"
+
+	// ansiLeaveAltScreen restores the main screen buffer.
+	ansiLeaveAltScreen = "\033[?1049l"
+
+	// ansiHome moves the cursor to row 1, column 1.
+	ansiHome = "\033[H"
 )
 
 // Bar represents a single tracked build or operation within a Display. It
@@ -163,6 +174,11 @@ type Display struct {
 	// restoreTerminal is called by Stop to restore the terminal's original
 	// input settings after echo suppression. Nil when echo was not suppressed.
 	restoreTerminal func()
+
+	// altScreen is true when the display is using the alternate screen buffer.
+	// This is activated by Start on TTY displays to isolate rendering from
+	// external output (log lines, keypress echo).
+	altScreen bool
 }
 
 // NewDisplay creates a Display that writes to w. The isTTY flag is inferred by
@@ -271,14 +287,18 @@ func (d *Display) SetTotal(total int) {
 // call Bar.Update/Complete/Fail, and the render loop draws all bars together.
 // Call Stop to halt the loop and perform a final render.
 //
-// On TTY outputs, Start suppresses terminal echo so that keypresses (e.g. Enter)
-// do not inject newlines that corrupt the ANSI cursor-based redraw. Ctrl+C
-// signal handling is preserved. The original terminal state is restored by Stop.
+// On TTY outputs, Start enters the alternate screen buffer so rendering is
+// fully isolated from external output (log lines, keypress echo). It also
+// suppresses terminal echo. Ctrl+C signal handling is preserved. The original
+// terminal and screen state is restored by Stop, with the final bar state
+// printed on the main screen.
 func (d *Display) Start(interval time.Duration) {
 	d.mu.Lock()
 	d.stopCh = make(chan struct{})
 	ch := d.stopCh
 	if d.isTTY {
+		_, _ = fmt.Fprint(d.writer, ansiEnterAltScreen+ansiHideCursor)
+		d.altScreen = true
 		d.restoreTerminal = suppressEcho()
 	}
 	d.mu.Unlock()
@@ -298,20 +318,34 @@ func (d *Display) Start(interval time.Duration) {
 }
 
 // Stop halts the background render loop started by Start and performs a final
-// render to ensure the terminal shows the latest state. It restores the
-// terminal's original input settings if echo was suppressed.
+// render to ensure the terminal shows the latest state. On TTY displays it
+// leaves the alternate screen buffer and prints the final bar state on the
+// main screen, then restores the terminal's original input settings.
 func (d *Display) Stop() {
 	d.mu.Lock()
 	ch := d.stopCh
 	d.stopCh = nil
 	restore := d.restoreTerminal
 	d.restoreTerminal = nil
+	wasAltScreen := d.altScreen
+	d.altScreen = false
 	d.mu.Unlock()
 
 	if ch != nil {
 		close(ch)
 	}
+
+	if wasAltScreen {
+		// Leave the alternate screen, restoring the main screen.
+		d.mu.Lock()
+		_, _ = fmt.Fprint(d.writer, ansiShowCursor+ansiLeaveAltScreen)
+		d.rendered = 0
+		d.mu.Unlock()
+	}
+
+	// Print final bar state on the main screen.
 	d.Render()
+
 	if restore != nil {
 		restore()
 	}
@@ -340,27 +374,30 @@ func (d *Display) Render() {
 }
 
 // renderTTY performs in-place rewrite of all bar lines using ANSI escape codes.
-// It hides the cursor during redraws and clears any orphaned lines below the
-// bar block (e.g. from user keypresses injecting newlines). It must be called
-// with d.mu held.
+// When the alternate screen buffer is active, it draws from the home position
+// for a fully isolated render. Otherwise it uses cursor-up rewind for inline
+// rendering. It must be called with d.mu held.
 func (d *Display) renderTTY() {
-	_, _ = fmt.Fprint(d.writer, ansiHideCursor)
-
-	// Rewind cursor to the start of the previously rendered block.
-	for i := 0; i < d.rendered; i++ {
-		_, _ = fmt.Fprint(d.writer, ansiCursorUp)
+	if d.altScreen {
+		// Alternate screen: move to home position and clear. No cursor-up
+		// math needed — the alternate screen is a clean, isolated canvas.
+		_, _ = fmt.Fprint(d.writer, ansiHome+ansiClearToEnd)
+	} else {
+		_, _ = fmt.Fprint(d.writer, ansiHideCursor)
+		for i := 0; i < d.rendered; i++ {
+			_, _ = fmt.Fprint(d.writer, ansiCursorUp)
+		}
+		_, _ = fmt.Fprint(d.writer, ansiClearToEnd)
 	}
-
-	// Clear from cursor to end of screen to wipe orphaned lines caused by
-	// external newlines (keypresses, other output).
-	_, _ = fmt.Fprint(d.writer, ansiClearToEnd)
 
 	for _, b := range d.bars {
 		line := d.formatBar(b)
 		_, _ = fmt.Fprint(d.writer, ansiClearLine+line+"\n")
 	}
 
-	_, _ = fmt.Fprint(d.writer, ansiShowCursor)
+	if !d.altScreen {
+		_, _ = fmt.Fprint(d.writer, ansiShowCursor)
+	}
 
 	d.rendered = len(d.bars)
 }

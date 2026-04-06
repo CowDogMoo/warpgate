@@ -1093,6 +1093,113 @@ func TestCreatedResourcesCleanup(t *testing.T) {
 		assert.Equal(t, "arn:pipeline:1", deletedARNs[0])
 	})
 
+	t.Run("non-quiet mode explicitly false still deletes resources", func(t *testing.T) {
+		t.Parallel()
+
+		clients, mocks := newMockAWSClients()
+		var deletedARNs []string
+
+		mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+			deletedARNs = append(deletedARNs, aws.ToString(params.ImagePipelineArn))
+			return &imagebuilder.DeleteImagePipelineOutput{}, nil
+		}
+		mocks.imageBuilder.DeleteImageRecipeFunc = func(ctx context.Context, params *imagebuilder.DeleteImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImageRecipeOutput, error) {
+			deletedARNs = append(deletedARNs, aws.ToString(params.ImageRecipeArn))
+			return &imagebuilder.DeleteImageRecipeOutput{}, nil
+		}
+
+		rm := NewResourceManager(clients)
+		cr := &CreatedResources{
+			PipelineARN: "arn:pipeline:1",
+			RecipeARN:   "arn:recipe:1",
+		}
+
+		// quiet=false explicitly: logging closures are defined and resources are deleted.
+		cr.Cleanup(context.Background(), rm, false)
+
+		assert.Len(t, deletedARNs, 2)
+		assert.Equal(t, "arn:pipeline:1", deletedARNs[0])
+		assert.Equal(t, "arn:recipe:1", deletedARNs[1])
+	})
+
+	t.Run("delete errors in quiet mode continue cleanup", func(t *testing.T) {
+		t.Parallel()
+
+		clients, mocks := newMockAWSClients()
+		var deletedARNs []string
+
+		// Pipeline delete fails
+		mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+			return nil, fmt.Errorf("pipeline delete failed")
+		}
+		// Recipe delete succeeds
+		mocks.imageBuilder.DeleteImageRecipeFunc = func(ctx context.Context, params *imagebuilder.DeleteImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImageRecipeOutput, error) {
+			deletedARNs = append(deletedARNs, aws.ToString(params.ImageRecipeArn))
+			return &imagebuilder.DeleteImageRecipeOutput{}, nil
+		}
+		// Component delete succeeds
+		mocks.imageBuilder.DeleteComponentFunc = func(ctx context.Context, params *imagebuilder.DeleteComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteComponentOutput, error) {
+			deletedARNs = append(deletedARNs, aws.ToString(params.ComponentBuildVersionArn))
+			return &imagebuilder.DeleteComponentOutput{}, nil
+		}
+
+		rm := NewResourceManager(clients)
+		cr := &CreatedResources{
+			PipelineARN:   "arn:pipeline:1",
+			RecipeARN:     "arn:recipe:1",
+			ComponentARNs: []string{"arn:comp:1"},
+		}
+
+		// quiet=true: logWarn fires for pipeline error but cleanup continues.
+		cr.Cleanup(context.Background(), rm, true)
+
+		// Recipe and component should still have been deleted despite pipeline failure.
+		assert.Len(t, deletedARNs, 2)
+		assert.Equal(t, "arn:recipe:1", deletedARNs[0])
+		assert.Equal(t, "arn:comp:1", deletedARNs[1])
+	})
+
+	t.Run("delete errors in non-quiet mode continue cleanup", func(t *testing.T) {
+		t.Parallel()
+
+		clients, mocks := newMockAWSClients()
+		var deletedARNs []string
+
+		// All deletes fail except component
+		mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+			return nil, fmt.Errorf("pipeline delete failed")
+		}
+		mocks.imageBuilder.DeleteImageRecipeFunc = func(ctx context.Context, params *imagebuilder.DeleteImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImageRecipeOutput, error) {
+			return nil, fmt.Errorf("recipe delete failed")
+		}
+		mocks.imageBuilder.DeleteDistributionConfigurationFunc = func(ctx context.Context, params *imagebuilder.DeleteDistributionConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteDistributionConfigurationOutput, error) {
+			return nil, fmt.Errorf("dist delete failed")
+		}
+		mocks.imageBuilder.DeleteInfrastructureConfigurationFunc = func(ctx context.Context, params *imagebuilder.DeleteInfrastructureConfigurationInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteInfrastructureConfigurationOutput, error) {
+			return nil, fmt.Errorf("infra delete failed")
+		}
+		mocks.imageBuilder.DeleteComponentFunc = func(ctx context.Context, params *imagebuilder.DeleteComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteComponentOutput, error) {
+			deletedARNs = append(deletedARNs, aws.ToString(params.ComponentBuildVersionArn))
+			return &imagebuilder.DeleteComponentOutput{}, nil
+		}
+
+		rm := NewResourceManager(clients)
+		cr := &CreatedResources{
+			PipelineARN:   "arn:pipeline:1",
+			RecipeARN:     "arn:recipe:1",
+			DistARN:       "arn:dist:1",
+			InfraARN:      "arn:infra:1",
+			ComponentARNs: []string{"arn:comp:1"},
+		}
+
+		// quiet=false: logWarn fires for each failure but cleanup continues through all resources.
+		cr.Cleanup(context.Background(), rm, false)
+
+		// Component should still be deleted even though all other deletes failed.
+		assert.Len(t, deletedARNs, 1)
+		assert.Equal(t, "arn:comp:1", deletedARNs[0])
+	})
+
 	t.Run("cleanup with cancelled context still works", func(t *testing.T) {
 		t.Parallel()
 
