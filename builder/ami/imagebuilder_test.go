@@ -1814,6 +1814,55 @@ func TestFinalizeBuild_NoTags(t *testing.T) {
 	assert.False(t, tagCalled)
 }
 
+func TestSetCleanupOnFinish(t *testing.T) {
+	t.Parallel()
+
+	clients, _ := newMockAWSClients()
+	ib := &ImageBuilder{
+		operations:      NewAMIOperations(clients, nil),
+		pipelineManager: NewPipelineManager(clients),
+		resourceManager: NewResourceManager(clients),
+	}
+
+	assert.False(t, ib.cleanupOnFinish)
+	ib.SetCleanupOnFinish(true)
+	assert.True(t, ib.cleanupOnFinish)
+}
+
+func TestFinalizeBuild_CleanupOnFinish(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+	componentDeleted := false
+	pipelineDeleted := false
+
+	mocks.imageBuilder.DeleteComponentFunc = func(ctx context.Context, params *imagebuilder.DeleteComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteComponentOutput, error) {
+		componentDeleted = true
+		return &imagebuilder.DeleteComponentOutput{}, nil
+	}
+	mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+		pipelineDeleted = true
+		return &imagebuilder.DeleteImagePipelineOutput{}, nil
+	}
+
+	ib := &ImageBuilder{
+		operations:      NewAMIOperations(clients, nil),
+		pipelineManager: NewPipelineManager(clients),
+		resourceManager: NewResourceManager(clients),
+		cleanupOnFinish: true,
+	}
+
+	created := &CreatedResources{
+		PipelineARN:   "arn:pipeline:test",
+		ComponentARNs: []string{"arn:component:test"},
+	}
+	target := &builder.Target{}
+
+	ib.finalizeBuild(context.Background(), "ami-12345", target, "arn:pipeline:test", created)
+	assert.True(t, pipelineDeleted, "pipeline should be deleted via Cleanup")
+	assert.True(t, componentDeleted, "component should be deleted via Cleanup")
+}
+
 func TestCreateDistributionConfig_AlreadyExists(t *testing.T) {
 	t.Parallel()
 

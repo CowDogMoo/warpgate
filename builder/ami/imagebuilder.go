@@ -152,15 +152,19 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 
 	createdResources := &CreatedResources{}
 
+	// Suppress cleanup logs when a StatusCallback is set, since a progress
+	// display is likely active and log output would corrupt the terminal.
+	quietCleanup := b.monitorConfig.StatusCallback != nil
+
 	resources, err := b.createBuildResources(ctx, config, amiTarget, createdResources)
 	if err != nil {
-		createdResources.Cleanup(ctx, b.resourceManager)
+		createdResources.Cleanup(ctx, b.resourceManager, quietCleanup)
 		return nil, err
 	}
 
 	amiID, err := b.executePipeline(ctx, resources, config.Name)
 	if err != nil {
-		createdResources.Cleanup(ctx, b.resourceManager)
+		createdResources.Cleanup(ctx, b.resourceManager, quietCleanup)
 		return nil, err
 	}
 

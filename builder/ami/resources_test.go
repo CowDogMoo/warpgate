@@ -1071,6 +1071,49 @@ func TestCreatedResourcesCleanup(t *testing.T) {
 		assert.Equal(t, "arn:recipe:1", deletedARNs[0])
 		assert.Equal(t, "arn:comp:1", deletedARNs[1])
 	})
+
+	t.Run("quiet mode suppresses logging", func(t *testing.T) {
+		t.Parallel()
+
+		clients, mocks := newMockAWSClients()
+		var deletedARNs []string
+
+		mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+			deletedARNs = append(deletedARNs, aws.ToString(params.ImagePipelineArn))
+			return &imagebuilder.DeleteImagePipelineOutput{}, nil
+		}
+
+		rm := NewResourceManager(clients)
+		cr := &CreatedResources{PipelineARN: "arn:pipeline:1"}
+
+		// quiet=true should not panic and should still delete resources.
+		cr.Cleanup(context.Background(), rm, true)
+
+		assert.Len(t, deletedARNs, 1)
+		assert.Equal(t, "arn:pipeline:1", deletedARNs[0])
+	})
+
+	t.Run("cleanup with cancelled context still works", func(t *testing.T) {
+		t.Parallel()
+
+		clients, mocks := newMockAWSClients()
+		var deletedARNs []string
+
+		mocks.imageBuilder.DeleteImagePipelineFunc = func(ctx context.Context, params *imagebuilder.DeleteImagePipelineInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImagePipelineOutput, error) {
+			deletedARNs = append(deletedARNs, aws.ToString(params.ImagePipelineArn))
+			return &imagebuilder.DeleteImagePipelineOutput{}, nil
+		}
+
+		rm := NewResourceManager(clients)
+		cr := &CreatedResources{PipelineARN: "arn:pipeline:1"}
+
+		// Pass a cancelled context — cleanup should use background context internally.
+		cancelledCtx, cancel := context.WithCancel(context.Background())
+		cancel()
+		cr.Cleanup(cancelledCtx, rm)
+
+		assert.Len(t, deletedARNs, 1)
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -1221,3 +1221,79 @@ func TestStatusCallbackTerminalStates(t *testing.T) {
 		})
 	}
 }
+
+// TestEstimateProgress verifies the smooth progress interpolation for various
+// stages and edge cases.
+func TestEstimateProgress(t *testing.T) {
+	t.Parallel()
+
+	clients, _ := newMockAWSClients()
+	pm := NewPipelineManager(clients)
+
+	t.Run("AVAILABLE returns 1.0", func(t *testing.T) {
+		t.Parallel()
+		state := &pipelineWaitState{stageStartTimes: make(map[types.ImageStatus]time.Time)}
+		p := pm.estimateProgress(types.ImageStatusAvailable, 0, state)
+		assert.Equal(t, 1.0, p)
+	})
+
+	t.Run("FAILED returns 0.0", func(t *testing.T) {
+		t.Parallel()
+		state := &pipelineWaitState{stageStartTimes: make(map[types.ImageStatus]time.Time)}
+		p := pm.estimateProgress(types.ImageStatusFailed, 0, state)
+		assert.Equal(t, 0.0, p)
+	})
+
+	t.Run("CANCELLED returns 0.0", func(t *testing.T) {
+		t.Parallel()
+		state := &pipelineWaitState{stageStartTimes: make(map[types.ImageStatus]time.Time)}
+		p := pm.estimateProgress(types.ImageStatusCancelled, 0, state)
+		assert.Equal(t, 0.0, p)
+	})
+
+	t.Run("BUILDING includes completed stage weights", func(t *testing.T) {
+		t.Parallel()
+		state := &pipelineWaitState{
+			stageStartTimes: map[types.ImageStatus]time.Time{
+				types.ImageStatusBuilding: time.Now(),
+			},
+		}
+		p := pm.estimateProgress(types.ImageStatusBuilding, 10*time.Minute, state)
+		// PENDING(0.05) + CREATING(0.10) = 0.15 base, plus some BUILDING interpolation
+		assert.Greater(t, p, 0.15)
+		assert.LessOrEqual(t, p, 0.99)
+	})
+
+	t.Run("long elapsed caps within stage at 95%", func(t *testing.T) {
+		t.Parallel()
+		// Start time 1 hour ago — far exceeds typical PENDING duration
+		state := &pipelineWaitState{
+			stageStartTimes: map[types.ImageStatus]time.Time{
+				types.ImageStatusPending: time.Now().Add(-1 * time.Hour),
+			},
+		}
+		p := pm.estimateProgress(types.ImageStatusPending, 1*time.Hour, state)
+		// Should be 0.05 * 0.95 = 0.0475 (capped fraction)
+		assert.InDelta(t, 0.0475, p, 0.01)
+	})
+
+	t.Run("progress never exceeds 0.99", func(t *testing.T) {
+		t.Parallel()
+		state := &pipelineWaitState{
+			stageStartTimes: map[types.ImageStatus]time.Time{
+				types.ImageStatusIntegrating: time.Now().Add(-1 * time.Hour),
+			},
+		}
+		p := pm.estimateProgress(types.ImageStatusIntegrating, 2*time.Hour, state)
+		assert.LessOrEqual(t, p, 0.99)
+	})
+
+	t.Run("missing stageStartTime uses now", func(t *testing.T) {
+		t.Parallel()
+		state := &pipelineWaitState{stageStartTimes: make(map[types.ImageStatus]time.Time)}
+		p := pm.estimateProgress(types.ImageStatusPending, 30*time.Second, state)
+		// With stageStart = now, fraction ≈ 0 so progress ≈ 0
+		assert.GreaterOrEqual(t, p, 0.0)
+		assert.Less(t, p, 0.05) // less than full PENDING weight
+	})
+}
