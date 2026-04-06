@@ -1784,7 +1784,7 @@ func TestFinalizeBuild_WithTags(t *testing.T) {
 		AMITags: map[string]string{"env": "test", "team": "platform"},
 	}
 
-	ib.finalizeBuild(context.Background(), "ami-12345", target, "arn:pipeline:test")
+	ib.finalizeBuild(context.Background(), "ami-12345", target, "arn:pipeline:test", &CreatedResources{})
 	assert.True(t, tagCalled)
 }
 
@@ -1810,7 +1810,7 @@ func TestFinalizeBuild_NoTags(t *testing.T) {
 		AMITags: map[string]string{},
 	}
 
-	ib.finalizeBuild(context.Background(), "ami-12345", target, "arn:pipeline:test")
+	ib.finalizeBuild(context.Background(), "ami-12345", target, "arn:pipeline:test", &CreatedResources{})
 	assert.False(t, tagCalled)
 }
 

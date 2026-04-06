@@ -50,6 +50,7 @@ type ImageBuilder struct {
 	config          ClientConfig
 	globalConfig    *config.Config
 	forceRecreate   bool
+	cleanupOnFinish bool          // Delete all build resources (components, configs, recipe, pipeline) after build
 	buildID         string        // Unique identifier for this build
 	namingPrefix    string        // Optional prefix for resource naming
 	monitorConfig   MonitorConfig // Configuration for build monitoring
@@ -101,6 +102,14 @@ func NewImageBuilderWithAllOptions(ctx context.Context, clientConfig ClientConfi
 func (b *ImageBuilder) SetMonitorConfig(config MonitorConfig) {
 	b.monitorConfig = config
 	b.pipelineManager.SetMonitorConfig(config)
+}
+
+// SetCleanupOnFinish controls whether all build resources (components,
+// infrastructure configs, distribution configs, recipes, and pipelines)
+// are deleted after a successful build. Default is false, which only
+// deletes the pipeline.
+func (b *ImageBuilder) SetCleanupOnFinish(cleanup bool) {
+	b.cleanupOnFinish = cleanup
 }
 
 // generateBuildID creates a unique identifier for this build
@@ -155,7 +164,7 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 		return nil, err
 	}
 
-	b.finalizeBuild(ctx, amiID, amiTarget, resources.PipelineARN)
+	b.finalizeBuild(ctx, amiID, amiTarget, resources.PipelineARN, createdResources)
 
 	duration := time.Since(startTime)
 	logging.InfoContext(ctx, "AMI build completed: %s (duration: %s)", amiID, duration)
@@ -256,8 +265,10 @@ func (b *ImageBuilder) executePipeline(ctx context.Context, resources *buildReso
 	return amiID, nil
 }
 
-// finalizeBuild tags the AMI and cleans up temporary resources
-func (b *ImageBuilder) finalizeBuild(ctx context.Context, amiID string, target *builder.Target, pipelineARN string) {
+// finalizeBuild tags the AMI and cleans up temporary resources. When
+// cleanupOnFinish is true, all build resources are deleted; otherwise
+// only the pipeline is removed.
+func (b *ImageBuilder) finalizeBuild(ctx context.Context, amiID string, target *builder.Target, pipelineARN string, created *CreatedResources) {
 	// Tag the AMI
 	if len(target.AMITags) > 0 {
 		if err := b.operations.TagAMI(ctx, amiID, target.AMITags); err != nil {
@@ -265,9 +276,14 @@ func (b *ImageBuilder) finalizeBuild(ctx context.Context, amiID string, target *
 		}
 	}
 
-	// Clean up resources
-	if err := b.pipelineManager.DeletePipeline(ctx, pipelineARN); err != nil {
-		logging.WarnContext(ctx, "Failed to delete pipeline: %v", err)
+	if b.cleanupOnFinish {
+		logging.InfoContext(ctx, "Cleaning up all build resources (cleanup-on-finish enabled)")
+		created.Cleanup(ctx, b.resourceManager)
+	} else {
+		// Default: only delete the pipeline.
+		if err := b.pipelineManager.DeletePipeline(ctx, pipelineARN); err != nil {
+			logging.WarnContext(ctx, "Failed to delete pipeline: %v", err)
+		}
 	}
 }
 

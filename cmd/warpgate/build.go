@@ -63,6 +63,7 @@ type buildOptions struct {
 	buildArgs       []string
 	noCache         bool
 	forceRecreate   bool
+	cleanupOnFinish bool // Delete all build resources after successful build
 	dryRun          bool
 	parallelRegions bool     // Build in all regions in parallel
 	copyToRegions   []string // Copy built AMI to additional regions
@@ -143,6 +144,7 @@ Examples:
 	buildCmd.Flags().StringArrayVar(&opts.buildArgs, "build-arg", []string{}, "Set build arguments (key=value)")
 	buildCmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Disable all caching")
 	buildCmd.Flags().BoolVar(&opts.forceRecreate, "force", false, "Force recreation of existing AWS resources (AMI builds only)")
+	buildCmd.Flags().BoolVar(&opts.cleanupOnFinish, "cleanup", false, "Delete all build resources after successful build (AMI builds only)")
 	buildCmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Validate configuration without creating resources (AMI builds only)")
 	buildCmd.Flags().StringSliceVar(&opts.regions, "regions", nil, "Build AMI in multiple regions (comma-separated)")
 	buildCmd.Flags().BoolVar(&opts.parallelRegions, "parallel-regions", false, "Build in all regions in parallel (default: sequential)")
@@ -404,6 +406,7 @@ func executeAMIBuildTarget(ctx context.Context, service *builder.BuildService, c
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AMI builder: %w", err)
 	}
+	amiBuilder.SetCleanupOnFinish(opts.cleanupOnFinish)
 	defer func() {
 		if closeErr := amiBuilder.Close(); closeErr != nil {
 			logging.WarnContext(ctx, "Failed to close AMI builder: %v", closeErr)
@@ -483,6 +486,7 @@ func executeSequentialRegionBuilds(ctx context.Context, service *builder.BuildSe
 			logging.ErrorContext(ctx, "Failed to create AMI builder for region %s: %v", region, err)
 			continue
 		}
+		amiBuilder.SetCleanupOnFinish(opts.cleanupOnFinish)
 
 		if opts.dryRun {
 			dryRunResult, err := handleAMIDryRun(ctx, amiBuilder, buildConfig)
@@ -556,6 +560,7 @@ func executeParallelRegionBuilds(ctx context.Context, service *builder.BuildServ
 			if err != nil {
 				return fmt.Errorf("region %s: failed to create AMI builder: %w", region, err)
 			}
+			amiBuilder.SetCleanupOnFinish(opts.cleanupOnFinish)
 			defer func() {
 				if closeErr := amiBuilder.Close(); closeErr != nil {
 					logging.WarnContext(ctx, "Failed to close AMI builder for %s: %v", region, closeErr)
