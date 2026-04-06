@@ -300,12 +300,12 @@ func (d *Display) Render() {
 func (d *Display) renderTTY() {
 	// Rewind cursor to the start of the previously rendered block.
 	for i := 0; i < d.rendered; i++ {
-		fmt.Fprint(d.writer, ansiCursorUp)
+		_, _ = fmt.Fprint(d.writer, ansiCursorUp)
 	}
 
 	for _, b := range d.bars {
 		line := d.formatBar(b)
-		fmt.Fprint(d.writer, ansiClearLine+line+"\n")
+		_, _ = fmt.Fprint(d.writer, ansiClearLine+line+"\n")
 	}
 
 	d.rendered = len(d.bars)
@@ -325,7 +325,7 @@ func (d *Display) renderPlain() {
 		b.mu.Unlock()
 
 		if changed {
-			fmt.Fprintln(d.writer, line)
+			_, _ = fmt.Fprintln(d.writer, line)
 		}
 	}
 }
