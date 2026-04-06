@@ -95,6 +95,12 @@ type StatusUpdate struct {
 	// EstimatedRemaining is the estimated time to completion. Zero if unknown.
 	EstimatedRemaining time.Duration
 
+	// Progress is a smoothly interpolated value in [0.0, 1.0] representing
+	// overall build completion. It advances within each stage based on
+	// elapsed time vs typical stage duration, so progress bars move
+	// continuously rather than jumping only on stage transitions.
+	Progress float64
+
 	// StageChanged is true on the first tick of a new stage.
 	StageChanged bool
 }

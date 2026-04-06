@@ -1128,12 +1128,16 @@ func TestStatusCallbackInvoked(t *testing.T) {
 
 	assert.Equal(t, string(types.ImageStatusPending), updates[0].Stage)
 	assert.True(t, updates[0].StageChanged, "first tick of PENDING should be StageChanged=true")
+	assert.Greater(t, updates[0].Progress, 0.0, "Progress should be > 0 for PENDING")
+	assert.LessOrEqual(t, updates[0].Progress, 1.0, "Progress should be <= 1.0")
 
 	assert.Equal(t, string(types.ImageStatusPending), updates[1].Stage)
 	assert.False(t, updates[1].StageChanged, "repeated PENDING tick should be StageChanged=false")
+	assert.GreaterOrEqual(t, updates[1].Progress, updates[0].Progress, "Progress should not decrease")
 
 	assert.Equal(t, string(types.ImageStatusBuilding), updates[2].Stage)
 	assert.True(t, updates[2].StageChanged, "transition to BUILDING should be StageChanged=true")
+	assert.Greater(t, updates[2].Progress, 0.0, "Progress should be > 0 for BUILDING")
 }
 
 // TestStatusCallbackNilSafe verifies that a nil StatusCallback causes no panic.

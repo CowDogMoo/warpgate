@@ -191,13 +191,14 @@ amiBuilder, _ := ami.NewImageBuilderWithAllOptions(ctx, clientConfig, false, mon
 
 #### StatusUpdate Fields
 
-| Field                | Type            | Description                     |
-| -------------------- | --------------- | ------------------------------- |
-| `Stage`              | `string`        | Raw stage name, e.g. `BUILDING` |
-| `StageLabel`         | `string`        | Human-readable label            |
-| `Elapsed`            | `time.Duration` | Total time since build start    |
-| `EstimatedRemaining` | `time.Duration` | Estimated time to completion    |
-| `StageChanged`       | `bool`          | `true` on first tick of stage   |
+| Field                | Type            | Description                      |
+| -------------------- | --------------- | -------------------------------- |
+| `Stage`              | `string`        | Raw stage name, e.g. `BUILDING`  |
+| `StageLabel`         | `string`        | Human-readable label             |
+| `Elapsed`            | `time.Duration` | Total time since build start     |
+| `EstimatedRemaining` | `time.Duration` | Estimated time to completion     |
+| `Progress`           | `float64`       | Smooth 0.0-1.0 completion value  |
+| `StageChanged`       | `bool`          | `true` on first tick of stage    |
 
 Valid stages: `PENDING`, `CREATING`, `BUILDING`, `TESTING`,
 `DISTRIBUTING`, `INTEGRATING`, `AVAILABLE`, `FAILED`.
@@ -265,11 +266,11 @@ bar3 := display.AddBar("goad-member-base", 3, 4)
 bar4 := display.AddBar("goad-mssql-base", 4, 4)
 
 // Each build's StatusCallback only updates its bar -- never calls Render().
+// u.Progress is a smooth 0.0-1.0 value computed by warpgate.
 for i, bar := range []*progress.Bar{bar1, bar2, bar3, bar4} {
     bar := bar
     configs[i].MonitorConfig.StatusCallback = func(u ami.StatusUpdate) {
-        pct := stageWeightedProgress(u.Stage) // your stage-to-percentage mapping
-        bar.Update(u.StageLabel, pct, u.Elapsed, u.EstimatedRemaining)
+        bar.Update(u.Stage, u.Progress, u.Elapsed, u.EstimatedRemaining)
     }
 }
 
@@ -288,28 +289,13 @@ Output (updated in-place every 500ms):
 [4/4] goad-mssql-base        [██████████████░░░░░░░░░░░] Building       18m14s  ~19m0s remaining
 ```
 
-### Stage-Weighted Progress
+### Built-in Progress Estimation
 
-AMI builds go through stages with different durations. Map them to progress
-weights so the bar moves proportionally:
-
-```go
-func stageWeightedProgress(stage string) float64 {
-    weights := map[string]float64{
-        "PENDING":      0.05,
-        "CREATING":     0.15,
-        "BUILDING":     0.60,
-        "TESTING":      0.70,
-        "DISTRIBUTING": 0.90,
-        "INTEGRATING":  0.95,
-        "AVAILABLE":    1.00,
-    }
-    if w, ok := weights[stage]; ok {
-        return w
-    }
-    return 0
-}
-```
+Warpgate computes a smooth `Progress` value (0.0–1.0) internally by
+interpolating within each AMI build stage based on elapsed time and typical
+stage durations. The `StatusUpdate.Progress` field already accounts for stage
+weights, so consumers can pass it directly to a progress bar without any
+additional mapping logic.
 
 ### API Reference
 
@@ -381,11 +367,11 @@ func main() {
         bar := display.AddBar(b.name, i+1, len(builds))
 
         // Wire the StatusCallback to update only the bar state.
+        // u.Progress is a smooth 0.0-1.0 value computed by warpgate.
         monitorConfig := ami.MonitorConfig{
             StreamLogs: false, // suppress logs -- progress bar is enough
             StatusCallback: func(u ami.StatusUpdate) {
-                pct := stageWeightedProgress(u.Stage)
-                bar.Update(u.Stage, pct, u.Elapsed, u.EstimatedRemaining)
+                bar.Update(u.Stage, u.Progress, u.Elapsed, u.EstimatedRemaining)
             },
         }
 
@@ -424,22 +410,6 @@ func main() {
             fmt.Printf("%s: %s (%s)\n", builds[i].name, r.AMIID, r.Duration)
         }
     }
-}
-
-func stageWeightedProgress(stage string) float64 {
-    weights := map[string]float64{
-        "PENDING":      0.05,
-        "CREATING":     0.15,
-        "BUILDING":     0.60,
-        "TESTING":      0.70,
-        "DISTRIBUTING": 0.90,
-        "INTEGRATING":  0.95,
-        "AVAILABLE":    1.00,
-    }
-    if w, ok := weights[stage]; ok {
-        return w
-    }
-    return 0
 }
 ```
 

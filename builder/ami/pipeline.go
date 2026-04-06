@@ -252,6 +252,7 @@ func (m *PipelineManager) processPipelineTick(ctx context.Context, imageARN stri
 			StageLabel:         m.formatBuildStage(status),
 			Elapsed:            elapsed,
 			EstimatedRemaining: m.estimateRemainingTime(status, elapsed),
+			Progress:           m.estimateProgress(status, elapsed, state),
 			StageChanged:       statusChanged,
 		})
 	}
@@ -368,6 +369,59 @@ func (m *PipelineManager) estimateRemainingTime(currentStatus types.ImageStatus,
 	}
 
 	return remaining
+}
+
+// estimateProgress returns a smoothly interpolated progress value in [0.0, 1.0]
+// based on the current stage and elapsed time within that stage. Progress
+// advances continuously within each stage rather than jumping on transitions.
+func (m *PipelineManager) estimateProgress(currentStatus types.ImageStatus, elapsed time.Duration, state *pipelineWaitState) float64 {
+	type stageInfo struct {
+		status   types.ImageStatus
+		weight   float64       // fraction of total progress this stage represents
+		duration time.Duration // typical duration
+	}
+
+	stages := []stageInfo{
+		{types.ImageStatusPending, 0.05, 2 * time.Minute},
+		{types.ImageStatusCreating, 0.10, 5 * time.Minute},
+		{types.ImageStatusBuilding, 0.45, 20 * time.Minute},
+		{types.ImageStatusTesting, 0.10, 5 * time.Minute},
+		{types.ImageStatusDistributing, 0.20, 10 * time.Minute},
+		{types.ImageStatusIntegrating, 0.05, 2 * time.Minute},
+	}
+
+	if currentStatus == types.ImageStatusAvailable {
+		return 1.0
+	}
+	if currentStatus == types.ImageStatusFailed || currentStatus == types.ImageStatusCancelled {
+		return 0.0
+	}
+
+	// Sum progress for completed stages + interpolate within current stage.
+	var progress float64
+	for _, s := range stages {
+		if s.status == currentStatus {
+			// Interpolate within this stage based on time spent in it.
+			stageStart, ok := state.stageStartTimes[currentStatus]
+			if !ok {
+				stageStart = time.Now()
+			}
+			stageElapsed := time.Since(stageStart)
+			fraction := float64(stageElapsed) / float64(s.duration)
+			if fraction > 1.0 {
+				fraction = 0.95 // cap at 95% within stage to avoid premature 100%
+			}
+			progress += s.weight * fraction
+			break
+		}
+		// This stage is completed — add its full weight.
+		progress += s.weight
+	}
+
+	if progress > 0.99 {
+		progress = 0.99
+	}
+	return progress
 }
 
 // formatBuildStage returns a human-readable description of the build stage

@@ -76,6 +76,16 @@ const (
 
 	// ansiClearLine clears the current line and returns the cursor to column 1.
 	ansiClearLine = "\033[2K\r"
+
+	// ansiHideCursor hides the terminal cursor to reduce flicker during redraws.
+	ansiHideCursor = "\033[?25l"
+
+	// ansiShowCursor restores the terminal cursor.
+	ansiShowCursor = "\033[?25h"
+
+	// ansiClearToEnd clears from the cursor to the end of the screen, removing
+	// any orphaned lines caused by external newlines (e.g. keypresses).
+	ansiClearToEnd = "\033[J"
 )
 
 // Bar represents a single tracked build or operation within a Display. It
@@ -296,17 +306,27 @@ func (d *Display) Render() {
 }
 
 // renderTTY performs in-place rewrite of all bar lines using ANSI escape codes.
-// It must be called with d.mu held.
+// It hides the cursor during redraws and clears any orphaned lines below the
+// bar block (e.g. from user keypresses injecting newlines). It must be called
+// with d.mu held.
 func (d *Display) renderTTY() {
+	_, _ = fmt.Fprint(d.writer, ansiHideCursor)
+
 	// Rewind cursor to the start of the previously rendered block.
 	for i := 0; i < d.rendered; i++ {
 		_, _ = fmt.Fprint(d.writer, ansiCursorUp)
 	}
 
+	// Clear from cursor to end of screen to wipe orphaned lines caused by
+	// external newlines (keypresses, other output).
+	_, _ = fmt.Fprint(d.writer, ansiClearToEnd)
+
 	for _, b := range d.bars {
 		line := d.formatBar(b)
 		_, _ = fmt.Fprint(d.writer, ansiClearLine+line+"\n")
 	}
+
+	_, _ = fmt.Fprint(d.writer, ansiShowCursor)
 
 	d.rendered = len(d.bars)
 }
