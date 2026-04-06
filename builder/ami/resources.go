@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
@@ -552,40 +553,45 @@ type CreatedResources struct {
 	PipelineARN   string
 }
 
-// Cleanup deletes all tracked resources
+// Cleanup deletes all tracked resources. It uses a fresh background context
+// with a 2-minute timeout so cleanup succeeds even when the caller's context
+// has been cancelled (e.g. by SIGINT).
 func (r *CreatedResources) Cleanup(ctx context.Context, manager *ResourceManager) {
-	logging.InfoContext(ctx, "Cleaning up resources created during failed build")
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	logging.InfoContext(cleanupCtx, "Cleaning up resources created during failed build")
 
 	// Delete in reverse order of dependency
 	if r.PipelineARN != "" {
-		if err := manager.DeleteImagePipeline(ctx, r.PipelineARN); err != nil {
-			logging.WarnContext(ctx, "Failed to cleanup pipeline: %v", err)
+		if err := manager.DeleteImagePipeline(cleanupCtx, r.PipelineARN); err != nil {
+			logging.WarnContext(cleanupCtx, "Failed to cleanup pipeline: %v", err)
 		}
 	}
 
 	if r.RecipeARN != "" {
-		if err := manager.DeleteImageRecipe(ctx, r.RecipeARN); err != nil {
-			logging.WarnContext(ctx, "Failed to cleanup image recipe: %v", err)
+		if err := manager.DeleteImageRecipe(cleanupCtx, r.RecipeARN); err != nil {
+			logging.WarnContext(cleanupCtx, "Failed to cleanup image recipe: %v", err)
 		}
 	}
 
 	if r.DistARN != "" {
-		if err := manager.DeleteDistributionConfig(ctx, r.DistARN); err != nil {
-			logging.WarnContext(ctx, "Failed to cleanup distribution config: %v", err)
+		if err := manager.DeleteDistributionConfig(cleanupCtx, r.DistARN); err != nil {
+			logging.WarnContext(cleanupCtx, "Failed to cleanup distribution config: %v", err)
 		}
 	}
 
 	if r.InfraARN != "" {
-		if err := manager.DeleteInfrastructureConfig(ctx, r.InfraARN); err != nil {
-			logging.WarnContext(ctx, "Failed to cleanup infrastructure config: %v", err)
+		if err := manager.DeleteInfrastructureConfig(cleanupCtx, r.InfraARN); err != nil {
+			logging.WarnContext(cleanupCtx, "Failed to cleanup infrastructure config: %v", err)
 		}
 	}
 
 	for _, arn := range r.ComponentARNs {
-		if err := manager.DeleteComponent(ctx, arn); err != nil {
-			logging.WarnContext(ctx, "Failed to cleanup component: %v", err)
+		if err := manager.DeleteComponent(cleanupCtx, arn); err != nil {
+			logging.WarnContext(cleanupCtx, "Failed to cleanup component: %v", err)
 		}
 	}
 
-	logging.InfoContext(ctx, "Resource cleanup completed")
+	logging.InfoContext(cleanupCtx, "Resource cleanup completed")
 }
