@@ -159,6 +159,10 @@ type Display struct {
 
 	// stopCh signals the background render loop to exit.
 	stopCh chan struct{}
+
+	// restoreTerminal is called by Stop to restore the terminal's original
+	// input settings after echo suppression. Nil when echo was not suppressed.
+	restoreTerminal func()
 }
 
 // NewDisplay creates a Display that writes to w. The isTTY flag is inferred by
@@ -266,10 +270,17 @@ func (d *Display) SetTotal(total int) {
 // Use this when multiple goroutines update bars concurrently — they should only
 // call Bar.Update/Complete/Fail, and the render loop draws all bars together.
 // Call Stop to halt the loop and perform a final render.
+//
+// On TTY outputs, Start suppresses terminal echo so that keypresses (e.g. Enter)
+// do not inject newlines that corrupt the ANSI cursor-based redraw. Ctrl+C
+// signal handling is preserved. The original terminal state is restored by Stop.
 func (d *Display) Start(interval time.Duration) {
 	d.mu.Lock()
 	d.stopCh = make(chan struct{})
 	ch := d.stopCh
+	if d.isTTY {
+		d.restoreTerminal = suppressEcho()
+	}
 	d.mu.Unlock()
 
 	go func() {
@@ -287,17 +298,23 @@ func (d *Display) Start(interval time.Duration) {
 }
 
 // Stop halts the background render loop started by Start and performs a final
-// render to ensure the terminal shows the latest state.
+// render to ensure the terminal shows the latest state. It restores the
+// terminal's original input settings if echo was suppressed.
 func (d *Display) Stop() {
 	d.mu.Lock()
 	ch := d.stopCh
 	d.stopCh = nil
+	restore := d.restoreTerminal
+	d.restoreTerminal = nil
 	d.mu.Unlock()
 
 	if ch != nil {
 		close(ch)
 	}
 	d.Render()
+	if restore != nil {
+		restore()
+	}
 }
 
 // IsFinished returns true if the bar is done or has an error.
