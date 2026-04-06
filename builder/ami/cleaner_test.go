@@ -326,8 +326,19 @@ func TestListComponents_WithWarpgateTag(t *testing.T) {
 			ComponentVersionList: []ibtypes.ComponentVersion{
 				{
 					Name:    aws.String("my-component"),
-					Arn:     aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/my-component/1.0.0/1"),
+					Arn:     aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/my-component/1.0.0"),
 					Version: aws.String("1.0.0"),
+				},
+			},
+		}, nil
+	}
+
+	mocks.imageBuilder.ListComponentBuildVersionsFunc = func(ctx context.Context, params *imagebuilder.ListComponentBuildVersionsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentBuildVersionsOutput, error) {
+		return &imagebuilder.ListComponentBuildVersionsOutput{
+			ComponentSummaryList: []ibtypes.ComponentSummary{
+				{
+					Arn:  aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/my-component/1.0.0/1"),
+					Name: aws.String("my-component"),
 				},
 			},
 		}, nil
@@ -349,6 +360,7 @@ func TestListComponents_WithWarpgateTag(t *testing.T) {
 	assert.Equal(t, "Component", resources[0].Type)
 	assert.Equal(t, "my-component", resources[0].Name)
 	assert.Equal(t, "my-build", resources[0].BuildName)
+	assert.Equal(t, "arn:aws:imagebuilder:us-east-1:123456789012:component/my-component/1.0.0/1", resources[0].ARN)
 	assert.Equal(t, "1.0.0", resources[0].Version)
 }
 
@@ -363,21 +375,32 @@ func TestListComponents_GetComponentError_Skipped(t *testing.T) {
 			ComponentVersionList: []ibtypes.ComponentVersion{
 				{
 					Name:    aws.String("bad-component"),
-					Arn:     aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/bad-component/1.0.0/1"),
+					Arn:     aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/bad-component/1.0.0"),
 					Version: aws.String("1.0.0"),
 				},
 				{
 					Name:    aws.String("good-component"),
-					Arn:     aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/good-component/1.0.0/1"),
+					Arn:     aws.String("arn:aws:imagebuilder:us-east-1:123456789012:component/good-component/1.0.0"),
 					Version: aws.String("1.0.0"),
 				},
 			},
 		}, nil
 	}
 
-	callCount := 0
+	mocks.imageBuilder.ListComponentBuildVersionsFunc = func(ctx context.Context, params *imagebuilder.ListComponentBuildVersionsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentBuildVersionsOutput, error) {
+		buildArn := aws.ToString(params.ComponentVersionArn) + "/1"
+		return &imagebuilder.ListComponentBuildVersionsOutput{
+			ComponentSummaryList: []ibtypes.ComponentSummary{
+				{
+					Arn: aws.String(buildArn),
+				},
+			},
+		}, nil
+	}
+
+	getCallCount := 0
 	mocks.imageBuilder.GetComponentFunc = func(ctx context.Context, params *imagebuilder.GetComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetComponentOutput, error) {
-		callCount++
+		getCallCount++
 		if aws.ToString(params.ComponentBuildVersionArn) == "arn:aws:imagebuilder:us-east-1:123456789012:component/bad-component/1.0.0/1" {
 			return nil, fmt.Errorf("component not accessible")
 		}
@@ -393,7 +416,7 @@ func TestListComponents_GetComponentError_Skipped(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, resources, 1)
 	assert.Equal(t, "good-component", resources[0].Name)
-	assert.Equal(t, 2, callCount)
+	assert.Equal(t, 2, getCallCount)
 }
 
 func TestListComponents_APIError(t *testing.T) {
@@ -456,6 +479,14 @@ func TestListWarpgateResources_ReturnsAllTypes(t *testing.T) {
 		return &imagebuilder.ListComponentsOutput{
 			ComponentVersionList: []ibtypes.ComponentVersion{
 				{Name: aws.String("comp-1"), Arn: aws.String("arn:comp-1"), Version: aws.String("1.0.0")},
+			},
+		}, nil
+	}
+
+	mocks.imageBuilder.ListComponentBuildVersionsFunc = func(ctx context.Context, params *imagebuilder.ListComponentBuildVersionsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentBuildVersionsOutput, error) {
+		return &imagebuilder.ListComponentBuildVersionsOutput{
+			ComponentSummaryList: []ibtypes.ComponentSummary{
+				{Arn: aws.String("arn:comp-1/1")},
 			},
 		}, nil
 	}
