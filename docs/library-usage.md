@@ -147,6 +147,11 @@ func main() {
     }
     defer amiBuilder.Close()
 
+    // Optional: delete all build resources (components, configs, recipe,
+    // pipeline) after a successful build. Default is false, which only
+    // removes the pipeline.
+    amiBuilder.SetCleanupOnFinish(true)
+
     buildConfig := builder.Config{
         Name: "my-ami",
         Base: builder.BaseImage{Image: "ami-0abcdef1234567890"},

@@ -165,6 +165,9 @@ warpgate build --template attack-box --target ami --dry-run
 
 # Force recreation of existing AWS resources
 warpgate build --template attack-box --target ami --force
+
+# Delete all build resources (components, configs, recipe) after successful build
+warpgate build --template attack-box --target ami --cleanup
 ```
 
 ### Resource Cleanup
