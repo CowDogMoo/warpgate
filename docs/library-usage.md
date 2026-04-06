@@ -316,10 +316,14 @@ func (*Display) Stop()                       // stop loop + final render
 
 ```go
 func (*Bar) Update(stage string, progress float64, elapsed, remaining time.Duration)
-func (*Bar) Complete()                       // sets Done, Progress=1.0
-func (*Bar) Fail()                           // sets Error, Stage="Failed"
+func (*Bar) Complete()                       // sets Done, Progress=1.0, green
+func (*Bar) CompleteWithMessage(msg string)  // Complete + cyan message (e.g. AMI ID)
+func (*Bar) Fail()                           // sets Error, Stage="Failed", red
 func (*Bar) IsFinished() bool                // true if Done or Error
 ```
+
+Completed bars render in **green**, failed bars in **red**, and the optional
+completion message (e.g. an AMI ID) renders in **cyan** after the bar.
 
 ## Complete Example: Parallel AMI Builds with Progress
 
@@ -396,7 +400,7 @@ func main() {
                 return
             }
 
-            bar.Complete()
+            bar.CompleteWithMessage(result.AMIID)
             results[idx] = result
         }(i, b.config, monitorConfig, bar)
     }

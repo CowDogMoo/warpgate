@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/cowdogmoo/warpgate/v3/progress"
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -434,4 +435,62 @@ func TestStartStopConcurrent(t *testing.T) {
 	for i := 1; i <= numBars; i++ {
 		assert.Contains(t, output, fmt.Sprintf("[%d/%d]", i, numBars))
 	}
+}
+
+// TestCompleteWithMessage verifies that CompleteWithMessage sets the
+// CompletionMessage and that it appears in the rendered output.
+func TestCompleteWithMessage(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	d := progress.NewDisplayTTY(&buf, false)
+
+	bar := d.AddBar("my-ami", 1, 1)
+	bar.Update("Building", 0.9, 30*time.Second, 3*time.Second)
+	bar.CompleteWithMessage("ami-0abcdef1234567890")
+
+	d.Render()
+
+	output := buf.String()
+	assert.Contains(t, output, "Complete")
+	assert.Contains(t, output, "ami-0abcdef1234567890")
+}
+
+// TestColorOutput verifies that completed bars contain ANSI color codes
+// (green for success, red for failure).
+func TestColorOutput(t *testing.T) {
+	// fatih/color disables color for non-TTY writers. Force it on for testing.
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = true })
+
+	t.Run("green on complete", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := progress.NewDisplayTTY(&buf, false)
+		bar := d.AddBar("svc", 1, 1)
+		bar.Complete()
+		d.Render()
+		// fatih/color green escape: \033[32m
+		assert.Contains(t, buf.String(), "\033[32m")
+	})
+
+	t.Run("red on failure", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := progress.NewDisplayTTY(&buf, false)
+		bar := d.AddBar("svc", 1, 1)
+		bar.Fail()
+		d.Render()
+		// fatih/color red escape: \033[31m
+		assert.Contains(t, buf.String(), "\033[31m")
+	})
+
+	t.Run("cyan completion message", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := progress.NewDisplayTTY(&buf, false)
+		bar := d.AddBar("svc", 1, 1)
+		bar.CompleteWithMessage("ami-123")
+		d.Render()
+		// fatih/color cyan escape: \033[36m
+		assert.Contains(t, buf.String(), "\033[36m")
+		assert.Contains(t, buf.String(), "ami-123")
+	})
 }

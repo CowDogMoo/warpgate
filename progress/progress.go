@@ -54,6 +54,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fatih/color"
 	"golang.org/x/term"
 )
 
@@ -120,6 +121,10 @@ type Bar struct {
 
 	// Error is true when the operation has terminated with a failure.
 	Error bool
+
+	// CompletionMessage is optional text appended after the stage on completion,
+	// e.g. an AMI ID or image digest. It is rendered in cyan when set.
+	CompletionMessage string
 
 	// lastRendered caches the most recently rendered line so non-TTY displays
 	// can skip unchanged bars.
@@ -220,6 +225,18 @@ func (b *Bar) Complete() {
 	b.Done = true
 	b.Stage = "Complete"
 	b.Progress = 1.0
+}
+
+// CompleteWithMessage marks the bar as finished and attaches a message (e.g.
+// an AMI ID) that is rendered in cyan after the stage text.
+func (b *Bar) CompleteWithMessage(msg string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.Done = true
+	b.Stage = "Complete"
+	b.Progress = 1.0
+	b.CompletionMessage = msg
 }
 
 // Fail marks the bar as having encountered an error, setting Error to true and
@@ -363,6 +380,7 @@ func (d *Display) formatBar(b *Bar) string {
 	progress := b.Progress
 	done := b.Done
 	hasErr := b.Error
+	completionMsg := b.CompletionMessage
 	b.mu.Unlock()
 
 	// Clamp progress to a valid range.
@@ -394,8 +412,6 @@ func (d *Display) formatBar(b *Bar) string {
 	// Build the stage/status suffix.
 	stageStr := stage
 	if done {
-		// Indicate completion; fatih/color is available but kept optional here
-		// to avoid coupling. Callers can wrap the Display writer with color if desired.
 		stageStr = "Complete"
 	} else if hasErr {
 		stageStr = "Failed"
@@ -407,6 +423,16 @@ func (d *Display) formatBar(b *Bar) string {
 
 	if remaining > 0 && !done && !hasErr {
 		line += fmt.Sprintf("  ~%s remaining", remaining.Truncate(time.Second).String())
+	}
+
+	// Colorize the entire line for terminal states.
+	if done {
+		line = color.GreenString(line)
+		if completionMsg != "" {
+			line += "  " + color.CyanString(completionMsg)
+		}
+	} else if hasErr {
+		line = color.RedString(line)
 	}
 
 	return line
