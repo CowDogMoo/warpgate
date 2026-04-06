@@ -72,7 +72,7 @@ jobs:
         run: python3 -m pip install pre-commit
 
       - name: Set up Go
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
@@ -98,7 +98,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Renovate
-        uses: renovatebot/github-action@68a3ea99af6ad249940b5a9fdf44fc6d7f14378b # v46.1.6
+        uses: renovatebot/github-action@3633cede7d4d4598438e654eac4a695e46004420 # v46.1.7
         env:
           LOG_LEVEL: "${{ inputs.logLevel || 'debug' }}"
           RENOVATE_AUTODISCOVER: true
