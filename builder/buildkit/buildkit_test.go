@@ -7495,3 +7495,96 @@ func TestFixImagePlatform_DaemonWriteError(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+// errorImage implements v1.Image but returns an error from ConfigFile.
+type errorImage struct {
+	v1.Image
+}
+
+func (e *errorImage) ConfigFile() (*v1.ConfigFile, error) {
+	return nil, fmt.Errorf("config read error")
+}
+
+func TestFixImagePlatform_ConfigFileError(t *testing.T) {
+	origLoad := daemonLoad
+	defer func() { daemonLoad = origLoad }()
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return &errorImage{Image: mockImage(t, "linux", "amd64")}, nil
+	}
+
+	b := &BuildKitBuilder{}
+	err := b.fixImagePlatform(context.Background(), "example.com/img:latest", "linux", "amd64")
+	if err == nil {
+		t.Fatal("expected error when ConfigFile fails")
+	}
+	if !strings.Contains(err.Error(), "failed to read image config") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestFixImagePlatform_OSCorrected(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	// Image has wrong OS but correct arch
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return mockImage(t, "windows", "amd64"), nil
+	}
+
+	var writtenImg v1.Image
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		writtenImg = img
+		return "", nil
+	}
+
+	b := &BuildKitBuilder{}
+	err := b.fixImagePlatform(context.Background(), "example.com/img:latest", "linux", "amd64")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writtenImg == nil {
+		t.Fatal("daemon.Write was not called")
+	}
+	cfg, err := writtenImg.ConfigFile()
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+	if cfg.OS != "linux" {
+		t.Errorf("expected OS linux, got %s", cfg.OS)
+	}
+	if cfg.Architecture != "amd64" {
+		t.Errorf("expected architecture amd64, got %s", cfg.Architecture)
+	}
+}
+
+func TestFixImagePlatform_BothOSAndArchCorrected(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return mockImage(t, "windows", "arm64"), nil
+	}
+
+	var writtenImg v1.Image
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		writtenImg = img
+		return "", nil
+	}
+
+	b := &BuildKitBuilder{}
+	err := b.fixImagePlatform(context.Background(), "example.com/img:latest", "linux", "amd64")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cfg, err := writtenImg.ConfigFile()
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+	if cfg.OS != "linux" || cfg.Architecture != "amd64" {
+		t.Errorf("expected linux/amd64, got %s/%s", cfg.OS, cfg.Architecture)
+	}
+}
