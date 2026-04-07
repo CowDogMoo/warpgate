@@ -904,6 +904,54 @@ func (b *BuildKitBuilder) loadAndTagImage(ctx context.Context, imageTarPath, ima
 	return nil
 }
 
+// fixImagePlatform ensures the loaded Docker image has the correct platform
+// metadata. BuildKit's Docker exporter may set the host architecture instead
+// of the target architecture when cross-building.
+func (b *BuildKitBuilder) fixImagePlatform(ctx context.Context, imageName, targetOS, targetArch string) error {
+	ref, err := name.ParseReference(imageName)
+	if err != nil {
+		return fmt.Errorf("failed to parse image reference %q: %w", imageName, err)
+	}
+
+	img, err := daemon.Image(ref, daemon.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("failed to read image from daemon: %w", err)
+	}
+
+	cfgFile, err := img.ConfigFile()
+	if err != nil {
+		return fmt.Errorf("failed to read image config: %w", err)
+	}
+
+	if cfgFile.Architecture == targetArch && cfgFile.OS == targetOS {
+		logging.DebugContext(ctx, "Image platform already correct: %s/%s", targetOS, targetArch)
+		return nil
+	}
+
+	logging.InfoContext(ctx, "Correcting image platform metadata: %s/%s -> %s/%s",
+		cfgFile.OS, cfgFile.Architecture, targetOS, targetArch)
+
+	cfgFile.Architecture = targetArch
+	cfgFile.OS = targetOS
+
+	img, err = mutate.ConfigFile(img, cfgFile)
+	if err != nil {
+		return fmt.Errorf("failed to mutate image config: %w", err)
+	}
+
+	tag, err := name.NewTag(imageName)
+	if err != nil {
+		return fmt.Errorf("failed to parse image tag %q: %w", imageName, err)
+	}
+
+	if _, err := daemon.Write(tag, img); err != nil {
+		return fmt.Errorf("failed to write corrected image to daemon: %w", err)
+	}
+
+	logging.InfoContext(ctx, "Image platform metadata corrected to %s/%s", targetOS, targetArch)
+	return nil
+}
+
 // getPlatformString extracts platform string from config
 func getPlatformString(cfg builder.Config) string {
 	switch {
@@ -1171,10 +1219,17 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, err
 	}
 
+	platform := getPlatformString(cfg)
+	platformParts := strings.SplitN(platform, "/", 2)
+	if len(platformParts) == 2 {
+		if err := b.fixImagePlatform(ctx, imageName, platformParts[0], platformParts[1]); err != nil {
+			return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
+		}
+	}
+
 	digest := b.getLocalImageDigest(ctx, imageName)
 
 	duration := time.Since(startTime)
-	platform := getPlatformString(cfg)
 
 	return &builder.BuildResult{
 		ImageRef:     imageName,
@@ -1786,6 +1841,12 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 
 	if err := b.loadAndTagImage(ctx, imageTarPath, imageName); err != nil {
 		return nil, err
+	}
+
+	if len(cfg.Architectures) > 0 {
+		if err := b.fixImagePlatform(ctx, imageName, "linux", cfg.Architectures[0]); err != nil {
+			return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
+		}
 	}
 
 	digest := b.getLocalImageDigest(ctx, imageName)
