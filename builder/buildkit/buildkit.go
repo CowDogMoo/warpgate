@@ -69,6 +69,12 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/templates"
 )
 
+// Package-level function variables for daemon operations (overridden in tests).
+var (
+	daemonLoad  = daemon.Image
+	daemonWrite = daemon.Write
+)
+
 // BuildKitBuilder implements container image building using Docker BuildKit.
 type BuildKitBuilder struct {
 	client        *client.Client
@@ -913,7 +919,7 @@ func (b *BuildKitBuilder) fixImagePlatform(ctx context.Context, imageName, targe
 		return fmt.Errorf("failed to parse image reference %q: %w", imageName, err)
 	}
 
-	img, err := daemon.Image(ref, daemon.WithContext(ctx))
+	img, err := daemonLoad(ref, daemon.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to read image from daemon: %w", err)
 	}
@@ -944,7 +950,7 @@ func (b *BuildKitBuilder) fixImagePlatform(ctx context.Context, imageName, targe
 		return fmt.Errorf("failed to parse image tag %q: %w", imageName, err)
 	}
 
-	if _, err := daemon.Write(tag, img); err != nil {
+	if _, err := daemonWrite(tag, img); err != nil {
 		return fmt.Errorf("failed to write corrected image to daemon: %w", err)
 	}
 
