@@ -2801,9 +2801,10 @@ func TestProcessPushResponse(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name:      "malformed JSON in stream continues processing",
+			name:      "malformed JSON in stream returns error",
 			input:     "[invalid]\n{\"status\":\"Pushed\",\"id\":\"abc123\"}\n",
-			wantError: false,
+			wantError: true,
+			errorMsg:  "push stream read error",
 		},
 	}
 
@@ -5218,11 +5219,13 @@ func TestPushReadResponseFailure(t *testing.T) {
 	}
 
 	b := &BuildKitBuilder{dockerClient: mock}
-	// The push proceeds even if reading the response body fails
+	// Read failures in the push response stream are now treated as errors.
 	_, err := b.Push(context.Background(), "ghcr.io/test:v1", "ghcr.io")
-	// Should not return error - read failure is logged but not fatal
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for read failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "push stream read error") {
+		t.Fatalf("expected push stream read error, got: %v", err)
 	}
 }
 

@@ -72,6 +72,37 @@ type MonitorConfig struct {
 	// ShowEC2Status displays EC2 instance status during build.
 	// Includes instance ID, state, type, IP addresses, and uptime.
 	ShowEC2Status bool
+
+	// StatusCallback is called on every poll tick (approx. every 30s) with
+	// current build progress. This field is consumed by PipelineManager, not
+	// by BuildMonitor. Consumers must return quickly to avoid blocking the
+	// polling loop. A nil callback is a no-op.
+	StatusCallback func(StatusUpdate)
+}
+
+// StatusUpdate contains build progress information delivered via StatusCallback.
+// Consumers should return quickly from the callback; use a channel for async processing.
+type StatusUpdate struct {
+	// Stage is the current build stage (e.g. "BUILDING", "TESTING").
+	Stage string
+
+	// StageLabel is a human-readable description (e.g. "BUILDING - Running provisioners on EC2 instance").
+	StageLabel string
+
+	// Elapsed is the time since build start.
+	Elapsed time.Duration
+
+	// EstimatedRemaining is the estimated time to completion. Zero if unknown.
+	EstimatedRemaining time.Duration
+
+	// Progress is a smoothly interpolated value in [0.0, 1.0] representing
+	// overall build completion. It advances within each stage based on
+	// elapsed time vs typical stage duration, so progress bars move
+	// continuously rather than jumping only on stage transitions.
+	Progress float64
+
+	// StageChanged is true on the first tick of a new stage.
+	StageChanged bool
 }
 
 // NewBuildMonitor creates a new build monitor

@@ -95,6 +95,11 @@ docker images | grep attack-box
 - **[Template Repositories](docs/template-repositories.md)** - Repository
   management and discovery
 
+### Library Usage
+
+- **[Library Usage Guide](docs/library-usage.md)** - Using warpgate as a Go
+  module: container builds, AMI builds, StatusCallback API, and progress bars
+
 ### Reference
 
 - **[Commands Reference](docs/commands.md)** - Complete CLI documentation
@@ -160,6 +165,9 @@ warpgate build --template attack-box --target ami --dry-run
 
 # Force recreation of existing AWS resources
 warpgate build --template attack-box --target ami --force
+
+# Delete all build resources (components, configs, recipe) after successful build
+warpgate build --template attack-box --target ami --cleanup
 ```
 
 ### Resource Cleanup

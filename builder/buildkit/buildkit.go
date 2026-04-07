@@ -65,6 +65,7 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/errors"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/cowdogmoo/warpgate/v3/manifests"
+	"github.com/cowdogmoo/warpgate/v3/progress"
 	"github.com/cowdogmoo/warpgate/v3/templates"
 )
 
@@ -1204,31 +1205,85 @@ func fixedWriteCloser(filepath string) func(map[string]string) (io.WriteCloser, 
 	}
 }
 
-// displayProgress consumes BuildKit solve status updates and displays build progress.
-// This function runs in a goroutine during the build process.
+// displayProgress consumes BuildKit solve status updates and renders per-step
+// progress bars. Each build vertex becomes a bar showing its name and
+// completion state. The display updates in-place on TTY terminals.
 //
 // Concurrency: This function should be run as a goroutine. It reads from the
 // status channel until it's closed, then signals completion via the done channel.
 // The done channel MUST be closed by this function to signal build completion.
-//
-// Parameters:
-//   - ctx: Context for logging operations
-//   - ch: Channel of solve status updates from BuildKit (closed when build completes)
-//   - done: Channel to signal when progress display is complete (closed by this function)
 func (b *BuildKitBuilder) displayProgress(ctx context.Context, ch <-chan *client.SolveStatus, done chan<- struct{}) {
 	defer close(done)
+
+	display := progress.NewDisplay(os.Stderr)
+	display.Start(500 * time.Millisecond)
+	defer display.Stop()
+
+	type vertexState struct {
+		bar   *progress.Bar
+		index int
+	}
+
+	vertices := make(map[digest.Digest]*vertexState)
+	stepCount := 0
+	startTime := time.Now()
 
 	for status := range ch {
 		// codespell:ignore vertexes
 		for _, vertex := range status.Vertexes {
-			if vertex.Name != "" {
-				logging.DebugContext(ctx, "[%s] %s", vertex.Digest.String()[:12], vertex.Name)
+			if vertex.Name == "" {
+				continue
+			}
+
+			vs, ok := vertices[vertex.Digest]
+			if !ok {
+				stepCount++
+				bar := display.AddBar(truncateVertexName(vertex.Name), stepCount, 0)
+				vs = &vertexState{bar: bar, index: stepCount}
+				vertices[vertex.Digest] = vs
+				display.SetTotal(stepCount)
+			}
+
+			elapsed := time.Since(startTime)
+
+			switch {
+			case vertex.Error != "":
+				vs.bar.Fail()
+			case vertex.Completed != nil:
+				vs.bar.Complete()
+			case vertex.Cached:
+				vs.bar.Update("Cached", 1.0, elapsed, 0)
+				vs.bar.Complete()
+			case vertex.Started != nil:
+				vs.bar.Update("Running", 0.5, elapsed, 0)
+			default:
+				vs.bar.Update("Waiting", 0.0, elapsed, 0)
 			}
 		}
+
+		// Update byte-level progress for vertex statuses (layer downloads, etc.).
+		for _, vs := range status.Statuses {
+			if vtx, ok := vertices[vs.Vertex]; ok && vs.Total > 0 {
+				pct := float64(vs.Current) / float64(vs.Total)
+				elapsed := time.Since(startTime)
+				vtx.bar.Update("Running", pct, elapsed, 0)
+			}
+		}
+
+		// Still emit raw log output for provisioner scripts, etc.
 		for _, log := range status.Logs {
 			logging.PrintContext(ctx, string(log.Data))
 		}
 	}
+}
+
+// truncateVertexName shortens a BuildKit vertex name to fit the progress label.
+func truncateVertexName(name string) string {
+	const maxLen = 24
+	if len(name) <= maxLen {
+		return name
+	}
+	return name[:maxLen-3] + "..."
 }
 
 // extractRegistryFromImageRef extracts the registry hostname from an image reference.
@@ -1324,27 +1379,102 @@ type pushStatusMessage struct {
 	} `json:"progressDetail"`
 }
 
-// processPushResponse reads the Docker push JSON stream, logs human-readable
-// progress, and returns an error if the stream reports one.
+// pushProgressState tracks per-layer progress bars during a Docker push.
+type pushProgressState struct {
+	display    *progress.Display
+	bars       map[string]*progress.Bar
+	layerOrder []string
+	startTime  time.Time
+}
+
+func newPushProgressState() *pushProgressState {
+	return &pushProgressState{
+		display:    progress.NewDisplay(os.Stderr),
+		bars:       make(map[string]*progress.Bar),
+		layerOrder: make([]string, 0),
+		startTime:  time.Now(),
+	}
+}
+
+func (s *pushProgressState) handleLayerProgress(msg pushStatusMessage) {
+	bar, ok := s.bars[msg.ID]
+	if !ok {
+		s.layerOrder = append(s.layerOrder, msg.ID)
+		bar = s.display.AddBar(msg.ID, len(s.layerOrder), 0)
+		s.bars[msg.ID] = bar
+		s.display.SetTotal(len(s.layerOrder))
+	}
+
+	pct := float64(msg.ProgressDetail.Current) / float64(msg.ProgressDetail.Total)
+	elapsed := time.Since(s.startTime)
+	bar.Update(msg.Status, pct, elapsed, 0)
+	s.display.Render()
+}
+
+func (s *pushProgressState) handleLayerStatus(ctx context.Context, msg pushStatusMessage) {
+	bar, ok := s.bars[msg.ID]
+	if !ok {
+		logging.DebugContext(ctx, "%s %s", msg.Status, msg.ID)
+		return
+	}
+
+	lower := strings.ToLower(msg.Status)
+	if strings.Contains(lower, "pushed") || strings.Contains(lower, "already exists") {
+		bar.Complete()
+		s.display.Render()
+	}
+}
+
+func (s *pushProgressState) finalize() {
+	for _, b := range s.bars {
+		if !b.IsFinished() {
+			b.Complete()
+		}
+	}
+	if len(s.bars) > 0 {
+		s.display.Render()
+	}
+}
+
+func (s *pushProgressState) failAll() {
+	for _, b := range s.bars {
+		b.Fail()
+	}
+	s.display.Render()
+}
+
+// processPushResponse reads the Docker push JSON stream, renders per-layer
+// progress bars for layers that report byte-level detail, and returns an
+// error if the stream reports one.
 func processPushResponse(ctx context.Context, resp io.Reader) error {
+	state := newPushProgressState()
+
 	decoder := json.NewDecoder(resp)
-	for decoder.More() {
+	for {
 		var msg pushStatusMessage
 		if err := decoder.Decode(&msg); err != nil {
-			logging.WarnContext(ctx, "Failed to decode push response line: %v", err)
-			break
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("push stream read error: %w", err)
 		}
 
 		if msg.Error != "" {
+			state.failAll()
 			return fmt.Errorf("push failed: %s", msg.Error)
 		}
 
-		if msg.ID != "" && msg.Progress != "" {
-			logging.DebugContext(ctx, "%s %s: %s", msg.Status, msg.ID, msg.Progress)
-		} else if msg.Status != "" {
-			logging.InfoContext(ctx, "%s %s", msg.Status, msg.ID)
+		switch {
+		case msg.ID != "" && msg.ProgressDetail != nil && msg.ProgressDetail.Total > 0:
+			state.handleLayerProgress(msg)
+		case msg.ID != "" && msg.Status != "":
+			state.handleLayerStatus(ctx, msg)
+		case msg.Status != "":
+			logging.InfoContext(ctx, "%s", msg.Status)
 		}
 	}
+
+	state.finalize()
 	return nil
 }
 
