@@ -7588,3 +7588,126 @@ func TestFixImagePlatform_BothOSAndArchCorrected(t *testing.T) {
 		t.Errorf("expected linux/amd64, got %s/%s", cfg.OS, cfg.Architecture)
 	}
 }
+
+func TestApplyPlatformFix_LLBBuild(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return mockImage(t, "linux", "arm64"), nil
+	}
+	var writtenArch string
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		cfg, _ := img.ConfigFile()
+		writtenArch = cfg.Architecture
+		return "", nil
+	}
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Base: builder.BaseImage{Platform: "linux/amd64"},
+	}
+	err := b.applyPlatformFix(context.Background(), "example.com/img:latest", cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writtenArch != "amd64" {
+		t.Errorf("expected amd64, got %s", writtenArch)
+	}
+}
+
+func TestApplyPlatformFix_DockerfileBuild(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return mockImage(t, "linux", "arm64"), nil
+	}
+	var writtenArch string
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		cfg, _ := img.ConfigFile()
+		writtenArch = cfg.Architecture
+		return "", nil
+	}
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Architectures: []string{"amd64"},
+		Dockerfile:    &builder.DockerfileConfig{Path: "Dockerfile"},
+	}
+	err := b.applyPlatformFix(context.Background(), "example.com/img:latest", cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writtenArch != "amd64" {
+		t.Errorf("expected amd64, got %s", writtenArch)
+	}
+}
+
+func TestApplyPlatformFix_DockerfileNoArchitectures(t *testing.T) {
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Dockerfile: &builder.DockerfileConfig{Path: "Dockerfile"},
+	}
+	err := b.applyPlatformFix(context.Background(), "example.com/img:latest", cfg)
+	if err != nil {
+		t.Error("expected nil error for dockerfile with no architectures")
+	}
+}
+
+func TestApplyPlatformFix_LLBUnknownPlatform(t *testing.T) {
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{}
+	err := b.applyPlatformFix(context.Background(), "example.com/img:latest", cfg)
+	if err != nil {
+		t.Error("expected nil error for unknown platform")
+	}
+}
+
+func TestApplyPlatformFix_LLBArchFallback(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return mockImage(t, "linux", "arm64"), nil
+	}
+	var writtenArch string
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		cfg, _ := img.ConfigFile()
+		writtenArch = cfg.Architecture
+		return "", nil
+	}
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Architectures: []string{"amd64"},
+	}
+	err := b.applyPlatformFix(context.Background(), "example.com/img:latest", cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if writtenArch != "amd64" {
+		t.Errorf("expected amd64, got %s", writtenArch)
+	}
+}
+
+func TestApplyPlatformFix_PropagatesError(t *testing.T) {
+	origLoad := daemonLoad
+	defer func() { daemonLoad = origLoad }()
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return nil, fmt.Errorf("daemon unavailable")
+	}
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Base: builder.BaseImage{Platform: "linux/amd64"},
+	}
+	err := b.applyPlatformFix(context.Background(), "example.com/img:latest", cfg)
+	if err == nil {
+		t.Fatal("expected error to propagate")
+	}
+}

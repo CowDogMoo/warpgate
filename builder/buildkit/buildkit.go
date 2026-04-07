@@ -958,6 +958,24 @@ func (b *BuildKitBuilder) fixImagePlatform(ctx context.Context, imageName, targe
 	return nil
 }
 
+// applyPlatformFix determines the target platform from the build config
+// and corrects the loaded image's platform metadata if needed.
+func (b *BuildKitBuilder) applyPlatformFix(ctx context.Context, imageName string, cfg builder.Config) error {
+	if cfg.IsDockerfileBased() {
+		if len(cfg.Architectures) > 0 {
+			return b.fixImagePlatform(ctx, imageName, "linux", cfg.Architectures[0])
+		}
+		return nil
+	}
+
+	platform := getPlatformString(cfg)
+	parts := strings.SplitN(platform, "/", 2)
+	if len(parts) == 2 {
+		return b.fixImagePlatform(ctx, imageName, parts[0], parts[1])
+	}
+	return nil
+}
+
 // getPlatformString extracts platform string from config
 func getPlatformString(cfg builder.Config) string {
 	switch {
@@ -1225,17 +1243,14 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, err
 	}
 
-	platform := getPlatformString(cfg)
-	platformParts := strings.SplitN(platform, "/", 2)
-	if len(platformParts) == 2 {
-		if err := b.fixImagePlatform(ctx, imageName, platformParts[0], platformParts[1]); err != nil {
-			return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
-		}
+	if err := b.applyPlatformFix(ctx, imageName, cfg); err != nil {
+		return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
 	}
 
 	digest := b.getLocalImageDigest(ctx, imageName)
 
 	duration := time.Since(startTime)
+	platform := getPlatformString(cfg)
 
 	return &builder.BuildResult{
 		ImageRef:     imageName,
@@ -1849,10 +1864,8 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		return nil, err
 	}
 
-	if len(cfg.Architectures) > 0 {
-		if err := b.fixImagePlatform(ctx, imageName, "linux", cfg.Architectures[0]); err != nil {
-			return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
-		}
+	if err := b.applyPlatformFix(ctx, imageName, cfg); err != nil {
+		return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
 	}
 
 	digest := b.getLocalImageDigest(ctx, imageName)
