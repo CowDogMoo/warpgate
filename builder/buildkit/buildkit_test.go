@@ -7589,6 +7589,32 @@ func TestFixImagePlatform_BothOSAndArchCorrected(t *testing.T) {
 	}
 }
 
+func TestFixImagePlatform_NewTagError(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	// Use a digest reference: ParseReference succeeds, but NewTag fails
+	digestRef := "example.com/img@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return mockImage(t, "linux", "arm64"), nil
+	}
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		t.Fatal("daemon.Write should not be called when NewTag fails")
+		return "", nil
+	}
+
+	b := &BuildKitBuilder{}
+	err := b.fixImagePlatform(context.Background(), digestRef, "linux", "amd64")
+	if err == nil {
+		t.Fatal("expected error when NewTag fails on digest reference")
+	}
+	if !strings.Contains(err.Error(), "failed to parse image tag") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
 func TestApplyPlatformFix_LLBBuild(t *testing.T) {
 	origLoad := daemonLoad
 	origWrite := daemonWrite
