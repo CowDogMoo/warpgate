@@ -1,6 +1,6 @@
 module github.com/cowdogmoo/warpgate/v3
 
-go 1.25.7
+go 1.26.2
 
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/iam v1.53.7
 	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.51.4
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.4
-	github.com/docker/cli v29.3.1+incompatible
+	github.com/docker/cli v29.4.0+incompatible
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.17.2
 	github.com/google/go-containerregistry v0.21.4
@@ -30,7 +30,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/zclconf/go-cty v1.18.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.42.0
+	golang.org/x/sys v0.43.0
 	golang.org/x/term v0.41.0
 	google.golang.org/grpc v1.80.0
 	gopkg.in/ini.v1 v1.67.1
@@ -103,7 +103,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mailru/easyjson v0.9.2 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
