@@ -747,7 +747,7 @@ Update CHANGELOG.md before each release with:
 
 - [README](README.md) - Project overview and usage
 - [Template Repositories Guide](docs/template-repositories.md) - Template management
-- [Go Documentation](https://pkg.go.dev/github.com/cowdogmoo/warpgate) -
+- [Go Documentation](https://pkg.go.dev/github.com/cowdogmoo/warpgate/v3) -
   Code documentation
 
 ### Contact Maintainers
