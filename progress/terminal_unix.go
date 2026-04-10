@@ -28,7 +28,24 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 )
+
+// openTTY opens /dev/tty for reading and writing. The returned file is used
+// for terminal size queries (GetSize) when the caller-supplied writer is not
+// detected as a terminal. Returns nil when /dev/tty is unavailable or not a
+// terminal.
+func openTTY() *os.File {
+	f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil
+	}
+	if !term.IsTerminal(int(f.Fd())) {
+		f.Close()
+		return nil
+	}
+	return f
+}
 
 // suppressEcho disables terminal echo and canonical mode on stdin so that
 // keypresses do not inject characters into the terminal output. Signal

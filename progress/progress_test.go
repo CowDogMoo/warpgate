@@ -243,15 +243,15 @@ func TestRenderTTYCursorRewind(t *testing.T) {
 	// First render: no rewind because nothing was previously rendered.
 	d.Render()
 	firstOutput := buf.String()
-	assert.NotContains(t, firstOutput, "\033[A",
+	assert.NotContains(t, firstOutput, "\033[1A",
 		"first render should not contain cursor-up sequence")
 
-	// Second render: one cursor-up sequence expected (one bar rendered previously).
+	// Second render: counted cursor-up expected (one bar rendered previously).
 	buf.Reset()
 	bar.Update("Building", 0.6, 6*time.Second, 9*time.Second)
 	d.Render()
 	secondOutput := buf.String()
-	assert.Contains(t, secondOutput, "\033[A",
+	assert.Contains(t, secondOutput, "\033[1A",
 		"second render should contain cursor-up sequence to rewind")
 }
 

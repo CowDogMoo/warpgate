@@ -24,6 +24,14 @@ THE SOFTWARE.
 
 package progress
 
+import "os"
+
+// openTTY is a no-op on Windows. The /dev/tty fallback is not available on
+// this platform.
+func openTTY() *os.File {
+	return nil
+}
+
 // suppressEcho is a no-op on Windows. Terminal echo suppression is not
 // implemented for this platform.
 func suppressEcho() func() {

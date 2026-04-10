@@ -24,9 +24,11 @@ package progress
 
 import (
 	"bytes"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -129,5 +131,87 @@ func TestIsFinished(t *testing.T) {
 		bar := d.AddBar("failed", 3, 3)
 		bar.Fail()
 		assert.True(t, bar.IsFinished())
+	})
+}
+
+// errWriter always returns an error on Write.
+type errWriter struct {
+	err error
+}
+
+func (ew *errWriter) Write([]byte) (int, error) {
+	return 0, ew.err
+}
+
+// TestErrCapturesWriteFailure verifies that a broken writer causes Err() to
+// return the underlying error and that subsequent renders are skipped.
+func TestErrCapturesWriteFailure(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("disk full")
+	d := NewDisplayTTY(&errWriter{err: writeErr}, false)
+
+	bar := d.AddBar("svc", 1, 1)
+	bar.Update("Building", 0.5, 5*time.Second, 5*time.Second)
+
+	assert.NoError(t, d.Err(), "Err should be nil before any render")
+
+	d.Render()
+
+	assert.ErrorIs(t, d.Err(), writeErr, "Err should capture the write error")
+
+	// A second render should be a no-op (no panic, no additional writes).
+	d.Render()
+	assert.ErrorIs(t, d.Err(), writeErr, "Err should still report the first error")
+}
+
+// TestErrNilOnSuccess verifies that Err() returns nil when all writes succeed.
+func TestErrNilOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	d := NewDisplayTTY(&buf, false)
+
+	bar := d.AddBar("svc", 1, 1)
+	bar.Update("Building", 0.5, 5*time.Second, 5*time.Second)
+
+	d.Render()
+
+	assert.NoError(t, d.Err())
+	assert.Greater(t, buf.Len(), 0)
+}
+
+// TestFormatBarWidthAdaptation verifies that formatBar respects maxWidth by
+// shrinking the progress bar and dropping the remaining-time suffix so that
+// lines never exceed the given width.
+func TestFormatBarWidthAdaptation(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	d := NewDisplayTTY(&buf, false)
+
+	bar := d.AddBar("goad-dc-base-2025", 1, 6)
+	bar.Update("BUILDING", 0.5, 5*time.Minute, 30*time.Minute)
+
+	t.Run("unlimited width keeps defaults", func(t *testing.T) {
+		line := d.formatBar(bar, 0)
+		assert.Contains(t, line, "remaining")
+		assert.Contains(t, line, "BUILDING")
+	})
+
+	t.Run("narrow width drops remaining time", func(t *testing.T) {
+		line := d.formatBar(bar, 70)
+		assert.NotContains(t, line, "remaining",
+			"remaining time should be dropped to fit narrow terminal")
+		assert.LessOrEqual(t, utf8.RuneCountInString(line), 70,
+			"visual width must not exceed maxWidth")
+	})
+
+	t.Run("very narrow width shrinks bar", func(t *testing.T) {
+		line := d.formatBar(bar, 55)
+		assert.NotContains(t, line, "remaining")
+		assert.LessOrEqual(t, utf8.RuneCountInString(line), 55)
+		assert.Contains(t, line, "[") // bar brackets still present
+		assert.Contains(t, line, "]")
 	})
 }

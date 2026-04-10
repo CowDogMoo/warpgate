@@ -50,9 +50,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/fatih/color"
 	"golang.org/x/term"
@@ -63,6 +65,10 @@ const (
 	// portion of the progress bar, excluding the surrounding brackets.
 	DefaultBarWidth = 25
 
+	// minBarWidth is the smallest bar fill area before we start shrinking
+	// other elements (label) to reclaim space.
+	minBarWidth = 10
+
 	// filledChar is the Unicode block element used for completed progress.
 	filledChar = "█"
 
@@ -72,9 +78,6 @@ const (
 
 	// labelWidth is the fixed width to which labels are padded.
 	labelWidth = 24
-
-	// ansiCursorUp moves the cursor up one line.
-	ansiCursorUp = "\033[A"
 
 	// ansiClearLine clears the current line and returns the cursor to column 1.
 	ansiClearLine = "\033[2K\r"
@@ -88,6 +91,17 @@ const (
 	// ansiClearToEnd clears from the cursor to the end of the screen, removing
 	// any orphaned lines caused by external newlines (e.g. keypresses).
 	ansiClearToEnd = "\033[J"
+
+	// ansiCursorHome moves the cursor to the top-left corner of the screen.
+	ansiCursorHome = "\033[H"
+
+	// ansiAltScreenEnter switches to the alternate screen buffer and clears it.
+	// Used by Start() to isolate progress rendering from the main scrollback.
+	ansiAltScreenEnter = "\033[?1049h"
+
+	// ansiAltScreenLeave switches back to the main screen buffer, restoring
+	// the content that was visible before entering the alternate screen.
+	ansiAltScreenLeave = "\033[?1049l"
 )
 
 // Bar represents a single tracked build or operation within a Display. It
@@ -148,8 +162,9 @@ type Display struct {
 	// bars is the ordered list of tracked operations.
 	bars []*Bar
 
-	// rendered is the number of lines written during the last Render call.
-	// Used to rewind the cursor before the next TTY render.
+	// rendered is the number of terminal rows written during the last TTY
+	// Render. Accounts for line wrapping when a bar's visual width exceeds
+	// the terminal width. Used to rewind the cursor before the next TTY render.
 	rendered int
 
 	// isTTY controls whether ANSI in-place rewrite or plain line output is used.
@@ -158,26 +173,66 @@ type Display struct {
 	// barWidth is the number of characters in the filled/empty portion of each bar.
 	barWidth int
 
+	// useAltScreen is true when Start() has entered the alternate screen buffer.
+	// In this mode, renderTTY uses cursor-home instead of cursor-up so that
+	// no content leaks into the main scrollback.
+	useAltScreen bool
+
 	// stopCh signals the background render loop to exit.
 	stopCh chan struct{}
+
+	// sigCh receives OS signals (SIGINT) so the display can restore terminal
+	// state before the process exits. Nil when no signal handler is registered.
+	sigCh chan os.Signal
 
 	// restoreTerminal is called by Stop to restore the terminal's original
 	// input settings after echo suppression. Nil when echo was not suppressed.
 	restoreTerminal func()
+
+	// writeErr captures the first write error. Once set, subsequent renders
+	// are skipped. Check with Err() after Stop().
+	writeErr error
+
+	// ttyFile is a /dev/tty file descriptor opened for terminal size queries
+	// when the caller-supplied writer is not detected as a TTY. All rendering
+	// goes to the original writer. Closed by Stop or Close. Nil when no
+	// fallback was needed.
+	ttyFile *os.File
 }
 
 // NewDisplay creates a Display that writes to w. The isTTY flag is inferred by
-// checking whether w is an *os.File; if so, it is treated as a TTY. Use
+// checking whether w is an *os.File backed by a terminal. When the check fails
+// (common under macOS/tmux where stderr loses its TTY association), NewDisplay
+// opens /dev/tty to confirm a controlling terminal exists and uses it for
+// terminal size queries, while continuing to write all output to w so that ANSI
+// cursor tracking stays consistent with other output on the same fd. Use
 // NewDisplayTTY for explicit control.
 func NewDisplay(w io.Writer) *Display {
 	isTTY := false
+	var ttyFile *os.File
+
 	if f, ok := w.(*os.File); ok {
 		isTTY = term.IsTerminal(int(f.Fd()))
 	}
+
+	// Fallback: open /dev/tty to detect that a controlling terminal exists.
+	// This handles environments (macOS + tmux, certain CI runners) where
+	// stderr's fd fails the IsTerminal check even though a controlling
+	// terminal exists. The ttyFile is used for terminal size queries only —
+	// all rendering still goes to the original writer so that ANSI cursor
+	// tracking stays consistent with other output on the same fd.
+	if !isTTY {
+		if tty := openTTY(); tty != nil {
+			ttyFile = tty
+			isTTY = true
+		}
+	}
+
 	return &Display{
 		writer:   w,
 		isTTY:    isTTY,
 		barWidth: DefaultBarWidth,
+		ttyFile:  ttyFile,
 	}
 }
 
@@ -189,6 +244,49 @@ func NewDisplayTTY(w io.Writer, isTTY bool) *Display {
 		writer:   w,
 		isTTY:    isTTY,
 		barWidth: DefaultBarWidth,
+	}
+}
+
+// Err returns the first write error encountered during rendering, or nil.
+// Check this after Stop() to determine whether output was written successfully.
+func (d *Display) Err() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.writeErr
+}
+
+// terminalWidth returns the current terminal width in columns, or 0 if the
+// width cannot be determined (non-TTY writer, error, etc.). When a /dev/tty
+// fallback fd is available it is preferred, since it reliably reports
+// dimensions even when the writer's fd fails GetSize (common in tmux).
+func (d *Display) terminalWidth() int {
+	// Prefer the /dev/tty fallback fd for size queries.
+	if d.ttyFile != nil {
+		w, _, err := term.GetSize(int(d.ttyFile.Fd()))
+		if err == nil && w > 0 {
+			return w
+		}
+	}
+	f, ok := d.writer.(*os.File)
+	if !ok {
+		return 0
+	}
+	w, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0
+	}
+	return w
+}
+
+// write writes s to the display's writer. On the first error it records
+// the error in writeErr; subsequent calls after an error are no-ops.
+// It must be called with d.mu held.
+func (d *Display) write(s string) {
+	if d.writeErr != nil {
+		return
+	}
+	if _, err := fmt.Fprint(d.writer, s); err != nil {
+		d.writeErr = err
 	}
 }
 
@@ -272,18 +370,44 @@ func (d *Display) SetTotal(total int) {
 // call Bar.Update/Complete/Fail, and the render loop draws all bars together.
 // Call Stop to halt the loop and perform a final render.
 //
-// On TTY outputs, Start enters the alternate screen buffer so rendering is
-// fully isolated from external output (log lines, keypress echo). It also
-// suppresses terminal echo. Ctrl+C signal handling is preserved. The original
-// terminal and screen state is restored by Stop, with the final bar state
-// printed on the main screen.
+// On TTY outputs, Start switches to the alternate screen buffer so progress
+// rendering is fully isolated from the main scrollback. It also hides the
+// cursor and suppresses terminal echo. A signal handler is registered to
+// restore the terminal on SIGINT. The original screen and terminal state
+// are restored by Stop.
 func (d *Display) Start(interval time.Duration) {
 	d.mu.Lock()
 	d.stopCh = make(chan struct{})
 	ch := d.stopCh
 	if d.isTTY {
-		_, _ = fmt.Fprint(d.writer, ansiHideCursor)
+		d.write(ansiAltScreenEnter)
+		d.useAltScreen = true
+		d.write(ansiHideCursor)
 		d.restoreTerminal = suppressEcho()
+
+		// Register a signal handler to restore terminal state if the
+		// process is interrupted before Stop() is called.
+		d.sigCh = make(chan os.Signal, 1)
+		sigCh := d.sigCh
+		signal.Notify(sigCh, os.Interrupt)
+		go func() {
+			select {
+			case <-sigCh:
+				d.mu.Lock()
+				restore := d.restoreTerminal
+				d.restoreTerminal = nil
+				d.write(ansiShowCursor)
+				if d.useAltScreen {
+					d.write(ansiAltScreenLeave)
+					d.useAltScreen = false
+				}
+				d.mu.Unlock()
+				if restore != nil {
+					restore()
+				}
+			case <-ch:
+			}
+		}()
 	}
 	d.mu.Unlock()
 
@@ -304,27 +428,54 @@ func (d *Display) Start(interval time.Duration) {
 // Stop halts the background render loop started by Start and performs a final
 // render to ensure the terminal shows the latest state. On TTY displays it
 // leaves the alternate screen buffer and prints the final bar state on the
-// main screen, then restores the terminal's original input settings.
+// main screen, then restores the terminal's original input settings. It also
+// closes any internally-opened /dev/tty fallback file.
 func (d *Display) Stop() {
 	d.mu.Lock()
 	ch := d.stopCh
 	d.stopCh = nil
 	restore := d.restoreTerminal
 	d.restoreTerminal = nil
+	sigCh := d.sigCh
+	d.sigCh = nil
 	d.mu.Unlock()
+
+	if sigCh != nil {
+		signal.Stop(sigCh)
+	}
 
 	if ch != nil {
 		close(ch)
 	}
 
-	// Final render to show latest state, then show cursor.
+	// Final render on the alt screen, then restore main screen.
 	d.Render()
 	d.mu.Lock()
-	_, _ = fmt.Fprint(d.writer, ansiShowCursor)
+	d.write(ansiShowCursor)
+	if d.useAltScreen {
+		d.write(ansiAltScreenLeave)
+		d.useAltScreen = false
+	}
 	d.mu.Unlock()
 
 	if restore != nil {
 		restore()
+	}
+
+	d.Close()
+}
+
+// Close releases any internally-opened resources (e.g. the /dev/tty fallback
+// file). It is safe to call multiple times. For displays that use Start/Stop,
+// Stop calls Close automatically; for single-threaded callers that never call
+// Start, call Close when done to avoid leaking the file descriptor.
+func (d *Display) Close() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.ttyFile != nil {
+		d.ttyFile.Close()
+		d.ttyFile = nil
 	}
 }
 
@@ -343,6 +494,10 @@ func (d *Display) Render() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	if d.writeErr != nil {
+		return
+	}
+
 	if d.isTTY {
 		d.renderTTY()
 	} else {
@@ -354,13 +509,69 @@ func (d *Display) Render() {
 // It uses cursor-up rewind to overwrite previously rendered lines, combined with
 // clear-to-end to remove any orphaned content. To minimize scrollback pollution,
 // it skips the rewrite entirely when all formatted lines are identical to the
-// previous frame. It must be called with d.mu held.
+// previous frame. The cursor-up count accounts for line wrapping so that lines
+// exceeding the terminal width do not cause the display to scroll. It must be
+// called with d.mu held.
 func (d *Display) renderTTY() {
+	termW := d.terminalWidth()
+
 	// Build all lines first to check for changes.
 	lines := make([]string, len(d.bars))
-	changed := d.rendered != len(d.bars)
+	changed := false
 	for i, b := range d.bars {
-		lines[i] = d.formatBar(b)
+		lines[i] = d.formatBar(b, termW)
+		if !changed {
+			b.mu.Lock()
+			if lines[i] != b.lastRendered {
+				changed = true
+			}
+			b.mu.Unlock()
+		}
+	}
+
+	// Detect structural changes: new bars added, terminal resized causing
+	// different row counts due to line wrapping, etc.
+	rows := d.rowCount(lines, termW)
+	if !changed && d.rendered != rows {
+		changed = true
+	}
+	if !changed {
+		return
+	}
+
+	// Buffer the entire frame and write it as a single string to prevent
+	// interleaved output from other goroutines corrupting the display.
+	var buf strings.Builder
+	if d.useAltScreen {
+		buf.WriteString(ansiCursorHome)
+	} else if d.rendered > 0 {
+		fmt.Fprintf(&buf, "\033[%dA", d.rendered)
+	}
+	buf.WriteString(ansiClearToEnd)
+	for _, line := range lines {
+		buf.WriteString(ansiClearLine)
+		buf.WriteString(line)
+		buf.WriteByte('\n')
+	}
+	d.write(buf.String())
+
+	for i, b := range d.bars {
+		b.mu.Lock()
+		b.lastRendered = lines[i]
+		b.mu.Unlock()
+	}
+
+	d.rendered = rows
+}
+
+// renderPlain emits all bars as a block when any bar has changed, without ANSI
+// cursor movement. A blank line separates successive blocks so log output stays
+// readable. It must be called with d.mu held.
+func (d *Display) renderPlain() {
+	lines := make([]string, len(d.bars))
+	changed := false
+	for i, b := range d.bars {
+		lines[i] = d.formatBar(b, 0)
 		if !changed {
 			b.mu.Lock()
 			if lines[i] != b.lastRendered {
@@ -373,13 +584,12 @@ func (d *Display) renderTTY() {
 		return
 	}
 
-	for i := 0; i < d.rendered; i++ {
-		_, _ = fmt.Fprint(d.writer, ansiCursorUp)
+	if d.rendered > 0 {
+		d.write("\n")
 	}
-	_, _ = fmt.Fprint(d.writer, ansiClearToEnd)
 
 	for i, b := range d.bars {
-		_, _ = fmt.Fprint(d.writer, ansiClearLine+lines[i]+"\n")
+		d.write(lines[i] + "\n")
 		b.mu.Lock()
 		b.lastRendered = lines[i]
 		b.mu.Unlock()
@@ -388,28 +598,107 @@ func (d *Display) renderTTY() {
 	d.rendered = len(d.bars)
 }
 
-// renderPlain emits only changed bar lines without any ANSI cursor movement,
-// suitable for log files and CI pipelines. It must be called with d.mu held.
-func (d *Display) renderPlain() {
-	for _, b := range d.bars {
-		line := d.formatBar(b)
-
-		b.mu.Lock()
-		changed := line != b.lastRendered
-		if changed {
-			b.lastRendered = line
-		}
-		b.mu.Unlock()
-
-		if changed {
-			_, _ = fmt.Fprintln(d.writer, line)
+// rowCount returns the total number of terminal rows that lines would occupy,
+// accounting for line wrapping when a line's visual width exceeds termW.
+// When termW is zero or negative, each line counts as one row.
+func (d *Display) rowCount(lines []string, termW int) int {
+	if termW <= 0 {
+		return len(lines)
+	}
+	rows := 0
+	for _, line := range lines {
+		vw := visualWidth(line)
+		if vw > termW {
+			rows += (vw + termW - 1) / termW
+		} else {
+			rows++
 		}
 	}
+	return rows
 }
 
-// formatBar produces the single-line string representation of b. It snapshots
-// b's state under b.mu so callers need not hold any lock.
-func (d *Display) formatBar(b *Bar) string {
+// visualWidth returns the number of terminal columns s would occupy after
+// stripping ANSI escape sequences. Standard-width UTF-8 runes (including
+// box-drawing characters like █) count as one column each.
+func visualWidth(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		switch {
+		case s[i] == '\033' && i+1 < len(s) && s[i+1] == '[':
+			i += 2
+			for i < len(s) && (s[i] >= '0' && s[i] <= '9' || s[i] == ';') {
+				i++
+			}
+			if i < len(s) {
+				i++
+			}
+		case s[i] < 0x80:
+			n++
+			i++
+		default:
+			_, size := utf8.DecodeRuneInString(s[i:])
+			n++
+			i += size
+		}
+	}
+	return n
+}
+
+// barLayout holds the resolved widths and suffix text produced by
+// adaptBarLayout so that formatBar can assemble the final line.
+type barLayout struct {
+	barWidth        int
+	labelWidth      int
+	remainingSuffix string
+}
+
+// adaptBarLayout computes effective bar and label widths plus the remaining-
+// time suffix for a given maxWidth budget. When maxWidth is zero or negative
+// width adaptation is disabled and the display defaults are returned unchanged.
+func (d *Display) adaptBarLayout(maxWidth, indexLen int, elapsedStr, remainingSuffix string, showRemaining bool) barLayout {
+	effectiveBarWidth := d.barWidth
+	effectiveLabelWidth := labelWidth
+
+	if maxWidth <= 0 {
+		return barLayout{effectiveBarWidth, effectiveLabelWidth, remainingSuffix}
+	}
+
+	// Fixed overhead: [I/T] + " " + label + " " + "[]" + " " + stage(14) + " " + elapsed
+	overhead := indexLen + 1 + effectiveLabelWidth + 1 + 2 + 1 + 14 + 1 + len(elapsedStr)
+	budget := maxWidth - overhead - len(remainingSuffix)
+
+	// If bar won't fit at minimum size, drop remaining time first.
+	if budget < minBarWidth && showRemaining {
+		budget += len(remainingSuffix)
+		remainingSuffix = ""
+	}
+
+	// If still too narrow, shrink the label.
+	if budget < minBarWidth {
+		shrink := minBarWidth - budget
+		effectiveLabelWidth -= shrink
+		if effectiveLabelWidth < 8 {
+			effectiveLabelWidth = 8
+		}
+		overhead = indexLen + 1 + effectiveLabelWidth + 1 + 2 + 1 + 14 + 1 + len(elapsedStr)
+		budget = maxWidth - overhead
+	}
+
+	if budget < 5 {
+		budget = 5
+	}
+	if budget < effectiveBarWidth {
+		effectiveBarWidth = budget
+	}
+
+	return barLayout{effectiveBarWidth, effectiveLabelWidth, remainingSuffix}
+}
+
+// formatBar produces the single-line string representation of b. maxWidth is
+// the terminal width in columns; when positive the output is adapted to fit
+// without wrapping (bar shrinks, then remaining time is dropped, then label
+// shrinks). A zero or negative maxWidth disables width adaptation.
+func (d *Display) formatBar(b *Bar, maxWidth int) string {
 	b.mu.Lock()
 	label := b.Label
 	index := b.Index
@@ -430,25 +719,6 @@ func (d *Display) formatBar(b *Bar) string {
 		progress = 1
 	}
 
-	// Build the progress bar characters.
-	filled := int(progress * float64(d.barWidth))
-	empty := d.barWidth - filled
-	bar := "[" + strings.Repeat(filledChar, filled) + strings.Repeat(emptyChar, empty) + "]"
-
-	// Pad label to a fixed width so columns stay aligned.
-	paddedLabel := label
-	if len(label) < labelWidth {
-		paddedLabel = label + strings.Repeat(" ", labelWidth-len(label))
-	} else if len(label) > labelWidth {
-		paddedLabel = label[:labelWidth]
-	}
-
-	// Format elapsed time using the natural duration string.
-	elapsedStr := elapsed.Truncate(time.Second).String()
-	if elapsed == 0 {
-		elapsedStr = "0s"
-	}
-
 	// Build the stage/status suffix.
 	stageStr := stage
 	if done {
@@ -457,13 +727,40 @@ func (d *Display) formatBar(b *Bar) string {
 		stageStr = "Failed"
 	}
 
+	// Format elapsed time using the natural duration string.
+	elapsedStr := elapsed.Truncate(time.Second).String()
+	if elapsed == 0 {
+		elapsedStr = "0s"
+	}
+
+	showRemaining := remaining > 0 && !done && !hasErr
+	remainingSuffix := ""
+	if showRemaining {
+		remainingSuffix = fmt.Sprintf("  ~%s remaining", remaining.Truncate(time.Second).String())
+	}
+
+	// Determine effective widths based on terminal size.
+	indexStr := fmt.Sprintf("[%d/%d]", index, total)
+	layout := d.adaptBarLayout(maxWidth, len(indexStr), elapsedStr, remainingSuffix, showRemaining)
+
+	// Build the progress bar characters.
+	filled := int(progress * float64(layout.barWidth))
+	empty := layout.barWidth - filled
+	bar := "[" + strings.Repeat(filledChar, filled) + strings.Repeat(emptyChar, empty) + "]"
+
+	// Pad label to a fixed width so columns stay aligned.
+	paddedLabel := label
+	if len(label) < layout.labelWidth {
+		paddedLabel = label + strings.Repeat(" ", layout.labelWidth-len(label))
+	} else if len(label) > layout.labelWidth {
+		paddedLabel = label[:layout.labelWidth]
+	}
+
 	// Assemble the line.
 	line := fmt.Sprintf("[%d/%d] %s %s %-14s %s",
 		index, total, paddedLabel, bar, stageStr, elapsedStr)
 
-	if remaining > 0 && !done && !hasErr {
-		line += fmt.Sprintf("  ~%s remaining", remaining.Truncate(time.Second).String())
-	}
+	line += layout.remainingSuffix
 
 	// Colorize the entire line for terminal states.
 	if done {
