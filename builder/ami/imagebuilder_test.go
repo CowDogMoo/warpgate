@@ -2607,6 +2607,299 @@ func TestResolveSSMParameterARN(t *testing.T) {
 	}
 }
 
+func TestResolveAMIFilters(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		filters          *builder.AMIFilterConfig
+		describeFunc     func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error)
+		expectedResult   string
+		expectError      bool
+		expectedErrorMsg string
+	}{
+		{
+			name: "single match returns AMI ID",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{"name": "kali-linux-2024.*"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				assert.Equal(t, []string{"679593333241"}, params.Owners)
+				return &ec2.DescribeImagesOutput{
+					Images: []ec2types.Image{
+						{
+							ImageId:      aws.String("ami-kali123"),
+							Name:         aws.String("kali-linux-2024.1"),
+							CreationDate: aws.String("2024-03-15T00:00:00.000Z"),
+						},
+					},
+				}, nil
+			},
+			expectedResult: "ami-kali123",
+		},
+		{
+			name: "multiple matches returns most recent",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{"name": "kali-linux-*"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				return &ec2.DescribeImagesOutput{
+					Images: []ec2types.Image{
+						{
+							ImageId:      aws.String("ami-older"),
+							Name:         aws.String("kali-linux-2023.4"),
+							CreationDate: aws.String("2023-12-01T00:00:00.000Z"),
+						},
+						{
+							ImageId:      aws.String("ami-newest"),
+							Name:         aws.String("kali-linux-2024.2"),
+							CreationDate: aws.String("2024-06-15T00:00:00.000Z"),
+						},
+						{
+							ImageId:      aws.String("ami-middle"),
+							Name:         aws.String("kali-linux-2024.1"),
+							CreationDate: aws.String("2024-03-15T00:00:00.000Z"),
+						},
+					},
+				}, nil
+			},
+			expectedResult: "ami-newest",
+		},
+		{
+			name: "no matches returns error",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{"name": "nonexistent-*"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
+			},
+			expectError:      true,
+			expectedErrorMsg: "no AMIs found matching filters",
+		},
+		{
+			name: "empty owners returns error",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{},
+				Filters: map[string]string{"name": "kali-*"},
+			},
+			expectError:      true,
+			expectedErrorMsg: "ami_filters.owners must specify at least one owner",
+		},
+		{
+			name: "empty filters returns error",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{},
+			},
+			expectError:      true,
+			expectedErrorMsg: "ami_filters.filters must specify at least one filter",
+		},
+		{
+			name: "API error returns wrapped error",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{"name": "kali-*"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				return nil, fmt.Errorf("access denied")
+			},
+			expectError:      true,
+			expectedErrorMsg: "failed to resolve AMI from filters",
+		},
+		{
+			name: "adds state=available filter by default",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"123456789012"},
+				Filters: map[string]string{"name": "my-ami-*"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				// Verify state=available filter was added
+				hasStateFilter := false
+				for _, f := range params.Filters {
+					if aws.ToString(f.Name) == "state" {
+						hasStateFilter = true
+						assert.Equal(t, []string{"available"}, f.Values)
+					}
+				}
+				assert.True(t, hasStateFilter, "expected state=available filter")
+				return &ec2.DescribeImagesOutput{
+					Images: []ec2types.Image{
+						{
+							ImageId:      aws.String("ami-test123"),
+							Name:         aws.String("my-ami-v1"),
+							CreationDate: aws.String("2024-01-01T00:00:00.000Z"),
+						},
+					},
+				}, nil
+			},
+			expectedResult: "ami-test123",
+		},
+		{
+			name: "explicit state filter overrides default",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"123456789012"},
+				Filters: map[string]string{"name": "my-ami-*", "state": "pending"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				stateCount := 0
+				for _, f := range params.Filters {
+					if aws.ToString(f.Name) == "state" {
+						stateCount++
+					}
+				}
+				assert.Equal(t, 1, stateCount, "should have exactly one state filter")
+				return &ec2.DescribeImagesOutput{
+					Images: []ec2types.Image{
+						{
+							ImageId:      aws.String("ami-pending1"),
+							Name:         aws.String("my-ami-pending"),
+							CreationDate: aws.String("2024-01-01T00:00:00.000Z"),
+						},
+					},
+				}, nil
+			},
+			expectedResult: "ami-pending1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			clients, mocks := newMockAWSClients()
+			if tc.describeFunc != nil {
+				mocks.ec2.DescribeImagesFunc = tc.describeFunc
+			}
+
+			ib := &ImageBuilder{
+				clients: clients,
+			}
+
+			result, err := ib.resolveAMIFilters(context.Background(), tc.filters)
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.expectedErrorMsg != "" {
+					assert.Contains(t, err.Error(), tc.expectedErrorMsg)
+				}
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedResult, result)
+		})
+	}
+}
+
+func TestResolveParentImage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		config         builder.Config
+		globalDefault  string
+		describeFunc   func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error)
+		getParamFunc   func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error)
+		expectedResult string
+		expectError    bool
+	}{
+		{
+			name: "ami_filters delegates to resolveAMIFilters",
+			config: builder.Config{
+				Base: builder.BaseImage{
+					AMIFilters: &builder.AMIFilterConfig{
+						Owners:  []string{"679593333241"},
+						Filters: map[string]string{"name": "kali-*"},
+					},
+				},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				return &ec2.DescribeImagesOutput{
+					Images: []ec2types.Image{
+						{
+							ImageId:      aws.String("ami-kali456"),
+							Name:         aws.String("kali-2024"),
+							CreationDate: aws.String("2024-06-01T00:00:00.000Z"),
+						},
+					},
+				}, nil
+			},
+			expectedResult: "ami-kali456",
+		},
+		{
+			name: "direct AMI ID passes through",
+			config: builder.Config{
+				Base: builder.BaseImage{
+					Image: "ami-direct123",
+				},
+			},
+			expectedResult: "ami-direct123",
+		},
+		{
+			name: "SSM ARN delegates to resolveSSMParameterARN",
+			config: builder.Config{
+				Base: builder.BaseImage{
+					Image: "arn:aws:ssm:us-east-1:123456789012:parameter/ami/ubuntu",
+				},
+			},
+			getParamFunc: func(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+				return &ssm.GetParameterOutput{
+					Parameter: &ssmtypes.Parameter{
+						Value: aws.String("ami-ssm789"),
+					},
+				}, nil
+			},
+			expectedResult: "ami-ssm789",
+		},
+		{
+			name: "falls back to global default",
+			config: builder.Config{
+				Base: builder.BaseImage{},
+			},
+			globalDefault:  "ami-global999",
+			expectedResult: "ami-global999",
+		},
+		{
+			name: "no image and no global default returns error",
+			config: builder.Config{
+				Base: builder.BaseImage{},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			clients, mocks := newMockAWSClients()
+			if tc.describeFunc != nil {
+				mocks.ec2.DescribeImagesFunc = tc.describeFunc
+			}
+			if tc.getParamFunc != nil {
+				mocks.ssm.GetParameterFunc = tc.getParamFunc
+			}
+
+			globalCfg := &config.Config{}
+			globalCfg.AWS.AMI.DefaultParentImage = tc.globalDefault
+
+			ib := &ImageBuilder{
+				clients:      clients,
+				globalConfig: globalCfg,
+			}
+
+			result, err := ib.resolveParentImage(context.Background(), tc.config)
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedResult, result)
+		})
+	}
+}
+
 func TestCopy(t *testing.T) {
 	t.Parallel()
 
