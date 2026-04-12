@@ -2,6 +2,35 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://warpgate.dev/schema/template.json",
   "$defs": {
+    "AMIFilterConfig": {
+      "properties": {
+        "owners": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Owners is a list of AWS account IDs or aliases (e.g., \"amazon\", \"self\") that own the AMI"
+        },
+        "filters": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "Filters is a map of EC2 DescribeImages filter names to values.\nCommon filters: \"name\", \"architecture\", \"state\", \"virtualization-type\", \"root-device-type\".\nValues support wildcards (e.g., \"kali-linux-2024.*\")."
+        },
+        "most_recent": {
+          "type": "boolean",
+          "description": "MostRecent selects the most recently created AMI when multiple match.\nDefaults to true when not specified."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "owners",
+        "filters"
+      ],
+      "description": "AMIFilterConfig specifies EC2 DescribeImages filters for dynamic AMI resolution."
+    },
     "ArchOverride": {
       "properties": {
         "dockerfile": {
@@ -33,6 +62,10 @@
         "image": {
           "type": "string",
           "description": "Image is the base container image reference (e.g., \"ubuntu:22.04\", \"alpine:latest\")"
+        },
+        "ami_filters": {
+          "$ref": "#/$defs/AMIFilterConfig",
+          "description": "AMIFilters specifies filters for dynamically resolving an AMI using EC2 DescribeImages.\nWhen set, the latest matching AMI is used as the parent image for AMI builds.\nMutually exclusive with Image for AMI targets."
         },
         "platform": {
           "type": "string",
