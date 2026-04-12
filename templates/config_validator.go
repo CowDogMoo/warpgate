@@ -62,21 +62,12 @@ func (v *Validator) ValidateWithOptions(ctx context.Context, config *builder.Con
 
 	// Check if this is a Dockerfile-based build
 	if config.IsDockerfileBased() {
-		// Validate Dockerfile configuration
 		if err := v.validateDockerfile(config.Dockerfile); err != nil {
 			return err
 		}
 	} else {
-		// Validate base image for provisioner-based builds
-		if config.Base.Image == "" {
-			return fmt.Errorf("config.base.image is required (or use dockerfile mode)")
-		}
-
-		// Validate provisioners
-		for i, prov := range config.Provisioners {
-			if err := v.validateProvisioner(ctx, &prov, i); err != nil {
-				return err
-			}
+		if err := v.validateProvisionerBuild(ctx, config); err != nil {
+			return err
 		}
 	}
 
@@ -257,6 +248,54 @@ func (v *Validator) hasUnresolvedVariable(path string) bool {
 	}
 
 	return false
+}
+
+// validateProvisionerBuild validates base image and provisioners for non-Dockerfile builds.
+func (v *Validator) validateProvisionerBuild(ctx context.Context, config *builder.Config) error {
+	if config.Base.Image == "" && config.Base.AMIFilters == nil {
+		return fmt.Errorf("config.base.image is required (or use ami_filters for AMI targets, or dockerfile mode)")
+	}
+
+	if config.Base.Image != "" && config.Base.AMIFilters != nil {
+		return fmt.Errorf("config.base.image and config.base.ami_filters are mutually exclusive")
+	}
+
+	if config.Base.AMIFilters != nil {
+		if err := v.validateAMIFilterTarget(config); err != nil {
+			return err
+		}
+		if err := v.validateAMIFilters(config.Base.AMIFilters); err != nil {
+			return err
+		}
+	}
+
+	for i, prov := range config.Provisioners {
+		if err := v.validateProvisioner(ctx, &prov, i); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateAMIFilterTarget checks that ami_filters is only used with at least one AMI target.
+func (v *Validator) validateAMIFilterTarget(config *builder.Config) error {
+	for _, t := range config.Targets {
+		if t.Type == "ami" {
+			return nil
+		}
+	}
+	return fmt.Errorf("config.base.ami_filters requires at least one AMI target")
+}
+
+// validateAMIFilters validates AMI filter configuration
+func (v *Validator) validateAMIFilters(filters *builder.AMIFilterConfig) error {
+	if len(filters.Owners) == 0 {
+		return fmt.Errorf("config.base.ami_filters.owners must specify at least one owner")
+	}
+	if len(filters.Filters) == 0 {
+		return fmt.Errorf("config.base.ami_filters.filters must specify at least one filter")
+	}
+	return nil
 }
 
 // validateTarget validates a single target

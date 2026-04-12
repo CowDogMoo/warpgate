@@ -474,7 +474,7 @@ func (d *Display) Close() {
 	defer d.mu.Unlock()
 
 	if d.ttyFile != nil {
-		d.ttyFile.Close()
+		_ = d.ttyFile.Close()
 		d.ttyFile = nil
 	}
 }

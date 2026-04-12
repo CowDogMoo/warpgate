@@ -487,6 +487,130 @@ func TestValidator_RequiredFields(t *testing.T) {
 	}
 }
 
+func TestValidator_AMIFilters(t *testing.T) {
+	validator := NewValidator()
+
+	tests := []struct {
+		name        string
+		config      *builder.Config
+		shouldError bool
+		errContains string
+	}{
+		{
+			name: "ami_filters with AMI target passes",
+			config: &builder.Config{
+				Name: "test",
+				Base: builder.BaseImage{
+					AMIFilters: &builder.AMIFilterConfig{
+						Owners:  []string{"679593333241"},
+						Filters: map[string]string{"name": "kali-*"},
+					},
+				},
+				Targets: []builder.Target{
+					{Type: "ami", Region: "us-east-1", AMIName: "test-ami"},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name: "both image and ami_filters errors",
+			config: &builder.Config{
+				Name: "test",
+				Base: builder.BaseImage{
+					Image: "ami-123",
+					AMIFilters: &builder.AMIFilterConfig{
+						Owners:  []string{"679593333241"},
+						Filters: map[string]string{"name": "kali-*"},
+					},
+				},
+				Targets: []builder.Target{
+					{Type: "ami", Region: "us-east-1", AMIName: "test-ami"},
+				},
+			},
+			shouldError: true,
+			errContains: "mutually exclusive",
+		},
+		{
+			name: "ami_filters without AMI target errors",
+			config: &builder.Config{
+				Name: "test",
+				Base: builder.BaseImage{
+					AMIFilters: &builder.AMIFilterConfig{
+						Owners:  []string{"679593333241"},
+						Filters: map[string]string{"name": "kali-*"},
+					},
+				},
+				Targets: []builder.Target{
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			shouldError: true,
+			errContains: "requires at least one AMI target",
+		},
+		{
+			name: "ami_filters with empty owners errors",
+			config: &builder.Config{
+				Name: "test",
+				Base: builder.BaseImage{
+					AMIFilters: &builder.AMIFilterConfig{
+						Owners:  []string{},
+						Filters: map[string]string{"name": "kali-*"},
+					},
+				},
+				Targets: []builder.Target{
+					{Type: "ami", Region: "us-east-1", AMIName: "test-ami"},
+				},
+			},
+			shouldError: true,
+			errContains: "at least one owner",
+		},
+		{
+			name: "ami_filters with empty filters errors",
+			config: &builder.Config{
+				Name: "test",
+				Base: builder.BaseImage{
+					AMIFilters: &builder.AMIFilterConfig{
+						Owners:  []string{"679593333241"},
+						Filters: map[string]string{},
+					},
+				},
+				Targets: []builder.Target{
+					{Type: "ami", Region: "us-east-1", AMIName: "test-ami"},
+				},
+			},
+			shouldError: true,
+			errContains: "at least one filter",
+		},
+		{
+			name: "neither image nor ami_filters errors",
+			config: &builder.Config{
+				Name: "test",
+				Base: builder.BaseImage{},
+				Targets: []builder.Target{
+					{Type: "ami", Region: "us-east-1", AMIName: "test-ami"},
+				},
+			},
+			shouldError: true,
+			errContains: "config.base.image is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.ValidateWithOptions(context.Background(), tt.config, ValidationOptions{SyntaxOnly: true})
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("expected error containing %q but got none", tt.errContains)
+				} else if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Errorf("expected error containing %q but got: %v", tt.errContains, err)
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestValidator_ValidateDockerfile(t *testing.T) {
 	validator := NewValidator()
 	tmpDir := t.TempDir()
