@@ -810,8 +810,25 @@ func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builde
 	}
 
 	if existing != nil {
-		if b.forceRecreate {
-			logging.InfoContext(ctx, "Force recreate enabled, deleting existing image recipe: %s", *existing.Arn)
+		recreate := b.forceRecreate
+
+		// When AMI filters are configured, resolve the current parent image
+		// and compare with the cached recipe. The filter may now resolve to a
+		// different AMI (e.g. a newer snapshot), so the recipe must be rebuilt.
+		if !recreate && existing.ParentImage != nil {
+			currentParent, err := b.resolveParentImage(ctx, config)
+			if err != nil {
+				return "", fmt.Errorf("failed to resolve parent image for recipe comparison: %w", err)
+			}
+			if currentParent != *existing.ParentImage {
+				logging.InfoContext(ctx, "Parent image changed (%s -> %s), recreating image recipe",
+					*existing.ParentImage, currentParent)
+				recreate = true
+			}
+		}
+
+		if recreate {
+			logging.InfoContext(ctx, "Deleting existing image recipe: %s", *existing.Arn)
 			if err := b.resourceManager.DeleteImageRecipe(ctx, *existing.Arn); err != nil {
 				return "", fmt.Errorf("failed to delete existing image recipe: %w", err)
 			}

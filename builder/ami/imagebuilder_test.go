@@ -2277,6 +2277,273 @@ func TestGetOrCreateImageRecipe_ExistingFound(t *testing.T) {
 	assert.Empty(t, created.RecipeARN)
 }
 
+func TestGetOrCreateImageRecipe_ParentImageChanged(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// Existing recipe was built with ami-old-ubuntu
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{
+				Arn:         aws.String("arn:recipe:existing"),
+				Name:        aws.String("test-recipe"),
+				ParentImage: aws.String("ami-old-ubuntu"),
+			},
+		}, nil
+	}
+
+	// Config now specifies a different direct AMI
+	deleteCalled := false
+	mocks.imageBuilder.DeleteImageRecipeFunc = func(ctx context.Context, params *imagebuilder.DeleteImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImageRecipeOutput, error) {
+		deleteCalled = true
+		return &imagebuilder.DeleteImageRecipeOutput{}, nil
+	}
+	mocks.imageBuilder.CreateImageRecipeFunc = func(ctx context.Context, params *imagebuilder.CreateImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImageRecipeOutput, error) {
+		assert.Equal(t, "ami-new-kali", *params.ParentImage)
+		return &imagebuilder.CreateImageRecipeOutput{
+			ImageRecipeArn: aws.String("arn:recipe:new"),
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "ami-new-kali"},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled, "should delete old recipe when parent image changed")
+	assert.Equal(t, "arn:recipe:new", arn)
+	assert.Equal(t, "arn:recipe:new", created.RecipeARN)
+}
+
+func TestGetOrCreateImageRecipe_ParentImageChangedWithAMIFilters(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// Existing recipe was built with ami-old-ubuntu
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{
+				Arn:         aws.String("arn:recipe:existing"),
+				Name:        aws.String("test-recipe"),
+				ParentImage: aws.String("ami-old-ubuntu"),
+			},
+		}, nil
+	}
+
+	// AMI filter now resolves to a different AMI
+	mocks.ec2.DescribeImagesFunc = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+		return &ec2.DescribeImagesOutput{
+			Images: []ec2types.Image{
+				{
+					ImageId:      aws.String("ami-new-kali"),
+					CreationDate: aws.String("2026-04-12T00:00:00.000Z"),
+					Name:         aws.String("kali-2026.1"),
+				},
+			},
+		}, nil
+	}
+
+	deleteCalled := false
+	mocks.imageBuilder.DeleteImageRecipeFunc = func(ctx context.Context, params *imagebuilder.DeleteImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.DeleteImageRecipeOutput, error) {
+		deleteCalled = true
+		return &imagebuilder.DeleteImageRecipeOutput{}, nil
+	}
+	mocks.imageBuilder.CreateImageRecipeFunc = func(ctx context.Context, params *imagebuilder.CreateImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateImageRecipeOutput, error) {
+		assert.Equal(t, "ami-new-kali", *params.ParentImage)
+		return &imagebuilder.CreateImageRecipeOutput{
+			ImageRecipeArn: aws.String("arn:recipe:new"),
+		}, nil
+	}
+
+	mostRecent := true
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base: builder.BaseImage{
+			AMIFilters: &builder.AMIFilterConfig{
+				Owners:     []string{"123456789012"},
+				Filters:    map[string]string{"name": "kali-*"},
+				MostRecent: &mostRecent,
+			},
+		},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.True(t, deleteCalled, "should delete old recipe when AMI filter resolves to different parent")
+	assert.Equal(t, "arn:recipe:new", arn)
+	assert.Equal(t, "arn:recipe:new", created.RecipeARN)
+}
+
+func TestGetOrCreateImageRecipe_ParentImageUnchanged(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// Existing recipe matches current parent image — should be reused
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{
+				Arn:         aws.String("arn:recipe:existing"),
+				Name:        aws.String("test-recipe"),
+				ParentImage: aws.String("ami-base"),
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "ami-base"},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:recipe:existing", arn, "should reuse recipe when parent image unchanged")
+	assert.Empty(t, created.RecipeARN, "should not set created recipe ARN when reusing")
+}
+
+func TestGetOrCreateImageRecipe_ResolveParentImageError(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{
+				Arn:         aws.String("arn:recipe:existing"),
+				Name:        aws.String("test-recipe"),
+				ParentImage: aws.String("ami-old"),
+			},
+		}, nil
+	}
+
+	// DescribeImages fails, causing resolveParentImage to error
+	mocks.ec2.DescribeImagesFunc = func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+		return nil, fmt.Errorf("ec2 api error")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	mostRecent := true
+	_, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base: builder.BaseImage{
+			AMIFilters: &builder.AMIFilterConfig{
+				Owners:     []string{"123456789012"},
+				Filters:    map[string]string{"name": "kali-*"},
+				MostRecent: &mostRecent,
+			},
+		},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to resolve parent image for recipe comparison")
+}
+
+func TestGetOrCreateImageRecipe_NilParentImageSkipsComparison(t *testing.T) {
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// Existing recipe has no ParentImage set — should skip comparison and reuse
+	mocks.imageBuilder.ListImageRecipesFunc = func(ctx context.Context, params *imagebuilder.ListImageRecipesInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListImageRecipesOutput, error) {
+		return &imagebuilder.ListImageRecipesOutput{
+			ImageRecipeSummaryList: []ibtypes.ImageRecipeSummary{
+				{Name: aws.String("test-recipe"), Arn: aws.String("arn:recipe:existing")},
+			},
+		}, nil
+	}
+	mocks.imageBuilder.GetImageRecipeFunc = func(ctx context.Context, params *imagebuilder.GetImageRecipeInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.GetImageRecipeOutput, error) {
+		return &imagebuilder.GetImageRecipeOutput{
+			ImageRecipe: &ibtypes.ImageRecipe{
+				Arn:         aws.String("arn:recipe:existing"),
+				Name:        aws.String("test-recipe"),
+				ParentImage: nil,
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		globalConfig:    newTestGlobalConfig(),
+		resourceManager: NewResourceManager(clients),
+		config:          ClientConfig{Region: "us-east-1"},
+		forceRecreate:   false,
+	}
+
+	created := &CreatedResources{}
+	arn, err := ib.getOrCreateImageRecipe(context.Background(), builder.Config{
+		Name:    "test",
+		Version: "1.0.0",
+		Base:    builder.BaseImage{Image: "ami-something"},
+	}, []string{"arn:comp1"}, &builder.Target{Region: "us-east-1"}, created)
+	require.NoError(t, err)
+	assert.Equal(t, "arn:recipe:existing", arn, "should reuse recipe when ParentImage is nil")
+	assert.Empty(t, created.RecipeARN)
+}
+
 func TestGetOrCreateImageRecipe_ForceRecreate(t *testing.T) {
 	t.Parallel()
 
