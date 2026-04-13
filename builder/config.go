@@ -177,10 +177,33 @@ type ChangelogEntry struct {
 	Changes []string `yaml:"changes" json:"changes"`
 }
 
+// AMIFilterConfig specifies EC2 DescribeImages filters for dynamic AMI resolution.
+// Instead of hard-coding an AMI ID or SSM parameter ARN, users can specify filters
+// (owner, name pattern, architecture, etc.) and warpgate will automatically resolve
+// the latest matching AMI at build time.
+type AMIFilterConfig struct {
+	// Owners is a list of AWS account IDs or aliases (e.g., "amazon", "self") that own the AMI
+	Owners []string `yaml:"owners" json:"owners"`
+
+	// Filters is a map of EC2 DescribeImages filter names to values.
+	// Common filters: "name", "architecture", "state", "virtualization-type", "root-device-type".
+	// Values support wildcards (e.g., "kali-linux-2024.*").
+	Filters map[string]string `yaml:"filters" json:"filters"`
+
+	// MostRecent selects the most recently created AMI when multiple match.
+	// Defaults to true when not specified.
+	MostRecent *bool `yaml:"most_recent,omitempty" json:"most_recent,omitempty"`
+}
+
 // BaseImage specifies the base image to start from
 type BaseImage struct {
 	// Image is the base container image reference (e.g., "ubuntu:22.04", "alpine:latest")
 	Image string `yaml:"image" json:"image"`
+
+	// AMIFilters specifies filters for dynamically resolving an AMI using EC2 DescribeImages.
+	// When set, the latest matching AMI is used as the parent image for AMI builds.
+	// Mutually exclusive with Image for AMI targets.
+	AMIFilters *AMIFilterConfig `yaml:"ami_filters,omitempty" json:"ami_filters,omitempty"`
 
 	// Platform specifies the target platform (e.g., "linux/amd64", "linux/arm64")
 	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"`

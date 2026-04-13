@@ -41,7 +41,7 @@ func openTTY() *os.File {
 		return nil
 	}
 	if !term.IsTerminal(int(f.Fd())) {
-		f.Close()
+		_ = f.Close()
 		return nil
 	}
 	return f
