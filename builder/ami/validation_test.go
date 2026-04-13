@@ -1321,6 +1321,122 @@ func TestValidateBuild(t *testing.T) {
 	}
 }
 
+func TestValidateAMIFilters(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		filters      *builder.AMIFilterConfig
+		describeFunc func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error)
+		wantErrors   int
+		wantInfo     int
+		errContains  string
+		infoContains string
+	}{
+		{
+			name: "valid filters with matches",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{"name": "kali-linux-*"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				return &ec2.DescribeImagesOutput{
+					Images: []ec2types.Image{
+						{
+							ImageId:      aws.String("ami-old"),
+							Name:         aws.String("kali-linux-2023"),
+							CreationDate: aws.String("2023-06-01T00:00:00.000Z"),
+						},
+						{
+							ImageId:      aws.String("ami-new"),
+							Name:         aws.String("kali-linux-2024"),
+							CreationDate: aws.String("2024-06-01T00:00:00.000Z"),
+						},
+					},
+				}, nil
+			},
+			wantErrors:   0,
+			wantInfo:     2,
+			infoContains: "ami-new",
+		},
+		{
+			name: "empty owners",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{},
+				Filters: map[string]string{"name": "kali-*"},
+			},
+			wantErrors:  1,
+			errContains: "at least one owner",
+		},
+		{
+			name: "empty filters",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{},
+			},
+			wantErrors:  1,
+			errContains: "at least one filter",
+		},
+		{
+			name: "no matches",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{"name": "nonexistent-*"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				return &ec2.DescribeImagesOutput{Images: []ec2types.Image{}}, nil
+			},
+			wantErrors:  1,
+			errContains: "No AMIs found",
+		},
+		{
+			name: "API error",
+			filters: &builder.AMIFilterConfig{
+				Owners:  []string{"679593333241"},
+				Filters: map[string]string{"name": "kali-*"},
+			},
+			describeFunc: func(ctx context.Context, params *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+				return nil, fmt.Errorf("access denied")
+			},
+			wantErrors:  1,
+			errContains: "Failed to validate AMI filters",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			clients, mocks := newMockAWSClients()
+			if tc.describeFunc != nil {
+				mocks.ec2.DescribeImagesFunc = tc.describeFunc
+			}
+
+			v := NewValidator(clients)
+			result := &ValidationResult{Valid: true}
+			v.validateAMIFilters(context.Background(), result, tc.filters)
+
+			assert.Len(t, result.Errors, tc.wantErrors)
+			if tc.errContains != "" && len(result.Errors) > 0 {
+				assert.Contains(t, result.Errors[0], tc.errContains)
+			}
+			if tc.wantInfo > 0 {
+				assert.GreaterOrEqual(t, len(result.Info), tc.wantInfo)
+			}
+			if tc.infoContains != "" {
+				found := false
+				for _, info := range result.Info {
+					if containsStr(info, tc.infoContains) {
+						found = true
+						break
+					}
+				}
+				assert.True(t, found, "expected info containing %q", tc.infoContains)
+			}
+		})
+	}
+}
+
 // containsStr is a helper that checks if s contains substr.
 func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || findSubstr(s, substr))

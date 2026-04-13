@@ -27,10 +27,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -572,22 +575,93 @@ func (b *ImageBuilder) resolveSSMParameterARN(ctx context.Context, parentImage s
 	return parentImage, nil
 }
 
-func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Config, componentARNs []string, target *builder.Target) (string, error) {
-	logging.InfoContext(ctx, "Creating image recipe")
+// resolveAMIFilters resolves AMI filters to the latest matching AMI ID using EC2 DescribeImages.
+func (b *ImageBuilder) resolveAMIFilters(ctx context.Context, filters *builder.AMIFilterConfig) (string, error) {
+	if len(filters.Owners) == 0 {
+		return "", fmt.Errorf("ami_filters.owners must specify at least one owner")
+	}
+	if len(filters.Filters) == 0 {
+		return "", fmt.Errorf("ami_filters.filters must specify at least one filter")
+	}
+
+	ec2Filters := make([]ec2types.Filter, 0, len(filters.Filters))
+	for name, value := range filters.Filters {
+		ec2Filters = append(ec2Filters, ec2types.Filter{
+			Name:   aws.String(name),
+			Values: []string{value},
+		})
+	}
+
+	// Always filter for available images unless the user explicitly set "state"
+	if _, hasState := filters.Filters["state"]; !hasState {
+		ec2Filters = append(ec2Filters, ec2types.Filter{
+			Name:   aws.String("state"),
+			Values: []string{"available"},
+		})
+	}
+
+	input := &ec2.DescribeImagesInput{
+		Owners:  filters.Owners,
+		Filters: ec2Filters,
+	}
+
+	logging.InfoContext(ctx, "Resolving AMI from filters (owners: %v, filters: %d)", filters.Owners, len(filters.Filters))
+
+	output, err := b.clients.EC2.DescribeImages(ctx, input)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve AMI from filters: %w", err)
+	}
+
+	if len(output.Images) == 0 {
+		filterDesc := make([]string, 0, len(filters.Filters))
+		for k, v := range filters.Filters {
+			filterDesc = append(filterDesc, fmt.Sprintf("%s=%s", k, v))
+		}
+		return "", fmt.Errorf("no AMIs found matching filters (owners: %v, filters: [%s])",
+			filters.Owners, strings.Join(filterDesc, ", "))
+	}
+
+	// Sort by CreationDate descending (RFC 3339 strings sort lexicographically)
+	sort.Slice(output.Images, func(i, j int) bool {
+		return aws.ToString(output.Images[i].CreationDate) > aws.ToString(output.Images[j].CreationDate)
+	})
+
+	selected := output.Images[0]
+	amiID := aws.ToString(selected.ImageId)
+	amiName := aws.ToString(selected.Name)
+	logging.InfoContext(ctx, "Resolved AMI from filters: %s (%s, created: %s)",
+		amiID, amiName, aws.ToString(selected.CreationDate))
+
+	return amiID, nil
+}
+
+// resolveParentImage resolves the parent image from config, handling:
+//   - AMI Filters (resolved via EC2 DescribeImages)
+//   - Direct AMI IDs (passthrough)
+//   - SSM Parameter ARNs (resolved via SSM GetParameter)
+func (b *ImageBuilder) resolveParentImage(ctx context.Context, config builder.Config) (string, error) {
+	if config.Base.AMIFilters != nil {
+		return b.resolveAMIFilters(ctx, config.Base.AMIFilters)
+	}
 
 	parentImage := config.Base.Image
 	if parentImage == "" {
 		parentImage = b.globalConfig.AWS.AMI.DefaultParentImage
 		if parentImage == "" {
-			return "", fmt.Errorf("parent image (base AMI) must be specified in template config or global config (aws.ami.default_parent_image)")
+			return "", fmt.Errorf("parent image must be specified via base.image, base.ami_filters, or global config (aws.ami.default_parent_image)")
 		}
 	}
 
-	resolved, err := b.resolveSSMParameterARN(ctx, parentImage)
+	return b.resolveSSMParameterARN(ctx, parentImage)
+}
+
+func (b *ImageBuilder) createImageRecipe(ctx context.Context, config builder.Config, componentARNs []string, target *builder.Target) (string, error) {
+	logging.InfoContext(ctx, "Creating image recipe")
+
+	parentImage, err := b.resolveParentImage(ctx, config)
 	if err != nil {
 		return "", err
 	}
-	parentImage = resolved
 
 	components := make([]types.ComponentConfiguration, 0, len(componentARNs))
 	for _, arn := range componentARNs {
@@ -736,8 +810,25 @@ func (b *ImageBuilder) getOrCreateImageRecipe(ctx context.Context, config builde
 	}
 
 	if existing != nil {
-		if b.forceRecreate {
-			logging.InfoContext(ctx, "Force recreate enabled, deleting existing image recipe: %s", *existing.Arn)
+		recreate := b.forceRecreate
+
+		// When AMI filters are configured, resolve the current parent image
+		// and compare with the cached recipe. The filter may now resolve to a
+		// different AMI (e.g. a newer snapshot), so the recipe must be rebuilt.
+		if !recreate && existing.ParentImage != nil {
+			currentParent, err := b.resolveParentImage(ctx, config)
+			if err != nil {
+				return "", fmt.Errorf("failed to resolve parent image for recipe comparison: %w", err)
+			}
+			if currentParent != *existing.ParentImage {
+				logging.InfoContext(ctx, "Parent image changed (%s -> %s), recreating image recipe",
+					*existing.ParentImage, currentParent)
+				recreate = true
+			}
+		}
+
+		if recreate {
+			logging.InfoContext(ctx, "Deleting existing image recipe: %s", *existing.Arn)
 			if err := b.resourceManager.DeleteImageRecipe(ctx, *existing.Arn); err != nil {
 				return "", fmt.Errorf("failed to delete existing image recipe: %w", err)
 			}

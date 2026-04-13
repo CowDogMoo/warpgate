@@ -129,63 +129,68 @@ func (v *Validator) ValidateBuild(ctx context.Context, config builder.Config, ta
 
 // validateBasicConfig validates basic configuration fields
 func (v *Validator) validateBasicConfig(result *ValidationResult, config builder.Config, target *builder.Target) {
-	// Check template name
-	if config.Name == "" {
-		result.AddError("Template name is required")
-	}
-	if config.Name != "" {
-		result.AddInfo("Template name: %s", config.Name)
-	}
+	validateRequiredField(result, config.Name, "Template name")
+	validateRequiredField(result, config.Version, "Template version")
 
-	// Check version
-	if config.Version == "" {
-		result.AddError("Template version is required")
-	}
-	if config.Version != "" {
-		result.AddInfo("Template version: %s", config.Version)
-	}
+	v.validateRegion(result, target)
+	v.validateBaseImageConfig(result, config)
 
-	// Check region
+	validateOptionalField(result, target.InstanceType, "Instance type",
+		"Instance type not specified, will use default from global config")
+	validateOptionalField(result, target.InstanceProfileName, "Instance profile",
+		"Instance profile not specified in template, will use global config value")
+}
+
+// validateRequiredField checks a required string field and adds error/info to the result.
+func validateRequiredField(result *ValidationResult, value, label string) {
+	if value == "" {
+		result.AddError("%s is required", label)
+	} else {
+		result.AddInfo("%s: %s", label, value)
+	}
+}
+
+// validateOptionalField checks an optional string field and adds warning/info to the result.
+func validateOptionalField(result *ValidationResult, value, label, warningMsg string) {
+	if value == "" {
+		result.AddWarning("%s", warningMsg)
+	} else {
+		result.AddInfo("%s: %s", label, value)
+	}
+}
+
+// validateRegion validates the AWS region is configured.
+func (v *Validator) validateRegion(result *ValidationResult, target *builder.Target) {
 	region := target.Region
 	if region == "" && v.clients != nil {
 		region = v.clients.GetRegion()
 	}
 	if region == "" {
 		result.AddError("AWS region must be specified (--region flag, template config, or global config)")
-	}
-	if region != "" {
+	} else {
 		result.AddInfo("Target region: %s", region)
 	}
+}
 
-	// Check base image
-	if config.Base.Image == "" {
-		result.AddError("Base image (parent AMI) must be specified in template config (base.image)")
+// validateBaseImageConfig validates that a base image source is configured.
+func (v *Validator) validateBaseImageConfig(result *ValidationResult, config builder.Config) {
+	if config.Base.Image == "" && config.Base.AMIFilters == nil {
+		result.AddError("Base image (parent AMI) must be specified in template config (base.image or base.ami_filters)")
 	}
 	if config.Base.Image != "" {
 		result.AddInfo("Base image: %s", config.Base.Image)
 	}
-
-	// Check instance type
-	if target.InstanceType == "" {
-		result.AddWarning("Instance type not specified, will use default from global config")
-	}
-	if target.InstanceType != "" {
-		result.AddInfo("Instance type: %s", target.InstanceType)
-	}
-
-	// Check instance profile
-	if target.InstanceProfileName == "" {
-		result.AddWarning("Instance profile not specified in template, will use global config value")
-	}
-	if target.InstanceProfileName != "" {
-		result.AddInfo("Instance profile: %s", target.InstanceProfileName)
+	if config.Base.AMIFilters != nil {
+		result.AddInfo("Base image: using AMI filters (owners: %v)", config.Base.AMIFilters.Owners)
 	}
 }
 
 // validateAWSResources validates AWS resources exist and are accessible
 func (v *Validator) validateAWSResources(ctx context.Context, result *ValidationResult, config builder.Config, target *builder.Target) {
 	// Validate base AMI exists
-	if config.Base.Image != "" && strings.HasPrefix(config.Base.Image, "ami-") {
+	if config.Base.AMIFilters != nil {
+		v.validateAMIFilters(ctx, result, config.Base.AMIFilters)
+	} else if config.Base.Image != "" && strings.HasPrefix(config.Base.Image, "ami-") {
 		v.validateAMI(ctx, result, config.Base.Image)
 	}
 
@@ -248,6 +253,66 @@ func (v *Validator) validateAMI(ctx context.Context, result *ValidationResult, a
 		return
 	}
 	result.AddInfo("Base AMI platform: Linux")
+}
+
+// validateAMIFilters performs a dry-run validation of AMI filters by executing
+// the DescribeImages call and reporting how many AMIs match.
+func (v *Validator) validateAMIFilters(ctx context.Context, result *ValidationResult, filters *builder.AMIFilterConfig) {
+	if len(filters.Owners) == 0 {
+		result.AddError("ami_filters.owners must specify at least one owner")
+		return
+	}
+	if len(filters.Filters) == 0 {
+		result.AddError("ami_filters.filters must specify at least one filter")
+		return
+	}
+
+	ec2Filters := make([]ec2types.Filter, 0, len(filters.Filters))
+	for name, value := range filters.Filters {
+		ec2Filters = append(ec2Filters, ec2types.Filter{
+			Name:   aws.String(name),
+			Values: []string{value},
+		})
+	}
+	if _, hasState := filters.Filters["state"]; !hasState {
+		ec2Filters = append(ec2Filters, ec2types.Filter{
+			Name:   aws.String("state"),
+			Values: []string{"available"},
+		})
+	}
+
+	input := &ec2.DescribeImagesInput{
+		Owners:  filters.Owners,
+		Filters: ec2Filters,
+	}
+
+	output, err := v.clients.EC2.DescribeImages(ctx, input)
+	if err != nil {
+		result.AddError("Failed to validate AMI filters: %v", err)
+		return
+	}
+
+	if len(output.Images) == 0 {
+		result.AddError("No AMIs found matching filters (owners: %v)", filters.Owners)
+		return
+	}
+
+	result.AddInfo("AMI filters matched %d image(s)", len(output.Images))
+
+	// Report which AMI would be selected (most recent)
+	latest := output.Images[0]
+	for _, img := range output.Images[1:] {
+		if aws.ToString(img.CreationDate) > aws.ToString(latest.CreationDate) {
+			latest = img
+		}
+	}
+
+	name := "unnamed"
+	if latest.Name != nil {
+		name = *latest.Name
+	}
+	result.AddInfo("Latest matching AMI: %s (%s, created: %s)",
+		aws.ToString(latest.ImageId), name, aws.ToString(latest.CreationDate))
 }
 
 // validateInstanceType checks if an instance type is available in the current region
