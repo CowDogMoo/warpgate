@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/config"
@@ -855,11 +856,11 @@ func TestPush_MultipleResults(t *testing.T) {
 	t.Parallel()
 	cfg := &config.Config{}
 
-	pushCount := 0
+	var pushCount atomic.Int32
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
 		return &mockContainerBuilder{
 			pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
-				pushCount++
+				pushCount.Add(1)
 				return "sha256:abcdef", nil
 			},
 		}, nil
@@ -936,11 +937,11 @@ func TestExecuteContainerBuild_MultiArch(t *testing.T) {
 	t.Parallel()
 	cfg := &config.Config{}
 
-	buildCount := 0
+	var buildCount atomic.Int32
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
 		return &mockContainerBuilder{
 			buildFunc: func(ctx context.Context, cfg Config) (*BuildResult, error) {
-				buildCount++
+				buildCount.Add(1)
 				return &BuildResult{
 					ImageRef:     fmt.Sprintf("test:%s", cfg.Base.Platform),
 					Architecture: cfg.Architectures[0],
