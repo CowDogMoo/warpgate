@@ -128,12 +128,8 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		))
 		logging.InfoContext(ctx, "TLS enabled for BuildKit connection")
 	} else if strings.HasPrefix(addr, "tcp://") {
-		// Plaintext TCP is only permitted when explicitly opted-in via the
-		// BUILDKIT_INSECURE_NO_TLS environment variable.  In all other cases
-		// callers should set buildkit.tls_enabled=true in the config.
-		if os.Getenv("BUILDKIT_INSECURE_NO_TLS") != "1" {
-			return nil, fmt.Errorf("connecting to BuildKit over TCP without TLS is not allowed; " +
-				"set buildkit.tls_enabled=true in config or set BUILDKIT_INSECURE_NO_TLS=1 to override")
+		if err := validateTCPSecurity(); err != nil {
+			return nil, err
 		}
 		clientOpts = append(clientOpts, client.WithGRPCDialOption(
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -175,6 +171,30 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		cacheFrom:     []string{},
 		cacheTo:       []string{},
 	}, nil
+}
+
+// validateTCPSecurity checks that plaintext TCP connections are explicitly
+// opted-in via the BUILDKIT_INSECURE_NO_TLS environment variable.
+func validateTCPSecurity() error {
+	if os.Getenv("BUILDKIT_INSECURE_NO_TLS") != "1" {
+		return fmt.Errorf("connecting to BuildKit over TCP without TLS is not allowed; " +
+			"set buildkit.tls_enabled=true in config or set BUILDKIT_INSECURE_NO_TLS=1 to override")
+	}
+	return nil
+}
+
+// createTempImageTar creates a temporary file for storing an image tar export.
+// The caller is responsible for removing the file when done.
+func createTempImageTar() (string, error) {
+	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary image tar: %w", err)
+	}
+	path := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temporary image tar: %w", err)
+	}
+	return path, nil
 }
 
 // loadTLSConfig creates a TLS configuration for secure BuildKit connections.
@@ -1207,13 +1227,9 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
 	}
 
-	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	imageTarPath, err := createTempImageTar()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary image tar: %w", err)
-	}
-	imageTarPath := tmpFile.Name()
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close temporary image tar: %w", err)
+		return nil, err
 	}
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
@@ -1834,13 +1850,9 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		frontendAttrs["no-cache"] = ""
 	}
 
-	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	imageTarPath, err := createTempImageTar()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary image tar: %w", err)
-	}
-	imageTarPath := tmpFile.Name()
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close temporary image tar: %w", err)
+		return nil, err
 	}
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {

@@ -7720,6 +7720,56 @@ func TestApplyPlatformFix_LLBArchFallback(t *testing.T) {
 	}
 }
 
+func TestValidateTCPSecurity(t *testing.T) {
+	tests := []struct {
+		name        string
+		envValue    string
+		expectError bool
+	}{
+		{"blocked when env not set", "", true},
+		{"blocked when env is 0", "0", true},
+		{"blocked when env is yes", "yes", true},
+		{"allowed when env is 1", "1", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				t.Setenv("BUILDKIT_INSECURE_NO_TLS", tt.envValue)
+			}
+			err := validateTCPSecurity()
+			if (err != nil) != tt.expectError {
+				t.Errorf("validateTCPSecurity() error = %v, expectError = %v", err, tt.expectError)
+			}
+			if err != nil && !strings.Contains(err.Error(), "TCP without TLS is not allowed") {
+				t.Errorf("unexpected error message: %v", err)
+			}
+		})
+	}
+}
+
+func TestCreateTempImageTar(t *testing.T) {
+	path, err := createTempImageTar()
+	if err != nil {
+		t.Fatalf("createTempImageTar() unexpected error: %v", err)
+	}
+	defer os.Remove(path)
+
+	if !strings.HasPrefix(filepath.Base(path), "warpgate-image-") {
+		t.Errorf("expected temp file name to start with warpgate-image-, got %s", filepath.Base(path))
+	}
+	if !strings.HasSuffix(path, ".tar") {
+		t.Errorf("expected temp file name to end with .tar, got %s", path)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("temp file does not exist: %v", err)
+	}
+	if info.IsDir() {
+		t.Error("expected a file, got a directory")
+	}
+}
+
 func TestApplyPlatformFix_PropagatesError(t *testing.T) {
 	origLoad := daemonLoad
 	defer func() { daemonLoad = origLoad }()
