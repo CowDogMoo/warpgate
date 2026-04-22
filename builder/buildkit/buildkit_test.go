@@ -7747,27 +7747,87 @@ func TestValidateTCPSecurity(t *testing.T) {
 	}
 }
 
-func TestCreateTempImageTar(t *testing.T) {
-	path, err := createTempImageTar()
-	if err != nil {
-		t.Fatalf("createTempImageTar() unexpected error: %v", err)
-	}
-	defer os.Remove(path)
+func TestBuildClientOpts(t *testing.T) {
+	t.Run("unix socket returns empty opts", func(t *testing.T) {
+		opts, err := buildClientOpts(context.Background(), "unix:///run/buildkit/buildkitd.sock", config.BuildKitConfig{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(opts) != 0 {
+			t.Errorf("expected no opts for unix socket, got %d", len(opts))
+		}
+	})
 
-	if !strings.HasPrefix(filepath.Base(path), "warpgate-image-") {
-		t.Errorf("expected temp file name to start with warpgate-image-, got %s", filepath.Base(path))
-	}
-	if !strings.HasSuffix(path, ".tar") {
-		t.Errorf("expected temp file name to end with .tar, got %s", path)
-	}
+	t.Run("docker-container returns empty opts", func(t *testing.T) {
+		opts, err := buildClientOpts(context.Background(), "docker-container://mybuilder", config.BuildKitConfig{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(opts) != 0 {
+			t.Errorf("expected no opts for docker-container, got %d", len(opts))
+		}
+	})
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("temp file does not exist: %v", err)
-	}
-	if info.IsDir() {
-		t.Error("expected a file, got a directory")
-	}
+	t.Run("tcp without TLS blocked by default", func(t *testing.T) {
+		_, err := buildClientOpts(context.Background(), "tcp://10.0.0.1:1234", config.BuildKitConfig{})
+		if err == nil {
+			t.Fatal("expected error for TCP without TLS")
+		}
+		if !strings.Contains(err.Error(), "TCP without TLS is not allowed") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("tcp without TLS allowed with env override", func(t *testing.T) {
+		t.Setenv("BUILDKIT_INSECURE_NO_TLS", "1")
+		opts, err := buildClientOpts(context.Background(), "tcp://10.0.0.1:1234", config.BuildKitConfig{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(opts) != 1 {
+			t.Errorf("expected 1 opt (grpc dial option), got %d", len(opts))
+		}
+	})
+
+	t.Run("tcp with TLS uses TLS credentials", func(t *testing.T) {
+		certDir := t.TempDir()
+		caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		caTemplate := &x509.Certificate{
+			SerialNumber:          big.NewInt(1),
+			Subject:               pkix.Name{CommonName: "test-ca"},
+			NotBefore:             time.Now(),
+			NotAfter:              time.Now().Add(time.Hour),
+			IsCA:                  true,
+			BasicConstraintsValid: true,
+		}
+		caDER, _ := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+		caCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+		caPath := filepath.Join(certDir, "ca.pem")
+		if err := os.WriteFile(caPath, caCertPEM, 0600); err != nil {
+			t.Fatalf("failed to write CA cert: %v", err)
+		}
+
+		opts, err := buildClientOpts(context.Background(), "tcp://10.0.0.1:1234", config.BuildKitConfig{
+			TLSEnabled: true,
+			TLSCACert:  caPath,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(opts) != 1 {
+			t.Errorf("expected 1 opt (grpc dial option), got %d", len(opts))
+		}
+	})
+
+	t.Run("tcp with TLS bad cert returns error", func(t *testing.T) {
+		_, err := buildClientOpts(context.Background(), "tcp://10.0.0.1:1234", config.BuildKitConfig{
+			TLSEnabled: true,
+			TLSCACert:  "/nonexistent/ca.pem",
+		})
+		if err == nil {
+			t.Fatal("expected error for bad TLS cert path")
+		}
+	})
 }
 
 func TestApplyPlatformFix_PropagatesError(t *testing.T) {

@@ -116,25 +116,9 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		logging.InfoContext(ctx, "Auto-detected BuildKit builder: %s", containerName)
 	}
 
-	clientOpts := []client.ClientOpt{}
-
-	if strings.HasPrefix(addr, "tcp://") && cfg.BuildKit.TLSEnabled {
-		tlsConfig, err := loadTLSConfig(cfg.BuildKit)
-		if err != nil {
-			return nil, errors.Wrap("load TLS config", "", err)
-		}
-		clientOpts = append(clientOpts, client.WithGRPCDialOption(
-			grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
-		))
-		logging.InfoContext(ctx, "TLS enabled for BuildKit connection")
-	} else if strings.HasPrefix(addr, "tcp://") {
-		if err := validateTCPSecurity(); err != nil {
-			return nil, err
-		}
-		clientOpts = append(clientOpts, client.WithGRPCDialOption(
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		))
-		logging.WarnContext(ctx, "Connecting to BuildKit without TLS (insecure) — BUILDKIT_INSECURE_NO_TLS override active")
+	clientOpts, err := buildClientOpts(ctx, addr, cfg.BuildKit)
+	if err != nil {
+		return nil, err
 	}
 
 	c, err := client.New(ctx, addr, clientOpts...)
@@ -173,6 +157,33 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 	}, nil
 }
 
+// buildClientOpts returns the gRPC client options for the given address and
+// BuildKit configuration, enforcing TLS policy for TCP connections.
+func buildClientOpts(ctx context.Context, addr string, cfg config.BuildKitConfig) ([]client.ClientOpt, error) {
+	var opts []client.ClientOpt
+
+	if strings.HasPrefix(addr, "tcp://") && cfg.TLSEnabled {
+		tlsConfig, err := loadTLSConfig(cfg)
+		if err != nil {
+			return nil, errors.Wrap("load TLS config", "", err)
+		}
+		opts = append(opts, client.WithGRPCDialOption(
+			grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		))
+		logging.InfoContext(ctx, "TLS enabled for BuildKit connection")
+	} else if strings.HasPrefix(addr, "tcp://") {
+		if err := validateTCPSecurity(); err != nil {
+			return nil, err
+		}
+		opts = append(opts, client.WithGRPCDialOption(
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		))
+		logging.WarnContext(ctx, "Connecting to BuildKit without TLS (insecure) — BUILDKIT_INSECURE_NO_TLS override active")
+	}
+
+	return opts, nil
+}
+
 // validateTCPSecurity checks that plaintext TCP connections are explicitly
 // opted-in via the BUILDKIT_INSECURE_NO_TLS environment variable.
 func validateTCPSecurity() error {
@@ -181,20 +192,6 @@ func validateTCPSecurity() error {
 			"set buildkit.tls_enabled=true in config or set BUILDKIT_INSECURE_NO_TLS=1 to override")
 	}
 	return nil
-}
-
-// createTempImageTar creates a temporary file for storing an image tar export.
-// The caller is responsible for removing the file when done.
-func createTempImageTar() (string, error) {
-	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temporary image tar: %w", err)
-	}
-	path := tmpFile.Name()
-	if err := tmpFile.Close(); err != nil {
-		return "", fmt.Errorf("failed to close temporary image tar: %w", err)
-	}
-	return path, nil
 }
 
 // loadTLSConfig creates a TLS configuration for secure BuildKit connections.
@@ -1227,10 +1224,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
 	}
 
-	imageTarPath, err := createTempImageTar()
-	if err != nil {
-		return nil, err
-	}
+	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
 			logging.WarnContext(ctx, "Failed to remove temporary image tar: %v", err)
@@ -1850,10 +1844,7 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		frontendAttrs["no-cache"] = ""
 	}
 
-	imageTarPath, err := createTempImageTar()
-	if err != nil {
-		return nil, err
-	}
+	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
 			logging.WarnContext(ctx, "Failed to remove temporary image tar: %v", err)
