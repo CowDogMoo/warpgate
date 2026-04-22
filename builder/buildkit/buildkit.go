@@ -128,10 +128,17 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		))
 		logging.InfoContext(ctx, "TLS enabled for BuildKit connection")
 	} else if strings.HasPrefix(addr, "tcp://") {
+		// Plaintext TCP is only permitted when explicitly opted-in via the
+		// BUILDKIT_INSECURE_NO_TLS environment variable.  In all other cases
+		// callers should set buildkit.tls_enabled=true in the config.
+		if os.Getenv("BUILDKIT_INSECURE_NO_TLS") != "1" {
+			return nil, fmt.Errorf("connecting to BuildKit over TCP without TLS is not allowed; " +
+				"set buildkit.tls_enabled=true in config or set BUILDKIT_INSECURE_NO_TLS=1 to override")
+		}
 		clientOpts = append(clientOpts, client.WithGRPCDialOption(
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		))
-		logging.WarnContext(ctx, "Connecting to BuildKit without TLS (insecure)")
+		logging.WarnContext(ctx, "Connecting to BuildKit without TLS (insecure) — BUILDKIT_INSECURE_NO_TLS override active")
 	}
 
 	c, err := client.New(ctx, addr, clientOpts...)
@@ -469,7 +476,7 @@ func (b *BuildKitBuilder) applyShellProvisioner(state llb.State, prov builder.Pr
 	combinedCmd := strings.Join(prov.Inline, " && ")
 
 	runOpts := []llb.RunOption{
-		llb.Shlex(fmt.Sprintf("sh -c '%s'", combinedCmd)),
+		llb.Args([]string{"sh", "-c", combinedCmd}),
 	}
 
 	if strings.Contains(combinedCmd, "apt-get") {
@@ -587,7 +594,7 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 
 	if prov.Mode != "" {
 		state = state.Run(
-			llb.Shlexf("chmod %s %s", prov.Mode, prov.Destination),
+			llb.Args([]string{"chmod", prov.Mode, prov.Destination}),
 		).Root()
 	}
 
@@ -616,7 +623,7 @@ func (b *BuildKitBuilder) applyScriptProvisioner(state llb.State, prov builder.P
 		)
 
 		state = state.Run(
-			llb.Shlexf("chmod +x %s && %s", destPath, destPath),
+			llb.Args([]string{"sh", "-c", "chmod +x " + destPath + " && " + destPath}),
 		).Root()
 	}
 
@@ -645,7 +652,7 @@ func (b *BuildKitBuilder) applyPowerShellProvisioner(state llb.State, prov build
 		)
 
 		state = state.Run(
-			llb.Shlexf("pwsh -ExecutionPolicy Bypass -File %s", destPath),
+			llb.Args([]string{"pwsh", "-ExecutionPolicy", "Bypass", "-File", destPath}),
 		).Root()
 	}
 
@@ -709,13 +716,13 @@ func (b *BuildKitBuilder) applyAnsibleProvisioner(state llb.State, prov builder.
 		).Root()
 	}
 
-	cmd := "ansible-playbook /tmp/playbook.yml -i localhost, -c local"
+	ansibleArgs := []string{"ansible-playbook", "/tmp/playbook.yml", "-i", "localhost,", "-c", "local"}
 	for key, value := range prov.ExtraVars {
-		cmd += fmt.Sprintf(" -e %s=%s", key, value)
+		ansibleArgs = append(ansibleArgs, "-e", key+"="+value)
 	}
 
 	runOpts := []llb.RunOption{
-		llb.Shlex(cmd),
+		llb.Args(ansibleArgs),
 		llb.AddMount("/var/cache/apt", llb.Scratch(),
 			llb.AsPersistentCacheDir("warpgate-apt-cache", llb.CacheMountShared)),
 		llb.AddMount("/var/lib/apt/lists", llb.Scratch(),
@@ -1200,7 +1207,14 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
 	}
 
-	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
+	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary image tar: %w", err)
+	}
+	imageTarPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close temporary image tar: %w", err)
+	}
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
 			logging.WarnContext(ctx, "Failed to remove temporary image tar: %v", err)
@@ -1820,7 +1834,14 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		frontendAttrs["no-cache"] = ""
 	}
 
-	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
+	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary image tar: %w", err)
+	}
+	imageTarPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close temporary image tar: %w", err)
+	}
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
 			logging.WarnContext(ctx, "Failed to remove temporary image tar: %v", err)
