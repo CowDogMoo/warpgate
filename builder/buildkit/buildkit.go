@@ -116,22 +116,9 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		logging.InfoContext(ctx, "Auto-detected BuildKit builder: %s", containerName)
 	}
 
-	clientOpts := []client.ClientOpt{}
-
-	if strings.HasPrefix(addr, "tcp://") && cfg.BuildKit.TLSEnabled {
-		tlsConfig, err := loadTLSConfig(cfg.BuildKit)
-		if err != nil {
-			return nil, errors.Wrap("load TLS config", "", err)
-		}
-		clientOpts = append(clientOpts, client.WithGRPCDialOption(
-			grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
-		))
-		logging.InfoContext(ctx, "TLS enabled for BuildKit connection")
-	} else if strings.HasPrefix(addr, "tcp://") {
-		clientOpts = append(clientOpts, client.WithGRPCDialOption(
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		))
-		logging.WarnContext(ctx, "Connecting to BuildKit without TLS (insecure)")
+	clientOpts, err := buildClientOpts(ctx, addr, cfg.BuildKit)
+	if err != nil {
+		return nil, err
 	}
 
 	c, err := client.New(ctx, addr, clientOpts...)
@@ -168,6 +155,43 @@ func NewBuildKitBuilder(ctx context.Context) (*BuildKitBuilder, error) {
 		cacheFrom:     []string{},
 		cacheTo:       []string{},
 	}, nil
+}
+
+// buildClientOpts returns the gRPC client options for the given address and
+// BuildKit configuration, enforcing TLS policy for TCP connections.
+func buildClientOpts(ctx context.Context, addr string, cfg config.BuildKitConfig) ([]client.ClientOpt, error) {
+	var opts []client.ClientOpt
+
+	if strings.HasPrefix(addr, "tcp://") && cfg.TLSEnabled {
+		tlsConfig, err := loadTLSConfig(cfg)
+		if err != nil {
+			return nil, errors.Wrap("load TLS config", "", err)
+		}
+		opts = append(opts, client.WithGRPCDialOption(
+			grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
+		))
+		logging.InfoContext(ctx, "TLS enabled for BuildKit connection")
+	} else if strings.HasPrefix(addr, "tcp://") {
+		if err := validateTCPSecurity(); err != nil {
+			return nil, err
+		}
+		opts = append(opts, client.WithGRPCDialOption(
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		))
+		logging.WarnContext(ctx, "Connecting to BuildKit without TLS (insecure) — BUILDKIT_INSECURE_NO_TLS override active")
+	}
+
+	return opts, nil
+}
+
+// validateTCPSecurity checks that plaintext TCP connections are explicitly
+// opted-in via the BUILDKIT_INSECURE_NO_TLS environment variable.
+func validateTCPSecurity() error {
+	if os.Getenv("BUILDKIT_INSECURE_NO_TLS") != "1" {
+		return fmt.Errorf("connecting to BuildKit over TCP without TLS is not allowed; " +
+			"set buildkit.tls_enabled=true in config or set BUILDKIT_INSECURE_NO_TLS=1 to override")
+	}
+	return nil
 }
 
 // loadTLSConfig creates a TLS configuration for secure BuildKit connections.
@@ -469,7 +493,7 @@ func (b *BuildKitBuilder) applyShellProvisioner(state llb.State, prov builder.Pr
 	combinedCmd := strings.Join(prov.Inline, " && ")
 
 	runOpts := []llb.RunOption{
-		llb.Shlex(fmt.Sprintf("sh -c '%s'", combinedCmd)),
+		llb.Args([]string{"sh", "-c", combinedCmd}),
 	}
 
 	if strings.Contains(combinedCmd, "apt-get") {
@@ -587,7 +611,7 @@ func (b *BuildKitBuilder) applyFileProvisioner(state llb.State, prov builder.Pro
 
 	if prov.Mode != "" {
 		state = state.Run(
-			llb.Shlexf("chmod %s %s", prov.Mode, prov.Destination),
+			llb.Args([]string{"chmod", prov.Mode, prov.Destination}),
 		).Root()
 	}
 
@@ -616,7 +640,7 @@ func (b *BuildKitBuilder) applyScriptProvisioner(state llb.State, prov builder.P
 		)
 
 		state = state.Run(
-			llb.Shlexf("chmod +x %s && %s", destPath, destPath),
+			llb.Args([]string{"sh", "-c", "chmod +x " + destPath + " && " + destPath}),
 		).Root()
 	}
 
@@ -645,7 +669,7 @@ func (b *BuildKitBuilder) applyPowerShellProvisioner(state llb.State, prov build
 		)
 
 		state = state.Run(
-			llb.Shlexf("pwsh -ExecutionPolicy Bypass -File %s", destPath),
+			llb.Args([]string{"pwsh", "-ExecutionPolicy", "Bypass", "-File", destPath}),
 		).Root()
 	}
 
@@ -709,13 +733,13 @@ func (b *BuildKitBuilder) applyAnsibleProvisioner(state llb.State, prov builder.
 		).Root()
 	}
 
-	cmd := "ansible-playbook /tmp/playbook.yml -i localhost, -c local"
+	ansibleArgs := []string{"ansible-playbook", "/tmp/playbook.yml", "-i", "localhost,", "-c", "local"}
 	for key, value := range prov.ExtraVars {
-		cmd += fmt.Sprintf(" -e %s=%s", key, value)
+		ansibleArgs = append(ansibleArgs, "-e", key+"="+value)
 	}
 
 	runOpts := []llb.RunOption{
-		llb.Shlex(cmd),
+		llb.Args(ansibleArgs),
 		llb.AddMount("/var/cache/apt", llb.Scratch(),
 			llb.AsPersistentCacheDir("warpgate-apt-cache", llb.CacheMountShared)),
 		llb.AddMount("/var/lib/apt/lists", llb.Scratch(),
