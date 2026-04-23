@@ -7836,7 +7836,11 @@ func TestCreateTempImageTar(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		defer os.Remove(path)
+		defer func() {
+			if err := os.Remove(path); err != nil {
+				t.Logf("cleanup: %v", err)
+			}
+		}()
 
 		if !strings.Contains(path, "warpgate-image-") {
 			t.Errorf("expected path to contain 'warpgate-image-', got %s", path)
@@ -7860,18 +7864,71 @@ func TestCreateTempImageTar(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		defer os.Remove(path1)
+		defer func() {
+			if err := os.Remove(path1); err != nil {
+				t.Logf("cleanup: %v", err)
+			}
+		}()
 
 		path2, err := createTempImageTar()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		defer os.Remove(path2)
+		defer func() {
+			if err := os.Remove(path2); err != nil {
+				t.Logf("cleanup: %v", err)
+			}
+		}()
 
 		if path1 == path2 {
 			t.Error("expected unique paths, got identical")
 		}
 	})
+
+	t.Run("returns error when temp dir is not writable", func(t *testing.T) {
+		t.Setenv("TMPDIR", "/nonexistent-dir-that-does-not-exist")
+
+		_, err := createTempImageTar()
+		if err == nil {
+			t.Fatal("expected error when TMPDIR is invalid")
+		}
+		if !strings.Contains(err.Error(), "failed to create temporary image tar") {
+			t.Errorf("unexpected error message: %v", err)
+		}
+	})
+}
+
+func TestBuildDockerfile_TempFileError(t *testing.T) {
+	orig := createTempImage
+	defer func() { createTempImage = orig }()
+
+	createTempImage = func() (string, error) {
+		return "", fmt.Errorf("injected temp file error")
+	}
+
+	tmpDir := t.TempDir()
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte("FROM scratch\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0",
+		Dockerfile: &builder.DockerfileConfig{
+			Path:    dockerfilePath,
+			Context: tmpDir,
+		},
+	}
+
+	_, err := b.BuildDockerfile(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("expected error from injected createTempImage failure")
+	}
+	if !strings.Contains(err.Error(), "injected temp file error") {
+		t.Errorf("unexpected error: %v", err)
+	}
 }
 
 func TestApplyPlatformFix_PropagatesError(t *testing.T) {

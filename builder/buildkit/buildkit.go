@@ -71,8 +71,9 @@ import (
 
 // Package-level function variables for daemon operations (overridden in tests).
 var (
-	daemonLoad  = daemon.Image
-	daemonWrite = daemon.Write
+	daemonLoad      = daemon.Image
+	daemonWrite     = daemon.Write
+	createTempImage = createTempImageTar
 )
 
 // BuildKitBuilder implements container image building using Docker BuildKit.
@@ -1224,7 +1225,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
 	}
 
-	imageTarPath, err := createTempImageTar()
+	imageTarPath, err := createTempImage()
 	if err != nil {
 		return nil, err
 	}
@@ -1862,7 +1863,7 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		frontendAttrs["no-cache"] = ""
 	}
 
-	imageTarPath, err := createTempImageTar()
+	imageTarPath, err := createTempImage()
 	if err != nil {
 		return nil, err
 	}
