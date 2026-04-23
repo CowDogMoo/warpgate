@@ -294,6 +294,24 @@ func TestCreateLinuxAnsibleComponent_WithExtraVarsAndInventory(t *testing.T) {
 	assert.NotContains(t, doc, "--connection=local")
 }
 
+func TestCreateLinuxAnsibleComponent_ExtraVarsEscaping(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	playbookPath := filepath.Join(tmpDir, "playbook.yml")
+	require.NoError(t, os.WriteFile(playbookPath, []byte("---\n- hosts: all"), 0644))
+
+	gen := &ComponentGenerator{}
+	provisioner := builder.Provisioner{
+		Type:         "ansible",
+		PlaybookPath: playbookPath,
+		ExtraVars:    map[string]string{"msg": "it's"},
+	}
+
+	doc, err := gen.createLinuxAnsibleComponent(provisioner)
+	require.NoError(t, err)
+	assert.Contains(t, doc, "msg=it'\\''s")
+}
+
 func TestCreateLinuxAnsibleComponent_NonexistentPlaybook(t *testing.T) {
 	t.Parallel()
 	gen := &ComponentGenerator{}
@@ -417,6 +435,24 @@ func TestCreateWindowsAnsibleComponent_WithExtraVars(t *testing.T) {
 	assert.Contains(t, doc, "env=prod")
 }
 
+func TestCreateWindowsAnsibleComponent_ExtraVarsEscaping(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	playbookPath := filepath.Join(tmpDir, "playbook.yml")
+	require.NoError(t, os.WriteFile(playbookPath, []byte("---\n- hosts: all"), 0644))
+
+	gen := &ComponentGenerator{}
+	provisioner := builder.Provisioner{
+		Type:         "ansible",
+		PlaybookPath: playbookPath,
+		ExtraVars:    map[string]string{"msg": "it's"},
+	}
+
+	doc, err := gen.createWindowsAnsibleComponent(provisioner)
+	require.NoError(t, err)
+	assert.Contains(t, doc, "msg=it'\\''s")
+}
+
 func TestCreateWindowsAnsibleComponent_NonexistentPlaybook(t *testing.T) {
 	t.Parallel()
 	gen := &ComponentGenerator{}
@@ -448,6 +484,48 @@ func TestCreateWindowsAnsibleComponent_NonexistentGalaxyFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to read galaxy file")
 }
 
+func TestShellEscapeSingleQuote(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "no quotes",
+			input:    "hello",
+			expected: "hello",
+		},
+		{
+			name:     "single quote in middle",
+			input:    "it's",
+			expected: "it'\\''s",
+		},
+		{
+			name:     "multiple single quotes",
+			input:    "it's a 'test'",
+			expected: "it'\\''s a '\\''test'\\''",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "only single quote",
+			input:    "'",
+			expected: "'\\''",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := shellEscapeSingleQuote(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
 func TestShellComponent_WithEnvironment(t *testing.T) {
 	t.Parallel()
 	gen := &ComponentGenerator{}
@@ -462,7 +540,28 @@ func TestShellComponent_WithEnvironment(t *testing.T) {
 
 	doc, err := gen.createShellComponent(provisioner)
 	require.NoError(t, err)
-	assert.Contains(t, doc, "export")
+	assert.Contains(t, doc, "export FOO='bar'")
+	assert.Contains(t, doc, "export BAZ='qux'")
+}
+
+func TestShellComponent_WithEnvironmentSpecialChars(t *testing.T) {
+	t.Parallel()
+	gen := &ComponentGenerator{}
+	provisioner := builder.Provisioner{
+		Type:   "shell",
+		Inline: []string{"echo hello"},
+		Environment: map[string]string{
+			"GREETING": "it's a test",
+			"CMD":      "$(whoami)",
+		},
+	}
+
+	doc, err := gen.createShellComponent(provisioner)
+	require.NoError(t, err)
+	// Single quotes should be escaped with the '\'' technique
+	assert.Contains(t, doc, "export GREETING='it'\\''s a test'")
+	// Command substitution should be safely quoted (single quotes prevent expansion)
+	assert.Contains(t, doc, "export CMD='$(whoami)'")
 }
 
 func TestGetComponentARN_Success(t *testing.T) {
