@@ -7931,6 +7931,33 @@ func TestBuildDockerfile_TempFileError(t *testing.T) {
 	}
 }
 
+func TestBuild_TempFileError(t *testing.T) {
+	orig := createTempImage
+	defer func() { createTempImage = orig }()
+
+	createTempImage = func() (string, error) {
+		return "", fmt.Errorf("injected temp file error")
+	}
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Name:    "test",
+		Version: "1.0",
+		Base: builder.BaseImage{
+			Image:    "alpine:latest",
+			Platform: "linux/amd64",
+		},
+	}
+
+	_, err := b.Build(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("expected error from injected createTempImage failure")
+	}
+	if !strings.Contains(err.Error(), "injected temp file error") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestApplyPlatformFix_PropagatesError(t *testing.T) {
 	origLoad := daemonLoad
 	defer func() { daemonLoad = origLoad }()
