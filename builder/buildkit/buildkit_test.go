@@ -7830,6 +7830,50 @@ func TestBuildClientOpts(t *testing.T) {
 	})
 }
 
+func TestCreateTempImageTar(t *testing.T) {
+	t.Run("creates and closes temp file successfully", func(t *testing.T) {
+		path, err := createTempImageTar()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.Remove(path)
+
+		if !strings.Contains(path, "warpgate-image-") {
+			t.Errorf("expected path to contain 'warpgate-image-', got %s", path)
+		}
+		if !strings.HasSuffix(path, ".tar") {
+			t.Errorf("expected path to end with '.tar', got %s", path)
+		}
+
+		// File should exist but be closed (writable by another open)
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("temp file should exist: %v", err)
+		}
+		if info.Size() != 0 {
+			t.Errorf("expected empty file, got %d bytes", info.Size())
+		}
+	})
+
+	t.Run("returned path is unique across calls", func(t *testing.T) {
+		path1, err := createTempImageTar()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.Remove(path1)
+
+		path2, err := createTempImageTar()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer os.Remove(path2)
+
+		if path1 == path2 {
+			t.Error("expected unique paths, got identical")
+		}
+	})
+}
+
 func TestApplyPlatformFix_PropagatesError(t *testing.T) {
 	origLoad := daemonLoad
 	defer func() { daemonLoad = origLoad }()

@@ -1224,13 +1224,9 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
 	}
 
-	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	imageTarPath, err := createTempImageTar()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary image tar: %w", err)
-	}
-	imageTarPath := tmpFile.Name()
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close temporary image tar: %w", err)
+		return nil, err
 	}
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
@@ -1302,6 +1298,21 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 //
 // Resource Management: The created file handle must be closed by the caller.
 // BuildKit typically handles this automatically when the solve operation completes.
+
+// createTempImageTar creates a temporary file for storing a Docker image tar.
+// The caller is responsible for removing the file when done.
+func createTempImageTar() (string, error) {
+	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary image tar: %w", err)
+	}
+	path := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temporary image tar: %w", err)
+	}
+	return path, nil
+}
+
 func fixedWriteCloser(filepath string) func(map[string]string) (io.WriteCloser, error) {
 	return func(m map[string]string) (io.WriteCloser, error) {
 		f, err := os.Create(filepath)
@@ -1851,13 +1862,9 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		frontendAttrs["no-cache"] = ""
 	}
 
-	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	imageTarPath, err := createTempImageTar()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temporary image tar: %w", err)
-	}
-	imageTarPath := tmpFile.Name()
-	if err := tmpFile.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close temporary image tar: %w", err)
+		return nil, err
 	}
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
