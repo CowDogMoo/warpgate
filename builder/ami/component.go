@@ -134,7 +134,7 @@ func (g *ComponentGenerator) createShellComponent(provisioner builder.Provisione
 	if len(provisioner.Environment) > 0 {
 		envVars := make([]string, 0, len(provisioner.Environment))
 		for key, value := range provisioner.Environment {
-			envVars = append(envVars, fmt.Sprintf("export %s=%s", key, value))
+			envVars = append(envVars, fmt.Sprintf("export %s='%s'", key, shellEscapeSingleQuote(value)))
 		}
 		doc["phases"].([]map[string]interface{})[0]["steps"].([]map[string]interface{})[0]["inputs"].(map[string]interface{})["commands"] = append(envVars, commands...)
 	}
@@ -228,12 +228,8 @@ func (g *ComponentGenerator) createLinuxAnsibleComponent(provisioner builder.Pro
 
 	ansibleCmd := fmt.Sprintf("ansible-playbook /tmp/%s", playbookName)
 
-	if len(provisioner.ExtraVars) > 0 {
-		var extraVars []string
-		for key, value := range provisioner.ExtraVars {
-			extraVars = append(extraVars, fmt.Sprintf("%s=%s", key, value))
-		}
-		ansibleCmd += fmt.Sprintf(" -e '%s'", strings.Join(extraVars, " "))
+	for key, value := range provisioner.ExtraVars {
+		ansibleCmd += fmt.Sprintf(" -e '%s=%s'", key, shellEscapeSingleQuote(value))
 	}
 
 	if provisioner.Inventory != "" {
@@ -323,19 +319,13 @@ func (g *ComponentGenerator) createWindowsAnsibleComponent(provisioner builder.P
 
 	ansibleCmd := fmt.Sprintf("ansible-playbook 'C:\\temp\\%s'", playbookName)
 
-	if len(provisioner.ExtraVars) > 0 {
-		var extraVars []string
-		for key, value := range provisioner.ExtraVars {
-			// Skip ansible connection vars for local execution
-			if key == "ansible_connection" || key == "ansible_shell_type" ||
-				key == "ansible_aws_ssm_bucket_name" || key == "ansible_aws_ssm_region" {
-				continue
-			}
-			extraVars = append(extraVars, fmt.Sprintf("%s=%s", key, value))
+	for key, value := range provisioner.ExtraVars {
+		// Skip ansible connection vars for local execution
+		if key == "ansible_connection" || key == "ansible_shell_type" ||
+			key == "ansible_aws_ssm_bucket_name" || key == "ansible_aws_ssm_region" {
+			continue
 		}
-		if len(extraVars) > 0 {
-			ansibleCmd += fmt.Sprintf(" -e '%s'", strings.Join(extraVars, " "))
-		}
+		ansibleCmd += fmt.Sprintf(" -e '%s=%s'", key, shellEscapeSingleQuote(value))
 	}
 
 	// Force local connection for Windows AMI builds
@@ -508,6 +498,13 @@ func needsReboot(script string) bool {
 		}
 	}
 	return false
+}
+
+// shellEscapeSingleQuote escapes a string for safe use inside a single-quoted shell argument.
+// A single quote cannot appear inside a single-quoted string in POSIX shell, so each
+// embedded single quote is replaced with the sequence: '\” (close-quote, literal-quote, re-open-quote).
+func shellEscapeSingleQuote(s string) string {
+	return strings.ReplaceAll(s, "'", "'\\''")
 }
 
 // marshalComponentDocument converts a component document to YAML string

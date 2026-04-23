@@ -1224,7 +1224,14 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
 	}
 
-	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
+	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary image tar: %w", err)
+	}
+	imageTarPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close temporary image tar: %w", err)
+	}
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
 			logging.WarnContext(ctx, "Failed to remove temporary image tar: %v", err)
@@ -1844,7 +1851,14 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		frontendAttrs["no-cache"] = ""
 	}
 
-	imageTarPath := filepath.Join(os.TempDir(), fmt.Sprintf("warpgate-image-%d.tar", time.Now().Unix()))
+	tmpFile, err := os.CreateTemp("", "warpgate-image-*.tar")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary image tar: %w", err)
+	}
+	imageTarPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close temporary image tar: %w", err)
+	}
 	defer func() {
 		if err := os.Remove(imageTarPath); err != nil {
 			logging.WarnContext(ctx, "Failed to remove temporary image tar: %v", err)
