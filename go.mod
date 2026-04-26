@@ -54,7 +54,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.16 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.20 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.0 // indirect
-	github.com/aws/smithy-go v1.25.0 // indirect
+	github.com/aws/smithy-go v1.25.1 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -119,7 +119,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
