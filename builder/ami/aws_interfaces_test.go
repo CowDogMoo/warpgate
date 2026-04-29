@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
@@ -40,7 +41,44 @@ var (
 	_ IAMAPI            = (*MockIAMClient)(nil)
 	_ SSMAPI            = (*MockSSMClient)(nil)
 	_ CloudWatchLogsAPI = (*MockCloudWatchLogsClient)(nil)
+	_ S3API             = (*MockS3Client)(nil)
 )
+
+// MockS3Client implements S3API for testing.
+type MockS3Client struct {
+	PutObjectFunc     func(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObjectFunc     func(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	DeleteObjectFunc  func(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	ListObjectsV2Func func(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+}
+
+func (m *MockS3Client) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+	if m.PutObjectFunc != nil {
+		return m.PutObjectFunc(ctx, params, optFns...)
+	}
+	return &s3.PutObjectOutput{}, nil
+}
+
+func (m *MockS3Client) GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	if m.GetObjectFunc != nil {
+		return m.GetObjectFunc(ctx, params, optFns...)
+	}
+	return &s3.GetObjectOutput{}, nil
+}
+
+func (m *MockS3Client) DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+	if m.DeleteObjectFunc != nil {
+		return m.DeleteObjectFunc(ctx, params, optFns...)
+	}
+	return &s3.DeleteObjectOutput{}, nil
+}
+
+func (m *MockS3Client) ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	if m.ListObjectsV2Func != nil {
+		return m.ListObjectsV2Func(ctx, params, optFns...)
+	}
+	return &s3.ListObjectsV2Output{}, nil
+}
 
 // MockEC2Client implements EC2API for testing.
 type MockEC2Client struct {
@@ -413,6 +451,7 @@ type mockClients struct {
 	iam            *MockIAMClient
 	ssm            *MockSSMClient
 	cloudWatchLogs *MockCloudWatchLogsClient
+	s3             *MockS3Client
 }
 
 // newMockAWSClients creates an AWSClients with all mock implementations and returns
@@ -424,6 +463,7 @@ func newMockAWSClients() (*AWSClients, *mockClients) {
 		iam:            &MockIAMClient{},
 		ssm:            &MockSSMClient{},
 		cloudWatchLogs: &MockCloudWatchLogsClient{},
+		s3:             &MockS3Client{},
 	}
 
 	clients := &AWSClients{
@@ -432,6 +472,7 @@ func newMockAWSClients() (*AWSClients, *mockClients) {
 		IAM:            mocks.iam,
 		SSM:            mocks.ssm,
 		CloudWatchLogs: mocks.cloudWatchLogs,
+		S3:             mocks.s3,
 		Config:         aws.Config{Region: "us-east-1"},
 	}
 

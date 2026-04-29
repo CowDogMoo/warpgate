@@ -50,6 +50,7 @@ type ImageBuilder struct {
 	pipelineManager *PipelineManager
 	operations      *AMIOperations
 	resourceManager *ResourceManager
+	fileStager      *FileStager // nil when no staging bucket is configured
 	config          ClientConfig
 	globalConfig    *config.Config
 	forceRecreate   bool
@@ -87,12 +88,18 @@ func NewImageBuilderWithAllOptions(ctx context.Context, clientConfig ClientConfi
 	buildID := generateBuildID()
 	pipelineManager := NewPipelineManagerWithMonitor(clients, monitorConfig)
 
+	var fileStager *FileStager
+	if globalCfg != nil {
+		fileStager = NewFileStager(clients.S3, globalCfg.AWS.AMI.FileStagingBucket)
+	}
+
 	return &ImageBuilder{
 		clients:         clients,
 		componentGen:    NewComponentGenerator(clients),
 		pipelineManager: pipelineManager,
 		operations:      NewAMIOperations(clients, globalCfg),
 		resourceManager: NewResourceManager(clients),
+		fileStager:      fileStager,
 		config:          clientConfig,
 		globalConfig:    globalCfg,
 		forceRecreate:   forceRecreate,
@@ -159,7 +166,13 @@ func (b *ImageBuilder) Build(ctx context.Context, config builder.Config) (*build
 	// display is likely active and log output would corrupt the terminal.
 	quietCleanup := b.monitorConfig.StatusCallback != nil
 
-	resources, err := b.createBuildResources(ctx, config, amiTarget, createdResources)
+	stagedFiles, err := b.stageFileProvisioners(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	defer b.cleanupStagedFiles(ctx, stagedFiles)
+
+	resources, err := b.createBuildResources(ctx, config, amiTarget, createdResources, stagedFiles)
 	if err != nil {
 		createdResources.Cleanup(ctx, b.resourceManager, quietCleanup)
 		return nil, err
@@ -217,8 +230,8 @@ func (b *ImageBuilder) setupBuild(config builder.Config) (*builder.Target, error
 }
 
 // createBuildResources creates all necessary AWS resources for the build
-func (b *ImageBuilder) createBuildResources(ctx context.Context, config builder.Config, amiTarget *builder.Target, created *CreatedResources) (*buildResources, error) {
-	componentARNs, err := b.createComponents(ctx, config, created)
+func (b *ImageBuilder) createBuildResources(ctx context.Context, config builder.Config, amiTarget *builder.Target, created *CreatedResources, stagedFiles map[int]*StagedFile) (*buildResources, error) {
+	componentARNs, err := b.createComponents(ctx, config, created, stagedFiles)
 	if err != nil {
 		return nil, WrapWithRemediation(err, "failed to create components")
 	}
@@ -294,6 +307,58 @@ func (b *ImageBuilder) finalizeBuild(ctx context.Context, amiID string, target *
 	}
 }
 
+// stageFileProvisioners uploads any `file` provisioner sources to the
+// configured S3 staging bucket so the build instance can fetch them via
+// S3Download. Returns a map keyed by provisioner index. If no `file`
+// provisioners are present, returns an empty map and no error.
+func (b *ImageBuilder) stageFileProvisioners(ctx context.Context, cfg builder.Config) (map[int]*StagedFile, error) {
+	staged := make(map[int]*StagedFile)
+
+	hasFileProvisioner := false
+	for _, prov := range cfg.Provisioners {
+		if prov.Type == "file" {
+			hasFileProvisioner = true
+			break
+		}
+	}
+	if !hasFileProvisioner {
+		return staged, nil
+	}
+
+	if b.fileStager == nil {
+		return nil, fmt.Errorf("file provisioner requires aws.ami.file_staging_bucket to be configured")
+	}
+
+	for i, prov := range cfg.Provisioners {
+		if prov.Type != "file" {
+			continue
+		}
+		if prov.Source == "" {
+			return nil, fmt.Errorf("file provisioner %d: source is required", i)
+		}
+		keyPrefix := fmt.Sprintf("warpgate-staging/%s/%d", b.buildID, i)
+		s, err := b.fileStager.Stage(ctx, prov.Source, keyPrefix)
+		if err != nil {
+			b.cleanupStagedFiles(ctx, staged)
+			return nil, fmt.Errorf("stage file provisioner %d: %w", i, err)
+		}
+		staged[i] = s
+	}
+	return staged, nil
+}
+
+// cleanupStagedFiles removes any S3 objects uploaded for `file` provisioners.
+// Errors are logged inside FileStager.Cleanup; we never fail the build over
+// orphaned staging objects.
+func (b *ImageBuilder) cleanupStagedFiles(ctx context.Context, staged map[int]*StagedFile) {
+	if b.fileStager == nil {
+		return
+	}
+	for _, s := range staged {
+		b.fileStager.Cleanup(ctx, s)
+	}
+}
+
 // Share implements the AMIBuilder interface
 func (b *ImageBuilder) Share(ctx context.Context, amiID string, accountIDs []string) error {
 	return b.operations.ShareAMI(ctx, amiID, accountIDs)
@@ -331,7 +396,7 @@ func (b *ImageBuilder) Close() error {
 }
 
 // createComponents creates Image Builder components from provisioners in parallel using errgroup
-func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Config, created *CreatedResources) ([]string, error) {
+func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Config, created *CreatedResources, stagedFiles map[int]*StagedFile) ([]string, error) {
 	numProvisioners := len(config.Provisioners)
 	if numProvisioners == 0 {
 		return nil, nil
@@ -368,7 +433,12 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 				}
 			}
 
-			arn, err := b.componentGen.GenerateComponent(ctx, prov, componentName, version)
+			opts := GenerateComponentOpts{}
+			if staged, ok := stagedFiles[index]; ok {
+				opts.StagedFile = staged
+			}
+
+			arn, err := b.componentGen.GenerateComponent(ctx, prov, componentName, version, opts)
 			if err != nil {
 				return fmt.Errorf("failed to create component %d (%s): %w", index, prov.Type, err)
 			}

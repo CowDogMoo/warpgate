@@ -149,6 +149,11 @@ type AMIConfig struct {
 	// InstanceProfileName is the IAM instance profile for EC2 Image Builder
 	// The instance profile grants permissions to the build instance
 	InstanceProfileName string `mapstructure:"instance_profile_name"`
+	// FileStagingBucket is the S3 bucket warpgate uploads `file` provisioner
+	// sources to before the build starts. Required when any provisioner has
+	// type=file. The InstanceProfileName must grant s3:GetObject on this
+	// bucket so the build instance can pull the staged objects.
+	FileStagingBucket string `mapstructure:"file_staging_bucket"`
 }
 
 // ContainerConfig holds container build configuration
