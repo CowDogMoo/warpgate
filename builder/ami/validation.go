@@ -623,9 +623,25 @@ func (v *Validator) validateProvisioners(result *ValidationResult, config builde
 			} else {
 				result.AddInfo("Provisioner %d: powershell with %d scripts", i, len(p.PSScripts))
 			}
+		case "file":
+			validateFileProvisioner(result, i, p)
 		default:
 			result.AddError("Provisioner %d: unknown type '%s'", i, p.Type)
 		}
+	}
+}
+
+// validateFileProvisioner validates a `file` provisioner's source and destination.
+func validateFileProvisioner(result *ValidationResult, i int, p builder.Provisioner) {
+	switch {
+	case p.Source == "" && p.Destination == "":
+		result.AddError("Provisioner %d (file): source and destination are required", i)
+	case p.Source == "":
+		result.AddError("Provisioner %d (file): source is required", i)
+	case p.Destination == "":
+		result.AddError("Provisioner %d (file): destination is required", i)
+	default:
+		result.AddInfo("Provisioner %d: file %s -> %s (staged via aws.ami.file_staging_bucket)", i, p.Source, p.Destination)
 	}
 }
 
