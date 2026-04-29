@@ -213,6 +213,37 @@ func TestValidateProvisioners(t *testing.T) {
 			wantInfoCount: 1,
 		},
 		{
+			name: "valid file provisioner",
+			provisioners: []builder.Provisioner{
+				{Type: "file", Source: "./local.txt", Destination: "/etc/app/local.txt"},
+			},
+			wantInfoCount: 2,
+		},
+		{
+			name: "file without source errors",
+			provisioners: []builder.Provisioner{
+				{Type: "file", Destination: "/etc/app/local.txt"},
+			},
+			wantErrors:    1,
+			wantInfoCount: 1,
+		},
+		{
+			name: "file without destination errors",
+			provisioners: []builder.Provisioner{
+				{Type: "file", Source: "./local.txt"},
+			},
+			wantErrors:    1,
+			wantInfoCount: 1,
+		},
+		{
+			name: "file without source or destination errors",
+			provisioners: []builder.Provisioner{
+				{Type: "file"},
+			},
+			wantErrors:    1,
+			wantInfoCount: 1,
+		},
+		{
 			name: "unknown provisioner type errors",
 			provisioners: []builder.Provisioner{
 				{Type: "terraform"},
