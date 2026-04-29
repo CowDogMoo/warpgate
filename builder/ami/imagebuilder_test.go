@@ -227,7 +227,7 @@ func TestComponentDocument(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gen := &ComponentGenerator{}
-			_, err := gen.createComponentDocument(tt.provisioner)
+			_, err := gen.createComponentDocument(tt.provisioner, GenerateComponentOpts{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("createComponentDocument() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -308,7 +308,7 @@ func TestPowerShellComponent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gen := &ComponentGenerator{}
-			doc, err := gen.createComponentDocument(tt.provisioner)
+			doc, err := gen.createComponentDocument(tt.provisioner, GenerateComponentOpts{})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("createComponentDocument() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -1677,7 +1677,7 @@ func TestCreateComponents_NoProvisioners(t *testing.T) {
 	arns, err := ib.createComponents(context.Background(), builder.Config{
 		Name:         "test",
 		Provisioners: []builder.Provisioner{},
-	}, &CreatedResources{})
+	}, &CreatedResources{}, nil)
 
 	assert.NoError(t, err)
 	assert.Nil(t, arns)
@@ -1712,7 +1712,7 @@ func TestCreateComponents_Success(t *testing.T) {
 			{Type: "shell", Inline: []string{"echo hello"}},
 			{Type: "shell", Inline: []string{"echo world"}},
 		},
-	}, created)
+	}, created, nil)
 
 	require.NoError(t, err)
 	assert.Len(t, arns, 2)
@@ -1754,7 +1754,7 @@ func TestCreateComponents_PartialFailure(t *testing.T) {
 			{Type: "shell", Inline: []string{"echo hello"}},
 			{Type: "shell", Inline: []string{"echo world"}},
 		},
-	}, created)
+	}, created, nil)
 
 	assert.Error(t, err)
 	assert.Nil(t, arns)
@@ -3221,7 +3221,7 @@ func TestCreateBuildResources_ComponentFailure(t *testing.T) {
 		Provisioners: []builder.Provisioner{
 			{Type: "shell", Inline: []string{"echo hello"}},
 		},
-	}, &builder.Target{Region: "us-east-1"}, created)
+	}, &builder.Target{Region: "us-east-1"}, created, nil)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create components")

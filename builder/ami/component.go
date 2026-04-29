@@ -49,9 +49,18 @@ func NewComponentGenerator(clients *AWSClients) *ComponentGenerator {
 	}
 }
 
+// GenerateComponentOpts carries optional context required to generate a
+// component document. Currently used to pass S3 staging info for the `file`
+// provisioner; safe to leave zero-valued for other provisioner types.
+type GenerateComponentOpts struct {
+	// StagedFile is the result of pre-uploading a `file` provisioner's source
+	// to S3. Only consulted when provisioner.Type == "file".
+	StagedFile *StagedFile
+}
+
 // GenerateComponent creates an Image Builder component from a provisioner
-func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner builder.Provisioner, name, version string) (*string, error) {
-	document, err := g.createComponentDocument(provisioner)
+func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner builder.Provisioner, name, version string, opts GenerateComponentOpts) (*string, error) {
+	document, err := g.createComponentDocument(provisioner, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create component document: %w", err)
 	}
@@ -88,7 +97,7 @@ func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner 
 }
 
 // createComponentDocument generates a YAML document for the Image Builder component
-func (g *ComponentGenerator) createComponentDocument(provisioner builder.Provisioner) (string, error) {
+func (g *ComponentGenerator) createComponentDocument(provisioner builder.Provisioner, opts GenerateComponentOpts) (string, error) {
 	switch provisioner.Type {
 	case "shell":
 		return g.createShellComponent(provisioner)
@@ -98,9 +107,68 @@ func (g *ComponentGenerator) createComponentDocument(provisioner builder.Provisi
 		return g.createAnsibleComponent(provisioner)
 	case "powershell":
 		return g.createPowerShellComponent(provisioner)
+	case "file":
+		return g.createFileComponent(provisioner, opts.StagedFile)
 	default:
 		return "", fmt.Errorf("unsupported provisioner type: %s", provisioner.Type)
 	}
+}
+
+// createFileComponent emits an S3Download component referencing the staged
+// upload. The build instance's IAM profile must allow s3:GetObject on the
+// staging bucket. If a Mode is set on the provisioner, a follow-on
+// ExecuteBash step applies it via chmod (Linux only — Windows file
+// provisioner mode is not supported).
+func (g *ComponentGenerator) createFileComponent(provisioner builder.Provisioner, staged *StagedFile) (string, error) {
+	if provisioner.Source == "" {
+		return "", fmt.Errorf("file provisioner has no source")
+	}
+	if provisioner.Destination == "" {
+		return "", fmt.Errorf("file provisioner has no destination")
+	}
+	if staged == nil {
+		return "", fmt.Errorf("file provisioner source has not been staged to S3 — set aws.ami.file_staging_bucket")
+	}
+
+	steps := []map[string]interface{}{
+		{
+			"name":   "DownloadFile",
+			"action": "S3Download",
+			"inputs": []map[string]interface{}{
+				{
+					"source":      staged.SourceURI(),
+					"destination": provisioner.Destination,
+					"overwrite":   true,
+				},
+			},
+		},
+	}
+
+	if provisioner.Mode != "" && determinePlatform(provisioner) != types.PlatformWindows {
+		steps = append(steps, map[string]interface{}{
+			"name":   "ApplyMode",
+			"action": "ExecuteBash",
+			"inputs": map[string]interface{}{
+				"commands": []string{
+					fmt.Sprintf("chmod -R %s %s", provisioner.Mode, provisioner.Destination),
+				},
+			},
+		})
+	}
+
+	doc := map[string]interface{}{
+		"schemaVersion": 1.0,
+		"name":          "FileProvisioner",
+		"description":   "File provisioner component (S3Download)",
+		"phases": []map[string]interface{}{
+			{
+				"name":  "build",
+				"steps": steps,
+			},
+		},
+	}
+
+	return marshalComponentDocument(doc)
 }
 
 // createShellComponent creates a component document for shell provisioner

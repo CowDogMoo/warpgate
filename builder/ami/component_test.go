@@ -63,7 +63,7 @@ func TestGenerateComponent_Success(t *testing.T) {
 		Inline: []string{"echo hello"},
 	}
 
-	arn, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0")
+	arn, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0", GenerateComponentOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, expectedARN, *arn)
 }
@@ -93,7 +93,7 @@ func TestGenerateComponent_AlreadyExists(t *testing.T) {
 		Inline: []string{"echo hello"},
 	}
 
-	arn, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0")
+	arn, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0", GenerateComponentOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, expectedARN, *arn)
 }
@@ -115,7 +115,7 @@ func TestGenerateComponent_AlreadyExistsButGetARNFails(t *testing.T) {
 		Inline: []string{"echo hello"},
 	}
 
-	_, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0")
+	_, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0", GenerateComponentOpts{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "component exists but failed to get ARN")
 }
@@ -134,7 +134,7 @@ func TestGenerateComponent_CreateError(t *testing.T) {
 		Inline: []string{"echo hello"},
 	}
 
-	_, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0")
+	_, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0", GenerateComponentOpts{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create component")
 }
@@ -148,7 +148,7 @@ func TestGenerateComponent_InvalidDocument(t *testing.T) {
 		Type: "unknown_type",
 	}
 
-	_, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0")
+	_, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0", GenerateComponentOpts{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to create component document")
 }
@@ -911,7 +911,7 @@ func TestCreateComponentDocument_AllTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gen := &ComponentGenerator{}
-			doc, err := gen.createComponentDocument(tt.provisioner)
+			doc, err := gen.createComponentDocument(tt.provisioner, GenerateComponentOpts{})
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -1013,7 +1013,84 @@ func TestCreateScriptComponent_ViaComponentDocument(t *testing.T) {
 	doc, err := gen.createComponentDocument(builder.Provisioner{
 		Type:    "script",
 		Scripts: []string{scriptPath},
-	})
+	}, GenerateComponentOpts{})
 	require.NoError(t, err)
 	assert.True(t, strings.Contains(doc, "ScriptProvisioner"))
+}
+
+func TestCreateFileComponent_File(t *testing.T) {
+	t.Parallel()
+
+	gen := &ComponentGenerator{}
+	staged := &StagedFile{
+		Bucket:    "my-bucket",
+		KeyPrefix: "warpgate-staging/build-1/0/",
+		BaseName:  "app.tar.gz",
+	}
+	prov := builder.Provisioner{
+		Type:        "file",
+		Source:      "/local/app.tar.gz",
+		Destination: "/opt/app.tar.gz",
+		Mode:        "0644",
+	}
+
+	doc, err := gen.createComponentDocument(prov, GenerateComponentOpts{StagedFile: staged})
+	require.NoError(t, err)
+	assert.Contains(t, doc, "FileProvisioner")
+	assert.Contains(t, doc, "S3Download")
+	assert.Contains(t, doc, "s3://my-bucket/warpgate-staging/build-1/0/app.tar.gz")
+	assert.Contains(t, doc, "/opt/app.tar.gz")
+	assert.Contains(t, doc, "chmod -R 0644 /opt/app.tar.gz")
+}
+
+func TestCreateFileComponent_Directory(t *testing.T) {
+	t.Parallel()
+
+	gen := &ComponentGenerator{}
+	staged := &StagedFile{
+		Bucket:      "my-bucket",
+		KeyPrefix:   "warpgate-staging/build-2/1/",
+		IsDirectory: true,
+		BaseName:    "configs",
+	}
+	prov := builder.Provisioner{
+		Type:        "file",
+		Source:      "/local/configs",
+		Destination: "/etc/configs/",
+	}
+
+	doc, err := gen.createComponentDocument(prov, GenerateComponentOpts{StagedFile: staged})
+	require.NoError(t, err)
+	assert.Contains(t, doc, "s3://my-bucket/warpgate-staging/build-2/1/configs/*")
+	assert.NotContains(t, doc, "chmod")
+}
+
+func TestCreateFileComponent_MissingStaging(t *testing.T) {
+	t.Parallel()
+
+	gen := &ComponentGenerator{}
+	prov := builder.Provisioner{
+		Type:        "file",
+		Source:      "/local/file",
+		Destination: "/dest",
+	}
+
+	_, err := gen.createComponentDocument(prov, GenerateComponentOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "file_staging_bucket")
+}
+
+func TestCreateFileComponent_MissingFields(t *testing.T) {
+	t.Parallel()
+
+	gen := &ComponentGenerator{}
+	staged := &StagedFile{Bucket: "b", BaseName: "f"}
+
+	_, err := gen.createComponentDocument(builder.Provisioner{Type: "file", Destination: "/d"}, GenerateComponentOpts{StagedFile: staged})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no source")
+
+	_, err = gen.createComponentDocument(builder.Provisioner{Type: "file", Source: "/s"}, GenerateComponentOpts{StagedFile: staged})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no destination")
 }

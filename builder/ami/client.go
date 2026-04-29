@@ -33,6 +33,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
@@ -45,6 +46,7 @@ type AWSClients struct {
 	IAM            IAMAPI
 	SSM            SSMAPI
 	CloudWatchLogs CloudWatchLogsAPI
+	S3             S3API
 	Config         aws.Config
 }
 
@@ -103,6 +105,7 @@ func NewAWSClients(ctx context.Context, cfg ClientConfig) (*AWSClients, error) {
 		IAM:            iam.NewFromConfig(awsCfg),
 		SSM:            ssm.NewFromConfig(awsCfg),
 		CloudWatchLogs: cloudwatchlogs.NewFromConfig(awsCfg),
+		S3:             s3.NewFromConfig(awsCfg),
 		Config:         awsCfg,
 	}
 
