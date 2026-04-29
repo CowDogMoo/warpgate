@@ -36,6 +36,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
 	ibtypes "github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/cowdogmoo/warpgate/v3/builder"
@@ -3324,4 +3325,110 @@ func TestOptimizedResourceCleanup_RecipeARNError(t *testing.T) {
 	bo := NewBatchOperations(clients)
 	err := bo.OptimizedResourceCleanup(context.Background(), "test")
 	assert.NoError(t, err)
+}
+
+func TestStageFileProvisioners_NoFileProvisioners(t *testing.T) {
+	t.Parallel()
+
+	ib := &ImageBuilder{buildID: "build-1"}
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo hi"}},
+		},
+	}
+
+	staged, err := ib.stageFileProvisioners(context.Background(), cfg)
+	require.NoError(t, err)
+	assert.Empty(t, staged)
+}
+
+func TestStageFileProvisioners_MissingStagingBucket(t *testing.T) {
+	t.Parallel()
+
+	ib := &ImageBuilder{buildID: "build-1"}
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{Type: "file", Source: "/tmp/x", Destination: "/dst"},
+		},
+	}
+
+	_, err := ib.stageFileProvisioners(context.Background(), cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "file_staging_bucket")
+}
+
+func TestStageFileProvisioners_MissingSource(t *testing.T) {
+	t.Parallel()
+
+	ib := &ImageBuilder{
+		buildID:    "build-1",
+		fileStager: NewFileStager(&MockS3Client{}, "bkt"),
+	}
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{Type: "file", Destination: "/dst"},
+		},
+	}
+
+	_, err := ib.stageFileProvisioners(context.Background(), cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "source is required")
+}
+
+func TestStageFileProvisioners_Stages(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	src1 := filepath.Join(dir, "a.txt")
+	src2 := filepath.Join(dir, "b.txt")
+	require.NoError(t, os.WriteFile(src1, []byte("a"), 0o600))
+	require.NoError(t, os.WriteFile(src2, []byte("b"), 0o600))
+
+	mock := &MockS3Client{}
+	ib := &ImageBuilder{
+		buildID:    "build-99",
+		fileStager: NewFileStager(mock, "bkt"),
+	}
+	cfg := builder.Config{
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo"}},
+			{Type: "file", Source: src1, Destination: "/dst/a"},
+			{Type: "file", Source: src2, Destination: "/dst/b"},
+		},
+	}
+
+	staged, err := ib.stageFileProvisioners(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, staged, 2)
+	assert.Equal(t, "warpgate-staging/build-99/1/", staged[1].KeyPrefix)
+	assert.Equal(t, "warpgate-staging/build-99/2/", staged[2].KeyPrefix)
+	assert.Equal(t, "a.txt", staged[1].BaseName)
+	assert.Equal(t, "b.txt", staged[2].BaseName)
+}
+
+func TestCleanupStagedFiles_NoStager(t *testing.T) {
+	t.Parallel()
+
+	ib := &ImageBuilder{}
+	ib.cleanupStagedFiles(context.Background(), map[int]*StagedFile{
+		0: {Bucket: "b", BaseName: "f"},
+	})
+}
+
+func TestCleanupStagedFiles_DeletesAll(t *testing.T) {
+	t.Parallel()
+
+	var deletes atomic.Int32
+	mock := &MockS3Client{}
+	mock.DeleteObjectFunc = func(_ context.Context, _ *s3.DeleteObjectInput, _ ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+		deletes.Add(1)
+		return &s3.DeleteObjectOutput{}, nil
+	}
+
+	ib := &ImageBuilder{fileStager: NewFileStager(mock, "bkt")}
+	ib.cleanupStagedFiles(context.Background(), map[int]*StagedFile{
+		0: {Bucket: "bkt", KeyPrefix: "p/", BaseName: "a"},
+		1: {Bucket: "bkt", KeyPrefix: "q/", BaseName: "b"},
+	})
+	assert.Equal(t, int32(2), deletes.Load())
 }
