@@ -551,7 +551,7 @@
         },
         "subnet_id": {
           "type": "string",
-          "description": "SubnetID is the VPC subnet ID to use for the build instance"
+          "description": "SubnetID is the subnet to attach the build VM to.\n  AMI: VPC subnet ID like \"subnet-abcd1234\".\n  Azure: ARM resource ID under Microsoft.Network/virtualNetworks/.../subnets.\nWhen set on an Azure target, AIB skips its default public IP and routes\ntraffic through a proxy VM in the same subnet (see ProxyVMSize)."
         },
         "volume_size": {
           "type": "integer",
@@ -616,6 +616,10 @@
           "type": "string",
           "description": "StagingResourceGroup is the resource group used by AIB for ephemeral build resources\nIf empty, AIB creates one automatically"
         },
+        "proxy_vm_size": {
+          "type": "string",
+          "description": "ProxyVMSize overrides the AIB proxy VM size used when SubnetID is set\n(Azure builds). AIB defaults to Standard_A1_v2 if empty. Has no effect\nfor AMI builds."
+        },
         "source_image": {
           "$ref": "#/$defs/AzureSourceImage",
           "description": "SourceImage references the parent image. Use either a marketplace reference\n(publisher/offer/sku/version) or a Compute Gallery image version resource ID."
@@ -626,6 +630,13 @@
           },
           "type": "array",
           "description": "TargetRegions lists Azure regions where the gallery image version is replicated.\nIf empty, only the build Location receives the image version."
+        },
+        "share_with": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "ShareWith lists Azure AD principal object IDs (users, groups, service\nprincipals) that should be granted the Reader role on the published\ngallery image version after a successful build. Sharing is idempotent;\nre-running with the same list is a no-op."
         },
         "image_tags": {
           "additionalProperties": {
