@@ -26,6 +26,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -42,6 +43,14 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/logging"
 	"golang.org/x/sync/errgroup"
 )
+
+// componentForceBumpMaxAttempts caps the bump-and-retry loop used when --force
+// races with concurrent builds (or accumulated stale components) for the same
+// next-available patch version. Each attempt re-queries Image Builder for the
+// current highest patch, so even with hundreds of stale versions the loop
+// converges quickly — but we bound it to keep a misbehaving environment from
+// looping forever.
+const componentForceBumpMaxAttempts = 10
 
 // ImageBuilder implements the AMIBuilder interface
 type ImageBuilder struct {
@@ -419,26 +428,19 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 			componentName := config.Name + "-" + fmt.Sprint(index)
 			logging.InfoContext(ctx, "Creating component: %s (index: %d)", prov.Type, index)
 
-			version := NormalizeSemanticVersion(config.Version)
+			baseVersion := NormalizeSemanticVersion(config.Version)
 			if prov.ComponentVersion != "" {
-				version = NormalizeSemanticVersion(prov.ComponentVersion)
-				logging.InfoContext(ctx, "Using provisioner-specified component version: %s", version)
+				baseVersion = NormalizeSemanticVersion(prov.ComponentVersion)
+				logging.InfoContext(ctx, "Using provisioner-specified component version: %s", baseVersion)
 			}
 
-			if b.forceRecreate {
-				nextVersion, err := b.resourceManager.GetNextComponentVersion(ctx, componentName+"-"+prov.Type, version)
-				if err == nil && nextVersion != version {
-					logging.InfoContext(ctx, "Component version conflict detected, using next version: %s", nextVersion)
-					version = nextVersion
-				}
-			}
-
-			opts := GenerateComponentOpts{}
+			opts := GenerateComponentOpts{BumpOnConflict: b.forceRecreate}
 			if staged, ok := stagedFiles[index]; ok {
 				opts.StagedFile = staged
 			}
 
-			arn, err := b.componentGen.GenerateComponent(ctx, prov, componentName, version, opts)
+			fullComponentName := componentName + "-" + prov.Type
+			arn, err := b.createComponentWithBump(ctx, prov, componentName, fullComponentName, baseVersion, opts)
 			if err != nil {
 				return fmt.Errorf("failed to create component %d (%s): %w", index, prov.Type, err)
 			}
@@ -467,6 +469,71 @@ func (b *ImageBuilder) createComponents(ctx context.Context, config builder.Conf
 
 	logging.InfoContext(ctx, "Successfully created %d components", numProvisioners)
 	return componentARNs, nil
+}
+
+// createComponentWithBump creates an Image Builder component, retrying with
+// the next available patch version when a duplicate-version conflict occurs.
+// Conflicts are common with --force in two scenarios:
+//
+//  1. Stale leftover versions from prior failed builds inflate the version
+//     space, but we still pick "highest+1" — fine on its own, but…
+//  2. Two concurrent builds both compute the same "highest+1" between their
+//     ListComponents and CreateComponent calls. CreateComponent is the only
+//     authoritative arbiter, so on conflict we re-list and try again.
+//
+// When BumpOnConflict is unset (the non-force path) GenerateComponent latches
+// onto the existing ARN exactly like before — this loop runs at most once.
+func (b *ImageBuilder) createComponentWithBump(ctx context.Context, prov builder.Provisioner, componentName, fullComponentName, baseVersion string, opts GenerateComponentOpts) (*string, error) {
+	version := baseVersion
+	if opts.BumpOnConflict {
+		nextVersion, err := b.resourceManager.GetNextComponentVersion(ctx, fullComponentName, version)
+		if err == nil && nextVersion != version {
+			logging.InfoContext(ctx, "Bumping component %s to next available version: %s", fullComponentName, nextVersion)
+			version = nextVersion
+		}
+	}
+
+	for attempt := 1; attempt <= componentForceBumpMaxAttempts; attempt++ {
+		arn, err := b.componentGen.GenerateComponent(ctx, prov, componentName, version, opts)
+		if err == nil {
+			return arn, nil
+		}
+		if !errors.Is(err, ErrComponentVersionExists) {
+			return nil, err
+		}
+
+		nextVersion, bumpErr := b.resourceManager.GetNextComponentVersion(ctx, fullComponentName, baseVersion)
+		if bumpErr != nil {
+			return nil, fmt.Errorf("conflict on %s@%s and re-bump failed: %w", fullComponentName, version, bumpErr)
+		}
+		if nextVersion == version {
+			// Another writer must have raced us *and* taken the same patch we
+			// just attempted. Synthesize the next slot manually so we make
+			// forward progress on the very next try.
+			nextVersion = bumpPatch(version)
+		}
+		logging.InfoContext(ctx, "Component %s@%s race lost (attempt %d/%d), retrying with %s",
+			fullComponentName, version, attempt, componentForceBumpMaxAttempts, nextVersion)
+		version = nextVersion
+	}
+	return nil, fmt.Errorf("exhausted %d bump attempts creating component %s; another build is concurrently bumping the same name", componentForceBumpMaxAttempts, fullComponentName)
+}
+
+// bumpPatch returns version with its third component incremented by one. If
+// the input has fewer than three dotted components or a non-numeric patch, it
+// falls back to "<input>.1" — close enough to the real format that the next
+// GetNextComponentVersion call will recover.
+func bumpPatch(version string) string {
+	parts := strings.Split(version, ".")
+	if len(parts) < 3 {
+		return version + ".1"
+	}
+	var patch int
+	if _, err := fmt.Sscanf(parts[2], "%d", &patch); err != nil {
+		return version + ".1"
+	}
+	parts[2] = fmt.Sprintf("%d", patch+1)
+	return strings.Join(parts, ".")
 }
 
 // createInfrastructureConfig creates an infrastructure configuration

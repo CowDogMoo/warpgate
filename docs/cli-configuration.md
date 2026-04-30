@@ -202,6 +202,61 @@ warpgate build myami --target ami --region us-east-1
 warpgate build myami --target ami --instance-type t3.large
 ```
 
+### Azure Configuration
+
+Default Azure settings for Compute Gallery builds via Azure VM Image Builder:
+
+```yaml
+azure:
+  subscription_id: 00000000-0000-0000-0000-000000000000
+  tenant_id: 00000000-0000-0000-0000-000000000000
+  resource_group: my-build-rg
+  location: eastus
+  identity_id: /subscriptions/.../userAssignedIdentities/aib-uami
+  image:
+    vm_size: Standard_D2s_v3
+    polling_interval_sec: 30
+    build_timeout_min: 60
+    # Optional: enables local file paths in `file` provisioners by uploading
+    # to blob storage before the build runs.
+    file_staging_storage_account: mystagingacct
+    file_staging_container: warpgate-staging
+```
+
+**Authentication:**
+
+Warpgate uses `DefaultAzureCredential`, which resolves credentials in this
+order: environment variables, managed identity, Azure CLI (`az login`).
+Standard `AZURE_SUBSCRIPTION_ID` and `AZURE_TENANT_ID` env vars are honoured.
+
+Azure builds do not auto-discover missing target fields during
+`warpgate build`. Define the Azure target fields explicitly in the template,
+or override them with CLI flags/global config before building.
+
+**Required RBAC:**
+
+- The credential principal needs Contributor on the build resource group and
+  the Compute Gallery resource group.
+- The user-assigned managed identity referenced by `identity_id` needs the
+  AIB role on the build resource group and the role to publish gallery image
+  versions on the gallery resource group.
+- When file staging is enabled, the credential principal needs Storage Blob
+  Data Contributor on the staging account, and the UAMI needs Storage Blob
+  Data Reader.
+
+**Override at build time:**
+
+```bash
+# Override location and identity
+warpgate build my-azure-template --target azure \
+  --location westus2 \
+  --identity-id /subscriptions/.../userAssignedIdentities/aib-uami
+
+# Replicate to additional regions
+warpgate build my-azure-template --target azure \
+  --target-regions westus2,westeurope
+```
+
 ### Build Defaults
 
 Configure default build behavior:

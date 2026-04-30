@@ -1763,6 +1763,139 @@ func TestCreateComponents_PartialFailure(t *testing.T) {
 	assert.NotEmpty(t, created.ComponentARNs)
 }
 
+func TestCreateComponents_ForceBumpsThroughConflicts(t *testing.T) {
+	// Simulates the "50+ stale ares-golden-image-* components, parallel --force"
+	// scenario: ListComponents reports a high water mark, the first
+	// CreateComponent attempt collides (a concurrent racer claimed it), the
+	// second attempt succeeds at the bumped patch.
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	// ListComponents returns the same view twice — both bump computations
+	// produce 1.0.51 from the same prefix, mimicking a real race where the
+	// concurrent build hasn't yet shown up in our paginated list.
+	mocks.imageBuilder.ListComponentsFunc = func(ctx context.Context, params *imagebuilder.ListComponentsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentsOutput, error) {
+		return &imagebuilder.ListComponentsOutput{
+			ComponentVersionList: []ibtypes.ComponentVersion{
+				{Version: aws.String("1.0.50"), Arn: aws.String("arn:stale50")},
+			},
+		}, nil
+	}
+
+	var attempts atomic.Int32
+	mocks.imageBuilder.CreateComponentFunc = func(ctx context.Context, params *imagebuilder.CreateComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateComponentOutput, error) {
+		n := attempts.Add(1)
+		if n == 1 {
+			// Concurrent racer beat us to 1.0.51.
+			return nil, &ibtypes.ResourceAlreadyExistsException{Message: aws.String("dup 1.0.51")}
+		}
+		// Loop falls back to bumpPatch -> 1.0.52, succeeds.
+		return &imagebuilder.CreateComponentOutput{
+			ComponentBuildVersionArn: params.SemanticVersion,
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		componentGen:    NewComponentGenerator(clients),
+		resourceManager: NewResourceManager(clients),
+		globalConfig:    newTestGlobalConfig(),
+		forceRecreate:   true,
+	}
+	created := &CreatedResources{}
+	arns, err := ib.createComponents(context.Background(), builder.Config{
+		Name:         "ares-golden-image",
+		Version:      "1.0.0",
+		Provisioners: []builder.Provisioner{{Type: "shell", Inline: []string{"echo x"}}},
+	}, created, nil)
+
+	require.NoError(t, err)
+	require.Len(t, arns, 1)
+	assert.Equal(t, "1.0.52", arns[0],
+		"expected the second attempt to land on 1.0.52 after 1.0.51 collision; got %s", arns[0])
+	assert.Equal(t, int32(2), attempts.Load())
+}
+
+func TestCreateComponents_ForceSurfacesNonConflictErrors(t *testing.T) {
+	// A non-conflict error (e.g., access denied) must NOT trigger the bump
+	// loop — it should propagate immediately.
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.CreateComponentFunc = func(ctx context.Context, params *imagebuilder.CreateComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateComponentOutput, error) {
+		return nil, fmt.Errorf("AccessDeniedException: not authorized")
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		componentGen:    NewComponentGenerator(clients),
+		resourceManager: NewResourceManager(clients),
+		globalConfig:    newTestGlobalConfig(),
+		forceRecreate:   true,
+	}
+	_, err := ib.createComponents(context.Background(), builder.Config{
+		Name:         "test",
+		Version:      "1.0.0",
+		Provisioners: []builder.Provisioner{{Type: "shell", Inline: []string{"echo"}}},
+	}, &CreatedResources{}, nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "AccessDenied")
+}
+
+func TestCreateComponents_NoForceLatchesOntoExisting(t *testing.T) {
+	// Without --force, hitting an existing version should return that version's
+	// ARN (idempotent behavior — preserved from before this change).
+	t.Parallel()
+
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.CreateComponentFunc = func(ctx context.Context, params *imagebuilder.CreateComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateComponentOutput, error) {
+		return nil, &ibtypes.ResourceAlreadyExistsException{Message: aws.String("dup")}
+	}
+	mocks.imageBuilder.ListComponentsFunc = func(ctx context.Context, params *imagebuilder.ListComponentsInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.ListComponentsOutput, error) {
+		return &imagebuilder.ListComponentsOutput{
+			ComponentVersionList: []ibtypes.ComponentVersion{
+				{Version: aws.String("1.0.0"), Arn: aws.String("arn:existing")},
+			},
+		}, nil
+	}
+
+	ib := &ImageBuilder{
+		clients:         clients,
+		componentGen:    NewComponentGenerator(clients),
+		resourceManager: NewResourceManager(clients),
+		globalConfig:    newTestGlobalConfig(),
+		forceRecreate:   false,
+	}
+	arns, err := ib.createComponents(context.Background(), builder.Config{
+		Name:         "test",
+		Version:      "1.0.0",
+		Provisioners: []builder.Provisioner{{Type: "shell", Inline: []string{"echo"}}},
+	}, &CreatedResources{}, nil)
+
+	require.NoError(t, err)
+	require.Len(t, arns, 1)
+	assert.Equal(t, "arn:existing", arns[0])
+}
+
+func TestBumpPatch(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"1.0.0":   "1.0.1",
+		"1.0.51":  "1.0.52",
+		"2.5.999": "2.5.1000",
+		"1.0":     "1.0.1",
+		"foo":     "foo.1",
+		"1.0.x":   "1.0.x.1",
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, bumpPatch(in), "bumpPatch(%q)", in)
+	}
+}
+
 func TestFinalizeBuild_WithTags(t *testing.T) {
 	t.Parallel()
 

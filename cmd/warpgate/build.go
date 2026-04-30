@@ -32,6 +32,7 @@ import (
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
+	"github.com/cowdogmoo/warpgate/v3/builder/azure"
 	"github.com/cowdogmoo/warpgate/v3/cli"
 	"github.com/cowdogmoo/warpgate/v3/config"
 	wgit "github.com/cowdogmoo/warpgate/v3/git"
@@ -70,6 +71,18 @@ type buildOptions struct {
 	streamLogs      bool     // Stream CloudWatch/SSM logs during build
 	showEC2Status   bool     // Show EC2 instance status during build
 	outputManifest  string   // Path to write build manifest JSON
+
+	// Azure-specific flags
+	azureSubscription string   // Azure subscription ID
+	azureLocation     string   // Azure region (overrides config and target)
+	azureResourceGrp  string   // Azure resource group
+	azureGallery      string   // Azure Compute Gallery name
+	azureImageDef     string   // Azure gallery image definition
+	azureVMSize       string   // VM size used by AIB during the build
+	azureIdentityID   string   // User-assigned managed identity resource ID
+	azureTargetRegion []string // Replicate gallery image version to additional regions
+	azureSubnetID     string   // Pre-existing subnet for AIB build VM (no public IP)
+	azureProxyVMSize  string   // VM size for the AIB proxy (only used when SubnetID is set)
 }
 
 var buildCmd *cobra.Command
@@ -144,7 +157,7 @@ Examples:
 	buildCmd.Flags().StringArrayVar(&opts.buildArgs, "build-arg", []string{}, "Set build arguments (key=value)")
 	buildCmd.Flags().BoolVar(&opts.noCache, "no-cache", false, "Disable all caching")
 	buildCmd.Flags().BoolVar(&opts.forceRecreate, "force", false, "Force recreation of existing AWS resources (AMI builds only)")
-	buildCmd.Flags().BoolVar(&opts.cleanupOnFinish, "cleanup", false, "Delete all build resources after successful build (AMI builds only)")
+	buildCmd.Flags().BoolVar(&opts.cleanupOnFinish, "cleanup", false, "Delete all build resources after successful build. Default: false for AMI, true for Azure (pass --cleanup=false to keep the Azure ImageTemplate around for debugging).")
 	buildCmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Validate configuration without creating resources (AMI builds only)")
 	buildCmd.Flags().StringSliceVar(&opts.regions, "regions", nil, "Build AMI in multiple regions (comma-separated)")
 	buildCmd.Flags().BoolVar(&opts.parallelRegions, "parallel-regions", false, "Build in all regions in parallel (default: sequential)")
@@ -152,6 +165,31 @@ Examples:
 	buildCmd.Flags().BoolVar(&opts.streamLogs, "stream-logs", false, "Stream CloudWatch/SSM logs from build instance (AMI builds only)")
 	buildCmd.Flags().BoolVar(&opts.showEC2Status, "show-ec2-status", false, "Show EC2 instance status during build (AMI builds only)")
 	buildCmd.Flags().StringVar(&opts.outputManifest, "output-manifest", "", "Write build manifest JSON to file")
+
+	buildCmd.Flags().StringVar(&opts.azureSubscription, "subscription", "", "Azure subscription ID (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureLocation, "location", "", "Azure region for builds (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureResourceGrp, "resource-group", "", "Azure resource group (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureGallery, "gallery", "", "Azure Compute Gallery name (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureImageDef, "image-definition", "", "Azure gallery image definition (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureVMSize, "vm-size", "", "VM size used by Azure Image Builder (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureIdentityID, "identity-id", "", "User-assigned managed identity resource ID (Azure builds only)")
+	buildCmd.Flags().StringSliceVar(&opts.azureTargetRegion, "target-regions", nil, "Azure regions to replicate the gallery image version to (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureSubnetID, "subnet-id", "", "Pre-existing subnet resource ID for the build VM. Disables AIB's public IP (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureProxyVMSize, "proxy-vm-size", "", "VM size for the AIB proxy when --subnet-id is set (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureSubscription, "azure-subscription-id", "", "Alias for --subscription (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureLocation, "azure-location", "", "Alias for --location (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureResourceGrp, "azure-resource-group", "", "Alias for --resource-group (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureGallery, "azure-gallery", "", "Alias for --gallery (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureImageDef, "azure-image-definition", "", "Alias for --image-definition (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureVMSize, "azure-vm-size", "", "Alias for --vm-size (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureIdentityID, "azure-identity-id", "", "Alias for --identity-id (Azure builds only)")
+	_ = buildCmd.Flags().MarkHidden("azure-subscription-id")
+	_ = buildCmd.Flags().MarkHidden("azure-location")
+	_ = buildCmd.Flags().MarkHidden("azure-resource-group")
+	_ = buildCmd.Flags().MarkHidden("azure-gallery")
+	_ = buildCmd.Flags().MarkHidden("azure-image-definition")
+	_ = buildCmd.Flags().MarkHidden("azure-vm-size")
+	_ = buildCmd.Flags().MarkHidden("azure-identity-id")
 
 	registerBuildCompletions(buildCmd)
 }
@@ -176,6 +214,7 @@ func registerBuildCompletions(cmd *cobra.Command) {
 		return []string{
 			"container\tBuild a container image",
 			"ami\tBuild an AWS AMI",
+			"azure\tBuild an Azure Compute Gallery image",
 		}, cobra.ShellCompDirectiveNoFileComp
 	})
 
@@ -240,6 +279,7 @@ func getCommonRegistries() []string {
 var validBuildTargets = map[string]bool{
 	"container": true,
 	"ami":       true,
+	"azure":     true,
 	"":          true, // Empty is valid (auto-detected from config)
 }
 
@@ -253,7 +293,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	// Validate --target flag if specified
 	if !validBuildTargets[opts.targetType] {
-		return fmt.Errorf("invalid target: %q. Valid options: container, ami", opts.targetType)
+		return fmt.Errorf("invalid target: %q. Valid options: container, ami, azure", opts.targetType)
 	}
 
 	logging.InfoContext(ctx, "Starting build process")
@@ -306,7 +346,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	targetType := builder.DetermineTargetType(buildConfig, builderOpts)
 
-	results, err := executeBuild(ctx, targetType, service, cfg, buildConfig, builderOpts, opts)
+	results, err := executeBuild(ctx, cmd, targetType, service, cfg, buildConfig, builderOpts, opts)
 	if err != nil {
 		return err
 	}
@@ -357,7 +397,7 @@ func loadAndValidateBuildConfig(ctx context.Context, args []string, opts *buildO
 }
 
 // executeBuild dispatches to the appropriate build handler based on target type
-func executeBuild(ctx context.Context, targetType string, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
+func executeBuild(ctx context.Context, cmd *cobra.Command, targetType string, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
 	switch targetType {
 	case "container":
 		results, err := service.ExecuteContainerBuild(ctx, *buildConfig, builderOpts)
@@ -367,8 +407,190 @@ func executeBuild(ctx context.Context, targetType string, service *builder.Build
 		return results, nil
 	case "ami":
 		return executeAMIBuildTarget(ctx, service, cfg, buildConfig, builderOpts, opts)
+	case "azure":
+		return executeAzureBuildTarget(ctx, cmd, service, cfg, buildConfig, builderOpts, opts)
 	default:
 		return nil, fmt.Errorf("unsupported target type: %s", targetType)
+	}
+}
+
+// executeAzureBuildTarget handles the Azure-specific build logic
+func executeAzureBuildTarget(ctx context.Context, cmd *cobra.Command, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
+	applyAzureCLIOverrides(buildConfig, cfg, opts)
+
+	subscription := opts.azureSubscription
+	if subscription == "" {
+		subscription = cfg.Azure.SubscriptionID
+	}
+	if subscription == "" {
+		subscription = firstAzureTargetSubscription(buildConfig)
+	}
+
+	location := opts.azureLocation
+	if location == "" {
+		location = cfg.Azure.Location
+	}
+	if location == "" {
+		location = firstAzureTargetLocation(buildConfig)
+	}
+
+	identityID := opts.azureIdentityID
+	if identityID == "" {
+		identityID = cfg.Azure.IdentityID
+	}
+	if identityID == "" {
+		identityID = firstAzureTargetIdentity(buildConfig)
+	}
+
+	azCfg := azure.ClientConfig{
+		SubscriptionID:       subscription,
+		TenantID:             cfg.Azure.TenantID,
+		Location:             location,
+		IdentityID:           identityID,
+		FileStagingAccount:   cfg.Azure.Image.FileStagingStorageAccount,
+		FileStagingContainer: cfg.Azure.Image.FileStagingContainer,
+	}
+
+	monitor := azure.MonitorConfig{StreamLogs: opts.streamLogs}
+
+	azBuilder, err := azure.NewImageBuilderWithAllOptions(ctx, azCfg, opts.forceRecreate, monitor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Azure builder: %w", err)
+	}
+	if cfg.Azure.Image.BuildTimeoutMin > 0 {
+		azBuilder.SetBuildTimeoutMinutes(int32(cfg.Azure.Image.BuildTimeoutMin))
+	}
+	if cfg.Azure.Image.PollingIntervalSec > 0 {
+		azBuilder.SetPollingInterval(time.Duration(cfg.Azure.Image.PollingIntervalSec) * time.Second)
+	}
+	azBuilder.SetCleanupOnFinish(resolveAzureCleanup(cmd, opts))
+	defer func() {
+		if closeErr := azBuilder.Close(); closeErr != nil {
+			logging.WarnContext(ctx, "Failed to close Azure builder: %v", closeErr)
+		}
+	}()
+
+	if opts.dryRun {
+		logging.InfoContext(ctx, "Dry-run: configuration validated, skipping Azure build")
+		return nil, nil
+	}
+
+	result, err := service.ExecuteAzureBuild(ctx, *buildConfig, builderOpts, azBuilder)
+	if err != nil {
+		return nil, fmt.Errorf("azure build failed: %w", err)
+	}
+
+	return []builder.BuildResult{*result}, nil
+}
+
+// resolveAzureCleanup picks the effective --cleanup value for Azure builds.
+// Default is true (Azure builds delete their AIB ImageTemplate after success)
+// unless the user passed --cleanup explicitly.
+func resolveAzureCleanup(cmd *cobra.Command, opts *buildOptions) bool {
+	if cmd != nil && cmd.Flags().Changed("cleanup") {
+		return opts.cleanupOnFinish
+	}
+	return true
+}
+
+// findFirstAzureTarget returns a pointer to the first azure target in
+// buildConfig, or nil when none exists.
+func findFirstAzureTarget(buildConfig *builder.Config) *builder.Target {
+	for i := range buildConfig.Targets {
+		if buildConfig.Targets[i].Type == "azure" {
+			return &buildConfig.Targets[i]
+		}
+	}
+	return nil
+}
+
+func firstAzureTargetSubscription(buildConfig *builder.Config) string {
+	if t := findFirstAzureTarget(buildConfig); t != nil {
+		return t.SubscriptionID
+	}
+	return ""
+}
+
+func firstAzureTargetLocation(buildConfig *builder.Config) string {
+	if t := findFirstAzureTarget(buildConfig); t != nil {
+		return t.Location
+	}
+	return ""
+}
+
+func firstAzureTargetIdentity(buildConfig *builder.Config) string {
+	if t := findFirstAzureTarget(buildConfig); t != nil {
+		return t.IdentityID
+	}
+	return ""
+}
+
+// applyAzureCLIOverrides applies CLI flag overrides onto the first Azure target
+// in the build config, falling back to global Azure config where flags are unset.
+func applyAzureCLIOverrides(buildConfig *builder.Config, cfg *config.Config, opts *buildOptions) {
+	for i := range buildConfig.Targets {
+		t := &buildConfig.Targets[i]
+		if t.Type != "azure" {
+			continue
+		}
+		applyAzureSubscriptionOverrides(t, cfg, opts)
+		applyAzureGalleryOverrides(t, cfg, opts)
+		applyAzureNetworkOverrides(t, opts)
+		break
+	}
+}
+
+// applyAzureSubscriptionOverrides resolves subscription/location/resource_group/
+// vm_size/identity from CLI flags first, then global config.
+func applyAzureSubscriptionOverrides(t *builder.Target, cfg *config.Config, opts *buildOptions) {
+	if opts.azureSubscription != "" {
+		t.SubscriptionID = opts.azureSubscription
+	} else if t.SubscriptionID == "" {
+		t.SubscriptionID = cfg.Azure.SubscriptionID
+	}
+	if opts.azureLocation != "" {
+		t.Location = opts.azureLocation
+	} else if t.Location == "" {
+		t.Location = cfg.Azure.Location
+	}
+	if opts.azureResourceGrp != "" {
+		t.ResourceGroup = opts.azureResourceGrp
+	} else if t.ResourceGroup == "" {
+		t.ResourceGroup = cfg.Azure.ResourceGroup
+	}
+	if opts.azureVMSize != "" {
+		t.VMSize = opts.azureVMSize
+	} else if t.VMSize == "" {
+		t.VMSize = cfg.Azure.Image.VMSize
+	}
+	if opts.azureIdentityID != "" {
+		t.IdentityID = opts.azureIdentityID
+	} else if t.IdentityID == "" {
+		t.IdentityID = cfg.Azure.IdentityID
+	}
+}
+
+// applyAzureGalleryOverrides applies gallery / image-definition / replication
+// region overrides from CLI flags.
+func applyAzureGalleryOverrides(t *builder.Target, _ *config.Config, opts *buildOptions) {
+	if opts.azureGallery != "" {
+		t.Gallery = opts.azureGallery
+	}
+	if opts.azureImageDef != "" {
+		t.GalleryImageDefinition = opts.azureImageDef
+	}
+	if len(opts.azureTargetRegion) > 0 {
+		t.TargetRegions = opts.azureTargetRegion
+	}
+}
+
+// applyAzureNetworkOverrides applies subnet / proxy-VM-size CLI overrides.
+func applyAzureNetworkOverrides(t *builder.Target, opts *buildOptions) {
+	if opts.azureSubnetID != "" {
+		t.SubnetID = opts.azureSubnetID
+	}
+	if opts.azureProxyVMSize != "" {
+		t.ProxyVMSize = opts.azureProxyVMSize
 	}
 }
 

@@ -24,6 +24,7 @@ package ami
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -96,6 +97,40 @@ func TestGenerateComponent_AlreadyExists(t *testing.T) {
 	arn, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0", GenerateComponentOpts{})
 	require.NoError(t, err)
 	assert.Equal(t, expectedARN, *arn)
+}
+
+func TestGenerateComponent_BumpOnConflict_SurfacesSentinel(t *testing.T) {
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.CreateComponentFunc = func(ctx context.Context, params *imagebuilder.CreateComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateComponentOutput, error) {
+		return nil, &ibtypes.ResourceAlreadyExistsException{Message: aws.String("component test-shell version 1.0.0 already exists")}
+	}
+
+	gen := NewComponentGenerator(clients)
+	provisioner := builder.Provisioner{Type: "shell", Inline: []string{"echo hi"}}
+
+	_, err := gen.GenerateComponent(context.Background(), provisioner, "test", "1.0.0", GenerateComponentOpts{BumpOnConflict: true})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrComponentVersionExists),
+		"expected ErrComponentVersionExists, got %v", err)
+}
+
+func TestGenerateComponent_BumpOnConflict_TypedSDKError(t *testing.T) {
+	// Confirms we recognize the AWS SDK v2 typed error even when the wrapping
+	// changes the rendered message — the typed-error path is the contract that
+	// won't drift if AWS reformats their error strings.
+	t.Parallel()
+	clients, mocks := newMockAWSClients()
+
+	mocks.imageBuilder.CreateComponentFunc = func(ctx context.Context, params *imagebuilder.CreateComponentInput, optFns ...func(*imagebuilder.Options)) (*imagebuilder.CreateComponentOutput, error) {
+		return nil, fmt.Errorf("operation error: %w", &ibtypes.ResourceAlreadyExistsException{Message: aws.String("dup")})
+	}
+
+	gen := NewComponentGenerator(clients)
+	_, err := gen.GenerateComponent(context.Background(), builder.Provisioner{Type: "shell", Inline: []string{"echo"}}, "test", "1.0.0", GenerateComponentOpts{BumpOnConflict: true})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrComponentVersionExists))
 }
 
 func TestGenerateComponent_AlreadyExistsButGetARNFails(t *testing.T) {

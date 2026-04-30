@@ -26,11 +26,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
+
+var azureSubnetIDPattern = regexp.MustCompile(`^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$`)
 
 // ValidationOptions contains options for validation
 type ValidationOptions struct {
@@ -287,6 +290,103 @@ func (v *Validator) validateAMIFilterTarget(config *builder.Config) error {
 	return fmt.Errorf("config.base.ami_filters requires at least one AMI target")
 }
 
+// validateAzureTarget validates Azure-specific required fields on a target.
+func (v *Validator) validateAzureTarget(target *builder.Target, index int) error {
+	if err := validateAzureRequiredFields(target, index); err != nil {
+		return err
+	}
+	if err := validateAzureOSType(target, index); err != nil {
+		return err
+	}
+	if err := validateAzureSourceImage(target, index); err != nil {
+		return err
+	}
+	if err := validateAzureShareWith(target, index); err != nil {
+		return err
+	}
+	return validateAzureNetworking(target, index)
+}
+
+// validateAzureRequiredFields ensures the simple top-level required fields on
+// an Azure target are populated.
+func validateAzureRequiredFields(target *builder.Target, index int) error {
+	if target.ResourceGroup == "" {
+		return fmt.Errorf("target[%d]: azure target requires 'resource_group'", index)
+	}
+	if target.Location == "" {
+		return fmt.Errorf("target[%d]: azure target requires 'location'", index)
+	}
+	if target.Gallery == "" {
+		return fmt.Errorf("target[%d]: azure target requires 'gallery'", index)
+	}
+	if target.GalleryImageDefinition == "" {
+		return fmt.Errorf("target[%d]: azure target requires 'gallery_image_definition'", index)
+	}
+	if target.IdentityID == "" {
+		return fmt.Errorf("target[%d]: azure target requires 'identity_id' (user-assigned managed identity used by AIB)", index)
+	}
+	return nil
+}
+
+// validateAzureOSType verifies target.OSType is one of the supported values.
+func validateAzureOSType(target *builder.Target, index int) error {
+	switch target.OSType {
+	case "Linux", "Windows":
+		return nil
+	case "":
+		return fmt.Errorf("target[%d]: azure target requires 'os_type' (\"Linux\" or \"Windows\")", index)
+	default:
+		return fmt.Errorf("target[%d]: azure target 'os_type' must be \"Linux\" or \"Windows\", got %q", index, target.OSType)
+	}
+}
+
+// validateAzureSourceImage checks that exactly one of marketplace or gallery
+// reference is set, and that a marketplace reference has the required fields.
+func validateAzureSourceImage(target *builder.Target, index int) error {
+	if target.SourceImage == nil {
+		return fmt.Errorf("target[%d]: azure target requires 'source_image'", index)
+	}
+	hasMarketplace := target.SourceImage.Marketplace != nil
+	hasGalleryRef := target.SourceImage.GalleryImageVersionID != ""
+	if hasMarketplace == hasGalleryRef {
+		return fmt.Errorf("target[%d]: azure target 'source_image' must set exactly one of 'marketplace' or 'gallery_image_version_id'", index)
+	}
+	if hasMarketplace {
+		mp := target.SourceImage.Marketplace
+		if mp.Publisher == "" || mp.Offer == "" || mp.SKU == "" {
+			return fmt.Errorf("target[%d]: azure marketplace source requires publisher, offer, and sku", index)
+		}
+		if mp.Plan != nil {
+			if mp.Plan.Name == "" || mp.Plan.Product == "" || mp.Plan.Publisher == "" {
+				return fmt.Errorf("target[%d]: azure marketplace 'plan' requires name, product, and publisher", index)
+			}
+		}
+	}
+	return nil
+}
+
+// validateAzureShareWith ensures every share_with principal is non-blank.
+func validateAzureShareWith(target *builder.Target, index int) error {
+	for j, p := range target.ShareWith {
+		if strings.TrimSpace(p) == "" {
+			return fmt.Errorf("target[%d]: azure target 'share_with[%d]' must not be blank", index, j)
+		}
+	}
+	return nil
+}
+
+// validateAzureNetworking validates the optional subnet/proxy fields used to
+// run AIB inside an existing VNet.
+func validateAzureNetworking(target *builder.Target, index int) error {
+	if target.SubnetID != "" && !azureSubnetIDPattern.MatchString(target.SubnetID) {
+		return fmt.Errorf("target[%d]: azure target 'subnet_id' must be a full resource ID like /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<subnet>, got %q", index, target.SubnetID)
+	}
+	if target.ProxyVMSize != "" && target.SubnetID == "" {
+		return fmt.Errorf("target[%d]: azure target 'proxy_vm_size' has no effect without 'subnet_id'", index)
+	}
+	return nil
+}
+
 // validateAMIFilters validates AMI filter configuration
 func (v *Validator) validateAMIFilters(filters *builder.AMIFilterConfig) error {
 	if len(filters.Owners) == 0 {
@@ -313,6 +413,11 @@ func (v *Validator) validateTarget(target *builder.Target, index int) error {
 		}
 		if target.AMIName == "" {
 			return fmt.Errorf("target[%d]: ami target requires 'ami_name'", index)
+		}
+
+	case "azure":
+		if err := v.validateAzureTarget(target, index); err != nil {
+			return err
 		}
 
 	case "":

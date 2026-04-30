@@ -25,6 +25,7 @@ package ami
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,12 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"gopkg.in/yaml.v3"
 )
+
+// ErrComponentVersionExists is returned by GenerateComponent when the
+// requested component+version already exists and the caller opted in to
+// surfacing conflicts via GenerateComponentOpts.BumpOnConflict. Callers use
+// errors.Is to detect it and decide whether to bump the version and retry.
+var ErrComponentVersionExists = errors.New("component version already exists")
 
 // ComponentGenerator generates EC2 Image Builder components from provisioners
 type ComponentGenerator struct {
@@ -56,6 +63,14 @@ type GenerateComponentOpts struct {
 	// StagedFile is the result of pre-uploading a `file` provisioner's source
 	// to S3. Only consulted when provisioner.Type == "file".
 	StagedFile *StagedFile
+
+	// BumpOnConflict, when true, makes GenerateComponent return
+	// ErrComponentVersionExists on a duplicate-version conflict rather than
+	// silently returning the existing component's ARN. The caller is then
+	// expected to bump to a new semantic version and retry. Used by --force
+	// flows where idempotently latching onto a concurrent build's version
+	// would mask the version-bump intent.
+	BumpOnConflict bool
 }
 
 // GenerateComponent creates an Image Builder component from a provisioner
@@ -83,7 +98,10 @@ func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner 
 
 	result, err := g.clients.ImageBuilder.CreateComponent(ctx, input)
 	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if isComponentAlreadyExists(err) {
+			if opts.BumpOnConflict {
+				return nil, fmt.Errorf("%w: %s@%s", ErrComponentVersionExists, componentName, version)
+			}
 			arn, getErr := g.getComponentARN(ctx, componentName, version)
 			if getErr != nil {
 				return nil, fmt.Errorf("component exists but failed to get ARN: %w", getErr)
@@ -94,6 +112,22 @@ func (g *ComponentGenerator) GenerateComponent(ctx context.Context, provisioner 
 	}
 
 	return result.ComponentBuildVersionArn, nil
+}
+
+// isComponentAlreadyExists reports whether err signals a duplicate-component
+// conflict. Prefers the AWS SDK typed error so we don't depend on message
+// formatting, but also matches the legacy substring shape used by tests and
+// by other AWS APIs that return the bare ResourceAlreadyExistsException code.
+func isComponentAlreadyExists(err error) bool {
+	if err == nil {
+		return false
+	}
+	var raee *types.ResourceAlreadyExistsException
+	if errors.As(err, &raee) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "ResourceAlreadyExistsException") || strings.Contains(msg, "already exists")
 }
 
 // createComponentDocument generates a YAML document for the Image Builder component

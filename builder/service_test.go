@@ -26,6 +26,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1213,5 +1214,326 @@ func TestPushMultiArch_SaveDigests(t *testing.T) {
 		if _, err := os.Stat(expectedFile); os.IsNotExist(err) {
 			t.Errorf("Expected digest file not found: %s", expectedFile)
 		}
+	}
+}
+
+// mockAzureImageBuilder implements AzureImageBuilder for testing the
+// post-build sharing flow inside ExecuteAzureBuild.
+type mockAzureImageBuilder struct {
+	buildFunc func(ctx context.Context, cfg Config) (*BuildResult, error)
+
+	shareCalled    bool
+	shareVersionID string
+	sharePrincipal []string
+	shareErr       error
+
+	replicateCalled bool
+	deleteCalled    bool
+}
+
+func (m *mockAzureImageBuilder) Build(ctx context.Context, cfg Config) (*BuildResult, error) {
+	if m.buildFunc != nil {
+		return m.buildFunc(ctx, cfg)
+	}
+	return &BuildResult{GalleryImageVersionID: "/v/123", Location: "eastus"}, nil
+}
+
+func (m *mockAzureImageBuilder) Replicate(_ context.Context, _ string, _ []string) error {
+	m.replicateCalled = true
+	return nil
+}
+
+func (m *mockAzureImageBuilder) Share(_ context.Context, versionID string, principals []string) error {
+	m.shareCalled = true
+	m.shareVersionID = versionID
+	m.sharePrincipal = principals
+	return m.shareErr
+}
+
+func (m *mockAzureImageBuilder) Delete(_ context.Context, _ string) error {
+	m.deleteCalled = true
+	return nil
+}
+
+func (m *mockAzureImageBuilder) Close() error { return nil }
+
+func azureBuildConfig(shareWith []string) Config {
+	return Config{
+		Name: "img",
+		Targets: []Target{
+			{
+				Type:                   "azure",
+				SubscriptionID:         "sub",
+				ResourceGroup:          "rg",
+				Location:               "eastus",
+				Gallery:                "g",
+				GalleryImageDefinition: "def",
+				IdentityID:             "/uami",
+				ShareWith:              shareWith,
+			},
+		},
+	}
+}
+
+func TestExecuteAzureBuild_NoShareWith(t *testing.T) {
+	mb := &mockAzureImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	res, err := svc.ExecuteAzureBuild(context.Background(), azureBuildConfig(nil), BuildOptions{}, mb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected build result, got nil")
+	}
+	if mb.shareCalled {
+		t.Errorf("Share should not have been called when share_with is empty")
+	}
+}
+
+func TestExecuteAzureBuild_SharesAfterSuccess(t *testing.T) {
+	mb := &mockAzureImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	cfg := azureBuildConfig([]string{"principal-1", "principal-2"})
+	_, err := svc.ExecuteAzureBuild(context.Background(), cfg, BuildOptions{}, mb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !mb.shareCalled {
+		t.Fatal("Share should have been called")
+	}
+	if mb.shareVersionID != "/v/123" {
+		t.Errorf("expected versionID /v/123, got %q", mb.shareVersionID)
+	}
+	if len(mb.sharePrincipal) != 2 || mb.sharePrincipal[0] != "principal-1" {
+		t.Errorf("unexpected principals: %v", mb.sharePrincipal)
+	}
+}
+
+func TestExecuteAzureBuild_ShareErrorPropagates(t *testing.T) {
+	mb := &mockAzureImageBuilder{shareErr: fmt.Errorf("rbac denied")}
+	svc := NewBuildService(nil, nil)
+
+	cfg := azureBuildConfig([]string{"p"})
+	_, err := svc.ExecuteAzureBuild(context.Background(), cfg, BuildOptions{}, mb)
+	if err == nil {
+		t.Fatal("expected error from Share to propagate")
+	}
+	if !strings.Contains(err.Error(), "rbac denied") {
+		t.Errorf("error did not contain expected message: %v", err)
+	}
+}
+
+func TestExecuteAzureBuild_BuildFailureSkipsShare(t *testing.T) {
+	mb := &mockAzureImageBuilder{
+		buildFunc: func(_ context.Context, _ Config) (*BuildResult, error) {
+			return nil, fmt.Errorf("build broke")
+		},
+	}
+	svc := NewBuildService(nil, nil)
+
+	_, err := svc.ExecuteAzureBuild(context.Background(), azureBuildConfig([]string{"p"}), BuildOptions{}, mb)
+	if err == nil {
+		t.Fatal("expected build error to propagate")
+	}
+	if mb.shareCalled {
+		t.Error("Share must not be called when Build fails")
+	}
+}
+
+func TestExecuteAzureBuild_NoAzureTarget(t *testing.T) {
+	mb := &mockAzureImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	cfg := Config{
+		Name:    "img",
+		Targets: []Target{{Type: "ami", Region: "us-east-1"}},
+	}
+	_, err := svc.ExecuteAzureBuild(context.Background(), cfg, BuildOptions{}, mb)
+	if err == nil || !strings.Contains(err.Error(), "no azure target found") {
+		t.Fatalf("expected 'no azure target found' error, got %v", err)
+	}
+}
+
+func TestExecuteAzureBuild_MissingLocationErrors(t *testing.T) {
+	mb := &mockAzureImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	cfg := Config{
+		Name: "img",
+		Targets: []Target{
+			{
+				Type:                   "azure",
+				ResourceGroup:          "rg",
+				Gallery:                "g",
+				GalleryImageDefinition: "def",
+				IdentityID:             "/uami",
+			},
+		},
+	}
+	_, err := svc.ExecuteAzureBuild(context.Background(), cfg, BuildOptions{}, mb)
+	if err == nil || !strings.Contains(err.Error(), "azure location must be specified") {
+		t.Fatalf("expected location error, got %v", err)
+	}
+}
+
+func TestApplyAzureGlobalDefaults(t *testing.T) {
+	tests := []struct {
+		name       string
+		globalCfg  *config.Config
+		target     Target
+		wantTarget Target
+	}{
+		{
+			name:      "nil global config leaves target untouched",
+			globalCfg: nil,
+			target: Target{
+				Type:     "azure",
+				Location: "eastus",
+			},
+			wantTarget: Target{
+				Type:     "azure",
+				Location: "eastus",
+			},
+		},
+		{
+			name: "fills empty fields from global config",
+			globalCfg: &config.Config{
+				Azure: config.AzureConfig{
+					SubscriptionID: "sub-global",
+					ResourceGroup:  "rg-global",
+					Location:       "westus",
+					IdentityID:     "/uami-global",
+					Image:          config.AzureImageConfig{VMSize: "Standard_D2s_v3"},
+				},
+			},
+			target: Target{Type: "azure"},
+			wantTarget: Target{
+				Type:           "azure",
+				SubscriptionID: "sub-global",
+				ResourceGroup:  "rg-global",
+				Location:       "westus",
+				IdentityID:     "/uami-global",
+				VMSize:         "Standard_D2s_v3",
+			},
+		},
+		{
+			name: "target values take precedence over global defaults",
+			globalCfg: &config.Config{
+				Azure: config.AzureConfig{
+					SubscriptionID: "sub-global",
+					ResourceGroup:  "rg-global",
+					Location:       "westus",
+					IdentityID:     "/uami-global",
+					Image:          config.AzureImageConfig{VMSize: "Standard_D2s_v3"},
+				},
+			},
+			target: Target{
+				Type:           "azure",
+				SubscriptionID: "sub-target",
+				ResourceGroup:  "rg-target",
+				Location:       "eastus",
+				IdentityID:     "/uami-target",
+				VMSize:         "Standard_E4s_v3",
+			},
+			wantTarget: Target{
+				Type:           "azure",
+				SubscriptionID: "sub-target",
+				ResourceGroup:  "rg-target",
+				Location:       "eastus",
+				IdentityID:     "/uami-target",
+				VMSize:         "Standard_E4s_v3",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := NewBuildService(tc.globalCfg, nil)
+			got := tc.target
+			svc.applyAzureGlobalDefaults(&got)
+			if !reflect.DeepEqual(got, tc.wantTarget) {
+				t.Errorf("applyAzureGlobalDefaults() = %+v, want %+v", got, tc.wantTarget)
+			}
+		})
+	}
+}
+
+func TestFindAzureTarget(t *testing.T) {
+	tests := []struct {
+		name    string
+		targets []Target
+		wantNil bool
+	}{
+		{
+			name:    "empty targets returns nil",
+			targets: nil,
+			wantNil: true,
+		},
+		{
+			name: "no azure target returns nil",
+			targets: []Target{
+				{Type: "ami", Region: "us-east-1"},
+				{Type: "container"},
+			},
+			wantNil: true,
+		},
+		{
+			name: "returns first azure target",
+			targets: []Target{
+				{Type: "container"},
+				{Type: "azure", Location: "eastus"},
+				{Type: "azure", Location: "westus"},
+			},
+			wantNil: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := findAzureTarget(tc.targets)
+			if tc.wantNil && got != nil {
+				t.Errorf("expected nil, got %+v", got)
+			}
+			if !tc.wantNil {
+				if got == nil {
+					t.Fatal("expected non-nil target")
+				}
+				if got.Location != "eastus" {
+					t.Errorf("expected first azure target location eastus, got %q", got.Location)
+				}
+			}
+		})
+	}
+}
+
+func TestExecuteAzureBuild_AppliesGlobalDefaults(t *testing.T) {
+	mb := &mockAzureImageBuilder{}
+	globalCfg := &config.Config{
+		Azure: config.AzureConfig{
+			Location: "westus",
+		},
+	}
+	svc := NewBuildService(globalCfg, nil)
+
+	cfg := Config{
+		Name: "img",
+		Targets: []Target{
+			{
+				Type:                   "azure",
+				ResourceGroup:          "rg",
+				Gallery:                "g",
+				GalleryImageDefinition: "def",
+				IdentityID:             "/uami",
+			},
+		},
+	}
+	res, err := svc.ExecuteAzureBuild(context.Background(), cfg, BuildOptions{}, mb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected build result")
 	}
 }

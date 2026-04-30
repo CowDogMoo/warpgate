@@ -452,6 +452,176 @@ This reduces launch times from ~10 minutes to ~3 minutes.
 - The default quota is 40 max parallel launches per region across all AMIs
 - Only applicable to Windows AMIs (Linux AMIs already launch quickly)
 
+### Azure Target
+
+Build Azure VM images using Azure VM Image Builder (AIB) and publish them to
+an Azure Compute Gallery:
+
+```yaml
+targets:
+  - type: azure
+    subscription_id: 00000000-0000-0000-0000-000000000000
+    resource_group: my-build-rg
+    location: eastus
+    gallery: myGallery
+    gallery_image_definition: ubuntu-22-04
+    os_type: Linux
+    vm_size: Standard_D2s_v3
+    identity_id: /subscriptions/.../userAssignedIdentities/aib-uami
+    source_image:
+      marketplace:
+        publisher: Canonical
+        offer: 0001-com-ubuntu-server-jammy
+        sku: 22_04-lts-gen2
+        version: latest
+    target_regions:
+      - westus2
+      - westeurope
+    image_tags:
+      Owner: redteam
+      Environment: prod
+```
+
+**How it works:**
+
+Warpgate uses Azure VM Image Builder as the build backend (no Packer):
+
+1. Generates an AIB ImageTemplate that references the source image and your
+   provisioners (mapped to AIB shell, PowerShell, and File customizers).
+2. Submits the template and runs it. AIB launches a build VM, runs the
+   customizers, and captures the result.
+3. Publishes the captured image as a new gallery image version
+   (`YYYY.MMDD.HHMMSS` UTC) into the configured Compute Gallery.
+4. Optionally replicates to additional regions via `target_regions`.
+5. Deletes the AIB ImageTemplate resource on success by default (pass
+   `--cleanup=false` to keep it around for debugging — Azure cleanup defaults
+   to on; AMI cleanup defaults to off).
+
+For Azure builds the parent image is taken from `source_image` on the target —
+the top-level `base.image` is still required by the schema but is not used by
+the Azure pipeline. Mirroring the marketplace identifier you put under
+`source_image` (e.g.,
+`Canonical/0001-com-ubuntu-server-jammy/22_04-lts-gen2:latest`) keeps the
+template self-documenting.
+
+**Prerequisites:**
+
+- Azure credentials reachable by `DefaultAzureCredential` (env vars, `az login`,
+  managed identity).
+- A user-assigned managed identity with the AIB role on the build resource
+  group and Contributor on the gallery resource group.
+- The Compute Gallery and gallery image definition already exist. The image
+  definition is metadata (it has no versions yet) and must be created with:
+  - **OS type** (`Linux` or `Windows`) matching the source image and the
+    target's `os_type` field.
+  - **OS state** = `Generalized` (AIB requires the captured image to be
+    sysprepped/waagent-deprovisioned, so Specialized definitions are not
+    supported).
+  - **Hyper-V generation** matching the source image (e.g., `V2` for
+    `*-gen2` Ubuntu marketplace SKUs).
+  - **Publisher / offer / SKU** identifier triple — this is your tag for the
+    image line, independent of the marketplace publisher of the source image.
+
+**Required options:**
+
+- `subscription_id` - Azure subscription (or set `AZURE_SUBSCRIPTION_ID`).
+- `resource_group` - Resource group hosting the build resources.
+- `location` - Azure region for the build (e.g., `eastus`).
+- `gallery` - Compute Gallery name where the image is published.
+- `gallery_image_definition` - Image definition (parent of versions).
+- `os_type` - `Linux` or `Windows`.
+- `identity_id` - Resource ID of the user-assigned managed identity used by AIB.
+- `source_image` - Either `marketplace` (publisher/offer/sku/version, plus an
+  optional `plan` block for marketplace images that require purchase plan
+  acceptance such as Kali Linux) or `gallery_image_version_id` (full resource
+  ID).
+- `vm_size` - Build VM size (e.g., `Standard_D2s_v3`). SKU availability
+  depends on subscription quota and region capacity, so we don't guess this.
+
+Azure builds do not auto-discover these fields during `warpgate build`; set
+them explicitly in the template or override them with CLI flags.
+
+**Optional:**
+
+- `staging_resource_group` - Resource group AIB uses for ephemeral build
+  resources. AIB creates one automatically when omitted.
+- `target_regions` - Additional regions for replication (CLI flag
+  `--target-regions` overrides).
+- `share_with` - List of Azure AD principal object IDs (users, groups, or
+  service principals) that should receive the Reader role on the published
+  gallery image version after a successful build. Sharing is idempotent;
+  re-running with the same list is a safe no-op. Requires the build credential
+  to hold User Access Administrator (or higher) on the gallery's resource
+  group scope.
+- `subnet_id` - Resource ID of a pre-existing subnet
+  (`/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<subnet>`).
+  When set, AIB places the build VM on this subnet without a public IP and
+  provisions a small proxy VM in the same subnet to relay control traffic.
+  The subnet must allow outbound internet (NAT gateway, Azure Firewall, or
+  service endpoints to storage/keyvault/ARM) so apt/pip and AIB callbacks can
+  reach their destinations. CLI flag `--subnet-id` overrides.
+- `proxy_vm_size` - VM size for the AIB proxy VM (defaults to
+  `Standard_A1_v2`). Has no effect unless `subnet_id` is set. CLI flag
+  `--proxy-vm-size` overrides.
+- `image_tags` - Map of tags applied to the published gallery image version.
+- `source_image.marketplace.plan` - Purchase plan info (`name`, `product`,
+  `publisher`) for marketplace images that require plan acceptance, e.g. Kali
+  Linux. All three fields are required when `plan` is set; AIB rejects
+  partial plan info. Accept the plan once per subscription with
+  `az vm image terms accept --publisher <p> --offer <o> --plan <name>` before
+  building. Example:
+
+  ```yaml
+  source_image:
+    marketplace:
+      publisher: kali-linux
+      offer: kali
+      sku: kali
+      version: latest
+      plan:
+        name: kali
+        product: kali-linux
+        publisher: kali-linux
+  ```
+
+**Provisioner support:**
+
+- `shell` (Linux) - inline commands.
+- `script` (Linux) - one or more local shell scripts from `scripts`; each is
+  embedded into the build, written to disk, made executable, and run in order.
+- `powershell` (Windows) - `ps_scripts` (preferred) or inline commands; runs elevated.
+- `file` - Source can be an HTTPS/SAS URL, or a local path when
+  `azure.image.file_staging_storage_account` and
+  `azure.image.file_staging_container` are configured (the local file is
+  uploaded to blob storage before the build, and cleaned up afterwards).
+- `ansible` - Runs an Ansible playbook on the build VM. The playbook (and an
+  optional `galaxy_file`) are embedded into the build via base64 inline
+  commands, so no extra storage is required. Linux targets emit a Shell
+  customizer that auto-installs `ansible` via apt/dnf/yum; Windows targets
+  emit a PowerShell customizer that installs Python via Chocolatey and pip
+  installs `ansible`/`pywinrm`. Recognised provisioner fields:
+  `playbook_path`, `galaxy_file`, `inventory`, `extra_vars`. Connection-flavor
+  vars (`ansible_connection`, `ansible_aws_ssm_*`, and on Windows also
+  `ansible_shell_type`) are stripped — the playbook is run with
+  `--connection=local`.
+Windows targets are detected from `os_type: Windows` on the target, or from
+`ansible_shell_type: powershell` (or `cmd`) in an ansible provisioner's
+`extra_vars`.
+
+**CLI flags:**
+
+```bash
+warpgate build my-template.yaml \
+  --target azure \
+  --subscription <sub> \
+  --location eastus \
+  --resource-group my-build-rg \
+  --gallery myGallery \
+  --image-definition ubuntu-22-04 \
+  --identity-id /subscriptions/.../userAssignedIdentities/aib-uami \
+  --target-regions westus2,westeurope
+```
+
 ### Multiple Targets
 
 Build both containers and AMIs:
@@ -663,6 +833,102 @@ targets:
     tags:
       - nginx-${NGINX_VERSION}
       - latest
+```
+
+### Azure Compute Gallery Template
+
+End-to-end Ubuntu 22.04 LTS image published to an Azure Compute Gallery via
+Azure VM Image Builder. This pattern works against an Ubuntu marketplace SKU,
+waits for `cloud-init` to finish before running apt, mixes shell and Ansible
+provisioners (Ansible auto-bootstraps on the build VM), and tags the resulting
+gallery image version:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/cowdogmoo/warpgate/main/schema/warpgate-template.json
+metadata:
+  name: ubuntu-22-azure
+  version: 0.1.0
+  description: Ubuntu 22.04 image published to a Compute Gallery via AIB.
+  author: Your Team <team@example.com>
+  license: MIT
+  tags:
+    - azure
+    - ubuntu
+  requires:
+    warpgate: ">=1.0.0"
+
+name: ubuntu-22-azure
+version: latest
+
+base:
+  image: Canonical/0001-com-ubuntu-server-jammy/22_04-lts-gen2:latest
+
+provisioners:
+  # Wait for cloud-init so apt is not racing the marketplace image's
+  # post-boot setup, then install the packages every later step needs.
+  - type: shell
+    inline:
+      - cloud-init status --wait || true
+      - rm -rf /var/lib/apt/lists/*
+      - apt-get update
+      - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends
+          ca-certificates curl jq python3 python3-pip python3-venv pipx
+      - pipx ensurepath
+
+  # Ansible auto-bootstraps on the build VM (apt installs ansible-core).
+  - type: ansible
+    playbook_path: ./playbooks/smoke.yml
+
+  - type: shell
+    inline:
+      - apt-get clean
+      - rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+targets:
+  - type: azure
+    subscription_id: 00000000-0000-0000-0000-000000000000
+    location: eastus
+    resource_group: my-build-rg
+    gallery: myGallery
+    gallery_image_definition: ubuntu-22-04
+    os_type: Linux
+    vm_size: Standard_D2s_v3
+    identity_id: /subscriptions/.../userAssignedIdentities/aib-uami
+    source_image:
+      marketplace:
+        publisher: Canonical
+        offer: 0001-com-ubuntu-server-jammy
+        sku: 22_04-lts-gen2
+        version: latest
+    image_tags:
+      Project: example
+      ManagedBy: warpgate
+```
+
+The companion `playbooks/smoke.yml` is just a regular Ansible playbook that
+runs locally on the build VM:
+
+```yaml
+---
+- hosts: localhost
+  connection: local
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Install red-team CLI tooling
+      ansible.builtin.apt:
+        name:
+          - nmap
+          - tcpdump
+          - net-tools
+        state: present
+        update_cache: true
+```
+
+Build it with:
+
+```bash
+warpgate build path/to/ubuntu-22-azure --target azure
 ```
 
 ### Multi-Stage Development Template
