@@ -384,6 +384,20 @@ func TestImageBuilder_SetCleanupOnFinish(t *testing.T) {
 	assert.False(t, b.cleanupOnFinish)
 }
 
+func TestImageBuilder_SetPollingInterval(t *testing.T) {
+	b := &ImageBuilder{}
+	b.SetPollingInterval(42 * time.Second)
+	assert.Equal(t, 42*time.Second, b.pollingInterval)
+	b.SetPollingInterval(0)
+	assert.Equal(t, time.Duration(0), b.pollingInterval)
+}
+
+func TestImageBuilder_SetBuildTimeoutMinutes(t *testing.T) {
+	b := &ImageBuilder{}
+	b.SetBuildTimeoutMinutes(120)
+	assert.Equal(t, int32(120), b.buildTimeoutMinutes)
+}
+
 func TestNewImageBuilderWithAllOptions_RequiresSubscriptionID(t *testing.T) {
 	defer installFakeCred(t)()
 

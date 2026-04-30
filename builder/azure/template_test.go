@@ -489,3 +489,48 @@ func TestBuildImageTemplate_PropagatesSourceError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, strings.ToLower(err.Error()), "source_image")
 }
+
+func TestPowerShellCustomizer_RequiresScriptsOrInline(t *testing.T) {
+	_, err := powerShellCustomizer(&builder.Provisioner{Type: "powershell"}, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ps_scripts or inline commands are required")
+}
+
+func TestScriptCustomizer_RequiresScripts(t *testing.T) {
+	_, err := scriptCustomizer(&builder.Provisioner{Type: "script"}, 0, "Linux")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scripts are required")
+}
+
+func TestScriptCustomizer_ReadError(t *testing.T) {
+	_, err := scriptCustomizer(&builder.Provisioner{
+		Type:    "script",
+		Scripts: []string{"/nonexistent/script.sh"},
+	}, 0, "Linux")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read script")
+}
+
+func TestPowerShellCommandsFromScripts_ReadError(t *testing.T) {
+	_, err := powerShellCommandsFromScripts(&builder.Provisioner{
+		Type:      "powershell",
+		PSScripts: []string{"/nonexistent/script.ps1"},
+	}, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read script")
+}
+
+func TestNormalizePowerShellScript_StripsBOM(t *testing.T) {
+	// UTF-8 BOM (EF BB BF) followed by content should be stripped.
+	withBOM := []byte{0xEF, 0xBB, 0xBF, 'W', 'r', 'i', 't', 'e'}
+	got := normalizePowerShellScript(withBOM)
+	assert.Equal(t, []byte("Write"), got)
+
+	// Content without a BOM passes through unchanged.
+	noBOM := []byte("Get-Service")
+	assert.Equal(t, noBOM, normalizePowerShellScript(noBOM))
+
+	// Short content stays intact even if it might look BOM-like.
+	short := []byte{0xEF, 0xBB}
+	assert.Equal(t, short, normalizePowerShellScript(short))
+}

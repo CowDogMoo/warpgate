@@ -1615,6 +1615,55 @@ func TestExecuteAzureBuildTarget_WithSubscription(t *testing.T) {
 	}
 }
 
+func TestExecuteAzureBuildTarget_AppliesGlobalImageDefaults(t *testing.T) {
+	t.Setenv("AZURE_CLIENT_ID", "fake-client-id")
+	t.Setenv("AZURE_CLIENT_SECRET", "fake-secret")
+	t.Setenv("AZURE_TENANT_ID", "fake-tenant")
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{
+		Azure: config.AzureConfig{
+			Image: config.AzureImageConfig{
+				BuildTimeoutMin:    180,
+				PollingIntervalSec: 30,
+			},
+		},
+	}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{
+			{
+				Type:                   "azure",
+				SubscriptionID:         "sub-1",
+				ResourceGroup:          "rg-1",
+				Location:               "eastus",
+				Gallery:                "g",
+				GalleryImageDefinition: "def",
+				IdentityID:             "/uami",
+			},
+		},
+	}
+
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+
+	opts := &buildOptions{
+		azureSubscription: "sub-1",
+		dryRun:            true,
+	}
+	cmd := &cobra.Command{}
+
+	results, err := executeAzureBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	// Dry-run should short-circuit before any real Azure calls.
+	if err != nil {
+		t.Fatalf("unexpected error from dry-run azure build: %v", err)
+	}
+	if results != nil {
+		t.Errorf("dry-run should return nil results, got %v", results)
+	}
+}
+
 func TestApplyAzureCLIOverrides_PreservesExistingFieldsWhenNoOverrides(t *testing.T) {
 	t.Parallel()
 

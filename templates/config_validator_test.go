@@ -1022,6 +1022,255 @@ func TestValidator_AzureTargetRejectsInvalidOSTypeWhenExplicit(t *testing.T) {
 	}
 }
 
+// azureValidTarget returns a fully-populated Azure target that should pass
+// validation. Tests mutate a copy of this fixture to exercise individual
+// failure modes.
+func azureValidTarget() builder.Target {
+	return builder.Target{
+		Type:                   "azure",
+		ResourceGroup:          "rg-1",
+		Location:               "eastus",
+		Gallery:                "gallery1",
+		GalleryImageDefinition: "def1",
+		IdentityID:             "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami",
+		OSType:                 "Linux",
+		VMSize:                 "Standard_D2s_v3",
+		SourceImage: &builder.AzureSourceImage{
+			Marketplace: &builder.AzureMarketplaceImage{
+				Publisher: "Canonical",
+				Offer:     "0001-com-ubuntu-server-jammy",
+				SKU:       "22_04-lts-gen2",
+				Version:   "latest",
+			},
+		},
+	}
+}
+
+func azureBaseConfig(target builder.Target) *builder.Config {
+	return &builder.Config{
+		Name: "azure-test",
+		Base: builder.BaseImage{Image: "ubuntu:22.04"},
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo hi"}},
+		},
+		Targets: []builder.Target{target},
+	}
+}
+
+func TestValidator_AzureTargetValidation(t *testing.T) {
+	validSubnet := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/snet"
+	galleryRef := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/galleries/g/images/i/versions/1.0.0"
+
+	tests := []struct {
+		name        string
+		mutate      func(t *builder.Target)
+		shouldError bool
+		errContains string
+	}{
+		{
+			name:        "valid marketplace target",
+			mutate:      func(t *builder.Target) {},
+			shouldError: false,
+		},
+		{
+			name: "valid gallery reference target",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{GalleryImageVersionID: galleryRef}
+			},
+			shouldError: false,
+		},
+		{
+			name: "valid Windows os_type",
+			mutate: func(t *builder.Target) {
+				t.OSType = "Windows"
+			},
+			shouldError: false,
+		},
+		{
+			name: "valid networking with subnet and proxy size",
+			mutate: func(t *builder.Target) {
+				t.SubnetID = validSubnet
+				t.ProxyVMSize = "Standard_D2s_v3"
+			},
+			shouldError: false,
+		},
+		{
+			name: "valid share_with entries",
+			mutate: func(t *builder.Target) {
+				t.ShareWith = []string{"sub-aaa", "sub-bbb"}
+			},
+			shouldError: false,
+		},
+		{
+			name:        "missing resource_group",
+			mutate:      func(t *builder.Target) { t.ResourceGroup = "" },
+			shouldError: true,
+			errContains: "requires 'resource_group'",
+		},
+		{
+			name:        "missing location",
+			mutate:      func(t *builder.Target) { t.Location = "" },
+			shouldError: true,
+			errContains: "requires 'location'",
+		},
+		{
+			name:        "missing gallery",
+			mutate:      func(t *builder.Target) { t.Gallery = "" },
+			shouldError: true,
+			errContains: "requires 'gallery'",
+		},
+		{
+			name:        "missing gallery_image_definition",
+			mutate:      func(t *builder.Target) { t.GalleryImageDefinition = "" },
+			shouldError: true,
+			errContains: "requires 'gallery_image_definition'",
+		},
+		{
+			name:        "missing identity_id",
+			mutate:      func(t *builder.Target) { t.IdentityID = "" },
+			shouldError: true,
+			errContains: "requires 'identity_id'",
+		},
+		{
+			name:        "missing os_type",
+			mutate:      func(t *builder.Target) { t.OSType = "" },
+			shouldError: true,
+			errContains: "requires 'os_type'",
+		},
+		{
+			name:        "invalid os_type",
+			mutate:      func(t *builder.Target) { t.OSType = "BSD" },
+			shouldError: true,
+			errContains: "must be \"Linux\" or \"Windows\"",
+		},
+		{
+			name:        "missing source_image",
+			mutate:      func(t *builder.Target) { t.SourceImage = nil },
+			shouldError: true,
+			errContains: "requires 'source_image'",
+		},
+		{
+			name: "both marketplace and gallery_image_version_id set",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{
+					Marketplace: &builder.AzureMarketplaceImage{
+						Publisher: "Canonical",
+						Offer:     "0001-com-ubuntu-server-jammy",
+						SKU:       "22_04-lts-gen2",
+					},
+					GalleryImageVersionID: galleryRef,
+				}
+			},
+			shouldError: true,
+			errContains: "must set exactly one of 'marketplace' or 'gallery_image_version_id'",
+		},
+		{
+			name: "neither marketplace nor gallery reference set",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{}
+			},
+			shouldError: true,
+			errContains: "must set exactly one of 'marketplace' or 'gallery_image_version_id'",
+		},
+		{
+			name: "marketplace missing publisher",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{
+					Marketplace: &builder.AzureMarketplaceImage{
+						Offer: "offer", SKU: "sku",
+					},
+				}
+			},
+			shouldError: true,
+			errContains: "marketplace source requires publisher, offer, and sku",
+		},
+		{
+			name: "marketplace missing offer",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{
+					Marketplace: &builder.AzureMarketplaceImage{
+						Publisher: "pub", SKU: "sku",
+					},
+				}
+			},
+			shouldError: true,
+			errContains: "marketplace source requires publisher, offer, and sku",
+		},
+		{
+			name: "marketplace missing sku",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{
+					Marketplace: &builder.AzureMarketplaceImage{
+						Publisher: "pub", Offer: "offer",
+					},
+				}
+			},
+			shouldError: true,
+			errContains: "marketplace source requires publisher, offer, and sku",
+		},
+		{
+			name: "blank share_with entry",
+			mutate: func(t *builder.Target) {
+				t.ShareWith = []string{"sub-aaa", "  "}
+			},
+			shouldError: true,
+			errContains: "share_with[1]' must not be blank",
+		},
+		{
+			name: "empty share_with entry",
+			mutate: func(t *builder.Target) {
+				t.ShareWith = []string{""}
+			},
+			shouldError: true,
+			errContains: "share_with[0]' must not be blank",
+		},
+		{
+			name: "invalid subnet_id format",
+			mutate: func(t *builder.Target) {
+				t.SubnetID = "not-an-arm-id"
+			},
+			shouldError: true,
+			errContains: "must be a full resource ID",
+		},
+		{
+			name: "subnet_id missing subnets segment",
+			mutate: func(t *builder.Target) {
+				t.SubnetID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet"
+			},
+			shouldError: true,
+			errContains: "must be a full resource ID",
+		},
+		{
+			name: "proxy_vm_size without subnet_id",
+			mutate: func(t *builder.Target) {
+				t.ProxyVMSize = "Standard_D2s_v3"
+			},
+			shouldError: true,
+			errContains: "'proxy_vm_size' has no effect without 'subnet_id'",
+		},
+	}
+
+	validator := NewValidator()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			target := azureValidTarget()
+			tc.mutate(&target)
+			cfg := azureBaseConfig(target)
+			err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true})
+			if tc.shouldError {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.errContains)
+				}
+				if tc.errContains != "" && !contains(err.Error(), tc.errContains) {
+					t.Fatalf("expected error containing %q, got: %v", tc.errContains, err)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))

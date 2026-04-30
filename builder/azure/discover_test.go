@@ -510,3 +510,23 @@ func TestDiscoverWithDefaultCredential_CredentialError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no cred")
 }
+
+// TestDiscoverWithDefaultCredential_PassesTenantID asserts the tenantID is
+// threaded through to the credential options. The credential factory inspects
+// the options and records what it saw.
+func TestDiscoverWithDefaultCredential_PassesTenantID(t *testing.T) {
+	orig := newCredential
+	var observedTenant string
+	newCredential = func(opts *azidentity.DefaultAzureCredentialOptions) (azcore.TokenCredential, error) {
+		if opts != nil {
+			observedTenant = opts.TenantID
+		}
+		return &fakeTokenCredential{}, nil
+	}
+	defer func() { newCredential = orig }()
+
+	// We expect this to fail at the discovery RPC stage (no real Azure), but
+	// the credential factory must have been called with our tenant first.
+	_, _ = DiscoverWithDefaultCredential(context.Background(), &builder.Target{}, "tmpl", "sub-1", "tenant-xyz")
+	assert.Equal(t, "tenant-xyz", observedTenant)
+}

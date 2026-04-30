@@ -183,6 +183,12 @@ warpgate build myimage --save-digests --digest-dir ./digests
 | `--vm-size`                | string   | Build VM size                     |
 | `--identity-id`            | string   | UAMI resource ID                  |
 | `--target-regions`         | string[] | Gallery image replication regions |
+| `--subnet-id`              | string   | Subnet (Azure ARM ID/AMI VPC ID)  |
+| `--proxy-vm-size`          | string   | AIB proxy VM size (Azure subnet)  |
+| `--cleanup`                | bool     | Delete build resources on success |
+| `--stream-logs`            | bool     | Stream build logs (AMI builds)    |
+| `--force`                  | bool     | Recreate existing AWS resources   |
+| `--dry-run`                | bool     | Validate config without building  |
 
 ### Variable Precedence
 

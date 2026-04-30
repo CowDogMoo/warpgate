@@ -29,6 +29,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
@@ -154,6 +155,14 @@ func TestPipelineRunner_NewPipelineRunner(t *testing.T) {
 	clients := &AzureClients{SubscriptionID: "sub-1"}
 	got := newPipelineRunner(clients, "rg-1", 0)
 	assert.NotNil(t, got)
+}
+
+// TestPipelineRunner_NewPipelineRunner_WithPollFrequency exercises the
+// pollFrequency>0 branch which sets pollOptions.
+func TestPipelineRunner_NewPipelineRunner_WithPollFrequency(t *testing.T) {
+	clients := &AzureClients{SubscriptionID: "sub-1"}
+	got := newPipelineRunner(clients, "rg-1", 5*time.Second)
+	require.NotNil(t, got)
 }
 
 // TestPipelineRunner_Submit_Success tests the submit path through the test server.
