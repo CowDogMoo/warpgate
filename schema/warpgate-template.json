@@ -57,6 +57,77 @@
       "type": "object",
       "description": "ArchOverride allows architecture-specific configuration"
     },
+    "AzureMarketplaceImage": {
+      "properties": {
+        "publisher": {
+          "type": "string",
+          "description": "Publisher is the marketplace publisher (e.g., \"Canonical\")"
+        },
+        "offer": {
+          "type": "string",
+          "description": "Offer is the offer name (e.g., \"0001-com-ubuntu-server-jammy\")"
+        },
+        "sku": {
+          "type": "string",
+          "description": "SKU is the offer SKU (e.g., \"22_04-lts-gen2\")"
+        },
+        "version": {
+          "type": "string",
+          "description": "Version is the marketplace image version, or \"latest\""
+        },
+        "plan": {
+          "$ref": "#/$defs/AzurePurchasePlan",
+          "description": "Plan supplies the marketplace purchase plan when the source image\nrequires plan acceptance (e.g., Kali Linux). All three fields must be\nset together; AIB rejects partial plan info."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "publisher",
+        "offer",
+        "sku"
+      ],
+      "description": "AzureMarketplaceImage identifies an Azure Marketplace image"
+    },
+    "AzurePurchasePlan": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name is the plan name (e.g., \"kali\")"
+        },
+        "product": {
+          "type": "string",
+          "description": "Product is the plan product (e.g., \"kali-linux\")"
+        },
+        "publisher": {
+          "type": "string",
+          "description": "Publisher is the plan publisher (e.g., \"kali-linux\")"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "product",
+        "publisher"
+      ],
+      "description": "AzurePurchasePlan describes a marketplace purchase plan for images that require plan acceptance."
+    },
+    "AzureSourceImage": {
+      "properties": {
+        "marketplace": {
+          "$ref": "#/$defs/AzureMarketplaceImage",
+          "description": "Marketplace references an Azure Marketplace image (publisher/offer/sku/version)"
+        },
+        "gallery_image_version_id": {
+          "type": "string",
+          "description": "GalleryImageVersionID is the resource ID of an existing gallery image version\n(e.g., \"/subscriptions/.../galleries/myGallery/images/myDef/versions/1.0.0\")"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "AzureSourceImage references the parent image for an Azure build."
+    },
     "BaseImage": {
       "properties": {
         "image": {
@@ -463,7 +534,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Type is the type of build target: \"container\" for Docker images or \"ami\" for AWS AMIs"
+          "description": "Type is the type of build target: \"container\" for Docker images,\n\"ami\" for AWS AMIs, or \"azure\" for Azure Compute Gallery images"
         },
         "platforms": {
           "items": {
@@ -508,7 +579,7 @@
         },
         "subnet_id": {
           "type": "string",
-          "description": "SubnetID is the VPC subnet ID to use for the build instance"
+          "description": "SubnetID is the subnet to attach the build VM to.\n  AMI: VPC subnet ID like \"subnet-abcd1234\".\n  Azure: ARM resource ID under Microsoft.Network/virtualNetworks/.../subnets.\nWhen set on an Azure target, AIB skips its default public IP and routes\ntraffic through a proxy VM in the same subnet (see ProxyVMSize)."
         },
         "volume_size": {
           "type": "integer",
@@ -536,6 +607,71 @@
           },
           "type": "array",
           "description": "SecurityGroupIDs specifies the security groups for the build instance\nIf not specified, uses the default security group for the VPC"
+        },
+        "subscription_id": {
+          "type": "string",
+          "description": "SubscriptionID is the Azure subscription that owns the build resources"
+        },
+        "resource_group": {
+          "type": "string",
+          "description": "ResourceGroup is the Azure resource group hosting the gallery and image template"
+        },
+        "location": {
+          "type": "string",
+          "description": "Location is the Azure region for the build (e.g., \"eastus\", \"westus2\")"
+        },
+        "gallery": {
+          "type": "string",
+          "description": "Gallery is the Azure Compute Gallery name where the image version is published"
+        },
+        "gallery_image_definition": {
+          "type": "string",
+          "description": "GalleryImageDefinition is the image definition (parent of versions) within the gallery"
+        },
+        "vm_size": {
+          "type": "string",
+          "description": "VMSize is the VM size used by Azure Image Builder during the build (e.g., \"Standard_D2s_v3\")"
+        },
+        "os_type": {
+          "type": "string",
+          "description": "OSType is the operating system family of the source image: \"Linux\" or \"Windows\""
+        },
+        "identity_id": {
+          "type": "string",
+          "description": "IdentityID is the resource ID of the user-assigned managed identity that AIB\nuses to access the gallery and staging resources"
+        },
+        "staging_resource_group": {
+          "type": "string",
+          "description": "StagingResourceGroup is the resource group used by AIB for ephemeral build resources\nIf empty, AIB creates one automatically"
+        },
+        "proxy_vm_size": {
+          "type": "string",
+          "description": "ProxyVMSize overrides the AIB proxy VM size used when SubnetID is set\n(Azure builds). AIB defaults to Standard_A1_v2 if empty. Has no effect\nfor AMI builds."
+        },
+        "source_image": {
+          "$ref": "#/$defs/AzureSourceImage",
+          "description": "SourceImage references the parent image. Use either a marketplace reference\n(publisher/offer/sku/version) or a Compute Gallery image version resource ID."
+        },
+        "target_regions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "TargetRegions lists Azure regions where the gallery image version is replicated.\nIf empty, only the build Location receives the image version."
+        },
+        "share_with": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "ShareWith lists Azure AD principal object IDs (users, groups, service\nprincipals) that should be granted the Reader role on the published\ngallery image version after a successful build. Sharing is idempotent;\nre-running with the same list is a no-op."
+        },
+        "image_tags": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object",
+          "description": "ImageTags are key-value tags applied to the generated gallery image version"
         }
       },
       "additionalProperties": false,

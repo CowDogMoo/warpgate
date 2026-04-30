@@ -243,3 +243,28 @@ type AMIBuilder interface {
 	// This does not delete associated snapshots; those must be cleaned up separately.
 	Deregister(ctx context.Context, amiID, region string) error
 }
+
+// AzureImageBuilder extends Builder with Azure Compute Gallery operations.
+// It provides operations for building and managing Azure VM images via Azure
+// VM Image Builder (AIB) and publishing them to a Compute Gallery.
+//
+// Implementations:
+//   - azure.ImageBuilder: Uses Azure VM Image Builder + Compute Gallery
+type AzureImageBuilder interface {
+	Builder
+
+	// Replicate ensures the gallery image version identified by versionID is
+	// replicated to the given target Azure regions.
+	// versionID is the resource ID of a gallery image version
+	// (e.g., "/subscriptions/.../galleries/<g>/images/<def>/versions/<v>").
+	Replicate(ctx context.Context, versionID string, targetRegions []string) error
+
+	// Share shares the gallery image version with other Azure subscriptions or
+	// tenants by configuring the gallery's sharing profile / RBAC.
+	// principalIDs are Azure AD object IDs (subscription, tenant, or service principal IDs).
+	Share(ctx context.Context, versionID string, principalIDs []string) error
+
+	// Delete removes a gallery image version. This does not delete the parent
+	// gallery image definition.
+	Delete(ctx context.Context, versionID string) error
+}
