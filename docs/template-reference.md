@@ -531,8 +531,10 @@ template self-documenting.
 - `gallery_image_definition` - Image definition (parent of versions).
 - `os_type` - `Linux` or `Windows`.
 - `identity_id` - Resource ID of the user-assigned managed identity used by AIB.
-- `source_image` - Either `marketplace` (publisher/offer/sku/version) or
-  `gallery_image_version_id` (full resource ID).
+- `source_image` - Either `marketplace` (publisher/offer/sku/version, plus an
+  optional `plan` block for marketplace images that require purchase plan
+  acceptance such as Kali Linux) or `gallery_image_version_id` (full resource
+  ID).
 - `vm_size` - Build VM size (e.g., `Standard_D2s_v3`). SKU availability
   depends on subscription quota and region capacity, so we don't guess this.
 
@@ -562,6 +564,25 @@ them explicitly in the template or override them with CLI flags.
   `Standard_A1_v2`). Has no effect unless `subnet_id` is set. CLI flag
   `--proxy-vm-size` overrides.
 - `image_tags` - Map of tags applied to the published gallery image version.
+- `source_image.marketplace.plan` - Purchase plan info (`name`, `product`,
+  `publisher`) for marketplace images that require plan acceptance, e.g. Kali
+  Linux. All three fields are required when `plan` is set; AIB rejects
+  partial plan info. Accept the plan once per subscription with
+  `az vm image terms accept --publisher <p> --offer <o> --plan <name>` before
+  building. Example:
+
+  ```yaml
+  source_image:
+    marketplace:
+      publisher: kali-linux
+      offer: kali
+      sku: kali
+      version: latest
+      plan:
+        name: kali
+        product: kali-linux
+        publisher: kali-linux
+  ```
 
 **Provisioner support:**
 

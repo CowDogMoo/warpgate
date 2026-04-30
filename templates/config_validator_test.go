@@ -1209,6 +1209,69 @@ func TestValidator_AzureTargetValidation(t *testing.T) {
 			errContains: "marketplace source requires publisher, offer, and sku",
 		},
 		{
+			name: "marketplace plan with valid fields",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{
+					Marketplace: &builder.AzureMarketplaceImage{
+						Publisher: "kali-linux",
+						Offer:     "kali",
+						SKU:       "kali",
+						Plan: &builder.AzurePurchasePlan{
+							Name:      "kali",
+							Product:   "kali-linux",
+							Publisher: "kali-linux",
+						},
+					},
+				}
+			},
+			shouldError: false,
+		},
+		{
+			name: "marketplace plan missing name",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{
+					Marketplace: &builder.AzureMarketplaceImage{
+						Publisher: "pub", Offer: "offer", SKU: "sku",
+						Plan: &builder.AzurePurchasePlan{
+							Product: "p", Publisher: "pp",
+						},
+					},
+				}
+			},
+			shouldError: true,
+			errContains: "marketplace 'plan' requires name, product, and publisher",
+		},
+		{
+			name: "marketplace plan missing product",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{
+					Marketplace: &builder.AzureMarketplaceImage{
+						Publisher: "pub", Offer: "offer", SKU: "sku",
+						Plan: &builder.AzurePurchasePlan{
+							Name: "n", Publisher: "pp",
+						},
+					},
+				}
+			},
+			shouldError: true,
+			errContains: "marketplace 'plan' requires name, product, and publisher",
+		},
+		{
+			name: "marketplace plan missing publisher",
+			mutate: func(t *builder.Target) {
+				t.SourceImage = &builder.AzureSourceImage{
+					Marketplace: &builder.AzureMarketplaceImage{
+						Publisher: "pub", Offer: "offer", SKU: "sku",
+						Plan: &builder.AzurePurchasePlan{
+							Name: "n", Product: "p",
+						},
+					},
+				}
+			},
+			shouldError: true,
+			errContains: "marketplace 'plan' requires name, product, and publisher",
+		},
+		{
 			name: "blank share_with entry",
 			mutate: func(t *builder.Target) {
 				t.ShareWith = []string{"sub-aaa", "  "}

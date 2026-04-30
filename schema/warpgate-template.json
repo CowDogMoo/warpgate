@@ -74,6 +74,10 @@
         "version": {
           "type": "string",
           "description": "Version is the marketplace image version, or \"latest\""
+        },
+        "plan": {
+          "$ref": "#/$defs/AzurePurchasePlan",
+          "description": "Plan supplies the marketplace purchase plan when the source image\nrequires plan acceptance (e.g., Kali Linux). All three fields must be\nset together; AIB rejects partial plan info."
         }
       },
       "additionalProperties": false,
@@ -84,6 +88,30 @@
         "sku"
       ],
       "description": "AzureMarketplaceImage identifies an Azure Marketplace image"
+    },
+    "AzurePurchasePlan": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name is the plan name (e.g., \"kali\")"
+        },
+        "product": {
+          "type": "string",
+          "description": "Product is the plan product (e.g., \"kali-linux\")"
+        },
+        "publisher": {
+          "type": "string",
+          "description": "Publisher is the plan publisher (e.g., \"kali-linux\")"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "product",
+        "publisher"
+      ],
+      "description": "AzurePurchasePlan describes a marketplace purchase plan for images that require plan acceptance."
     },
     "AzureSourceImage": {
       "properties": {

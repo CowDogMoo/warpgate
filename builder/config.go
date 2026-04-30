@@ -531,6 +531,24 @@ type AzureMarketplaceImage struct {
 
 	// Version is the marketplace image version, or "latest"
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
+
+	// Plan supplies the marketplace purchase plan when the source image
+	// requires plan acceptance (e.g., Kali Linux). All three fields must be
+	// set together; AIB rejects partial plan info.
+	Plan *AzurePurchasePlan `yaml:"plan,omitempty" json:"plan,omitempty"`
+}
+
+// AzurePurchasePlan describes a marketplace purchase plan for images that
+// require plan acceptance. Mirrors the AIB PlatformImagePurchasePlan model.
+type AzurePurchasePlan struct {
+	// Name is the plan name (e.g., "kali")
+	Name string `yaml:"name" json:"name"`
+
+	// Product is the plan product (e.g., "kali-linux")
+	Product string `yaml:"product" json:"product"`
+
+	// Publisher is the plan publisher (e.g., "kali-linux")
+	Publisher string `yaml:"publisher" json:"publisher"`
 }
 
 // BuildResult represents the result of a build operation

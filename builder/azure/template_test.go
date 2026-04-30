@@ -81,6 +81,37 @@ func TestBuildSource_MarketplaceDefaultsVersionToLatest(t *testing.T) {
 	assert.Equal(t, "latest", *platform.Version)
 }
 
+func TestBuildSource_MarketplaceWithPlan(t *testing.T) {
+	target := fullTarget()
+	target.SourceImage.Marketplace.Publisher = "kali-linux"
+	target.SourceImage.Marketplace.Offer = "kali"
+	target.SourceImage.Marketplace.SKU = "kali"
+	target.SourceImage.Marketplace.Plan = &builder.AzurePurchasePlan{
+		Name:      "kali",
+		Product:   "kali-linux",
+		Publisher: "kali-linux",
+	}
+
+	src, err := buildSource(target)
+	require.NoError(t, err)
+
+	platform := mustBeType[*armvirtualmachineimagebuilder.ImageTemplatePlatformImageSource](t, src)
+	require.NotNil(t, platform.PlanInfo)
+	assert.Equal(t, "kali", *platform.PlanInfo.PlanName)
+	assert.Equal(t, "kali-linux", *platform.PlanInfo.PlanProduct)
+	assert.Equal(t, "kali-linux", *platform.PlanInfo.PlanPublisher)
+}
+
+func TestBuildSource_MarketplaceWithoutPlanLeavesPlanInfoNil(t *testing.T) {
+	target := fullTarget()
+
+	src, err := buildSource(target)
+	require.NoError(t, err)
+
+	platform := mustBeType[*armvirtualmachineimagebuilder.ImageTemplatePlatformImageSource](t, src)
+	assert.Nil(t, platform.PlanInfo)
+}
+
 func TestBuildSource_GalleryVersion(t *testing.T) {
 	target := fullTarget()
 	target.SourceImage = &builder.AzureSourceImage{

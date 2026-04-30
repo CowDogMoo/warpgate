@@ -122,13 +122,21 @@ func buildSource(target *builder.Target) (armvirtualmachineimagebuilder.ImageTem
 		if version == "" {
 			version = "latest"
 		}
-		return &armvirtualmachineimagebuilder.ImageTemplatePlatformImageSource{
+		src := &armvirtualmachineimagebuilder.ImageTemplatePlatformImageSource{
 			Type:      to.Ptr("PlatformImage"),
 			Publisher: to.Ptr(mp.Publisher),
 			Offer:     to.Ptr(mp.Offer),
 			SKU:       to.Ptr(mp.SKU),
 			Version:   to.Ptr(version),
-		}, nil
+		}
+		if mp.Plan != nil {
+			src.PlanInfo = &armvirtualmachineimagebuilder.PlatformImagePurchasePlan{
+				PlanName:      to.Ptr(mp.Plan.Name),
+				PlanProduct:   to.Ptr(mp.Plan.Product),
+				PlanPublisher: to.Ptr(mp.Plan.Publisher),
+			}
+		}
+		return src, nil
 	}
 	if id := target.SourceImage.GalleryImageVersionID; id != "" {
 		return &armvirtualmachineimagebuilder.ImageTemplateSharedImageVersionSource{

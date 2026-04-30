@@ -356,6 +356,11 @@ func validateAzureSourceImage(target *builder.Target, index int) error {
 		if mp.Publisher == "" || mp.Offer == "" || mp.SKU == "" {
 			return fmt.Errorf("target[%d]: azure marketplace source requires publisher, offer, and sku", index)
 		}
+		if mp.Plan != nil {
+			if mp.Plan.Name == "" || mp.Plan.Product == "" || mp.Plan.Publisher == "" {
+				return fmt.Errorf("target[%d]: azure marketplace 'plan' requires name, product, and publisher", index)
+			}
+		}
 	}
 	return nil
 }
