@@ -61,9 +61,12 @@ type ImageBuilder struct {
 	// buildTimeoutMinutes overrides the AIB image template timeout when > 0.
 	buildTimeoutMinutes int32
 
+	// pollingInterval overrides the Azure SDK LRO polling frequency when > 0.
+	pollingInterval time.Duration
+
 	// runnerFactory builds the AIB pipelineOps used by Build. Defaults to
 	// newPipelineRunner; tests can substitute a fake.
-	runnerFactory func(*AzureClients, string) pipelineOps
+	runnerFactory func(*AzureClients, string, time.Duration) pipelineOps
 }
 
 // generateBuildID creates a unique identifier for this build. Mirrors the
@@ -116,6 +119,12 @@ func (b *ImageBuilder) SetCleanupOnFinish(v bool) {
 // Pass 0 to revert to the default.
 func (b *ImageBuilder) SetBuildTimeoutMinutes(v int32) {
 	b.buildTimeoutMinutes = v
+}
+
+// SetPollingInterval overrides the default Azure SDK LRO polling frequency.
+// Pass 0 to let the SDK default apply.
+func (b *ImageBuilder) SetPollingInterval(v time.Duration) {
+	b.pollingInterval = v
 }
 
 // Build executes the full Azure image pipeline: generate AIB image template,
@@ -203,7 +212,7 @@ func (b *ImageBuilder) runPipeline(ctx context.Context, target *builder.Target, 
 	if factory == nil {
 		factory = newPipelineRunner
 	}
-	runner := factory(b.clients, target.ResourceGroup)
+	runner := factory(b.clients, target.ResourceGroup, b.pollingInterval)
 
 	if b.forceRecreate {
 		runner.deleteTemplate(ctx, tplName)

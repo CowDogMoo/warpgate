@@ -23,7 +23,12 @@ THE SOFTWARE.
 package azure
 
 import (
+	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder"
@@ -135,7 +140,7 @@ func buildSource(target *builder.Target) (armvirtualmachineimagebuilder.ImageTem
 }
 
 // buildCustomizers converts warpgate provisioners into AIB customizers.
-// Supported provisioner types: shell, powershell, file. Other types return
+// Supported provisioner types: shell, script, powershell, file, ansible. Other types return
 // an error so the caller can surface a clear diagnostic.
 func buildCustomizers(provisioners []builder.Provisioner, osType string, opts buildTemplateOpts) ([]armvirtualmachineimagebuilder.ImageTemplateCustomizerClassification, error) {
 	out := make([]armvirtualmachineimagebuilder.ImageTemplateCustomizerClassification, 0, len(provisioners))
@@ -160,12 +165,15 @@ func buildCustomizers(provisioners []builder.Provisioner, osType string, opts bu
 				return nil, err
 			}
 			out = append(out, cs...)
+			if c := fileModeCustomizer(p, i, osType, opts.StagedFiles[i]); c != nil {
+				out = append(out, c)
+			}
 		case "script":
-			// `script` provisioners run local script files; today we surface a
-			// clear error directing users to switch to shell/powershell. A
-			// future iteration can stage scripts to blob storage and emit a
-			// shell or powershell customizer with ScriptURI.
-			return nil, fmt.Errorf("provisioner[%d] type=script is not yet supported for azure builds; use shell or powershell with inline commands", i)
+			c, err := scriptCustomizer(p, i, osType)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, c)
 		case "ansible":
 			c, err := ansibleCustomizer(p, i, osType)
 			if err != nil {
@@ -182,29 +190,72 @@ func buildCustomizers(provisioners []builder.Provisioner, osType string, opts bu
 }
 
 // shellCustomizer builds an AIB shell customizer from a shell provisioner.
-// Only inline commands are supported in this iteration.
 func shellCustomizer(p *builder.Provisioner, index int) (armvirtualmachineimagebuilder.ImageTemplateCustomizerClassification, error) {
 	if len(p.Inline) == 0 {
 		return nil, fmt.Errorf("provisioner[%d] shell: inline commands are required", index)
 	}
+	inline := make([]string, 0, len(p.Environment)+len(p.Inline))
+	for _, key := range sortedStringKeys(p.Environment) {
+		inline = append(inline, fmt.Sprintf("export %s=%s", key, shellSingleQuote(p.Environment[key])))
+	}
+	inline = append(inline, p.Inline...)
 	return &armvirtualmachineimagebuilder.ImageTemplateShellCustomizer{
 		Type:   to.Ptr("Shell"),
 		Name:   to.Ptr(fmt.Sprintf("shell-%d", index)),
-		Inline: stringSliceToPointerSlice(p.Inline),
+		Inline: stringSliceToPointerSlice(inline),
 	}, nil
 }
 
 // powerShellCustomizer builds an AIB PowerShell customizer from a powershell
-// provisioner. Only inline commands are supported in this iteration.
+// provisioner. `ps_scripts` follow the shared schema used by the rest of
+// warpgate; `inline` is retained for backwards compatibility.
 func powerShellCustomizer(p *builder.Provisioner, index int) (armvirtualmachineimagebuilder.ImageTemplateCustomizerClassification, error) {
-	if len(p.Inline) == 0 {
-		return nil, fmt.Errorf("provisioner[%d] powershell: inline commands are required", index)
+	inline, err := powerShellInlineCommands(p, index)
+	if err != nil {
+		return nil, err
 	}
 	return &armvirtualmachineimagebuilder.ImageTemplatePowerShellCustomizer{
 		Type:        to.Ptr("PowerShell"),
 		Name:        to.Ptr(fmt.Sprintf("powershell-%d", index)),
-		Inline:      stringSliceToPointerSlice(p.Inline),
+		Inline:      stringSliceToPointerSlice(inline),
 		RunElevated: to.Ptr(true),
+	}, nil
+}
+
+// scriptCustomizer builds an AIB shell customizer from one or more local
+// script files. Azure's shell customizer supports inline commands, so we
+// embed each script as base64, write it to disk, mark it executable, and run it.
+func scriptCustomizer(p *builder.Provisioner, index int, osType string) (armvirtualmachineimagebuilder.ImageTemplateCustomizerClassification, error) {
+	if len(p.Scripts) == 0 {
+		return nil, fmt.Errorf("provisioner[%d] script: scripts are required", index)
+	}
+	if strings.EqualFold(osType, "windows") {
+		return nil, fmt.Errorf("provisioner[%d] script: Windows targets are not supported; use powershell", index)
+	}
+
+	commands := []string{
+		"set -eu",
+		"mkdir -p /tmp/warpgate-scripts",
+	}
+	for scriptIndex, scriptPath := range p.Scripts {
+		content, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return nil, fmt.Errorf("provisioner[%d] script: read script %s: %w", index, scriptPath, err)
+		}
+		scriptName := fmt.Sprintf("%02d-%s", scriptIndex, filepath.Base(scriptPath))
+		scriptOnDisk := "/tmp/warpgate-scripts/" + scriptName
+		encoded := base64.StdEncoding.EncodeToString(content)
+		commands = append(commands,
+			fmt.Sprintf("echo '%s' | base64 -d > %s", encoded, shellSingleQuote(scriptOnDisk)),
+			fmt.Sprintf("chmod +x %s", shellSingleQuote(scriptOnDisk)),
+			shellSingleQuote(scriptOnDisk),
+		)
+	}
+
+	return &armvirtualmachineimagebuilder.ImageTemplateShellCustomizer{
+		Type:   to.Ptr("Shell"),
+		Name:   to.Ptr(fmt.Sprintf("script-%d", index)),
+		Inline: stringSliceToPointerSlice(commands),
 	}, nil
 }
 
@@ -250,6 +301,82 @@ func fileCustomizers(p *builder.Provisioner, index int, staged *StagedFile) ([]a
 		})
 	}
 	return out, nil
+}
+
+// fileModeCustomizer applies a provisioner's Mode after its file upload(s)
+// complete. Numeric chmod modes are only meaningful on Linux targets, so
+// Windows builds ignore Mode to match the AWS implementation.
+func fileModeCustomizer(p *builder.Provisioner, index int, osType string, staged *StagedFile) armvirtualmachineimagebuilder.ImageTemplateCustomizerClassification {
+	if p.Mode == "" || osType == "Windows" {
+		return nil
+	}
+
+	chmodCmd := fmt.Sprintf("chmod %s %s", p.Mode, shellSingleQuote(p.Destination))
+	if staged != nil && staged.IsDirectory {
+		chmodCmd = fmt.Sprintf("chmod -R %s %s", p.Mode, shellSingleQuote(p.Destination))
+	}
+
+	return &armvirtualmachineimagebuilder.ImageTemplateShellCustomizer{
+		Type:   to.Ptr("Shell"),
+		Name:   to.Ptr(fmt.Sprintf("file-%d-mode", index)),
+		Inline: stringSliceToPointerSlice([]string{chmodCmd}),
+	}
+}
+
+func powerShellInlineCommands(p *builder.Provisioner, index int) ([]string, error) {
+	if len(p.PSScripts) > 0 {
+		return powerShellCommandsFromScripts(p, index)
+	}
+	if len(p.Inline) == 0 {
+		return nil, fmt.Errorf("provisioner[%d] powershell: ps_scripts or inline commands are required", index)
+	}
+	return append([]string{}, p.Inline...), nil
+}
+
+func powerShellCommandsFromScripts(p *builder.Provisioner, index int) ([]string, error) {
+	executionPolicy := p.ExecutionPolicy
+	if executionPolicy == "" {
+		executionPolicy = "Bypass"
+	}
+
+	commands := []string{
+		"$ErrorActionPreference = 'Stop'",
+		fmt.Sprintf("Set-ExecutionPolicy -ExecutionPolicy %s -Scope Process -Force", powerShellEscape(executionPolicy)),
+		"New-Item -ItemType Directory -Force -Path 'C:\\warpgate-powershell' | Out-Null",
+	}
+
+	for scriptIndex, scriptPath := range p.PSScripts {
+		content, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return nil, fmt.Errorf("provisioner[%d] powershell: read script %s: %w", index, scriptPath, err)
+		}
+		scriptName := fmt.Sprintf("%02d-%s", scriptIndex, filepath.Base(scriptPath))
+		scriptOnDisk := "C:\\warpgate-powershell\\" + scriptName
+		encoded := base64.StdEncoding.EncodeToString(normalizePowerShellScript(content))
+		commands = append(commands,
+			fmt.Sprintf("$scriptB64 = '%s'", encoded),
+			fmt.Sprintf("[System.IO.File]::WriteAllBytes('%s', [System.Convert]::FromBase64String($scriptB64))", powerShellEscape(scriptOnDisk)),
+			fmt.Sprintf("& '%s'", powerShellEscape(scriptOnDisk)),
+		)
+	}
+
+	return commands, nil
+}
+
+func normalizePowerShellScript(content []byte) []byte {
+	if len(content) >= 3 && content[0] == 0xEF && content[1] == 0xBB && content[2] == 0xBF {
+		content = content[3:]
+	}
+	return content
+}
+
+func sortedStringKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // buildSharedImageDistributor builds the AIB distribution target that publishes

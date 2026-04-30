@@ -993,6 +993,35 @@ func TestValidator_ValidateSource(t *testing.T) {
 	}
 }
 
+func TestValidator_AzureTargetRejectsInvalidOSTypeWhenExplicit(t *testing.T) {
+	validator := NewValidator()
+	cfg := &builder.Config{
+		Name: "azure-test",
+		Base: builder.BaseImage{Image: "ubuntu:22.04"},
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo hi"}},
+		},
+		Targets: []builder.Target{
+			{
+				Type:                   "azure",
+				ResourceGroup:          "rg-1",
+				Location:               "eastus",
+				Gallery:                "gallery1",
+				GalleryImageDefinition: "def1",
+				IdentityID:             "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami",
+				OSType:                 "Solaris",
+				VMSize:                 "Standard_D2s_v3",
+				SourceImage:            &builder.AzureSourceImage{GalleryImageVersionID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/galleries/g/images/i/versions/1.0.0"},
+			},
+		},
+	}
+
+	err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true})
+	if err == nil || !contains(err.Error(), "must be \"Linux\" or \"Windows\"") {
+		t.Fatalf("expected invalid os_type error, got %v", err)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))

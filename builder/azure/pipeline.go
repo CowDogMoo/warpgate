@@ -25,7 +25,9 @@ package azure
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
@@ -46,12 +48,17 @@ type pipelineOps interface {
 type pipelineRunner struct {
 	clients       *AzureClients
 	resourceGroup string
+	pollOptions   *runtime.PollUntilDoneOptions
 }
 
 // newPipelineRunner is the default factory used by ImageBuilder. Tests can
 // substitute a fake by overriding ImageBuilder.runnerFactory.
-func newPipelineRunner(clients *AzureClients, resourceGroup string) pipelineOps {
-	return &pipelineRunner{clients: clients, resourceGroup: resourceGroup}
+func newPipelineRunner(clients *AzureClients, resourceGroup string, pollFrequency time.Duration) pipelineOps {
+	runner := &pipelineRunner{clients: clients, resourceGroup: resourceGroup}
+	if pollFrequency > 0 {
+		runner.pollOptions = &runtime.PollUntilDoneOptions{Frequency: pollFrequency}
+	}
+	return runner
 }
 
 // submit creates (or replaces) the image template resource in AIB.
@@ -63,7 +70,7 @@ func (p *pipelineRunner) submit(ctx context.Context, name string, tpl *armvirtua
 	if err != nil {
 		return fmt.Errorf("create image template %q: %w", name, err)
 	}
-	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+	if _, err := poller.PollUntilDone(ctx, p.pollOptions); err != nil {
 		return fmt.Errorf("provision image template %q: %w", name, err)
 	}
 	return nil
@@ -78,7 +85,7 @@ func (p *pipelineRunner) run(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("start image template run %q: %w", name, err)
 	}
-	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+	if _, err := poller.PollUntilDone(ctx, p.pollOptions); err != nil {
 		return fmt.Errorf("image template run %q: %w", name, err)
 	}
 	return nil
@@ -127,7 +134,7 @@ func (p *pipelineRunner) deleteTemplate(ctx context.Context, name string) {
 		logging.WarnContext(ctx, "Failed to start delete of image template %q: %v", name, err)
 		return
 	}
-	if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+	if _, err := poller.PollUntilDone(ctx, p.pollOptions); err != nil {
 		logging.WarnContext(ctx, "Failed to delete image template %q: %v", name, err)
 	}
 }

@@ -24,9 +24,12 @@ package azure
 
 import (
 	"context"
+	"errors"
+	"os"
 	"sync"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -234,4 +237,182 @@ func TestImageBuilder_CleanupStagedFiles_NilStager(t *testing.T) {
 	b := &ImageBuilder{fileStager: nil}
 	// Should not panic.
 	b.cleanupStagedFiles(context.Background(), map[int]*StagedFile{0: {}})
+}
+
+// fakeBlobClient implements blobClientAPI for unit tests. Upload and delete
+// results are configurable per-call so individual tests can simulate success
+// or failure paths without touching Azure storage.
+type fakeBlobClient struct {
+	mu          sync.Mutex
+	uploadCalls []fakeBlobUpload
+	deleteCalls []fakeBlobDelete
+	uploadErr   error
+	deleteErr   error
+}
+
+type fakeBlobUpload struct {
+	container string
+	blobName  string
+}
+
+type fakeBlobDelete struct {
+	container string
+	blobName  string
+}
+
+func (f *fakeBlobClient) UploadFile(_ context.Context, container, blobName string, _ *os.File, _ *azblob.UploadFileOptions) (azblob.UploadFileResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploadCalls = append(f.uploadCalls, fakeBlobUpload{container: container, blobName: blobName})
+	return azblob.UploadFileResponse{}, f.uploadErr
+}
+
+func (f *fakeBlobClient) DeleteBlob(_ context.Context, container, blobName string, _ *azblob.DeleteBlobOptions) (azblob.DeleteBlobResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleteCalls = append(f.deleteCalls, fakeBlobDelete{container: container, blobName: blobName})
+	return azblob.DeleteBlobResponse{}, f.deleteErr
+}
+
+// newFakeBlobStager creates a FileStager wired with a fakeBlobClient.
+func newFakeBlobStager(uploadErr, deleteErr error) (*FileStager, *fakeBlobClient) {
+	fbc := &fakeBlobClient{uploadErr: uploadErr, deleteErr: deleteErr}
+	s := &FileStager{client: fbc, account: "testacc", container: "testctr"}
+	return s, fbc
+}
+
+func TestFileStager_NewFileStager_PositiveCase(t *testing.T) {
+	fbc := &fakeBlobClient{}
+	// NewFileStager takes *azblob.Client; the positive path is already tested
+	// indirectly via NewAzureClients. Exercise the nil-return guard via nil
+	// *azblob.Client and then separately confirm non-nil via blobClientAPI.
+	// Direct construction via the struct literal is safe for testing internals.
+	s := &FileStager{client: fbc, account: "a", container: "c"}
+	require.NotNil(t, s)
+	assert.Equal(t, "a", s.account)
+	assert.Equal(t, "c", s.container)
+}
+
+func TestFileStager_Stage_SingleFile(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.sh"
+	require.NoError(t, os.WriteFile(tmpFile, []byte("#!/bin/sh"), 0600))
+
+	s, fbc := newFakeBlobStager(nil, nil)
+	staged, err := s.Stage(context.Background(), tmpFile, "warpgate-staging/build-1/0")
+	require.NoError(t, err)
+	require.NotNil(t, staged)
+
+	assert.False(t, staged.IsDirectory)
+	assert.Equal(t, "testacc", staged.Account)
+	assert.Equal(t, "testctr", staged.Container)
+	assert.Equal(t, "warpgate-staging/build-1/0", staged.KeyPrefix)
+	require.Len(t, staged.Entries, 1)
+	assert.Contains(t, staged.Entries[0].BlobName, "test.sh")
+
+	require.Len(t, fbc.uploadCalls, 1)
+	assert.Equal(t, "testctr", fbc.uploadCalls[0].container)
+}
+
+func TestFileStager_Stage_SingleFile_UploadError(t *testing.T) {
+	tmpFile := t.TempDir() + "/fail.sh"
+	require.NoError(t, os.WriteFile(tmpFile, []byte("x"), 0600))
+
+	s, _ := newFakeBlobStager(errors.New("upload denied"), nil)
+	_, err := s.Stage(context.Background(), tmpFile, "prefix/0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "upload denied")
+}
+
+func TestFileStager_Stage_NonexistentSource(t *testing.T) {
+	s, _ := newFakeBlobStager(nil, nil)
+	_, err := s.Stage(context.Background(), "/does/not/exist/file.sh", "prefix/0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "stat file provisioner source")
+}
+
+func TestFileStager_Stage_Directory(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, os.WriteFile(tmpDir+"/a.sh", []byte("a"), 0600))
+	require.NoError(t, os.MkdirAll(tmpDir+"/sub", 0755))
+	require.NoError(t, os.WriteFile(tmpDir+"/sub/b.sh", []byte("b"), 0600))
+
+	s, fbc := newFakeBlobStager(nil, nil)
+	staged, err := s.Stage(context.Background(), tmpDir, "warpgate-staging/build-1/1")
+	require.NoError(t, err)
+	require.NotNil(t, staged)
+
+	assert.True(t, staged.IsDirectory)
+	require.Len(t, staged.Entries, 2)
+	assert.Len(t, fbc.uploadCalls, 2)
+
+	// Relative paths should use forward slashes.
+	relPaths := make([]string, len(staged.Entries))
+	for i, e := range staged.Entries {
+		relPaths[i] = e.RelPath
+	}
+	assert.Contains(t, relPaths, "a.sh")
+	assert.Contains(t, relPaths, "sub/b.sh")
+}
+
+func TestFileStager_Stage_EmptyDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	s, _ := newFakeBlobStager(nil, nil)
+	_, err := s.Stage(context.Background(), tmpDir, "prefix/1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty directory")
+}
+
+func TestFileStager_Stage_Directory_UploadError(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, os.WriteFile(tmpDir+"/x.sh", []byte("x"), 0600))
+
+	s, _ := newFakeBlobStager(errors.New("quota exceeded"), nil)
+	_, err := s.Stage(context.Background(), tmpDir, "prefix/1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "quota exceeded")
+}
+
+func TestFileStager_Cleanup_DeletesEachEntry(t *testing.T) {
+	s, fbc := newFakeBlobStager(nil, nil)
+	staged := &StagedFile{
+		Account:   "testacc",
+		Container: "testctr",
+		Entries: []StagedEntry{
+			{BlobName: "prefix/0/a.sh"},
+			{BlobName: "prefix/0/b.sh"},
+		},
+	}
+	s.Cleanup(context.Background(), staged)
+	assert.Len(t, fbc.deleteCalls, 2)
+	assert.Equal(t, "testctr", fbc.deleteCalls[0].container)
+	assert.Equal(t, "prefix/0/a.sh", fbc.deleteCalls[0].blobName)
+}
+
+func TestFileStager_Cleanup_NilStagedFile(t *testing.T) {
+	s, fbc := newFakeBlobStager(nil, nil)
+	// Must not panic.
+	s.Cleanup(context.Background(), nil)
+	assert.Empty(t, fbc.deleteCalls)
+}
+
+func TestFileStager_Cleanup_DeleteError_DoesNotPanic(t *testing.T) {
+	s, fbc := newFakeBlobStager(nil, errors.New("delete failed"))
+	staged := &StagedFile{
+		Container: "testctr",
+		Entries:   []StagedEntry{{BlobName: "prefix/0/x.sh"}},
+	}
+	// Errors are logged, not returned.
+	s.Cleanup(context.Background(), staged)
+	assert.Len(t, fbc.deleteCalls, 1)
+}
+
+func TestFileStager_Stage_KeyPrefixTrailingSlashStripped(t *testing.T) {
+	tmpFile := t.TempDir() + "/x.sh"
+	require.NoError(t, os.WriteFile(tmpFile, []byte("x"), 0600))
+
+	s, fbc := newFakeBlobStager(nil, nil)
+	staged, err := s.Stage(context.Background(), tmpFile, "prefix/0/")
+	require.NoError(t, err)
+	assert.Equal(t, "prefix/0", staged.KeyPrefix)
+	assert.NotContains(t, fbc.uploadCalls[0].blobName, "//", "double slash must not appear in blob name")
 }

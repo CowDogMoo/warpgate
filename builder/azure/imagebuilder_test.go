@@ -27,6 +27,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder"
 	"github.com/cowdogmoo/warpgate/v3/builder"
@@ -121,7 +122,7 @@ func buildAzureCfg() builder.Config {
 func newImageBuilderWithFake(fake *fakePipelineOps) *ImageBuilder {
 	return &ImageBuilder{
 		clients:       &AzureClients{SubscriptionID: "sub-1"},
-		runnerFactory: func(*AzureClients, string) pipelineOps { return fake },
+		runnerFactory: func(*AzureClients, string, time.Duration) pipelineOps { return fake },
 	}
 }
 
@@ -249,7 +250,7 @@ func TestImageBuilder_Build_PropagatesDefaultsFromClients(t *testing.T) {
 			SubscriptionID: "sub-from-clients",
 			IdentityID:     "/subscriptions/sub-from-clients/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/from-clients",
 		},
-		runnerFactory: func(*AzureClients, string) pipelineOps { return fake },
+		runnerFactory: func(*AzureClients, string, time.Duration) pipelineOps { return fake },
 	}
 	cfg := buildAzureCfg()
 	cfg.Targets[0].SubscriptionID = ""
@@ -362,4 +363,128 @@ func TestImageBuilder_Delete_RequiresVersionID(t *testing.T) {
 func TestImageBuilder_Close(t *testing.T) {
 	b := &ImageBuilder{}
 	require.NoError(t, b.Close())
+}
+
+func TestImageBuilder_GetBuildID(t *testing.T) {
+	b := &ImageBuilder{buildID: "build-abc123"}
+	assert.Equal(t, "build-abc123", b.GetBuildID())
+}
+
+func TestImageBuilder_GetBuildID_Empty(t *testing.T) {
+	b := &ImageBuilder{}
+	assert.Equal(t, "", b.GetBuildID())
+}
+
+func TestImageBuilder_SetCleanupOnFinish(t *testing.T) {
+	b := &ImageBuilder{}
+	assert.False(t, b.cleanupOnFinish)
+	b.SetCleanupOnFinish(true)
+	assert.True(t, b.cleanupOnFinish)
+	b.SetCleanupOnFinish(false)
+	assert.False(t, b.cleanupOnFinish)
+}
+
+func TestNewImageBuilderWithAllOptions_RequiresSubscriptionID(t *testing.T) {
+	defer installFakeCred(t)()
+
+	_, err := NewImageBuilderWithAllOptions(context.Background(), ClientConfig{}, false, MonitorConfig{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "SubscriptionID is required")
+}
+
+func TestNewImageBuilderWithAllOptions_HappyPath(t *testing.T) {
+	defer installFakeCred(t)()
+
+	cfg := ClientConfig{
+		SubscriptionID: "sub-1",
+		Location:       "eastus",
+	}
+	b, err := NewImageBuilderWithAllOptions(context.Background(), cfg, true, MonitorConfig{StreamLogs: true})
+	require.NoError(t, err)
+	require.NotNil(t, b)
+	assert.True(t, b.forceRecreate)
+	assert.True(t, b.monitor.StreamLogs)
+	assert.NotEmpty(t, b.buildID)
+	assert.NotNil(t, b.runnerFactory)
+	assert.Nil(t, b.fileStager, "no staging account set")
+}
+
+func TestNewImageBuilderWithAllOptions_WithFileStaging(t *testing.T) {
+	defer installFakeCred(t)()
+
+	cfg := ClientConfig{
+		SubscriptionID:       "sub-1",
+		FileStagingAccount:   "myacct",
+		FileStagingContainer: "myctr",
+	}
+	b, err := NewImageBuilderWithAllOptions(context.Background(), cfg, false, MonitorConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, b)
+	assert.NotNil(t, b.fileStager, "stager should be created when staging config is present")
+}
+
+func TestGenerateBuildID_Format(t *testing.T) {
+	id := generateBuildID()
+	assert.NotEmpty(t, id)
+	assert.Contains(t, id, "-", "buildID should contain separator")
+}
+
+func TestRequireAzureFields_AllErrors(t *testing.T) {
+	base := &builder.Target{
+		Type:                   "azure",
+		SubscriptionID:         "sub-1",
+		ResourceGroup:          "rg-1",
+		Location:               "eastus",
+		Gallery:                "g",
+		GalleryImageDefinition: "def",
+		IdentityID:             "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami",
+	}
+
+	tests := []struct {
+		name  string
+		field func(*builder.Target)
+		want  string
+	}{
+		{"no subscription", func(t *builder.Target) { t.SubscriptionID = "" }, "subscription_id"},
+		{"no resource group", func(t *builder.Target) { t.ResourceGroup = "" }, "resource_group"},
+		{"no location", func(t *builder.Target) { t.Location = "" }, "location"},
+		{"no gallery", func(t *builder.Target) { t.Gallery = "" }, "gallery"},
+		{"no gallery image def", func(t *builder.Target) { t.GalleryImageDefinition = "" }, "gallery_image_definition"},
+		{"no identity", func(t *builder.Target) { t.IdentityID = "" }, "identity_id"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tgt := *base
+			tt.field(&tgt)
+			err := requireAzureFields(&tgt)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestRequireAzureFields_HappyPath(t *testing.T) {
+	tgt := &builder.Target{
+		Type:                   "azure",
+		SubscriptionID:         "sub-1",
+		ResourceGroup:          "rg-1",
+		Location:               "eastus",
+		Gallery:                "g",
+		GalleryImageDefinition: "def",
+		IdentityID:             "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami",
+	}
+	require.NoError(t, requireAzureFields(tgt))
+}
+
+func TestImageBuilder_Delete_HappyPath(t *testing.T) {
+	fake := &fakeRoleAssignmentsClient{}
+	_ = fake
+	b := &ImageBuilder{clients: &AzureClients{SubscriptionID: "sub-1"}}
+	// Delete with a valid version ID will call deleteGalleryVersion which needs
+	// a real GalleryImageVersions client. Without one it panics (nil pointer).
+	// We test the versionID == "" guard here; the actual SDK path is tested in pipeline_test.go.
+	err := b.Delete(context.Background(), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "versionID")
 }

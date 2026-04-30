@@ -23,6 +23,8 @@ THE SOFTWARE.
 package azure
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -123,13 +125,32 @@ func TestBuildCustomizers_Shell(t *testing.T) {
 	assert.Equal(t, "echo hi", *shell.Inline[0])
 }
 
+func TestBuildCustomizers_ShellIncludesEnvironment(t *testing.T) {
+	provs := []builder.Provisioner{
+		{
+			Type:        "shell",
+			Inline:      []string{"echo hi"},
+			Environment: map[string]string{"B": "2", "A": "1"},
+		},
+	}
+
+	cs, err := buildCustomizers(provs, "Linux", buildTemplateOpts{})
+	require.NoError(t, err)
+
+	shell := mustBeType[*armvirtualmachineimagebuilder.ImageTemplateShellCustomizer](t, cs[0])
+	require.Len(t, shell.Inline, 3)
+	assert.Equal(t, "export A='1'", *shell.Inline[0])
+	assert.Equal(t, "export B='2'", *shell.Inline[1])
+	assert.Equal(t, "echo hi", *shell.Inline[2])
+}
+
 func TestBuildCustomizers_ShellRequiresInline(t *testing.T) {
 	provs := []builder.Provisioner{{Type: "shell"}}
 	_, err := buildCustomizers(provs, "Linux", buildTemplateOpts{})
 	assert.Error(t, err)
 }
 
-func TestBuildCustomizers_PowerShell(t *testing.T) {
+func TestBuildCustomizers_PowerShellInline(t *testing.T) {
 	provs := []builder.Provisioner{
 		{Type: "powershell", Inline: []string{"Get-Service"}},
 	}
@@ -141,6 +162,25 @@ func TestBuildCustomizers_PowerShell(t *testing.T) {
 	assert.Equal(t, "PowerShell", *ps.Type)
 	assert.Equal(t, "powershell-0", *ps.Name)
 	assert.True(t, *ps.RunElevated)
+}
+
+func TestBuildCustomizers_PowerShellScripts(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "setup.ps1")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("Write-Host 'hello'\n"), 0o644))
+
+	provs := []builder.Provisioner{
+		{Type: "powershell", PSScripts: []string{scriptPath}, ExecutionPolicy: "RemoteSigned"},
+	}
+	cs, err := buildCustomizers(provs, "Windows", buildTemplateOpts{})
+	require.NoError(t, err)
+
+	ps := mustBeType[*armvirtualmachineimagebuilder.ImageTemplatePowerShellCustomizer](t, cs[0])
+	require.GreaterOrEqual(t, len(ps.Inline), 6)
+	assert.Equal(t, "$ErrorActionPreference = 'Stop'", *ps.Inline[0])
+	assert.Equal(t, "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process -Force", *ps.Inline[1])
+	assert.Contains(t, *ps.Inline[4], "WriteAllBytes('C:\\warpgate-powershell\\00-setup.ps1'")
+	assert.Equal(t, "& 'C:\\warpgate-powershell\\00-setup.ps1'", *ps.Inline[5])
 }
 
 func TestBuildCustomizers_File(t *testing.T) {
@@ -169,8 +209,39 @@ func TestBuildCustomizers_FileRequiresSourceAndDestination(t *testing.T) {
 	}
 }
 
+func TestBuildCustomizers_Script(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "setup.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hi\n"), 0o644))
+
+	provs := []builder.Provisioner{
+		{Type: "script", Scripts: []string{scriptPath}},
+	}
+	cs, err := buildCustomizers(provs, "Linux", buildTemplateOpts{})
+	require.NoError(t, err)
+	require.Len(t, cs, 1)
+
+	shell := mustBeType[*armvirtualmachineimagebuilder.ImageTemplateShellCustomizer](t, cs[0])
+	assert.Equal(t, "script-0", *shell.Name)
+	require.GreaterOrEqual(t, len(shell.Inline), 5)
+	assert.Equal(t, "set -eu", *shell.Inline[0])
+	assert.Equal(t, "mkdir -p /tmp/warpgate-scripts", *shell.Inline[1])
+	assert.Contains(t, *shell.Inline[2], "base64 -d > '/tmp/warpgate-scripts/00-setup.sh'")
+	assert.Equal(t, "chmod +x '/tmp/warpgate-scripts/00-setup.sh'", *shell.Inline[3])
+	assert.Equal(t, "'/tmp/warpgate-scripts/00-setup.sh'", *shell.Inline[4])
+}
+
+func TestBuildCustomizers_ScriptRejectsWindows(t *testing.T) {
+	provs := []builder.Provisioner{
+		{Type: "script", Scripts: []string{"setup.sh"}},
+	}
+	_, err := buildCustomizers(provs, "Windows", buildTemplateOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "use powershell")
+}
+
 func TestBuildCustomizers_UnsupportedTypes(t *testing.T) {
-	for _, ty := range []string{"script", "ansible", "", "rocket"} {
+	for _, ty := range []string{"", "rocket"} {
 		_, err := buildCustomizers([]builder.Provisioner{{Type: ty, Inline: []string{"x"}}}, "Linux", buildTemplateOpts{})
 		assert.Errorf(t, err, "type=%q must error", ty)
 	}
@@ -246,6 +317,58 @@ func TestBuildCustomizers_PreservesOrder(t *testing.T) {
 	mustBeType[*armvirtualmachineimagebuilder.ImageTemplateShellCustomizer](t, cs[0])
 	mustBeType[*armvirtualmachineimagebuilder.ImageTemplatePowerShellCustomizer](t, cs[1])
 	mustBeType[*armvirtualmachineimagebuilder.ImageTemplateFileCustomizer](t, cs[2])
+}
+
+func TestBuildCustomizers_FileModeAddsLinuxChmodStep(t *testing.T) {
+	provs := []builder.Provisioner{
+		{Type: "file", Source: "https://example.com/tool", Destination: "/usr/local/bin/tool", Mode: "0755"},
+	}
+
+	cs, err := buildCustomizers(provs, "Linux", buildTemplateOpts{})
+	require.NoError(t, err)
+	require.Len(t, cs, 2)
+
+	file := mustBeType[*armvirtualmachineimagebuilder.ImageTemplateFileCustomizer](t, cs[0])
+	assert.Equal(t, "/usr/local/bin/tool", *file.Destination)
+
+	mode := mustBeType[*armvirtualmachineimagebuilder.ImageTemplateShellCustomizer](t, cs[1])
+	require.Len(t, mode.Inline, 1)
+	assert.Equal(t, "chmod 0755 '/usr/local/bin/tool'", *mode.Inline[0])
+}
+
+func TestBuildCustomizers_FileModeUsesRecursiveChmodForDirectories(t *testing.T) {
+	provs := []builder.Provisioner{
+		{Type: "file", Source: "scripts", Destination: "/opt/scripts", Mode: "0750"},
+	}
+	opts := buildTemplateOpts{
+		StagedFiles: map[int]*StagedFile{
+			0: {
+				Account:     "acct",
+				Container:   "ctr",
+				IsDirectory: true,
+				KeyPrefix:   "warpgate-staging/build-1/0",
+				Entries:     []StagedEntry{{BlobName: "warpgate-staging/build-1/0/install.sh", RelPath: "install.sh"}},
+			},
+		},
+	}
+
+	cs, err := buildCustomizers(provs, "Linux", opts)
+	require.NoError(t, err)
+	require.Len(t, cs, 2)
+
+	mode := mustBeType[*armvirtualmachineimagebuilder.ImageTemplateShellCustomizer](t, cs[1])
+	assert.Equal(t, "chmod -R 0750 '/opt/scripts'", *mode.Inline[0])
+}
+
+func TestBuildCustomizers_FileModeIgnoredForWindows(t *testing.T) {
+	provs := []builder.Provisioner{
+		{Type: "file", Source: "https://example.com/tool", Destination: "C:\\tool.exe", Mode: "0755"},
+	}
+
+	cs, err := buildCustomizers(provs, "Windows", buildTemplateOpts{})
+	require.NoError(t, err)
+	require.Len(t, cs, 1)
+	mustBeType[*armvirtualmachineimagebuilder.ImageTemplateFileCustomizer](t, cs[0])
 }
 
 func TestBuildSharedImageDistributor_BasicLayout(t *testing.T) {

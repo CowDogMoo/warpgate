@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -317,4 +319,194 @@ func TestNewDiscoverer_RequiresSubscription(t *testing.T) {
 	_, err := NewDiscoverer(nil, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "subscription_id is required")
+}
+
+// TestPtrMapToStringMap covers the nil-guard and the copy logic.
+func TestPtrMapToStringMap(t *testing.T) {
+	t.Run("nil input returns nil", func(t *testing.T) {
+		assert.Nil(t, ptrMapToStringMap(nil))
+	})
+
+	t.Run("skips nil values", func(t *testing.T) {
+		s := "hello"
+		in := map[string]*string{
+			"a": &s,
+			"b": nil,
+		}
+		out := ptrMapToStringMap(in)
+		require.Len(t, out, 1)
+		assert.Equal(t, "hello", out["a"])
+	})
+
+	t.Run("empty map", func(t *testing.T) {
+		out := ptrMapToStringMap(map[string]*string{})
+		assert.NotNil(t, out)
+		assert.Empty(t, out)
+	})
+}
+
+// TestImageNames covers sorting and name extraction.
+func TestImageNames(t *testing.T) {
+	images := []GalleryImageRef{
+		{Name: "zulu"},
+		{Name: "alpha"},
+		{Name: "mango"},
+	}
+	names := imageNames(images)
+	assert.Equal(t, []string{"alpha", "mango", "zulu"}, names)
+}
+
+// TestImageNames_Empty ensures an empty slice is handled without panic.
+func TestImageNames_Empty(t *testing.T) {
+	assert.Empty(t, imageNames(nil))
+}
+
+// TestMatchSourceForImage tests the three possible match sources.
+func TestMatchSourceForImage(t *testing.T) {
+	t.Run("tag match", func(t *testing.T) {
+		img := GalleryImageRef{
+			Name: "img",
+			Tags: map[string]string{warpgateOwnerTag: "mytemplate"},
+		}
+		got := matchSourceForImage(img, "mytemplate")
+		assert.Contains(t, got, "tag")
+		assert.Contains(t, got, warpgateOwnerTag)
+	})
+
+	t.Run("name matches template", func(t *testing.T) {
+		img := GalleryImageRef{Name: "tmpl"}
+		got := matchSourceForImage(img, "tmpl")
+		assert.Equal(t, "name matches template", got)
+	})
+
+	t.Run("single image fallback", func(t *testing.T) {
+		img := GalleryImageRef{Name: "only-one"}
+		got := matchSourceForImage(img, "other-tmpl")
+		assert.Equal(t, "single image definition in gallery", got)
+	})
+
+	t.Run("empty template name falls through to single", func(t *testing.T) {
+		img := GalleryImageRef{Name: "img"}
+		got := matchSourceForImage(img, "")
+		assert.Equal(t, "single image definition in gallery", got)
+	})
+}
+
+// TestMatchByTag exercises the tag-filter generic helper across all branches.
+func TestMatchByTag(t *testing.T) {
+	items := []GalleryRef{
+		{Name: "a", Tags: nil},
+		{Name: "b", Tags: map[string]string{}},
+		{Name: "c", Tags: map[string]string{warpgateOwnerTag: "tmpl"}},
+		{Name: "d", Tags: map[string]string{warpgateOwnerTag: "other"}},
+		{Name: "e", Tags: map[string]string{warpgateOwnerTag: "true"}},
+	}
+	tagsOf := func(g GalleryRef) map[string]string { return g.Tags }
+
+	t.Run("match specific template name", func(t *testing.T) {
+		got := matchByTag(items, "tmpl", tagsOf)
+		require.Len(t, got, 2, "c (exact) and e (true) should match")
+		names := make([]string, len(got))
+		for i, g := range got {
+			names[i] = g.Name
+		}
+		assert.Contains(t, names, "c")
+		assert.Contains(t, names, "e")
+	})
+
+	t.Run("empty template name returns any tagged", func(t *testing.T) {
+		got := matchByTag(items, "", tagsOf)
+		require.Len(t, got, 3, "c, d, and e are all tagged")
+	})
+
+	t.Run("no tag key present returns empty", func(t *testing.T) {
+		untagged := []GalleryRef{{Name: "x"}, {Name: "y"}}
+		got := matchByTag(untagged, "tmpl", tagsOf)
+		assert.Empty(t, got)
+	})
+}
+
+// TestPickGalleryImage_ExplicitNotFound ensures a descriptive error when the
+// user names an image definition that doesn't exist.
+func TestPickGalleryImage_ExplicitNotFound(t *testing.T) {
+	images := []GalleryImageRef{
+		{Name: "img-1", OSType: "Linux"},
+		{Name: "img-2", OSType: "Windows"},
+	}
+	_, err := pickGalleryImage(images, "missing-img", "tmpl")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing-img")
+}
+
+// TestPickGalleryImage_AmbiguousMultiple checks the ambiguous-multiple error path.
+func TestPickGalleryImage_AmbiguousMultiple(t *testing.T) {
+	images := []GalleryImageRef{
+		{Name: "img-a", OSType: "Linux"},
+		{Name: "img-b", OSType: "Windows"},
+	}
+	_, err := pickGalleryImage(images, "", "no-match")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multiple gallery image definitions")
+	assert.Contains(t, err.Error(), "img-a")
+	assert.Contains(t, err.Error(), "img-b")
+}
+
+// TestPickGalleryImage_NameMatchesFallback picks by template name when no tag match.
+func TestPickGalleryImage_NameMatchesFallback(t *testing.T) {
+	images := []GalleryImageRef{
+		{Name: "tmpl", OSType: "Linux"},
+		{Name: "other", OSType: "Linux"},
+	}
+	got, err := pickGalleryImage(images, "", "tmpl")
+	require.NoError(t, err)
+	assert.Equal(t, "tmpl", got.Name)
+}
+
+// TestPickGalleryImage_SingleCandidate handles the single-entry fall-through.
+func TestPickGalleryImage_SingleCandidate(t *testing.T) {
+	images := []GalleryImageRef{{Name: "only", OSType: "Linux"}}
+	got, err := pickGalleryImage(images, "", "no-match")
+	require.NoError(t, err)
+	assert.Equal(t, "only", got.Name)
+}
+
+// TestPickGalleryImage_TaggedWins verifies tag-match takes precedence.
+func TestPickGalleryImage_TaggedWins(t *testing.T) {
+	images := []GalleryImageRef{
+		{Name: "img-a", OSType: "Linux"},
+		{Name: "tagged", OSType: "Linux", Tags: map[string]string{warpgateOwnerTag: "tmpl"}},
+	}
+	got, err := pickGalleryImage(images, "", "tmpl")
+	require.NoError(t, err)
+	assert.Equal(t, "tagged", got.Name)
+}
+
+// TestDiscoverWithDefaultCredential_RequiresSubscription verifies the early
+// error path using the fake credential override from client.go.
+func TestDiscoverWithDefaultCredential_RequiresSubscription(t *testing.T) {
+	// Without overriding newCredential, DefaultAzureCredential would attempt to
+	// authenticate against Azure. Override it so we stay local.
+	orig := newCredential
+	newCredential = func(_ *azidentity.DefaultAzureCredentialOptions) (azcore.TokenCredential, error) {
+		return &fakeTokenCredential{}, nil
+	}
+	defer func() { newCredential = orig }()
+
+	_, err := DiscoverWithDefaultCredential(context.Background(), &builder.Target{}, "tmpl", "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "subscription_id is required")
+}
+
+// TestDiscoverWithDefaultCredential_CredentialError propagates a credential
+// construction failure.
+func TestDiscoverWithDefaultCredential_CredentialError(t *testing.T) {
+	orig := newCredential
+	newCredential = func(_ *azidentity.DefaultAzureCredentialOptions) (azcore.TokenCredential, error) {
+		return nil, errors.New("no cred")
+	}
+	defer func() { newCredential = orig }()
+
+	_, err := DiscoverWithDefaultCredential(context.Background(), &builder.Target{}, "tmpl", "sub-1", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no cred")
 }

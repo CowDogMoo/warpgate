@@ -35,6 +35,14 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
 
+// blobClientAPI is the subset of azblob.Client used by FileStager. Declaring
+// the interface here (following the roleAssignmentsAPI pattern) lets tests
+// inject a fake without standing up real Azure storage.
+type blobClientAPI interface {
+	UploadFile(ctx context.Context, containerName, blobName string, file *os.File, opts *azblob.UploadFileOptions) (azblob.UploadFileResponse, error)
+	DeleteBlob(ctx context.Context, containerName, blobName string, opts *azblob.DeleteBlobOptions) (azblob.DeleteBlobResponse, error)
+}
+
 // StagedFile records the result of uploading a single `file` provisioner
 // source to the staging container. For a single-file source it has one Entry;
 // for a directory source it has one Entry per file under the source.
@@ -81,7 +89,7 @@ type FileStagerAPI interface {
 // Storage Blob Data Contributor) and the build's UAMI must have read access
 // (typically Storage Blob Data Reader).
 type FileStager struct {
-	client    *azblob.Client
+	client    blobClientAPI
 	account   string
 	container string
 }

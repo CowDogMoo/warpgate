@@ -25,9 +25,90 @@ package azure
 import (
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func ptr(s string) *string { return &s }
+
+func TestMergeTargetRegions_NilProps(t *testing.T) {
+	merged := mergeTargetRegions(nil, []string{"eastus", "westus"})
+	require.Len(t, merged, 2)
+	assert.Equal(t, "eastus", *merged[0].Name)
+	assert.Equal(t, "westus", *merged[1].Name)
+}
+
+func TestMergeTargetRegions_NilPublishingProfile(t *testing.T) {
+	props := &armcompute.GalleryImageVersionProperties{}
+	merged := mergeTargetRegions(props, []string{"centralus"})
+	require.Len(t, merged, 1)
+	assert.Equal(t, "centralus", *merged[0].Name)
+}
+
+func TestMergeTargetRegions_PreservesExistingRegions(t *testing.T) {
+	existing := &armcompute.GalleryImageVersionProperties{
+		PublishingProfile: &armcompute.GalleryImageVersionPublishingProfile{
+			TargetRegions: []*armcompute.TargetRegion{
+				{Name: ptr("eastus")},
+				{Name: ptr("westus")},
+			},
+		},
+	}
+	merged := mergeTargetRegions(existing, []string{"centralus"})
+	require.Len(t, merged, 3)
+	assert.Equal(t, "eastus", *merged[0].Name)
+	assert.Equal(t, "westus", *merged[1].Name)
+	assert.Equal(t, "centralus", *merged[2].Name)
+}
+
+func TestMergeTargetRegions_DeduplicatesCaseInsensitive(t *testing.T) {
+	existing := &armcompute.GalleryImageVersionProperties{
+		PublishingProfile: &armcompute.GalleryImageVersionPublishingProfile{
+			TargetRegions: []*armcompute.TargetRegion{
+				{Name: ptr("EastUS")},
+			},
+		},
+	}
+	merged := mergeTargetRegions(existing, []string{"eastus", "EASTUS", "WestUS"})
+	require.Len(t, merged, 2, "eastus duplicate must be dropped, westus added")
+	assert.Equal(t, "EastUS", *merged[0].Name)
+	assert.Equal(t, "WestUS", *merged[1].Name)
+}
+
+func TestMergeTargetRegions_NoNewRegions(t *testing.T) {
+	existing := &armcompute.GalleryImageVersionProperties{
+		PublishingProfile: &armcompute.GalleryImageVersionPublishingProfile{
+			TargetRegions: []*armcompute.TargetRegion{
+				{Name: ptr("eastus")},
+			},
+		},
+	}
+	merged := mergeTargetRegions(existing, nil)
+	require.Len(t, merged, 1)
+	assert.Equal(t, "eastus", *merged[0].Name)
+}
+
+func TestMergeTargetRegions_EmptyNewRegions(t *testing.T) {
+	merged := mergeTargetRegions(nil, []string{})
+	assert.Empty(t, merged)
+}
+
+func TestMergeTargetRegions_NilEntryInExisting(t *testing.T) {
+	existing := &armcompute.GalleryImageVersionProperties{
+		PublishingProfile: &armcompute.GalleryImageVersionPublishingProfile{
+			TargetRegions: []*armcompute.TargetRegion{
+				nil,
+				{Name: ptr("eastus")},
+			},
+		},
+	}
+	merged := mergeTargetRegions(existing, []string{"westus"})
+	require.Len(t, merged, 3, "nil entry preserved in slice, westus appended")
+	assert.Nil(t, merged[0])
+	assert.Equal(t, "eastus", *merged[1].Name)
+	assert.Equal(t, "westus", *merged[2].Name)
+}
 
 func TestParseGalleryVersionID_Valid(t *testing.T) {
 	id := "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Compute/galleries/g/images/i/versions/1.2.3"

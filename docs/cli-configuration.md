@@ -229,6 +229,10 @@ Warpgate uses `DefaultAzureCredential`, which resolves credentials in this
 order: environment variables, managed identity, Azure CLI (`az login`).
 Standard `AZURE_SUBSCRIPTION_ID` and `AZURE_TENANT_ID` env vars are honoured.
 
+Azure builds do not auto-discover missing target fields during
+`warpgate build`. Define the Azure target fields explicitly in the template,
+or override them with CLI flags/global config before building.
+
 **Required RBAC:**
 
 - The credential principal needs Contributor on the build resource group and
@@ -245,8 +249,8 @@ Standard `AZURE_SUBSCRIPTION_ID` and `AZURE_TENANT_ID` env vars are honoured.
 ```bash
 # Override location and identity
 warpgate build my-azure-template --target azure \
-  --azure-location westus2 \
-  --azure-identity-id /subscriptions/.../userAssignedIdentities/aib-uami
+  --location westus2 \
+  --identity-id /subscriptions/.../userAssignedIdentities/aib-uami
 
 # Replicate to additional regions
 warpgate build my-azure-template --target azure \

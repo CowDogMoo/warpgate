@@ -1233,6 +1233,405 @@ func TestResolveAzureCleanup(t *testing.T) {
 	}
 }
 
+// azureTargetConfig returns a builder.Config with a single azure target for use
+// in the Azure helper function tests.
+func azureTargetConfig() builder.Config {
+	return builder.Config{
+		Name: "my-image",
+		Targets: []builder.Target{
+			{
+				Type:                   "azure",
+				SubscriptionID:         "sub-1",
+				ResourceGroup:          "rg-1",
+				Location:               "eastus",
+				Gallery:                "gallery1",
+				GalleryImageDefinition: "def1",
+				IdentityID:             "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami",
+			},
+		},
+	}
+}
+
+func TestFindFirstAzureTarget_Found(t *testing.T) {
+	t.Parallel()
+	cfg := azureTargetConfig()
+	got := findFirstAzureTarget(&cfg)
+	if got == nil {
+		t.Fatal("expected non-nil azure target")
+	}
+	if got.Type != "azure" {
+		t.Errorf("Type = %q, want %q", got.Type, "azure")
+	}
+}
+
+func TestFindFirstAzureTarget_NotFound(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{
+		Targets: []builder.Target{
+			{Type: "container"},
+			{Type: "ami"},
+		},
+	}
+	got := findFirstAzureTarget(&cfg)
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}
+
+func TestFindFirstAzureTarget_EmptyTargets(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{}
+	if got := findFirstAzureTarget(&cfg); got != nil {
+		t.Errorf("expected nil for empty targets, got %+v", got)
+	}
+}
+
+func TestFirstAzureTargetSubscription(t *testing.T) {
+	t.Parallel()
+	cfg := azureTargetConfig()
+	got := firstAzureTargetSubscription(&cfg)
+	if got != "sub-1" {
+		t.Errorf("got %q, want %q", got, "sub-1")
+	}
+}
+
+func TestFirstAzureTargetSubscription_NoTarget(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{}
+	if got := firstAzureTargetSubscription(&cfg); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestFirstAzureTargetLocation(t *testing.T) {
+	t.Parallel()
+	cfg := azureTargetConfig()
+	got := firstAzureTargetLocation(&cfg)
+	if got != "eastus" {
+		t.Errorf("got %q, want %q", got, "eastus")
+	}
+}
+
+func TestFirstAzureTargetLocation_NoTarget(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{}
+	if got := firstAzureTargetLocation(&cfg); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestFirstAzureTargetIdentity(t *testing.T) {
+	t.Parallel()
+	cfg := azureTargetConfig()
+	got := firstAzureTargetIdentity(&cfg)
+	if got == "" {
+		t.Error("expected non-empty identity ID")
+	}
+}
+
+func TestFirstAzureTargetIdentity_NoTarget(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{}
+	if got := firstAzureTargetIdentity(&cfg); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestApplyAzureCLIOverrides_FlagsOverrideTarget(tt *testing.T) {
+	tt.Parallel()
+
+	cfg := azureTargetConfig()
+	globalCfg := &config.Config{}
+	globalCfg.Azure.SubscriptionID = "global-sub"
+	globalCfg.Azure.Location = "westeurope"
+
+	opts := &buildOptions{
+		azureSubscription: "override-sub",
+		azureLocation:     "centralus",
+		azureResourceGrp:  "override-rg",
+		azureGallery:      "override-gallery",
+		azureImageDef:     "override-def",
+		azureVMSize:       "Standard_D4s_v3",
+		azureIdentityID:   "/subscriptions/override-sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/override-uami",
+		azureSubnetID:     "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+		azureProxyVMSize:  "Standard_A1_v2",
+		azureTargetRegion: []string{"westus", "eastus2"},
+	}
+
+	applyAzureCLIOverrides(&cfg, globalCfg, opts)
+
+	got := cfg.Targets[0]
+	if got.SubscriptionID != "override-sub" {
+		tt.Errorf("SubscriptionID = %q, want override-sub", got.SubscriptionID)
+	}
+	if got.Location != "centralus" {
+		tt.Errorf("Location = %q, want centralus", got.Location)
+	}
+	if got.ResourceGroup != "override-rg" {
+		tt.Errorf("ResourceGroup = %q, want override-rg", got.ResourceGroup)
+	}
+	if got.Gallery != "override-gallery" {
+		tt.Errorf("Gallery = %q, want override-gallery", got.Gallery)
+	}
+	if got.GalleryImageDefinition != "override-def" {
+		tt.Errorf("GalleryImageDefinition = %q, want override-def", got.GalleryImageDefinition)
+	}
+	if got.VMSize != "Standard_D4s_v3" {
+		tt.Errorf("VMSize = %q, want Standard_D4s_v3", got.VMSize)
+	}
+	if got.IdentityID != opts.azureIdentityID {
+		tt.Errorf("IdentityID = %q, want %q", got.IdentityID, opts.azureIdentityID)
+	}
+	if got.SubnetID != opts.azureSubnetID {
+		tt.Errorf("SubnetID = %q, want %q", got.SubnetID, opts.azureSubnetID)
+	}
+	if got.ProxyVMSize != "Standard_A1_v2" {
+		tt.Errorf("ProxyVMSize = %q, want Standard_A1_v2", got.ProxyVMSize)
+	}
+	if len(got.TargetRegions) != 2 {
+		tt.Errorf("len(TargetRegions) = %d, want 2", len(got.TargetRegions))
+	}
+}
+
+func TestApplyAzureCLIOverrides_FallsBackToGlobalConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := builder.Config{
+		Targets: []builder.Target{
+			{Type: "azure"},
+		},
+	}
+	globalCfg := &config.Config{}
+	globalCfg.Azure.SubscriptionID = "global-sub"
+	globalCfg.Azure.Location = "westeurope"
+	globalCfg.Azure.ResourceGroup = "global-rg"
+	globalCfg.Azure.IdentityID = "global-identity"
+	globalCfg.Azure.Image.VMSize = "Standard_D2s_v3"
+
+	opts := &buildOptions{}
+	applyAzureCLIOverrides(&cfg, globalCfg, opts)
+
+	got := cfg.Targets[0]
+	if got.SubscriptionID != "global-sub" {
+		t.Errorf("SubscriptionID = %q, want %q", got.SubscriptionID, "global-sub")
+	}
+	if got.Location != "westeurope" {
+		t.Errorf("Location = %q, want %q", got.Location, "westeurope")
+	}
+	if got.ResourceGroup != "global-rg" {
+		t.Errorf("ResourceGroup = %q, want %q", got.ResourceGroup, "global-rg")
+	}
+	if got.IdentityID != "global-identity" {
+		t.Errorf("IdentityID = %q, want %q", got.IdentityID, "global-identity")
+	}
+	if got.VMSize != "Standard_D2s_v3" {
+		t.Errorf("VMSize = %q, want %q", got.VMSize, "Standard_D2s_v3")
+	}
+}
+
+func TestApplyAzureCLIOverrides_NoAzureTarget(t *testing.T) {
+	t.Parallel()
+
+	cfg := builder.Config{
+		Targets: []builder.Target{
+			{Type: "container"},
+		},
+	}
+	// Should be a no-op, not panic.
+	applyAzureCLIOverrides(&cfg, &config.Config{}, &buildOptions{})
+	if cfg.Targets[0].Type != "container" {
+		t.Error("non-azure target should not be modified")
+	}
+}
+
+func TestApplyAzureSubscriptionOverrides_ExplicitPreservation(t *testing.T) {
+	t.Parallel()
+
+	target := &builder.Target{
+		SubscriptionID: "existing-sub",
+		Location:       "existing-loc",
+		ResourceGroup:  "existing-rg",
+	}
+	globalCfg := &config.Config{}
+	globalCfg.Azure.SubscriptionID = "global-sub"
+
+	opts := &buildOptions{}
+	applyAzureSubscriptionOverrides(target, globalCfg, opts)
+
+	if target.SubscriptionID != "existing-sub" {
+		t.Errorf("SubscriptionID should not be overridden, got %q", target.SubscriptionID)
+	}
+	if target.Location != "existing-loc" {
+		t.Errorf("Location should not be overridden, got %q", target.Location)
+	}
+}
+
+func TestApplyAzureGalleryOverrides_Empty(t *testing.T) {
+	t.Parallel()
+
+	target := &builder.Target{Gallery: "existing", GalleryImageDefinition: "existing-def"}
+	opts := &buildOptions{}
+	applyAzureGalleryOverrides(target, &config.Config{}, opts)
+	if target.Gallery != "existing" {
+		t.Errorf("Gallery should not be overridden, got %q", target.Gallery)
+	}
+}
+
+func TestApplyAzureGalleryOverrides_Override(t *testing.T) {
+	t.Parallel()
+
+	target := &builder.Target{}
+	opts := &buildOptions{
+		azureGallery:      "new-gallery",
+		azureImageDef:     "new-def",
+		azureTargetRegion: []string{"eastus"},
+	}
+	applyAzureGalleryOverrides(target, &config.Config{}, opts)
+	if target.Gallery != "new-gallery" {
+		t.Errorf("Gallery = %q, want %q", target.Gallery, "new-gallery")
+	}
+	if target.GalleryImageDefinition != "new-def" {
+		t.Errorf("GalleryImageDefinition = %q, want %q", target.GalleryImageDefinition, "new-def")
+	}
+	if len(target.TargetRegions) != 1 || target.TargetRegions[0] != "eastus" {
+		t.Errorf("TargetRegions = %v, want [eastus]", target.TargetRegions)
+	}
+}
+
+func TestApplyAzureNetworkOverrides(t *testing.T) {
+	t.Parallel()
+
+	target := &builder.Target{}
+	opts := &buildOptions{
+		azureSubnetID:    "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+		azureProxyVMSize: "Standard_A2_v2",
+	}
+	applyAzureNetworkOverrides(target, opts)
+	if target.SubnetID != opts.azureSubnetID {
+		t.Errorf("SubnetID = %q, want %q", target.SubnetID, opts.azureSubnetID)
+	}
+	if target.ProxyVMSize != "Standard_A2_v2" {
+		t.Errorf("ProxyVMSize = %q, want %q", target.ProxyVMSize, "Standard_A2_v2")
+	}
+}
+
+func TestApplyAzureNetworkOverrides_Empty(t *testing.T) {
+	t.Parallel()
+
+	target := &builder.Target{SubnetID: "existing-subnet"}
+	applyAzureNetworkOverrides(target, &buildOptions{})
+	if target.SubnetID != "existing-subnet" {
+		t.Errorf("SubnetID should not change, got %q", target.SubnetID)
+	}
+}
+
+func TestExecuteBuild_AzurePath_NoSubscription(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{
+			{Type: "azure"},
+		},
+	}
+
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+
+	opts := &buildOptions{}
+	cmd := &cobra.Command{}
+
+	_, err := executeBuild(ctx, cmd, "azure", service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	if err == nil {
+		t.Fatal("expected error for azure build without subscription")
+	}
+}
+
+func TestExecuteAzureBuildTarget_NoSubscription(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{
+			{Type: "azure"},
+		},
+	}
+
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+
+	opts := &buildOptions{}
+	cmd := &cobra.Command{}
+
+	_, err := executeAzureBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	if err == nil {
+		t.Fatal("expected error for azure build with no subscription")
+	}
+}
+
+func TestExecuteAzureBuildTarget_WithSubscription(t *testing.T) {
+	// Disable metadata to prevent real Azure credential discovery.
+	t.Setenv("AZURE_CLIENT_ID", "fake-client-id")
+	t.Setenv("AZURE_CLIENT_SECRET", "fake-secret")
+	t.Setenv("AZURE_TENANT_ID", "fake-tenant")
+
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{
+			{
+				Type:                   "azure",
+				SubscriptionID:         "sub-1",
+				ResourceGroup:          "rg-1",
+				Location:               "eastus",
+				Gallery:                "g",
+				GalleryImageDefinition: "def",
+				IdentityID:             "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami",
+			},
+		},
+	}
+
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+
+	opts := &buildOptions{
+		azureSubscription: "sub-1",
+		dryRun:            true,
+	}
+	cmd := &cobra.Command{}
+
+	// With dry-run, we stop right after creating the builder (which may fail on
+	// credential creation). Either a credential error or nil (dry-run success).
+	_, err := executeAzureBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	// An error is expected (fake credentials won't authenticate) but it must
+	// not be a "subscription is required" error — that would mean the opts were
+	// not applied correctly.
+	if err != nil && strings.Contains(err.Error(), "SubscriptionID is required") {
+		t.Errorf("subscription should have been applied from opts, got: %v", err)
+	}
+}
+
+func TestApplyAzureCLIOverrides_PreservesExistingFieldsWhenNoOverrides(t *testing.T) {
+	t.Parallel()
+
+	cfg := azureTargetConfig()
+	originalSub := cfg.Targets[0].SubscriptionID
+	originalLoc := cfg.Targets[0].Location
+
+	applyAzureCLIOverrides(&cfg, &config.Config{}, &buildOptions{})
+
+	if cfg.Targets[0].SubscriptionID != originalSub {
+		t.Errorf("SubscriptionID changed unexpectedly: got %q", cfg.Targets[0].SubscriptionID)
+	}
+	if cfg.Targets[0].Location != originalLoc {
+		t.Errorf("Location changed unexpectedly: got %q", cfg.Targets[0].Location)
+	}
+}
+
 func TestSourceRefPattern_MatchCases(t *testing.T) {
 	t.Parallel()
 

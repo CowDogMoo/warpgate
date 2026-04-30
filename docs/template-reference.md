@@ -505,45 +505,22 @@ Warpgate uses Azure VM Image Builder as the build backend (no Packer):
   group and Contributor on the gallery resource group.
 - The Compute Gallery and gallery image definition already exist.
 
-**Auto-discovery:**
-
-When you omit the `gallery`, `resource_group`, `location`,
-`gallery_image_definition`, `os_type`, or `identity_id` fields, warpgate looks
-them up from your subscription before submitting the build:
-
-- The Compute Gallery is selected by tag (`warpgate=<template-name>` or
-  `warpgate=true`), then by exact name match against the template name, then
-  by single-match.
-- `resource_group` and `location` come from the chosen gallery.
-- The gallery image definition is selected the same way (tag → name match →
-  single-match) within the chosen gallery, and `os_type` is read from it.
-- The user-assigned managed identity is selected from the chosen resource
-  group (tagged candidate wins; otherwise must be the only UAMI in that RG).
-
-`subscription_id` is **not** auto-discovered — set it explicitly via
-`--subscription`, `AZURE_SUBSCRIPTION_ID`, or the global warpgate config so
-discovery has a scope to query.
-
-If discovery finds multiple candidates with no way to disambiguate, the build
-fails with the list of candidates and how to pick one. Pass `--no-discover`
-to skip discovery and require everything to be explicit.
-
-**Required options (after discovery):**
+**Required options:**
 
 - `subscription_id` - Azure subscription (or set `AZURE_SUBSCRIPTION_ID`).
-- `source_image` - Either `marketplace` (publisher/offer/sku/version) or
-  `gallery_image_version_id` (full resource ID).
-- `vm_size` - Build VM size (e.g., `Standard_D2s_v3`). SKU availability
-  depends on subscription quota and region capacity, so we don't guess this.
-
-**Discoverable options (set explicitly to skip lookup):**
-
 - `resource_group` - Resource group hosting the build resources.
 - `location` - Azure region for the build (e.g., `eastus`).
 - `gallery` - Compute Gallery name where the image is published.
 - `gallery_image_definition` - Image definition (parent of versions).
 - `os_type` - `Linux` or `Windows`.
 - `identity_id` - Resource ID of the user-assigned managed identity used by AIB.
+- `source_image` - Either `marketplace` (publisher/offer/sku/version) or
+  `gallery_image_version_id` (full resource ID).
+- `vm_size` - Build VM size (e.g., `Standard_D2s_v3`). SKU availability
+  depends on subscription quota and region capacity, so we don't guess this.
+
+Azure builds do not auto-discover these fields during `warpgate build`; set
+them explicitly in the template or override them with CLI flags.
 
 **Optional:**
 
@@ -572,7 +549,9 @@ to skip discovery and require everything to be explicit.
 **Provisioner support:**
 
 - `shell` (Linux) - inline commands.
-- `powershell` (Windows) - inline commands; runs elevated.
+- `script` (Linux) - one or more local shell scripts from `scripts`; each is
+  embedded into the build, written to disk, made executable, and run in order.
+- `powershell` (Windows) - `ps_scripts` (preferred) or inline commands; runs elevated.
 - `file` - Source can be an HTTPS/SAS URL, or a local path when
   `azure.image.file_staging_storage_account` and
   `azure.image.file_staging_container` are configured (the local file is
@@ -587,9 +566,6 @@ to skip discovery and require everything to be explicit.
   vars (`ansible_connection`, `ansible_aws_ssm_*`, and on Windows also
   `ansible_shell_type`) are stripped — the playbook is run with
   `--connection=local`.
-- `script` is not yet supported on Azure builds; use `shell`/`powershell`
-  instead.
-
 Windows targets are detected from `os_type: Windows` on the target, or from
 `ansible_shell_type: powershell` (or `cmd`) in an ansible provisioner's
 `extra_vars`.
@@ -598,13 +574,13 @@ Windows targets are detected from `os_type: Windows` on the target, or from
 
 ```bash
 warpgate build my-template.yaml \
-  --target-type azure \
-  --azure-subscription-id <sub> \
-  --azure-location eastus \
-  --azure-resource-group my-build-rg \
-  --azure-gallery myGallery \
-  --azure-image-definition ubuntu-22-04 \
-  --azure-identity-id /subscriptions/.../userAssignedIdentities/aib-uami \
+  --target azure \
+  --subscription <sub> \
+  --location eastus \
+  --resource-group my-build-rg \
+  --gallery myGallery \
+  --image-definition ubuntu-22-04 \
+  --identity-id /subscriptions/.../userAssignedIdentities/aib-uami \
   --target-regions westus2,westeurope
 ```
 

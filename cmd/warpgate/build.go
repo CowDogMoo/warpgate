@@ -83,7 +83,6 @@ type buildOptions struct {
 	azureTargetRegion []string // Replicate gallery image version to additional regions
 	azureSubnetID     string   // Pre-existing subnet for AIB build VM (no public IP)
 	azureProxyVMSize  string   // VM size for the AIB proxy (only used when SubnetID is set)
-	azureNoDiscover   bool     // Skip Azure resource auto-discovery
 }
 
 var buildCmd *cobra.Command
@@ -177,7 +176,20 @@ Examples:
 	buildCmd.Flags().StringSliceVar(&opts.azureTargetRegion, "target-regions", nil, "Azure regions to replicate the gallery image version to (Azure builds only)")
 	buildCmd.Flags().StringVar(&opts.azureSubnetID, "subnet-id", "", "Pre-existing subnet resource ID for the build VM. Disables AIB's public IP (Azure builds only)")
 	buildCmd.Flags().StringVar(&opts.azureProxyVMSize, "proxy-vm-size", "", "VM size for the AIB proxy when --subnet-id is set (Azure builds only)")
-	buildCmd.Flags().BoolVar(&opts.azureNoDiscover, "no-discover", false, "Disable auto-discovery of Azure gallery, image definition, and managed identity (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureSubscription, "azure-subscription-id", "", "Alias for --subscription (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureLocation, "azure-location", "", "Alias for --location (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureResourceGrp, "azure-resource-group", "", "Alias for --resource-group (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureGallery, "azure-gallery", "", "Alias for --gallery (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureImageDef, "azure-image-definition", "", "Alias for --image-definition (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureVMSize, "azure-vm-size", "", "Alias for --vm-size (Azure builds only)")
+	buildCmd.Flags().StringVar(&opts.azureIdentityID, "azure-identity-id", "", "Alias for --identity-id (Azure builds only)")
+	_ = buildCmd.Flags().MarkHidden("azure-subscription-id")
+	_ = buildCmd.Flags().MarkHidden("azure-location")
+	_ = buildCmd.Flags().MarkHidden("azure-resource-group")
+	_ = buildCmd.Flags().MarkHidden("azure-gallery")
+	_ = buildCmd.Flags().MarkHidden("azure-image-definition")
+	_ = buildCmd.Flags().MarkHidden("azure-vm-size")
+	_ = buildCmd.Flags().MarkHidden("azure-identity-id")
 
 	registerBuildCompletions(buildCmd)
 }
@@ -406,12 +418,6 @@ func executeBuild(ctx context.Context, cmd *cobra.Command, targetType string, se
 func executeAzureBuildTarget(ctx context.Context, cmd *cobra.Command, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
 	applyAzureCLIOverrides(buildConfig, cfg, opts)
 
-	if !opts.azureNoDiscover {
-		if err := runAzureDiscovery(ctx, buildConfig, cfg); err != nil {
-			return nil, err
-		}
-	}
-
 	subscription := opts.azureSubscription
 	if subscription == "" {
 		subscription = cfg.Azure.SubscriptionID
@@ -451,6 +457,12 @@ func executeAzureBuildTarget(ctx context.Context, cmd *cobra.Command, service *b
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure builder: %w", err)
 	}
+	if cfg.Azure.Image.BuildTimeoutMin > 0 {
+		azBuilder.SetBuildTimeoutMinutes(int32(cfg.Azure.Image.BuildTimeoutMin))
+	}
+	if cfg.Azure.Image.PollingIntervalSec > 0 {
+		azBuilder.SetPollingInterval(time.Duration(cfg.Azure.Image.PollingIntervalSec) * time.Second)
+	}
 	azBuilder.SetCleanupOnFinish(resolveAzureCleanup(cmd, opts))
 	defer func() {
 		if closeErr := azBuilder.Close(); closeErr != nil {
@@ -471,30 +483,6 @@ func executeAzureBuildTarget(ctx context.Context, cmd *cobra.Command, service *b
 	return []builder.BuildResult{*result}, nil
 }
 
-// runAzureDiscovery fills in empty Azure target fields using the Azure SDK.
-// Subscription/tenant come from CLI/global config; the rest is auto-discovered.
-// A clear error is returned if the subscription cannot be determined, so we
-// don't silently skip discovery on a misconfigured machine.
-func runAzureDiscovery(ctx context.Context, buildConfig *builder.Config, cfg *config.Config) error {
-	target := findFirstAzureTarget(buildConfig)
-	if target == nil {
-		return nil
-	}
-
-	subscription := target.SubscriptionID
-	if subscription == "" {
-		subscription = cfg.Azure.SubscriptionID
-	}
-	if subscription == "" {
-		return fmt.Errorf("azure discovery: subscription_id is required (set --subscription, AZURE_SUBSCRIPTION_ID, or warpgate config); pass --no-discover to skip auto-discovery")
-	}
-
-	templateName := buildConfig.Name
-	tenant := cfg.Azure.TenantID
-	_, err := azure.DiscoverWithDefaultCredential(ctx, target, templateName, subscription, tenant)
-	return err
-}
-
 // resolveAzureCleanup picks the effective --cleanup value for Azure builds.
 // Default is true (Azure builds delete their AIB ImageTemplate after success)
 // unless the user passed --cleanup explicitly.
@@ -506,8 +494,7 @@ func resolveAzureCleanup(cmd *cobra.Command, opts *buildOptions) bool {
 }
 
 // findFirstAzureTarget returns a pointer to the first azure target in
-// buildConfig, or nil when none exists. Used by discovery so the build path
-// has a single canonical "where do I put discovered values" anchor.
+// buildConfig, or nil when none exists.
 func findFirstAzureTarget(buildConfig *builder.Config) *builder.Target {
 	for i := range buildConfig.Targets {
 		if buildConfig.Targets[i].Type == "azure" {

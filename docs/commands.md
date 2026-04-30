@@ -143,11 +143,11 @@ warpgate build my-ami-template --target ami
 
 # Build Azure VM image (publishes to Compute Gallery)
 warpgate build my-azure-template --target azure \
-  --azure-location eastus \
-  --azure-resource-group my-build-rg \
-  --azure-gallery myGallery \
-  --azure-image-definition ubuntu-22-04 \
-  --azure-identity-id /subscriptions/.../userAssignedIdentities/aib-uami
+  --location eastus \
+  --resource-group my-build-rg \
+  --gallery myGallery \
+  --image-definition ubuntu-22-04 \
+  --identity-id /subscriptions/.../userAssignedIdentities/aib-uami
 
 # Save build digests for signing
 warpgate build myimage --save-digests --digest-dir ./digests
@@ -175,13 +175,13 @@ warpgate build myimage --save-digests --digest-dir ./digests
 | `--no-cache`               | bool     | Disable all caching               |
 | `--region`                 | string   | AWS region for AMI builds         |
 | `--instance-type`          | string   | EC2 instance type for AMI builds  |
-| `--azure-subscription-id`  | string   | Azure subscription ID             |
-| `--azure-location`         | string   | Azure region                      |
-| `--azure-resource-group`   | string   | Azure resource group              |
-| `--azure-gallery`          | string   | Compute Gallery name              |
-| `--azure-image-definition` | string   | Gallery image definition          |
-| `--azure-vm-size`          | string   | Build VM size                     |
-| `--azure-identity-id`      | string   | UAMI resource ID                  |
+| `--subscription`           | string   | Azure subscription ID             |
+| `--location`               | string   | Azure region                      |
+| `--resource-group`         | string   | Azure resource group              |
+| `--gallery`                | string   | Compute Gallery name              |
+| `--image-definition`       | string   | Gallery image definition          |
+| `--vm-size`                | string   | Build VM size                     |
+| `--identity-id`            | string   | UAMI resource ID                  |
 | `--target-regions`         | string[] | Gallery image replication regions |
 
 ### Variable Precedence
