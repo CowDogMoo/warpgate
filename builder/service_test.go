@@ -1215,3 +1215,128 @@ func TestPushMultiArch_SaveDigests(t *testing.T) {
 		}
 	}
 }
+
+// mockAzureImageBuilder implements AzureImageBuilder for testing the
+// post-build sharing flow inside ExecuteAzureBuild.
+type mockAzureImageBuilder struct {
+	buildFunc func(ctx context.Context, cfg Config) (*BuildResult, error)
+
+	shareCalled    bool
+	shareVersionID string
+	sharePrincipal []string
+	shareErr       error
+
+	replicateCalled bool
+	deleteCalled    bool
+}
+
+func (m *mockAzureImageBuilder) Build(ctx context.Context, cfg Config) (*BuildResult, error) {
+	if m.buildFunc != nil {
+		return m.buildFunc(ctx, cfg)
+	}
+	return &BuildResult{GalleryImageVersionID: "/v/123", Location: "eastus"}, nil
+}
+
+func (m *mockAzureImageBuilder) Replicate(_ context.Context, _ string, _ []string) error {
+	m.replicateCalled = true
+	return nil
+}
+
+func (m *mockAzureImageBuilder) Share(_ context.Context, versionID string, principals []string) error {
+	m.shareCalled = true
+	m.shareVersionID = versionID
+	m.sharePrincipal = principals
+	return m.shareErr
+}
+
+func (m *mockAzureImageBuilder) Delete(_ context.Context, _ string) error {
+	m.deleteCalled = true
+	return nil
+}
+
+func (m *mockAzureImageBuilder) Close() error { return nil }
+
+func azureBuildConfig(shareWith []string) Config {
+	return Config{
+		Name: "img",
+		Targets: []Target{
+			{
+				Type:                   "azure",
+				SubscriptionID:         "sub",
+				ResourceGroup:          "rg",
+				Location:               "eastus",
+				Gallery:                "g",
+				GalleryImageDefinition: "def",
+				IdentityID:             "/uami",
+				ShareWith:              shareWith,
+			},
+		},
+	}
+}
+
+func TestExecuteAzureBuild_NoShareWith(t *testing.T) {
+	mb := &mockAzureImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	res, err := svc.ExecuteAzureBuild(context.Background(), azureBuildConfig(nil), BuildOptions{}, mb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected build result, got nil")
+	}
+	if mb.shareCalled {
+		t.Errorf("Share should not have been called when share_with is empty")
+	}
+}
+
+func TestExecuteAzureBuild_SharesAfterSuccess(t *testing.T) {
+	mb := &mockAzureImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	cfg := azureBuildConfig([]string{"principal-1", "principal-2"})
+	_, err := svc.ExecuteAzureBuild(context.Background(), cfg, BuildOptions{}, mb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !mb.shareCalled {
+		t.Fatal("Share should have been called")
+	}
+	if mb.shareVersionID != "/v/123" {
+		t.Errorf("expected versionID /v/123, got %q", mb.shareVersionID)
+	}
+	if len(mb.sharePrincipal) != 2 || mb.sharePrincipal[0] != "principal-1" {
+		t.Errorf("unexpected principals: %v", mb.sharePrincipal)
+	}
+}
+
+func TestExecuteAzureBuild_ShareErrorPropagates(t *testing.T) {
+	mb := &mockAzureImageBuilder{shareErr: fmt.Errorf("rbac denied")}
+	svc := NewBuildService(nil, nil)
+
+	cfg := azureBuildConfig([]string{"p"})
+	_, err := svc.ExecuteAzureBuild(context.Background(), cfg, BuildOptions{}, mb)
+	if err == nil {
+		t.Fatal("expected error from Share to propagate")
+	}
+	if !strings.Contains(err.Error(), "rbac denied") {
+		t.Errorf("error did not contain expected message: %v", err)
+	}
+}
+
+func TestExecuteAzureBuild_BuildFailureSkipsShare(t *testing.T) {
+	mb := &mockAzureImageBuilder{
+		buildFunc: func(_ context.Context, _ Config) (*BuildResult, error) {
+			return nil, fmt.Errorf("build broke")
+		},
+	}
+	svc := NewBuildService(nil, nil)
+
+	_, err := svc.ExecuteAzureBuild(context.Background(), azureBuildConfig([]string{"p"}), BuildOptions{}, mb)
+	if err == nil {
+		t.Fatal("expected build error to propagate")
+	}
+	if mb.shareCalled {
+		t.Error("Share must not be called when Build fails")
+	}
+}

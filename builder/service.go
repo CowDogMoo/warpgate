@@ -126,6 +126,75 @@ func (s *BuildService) ExecuteAMIBuild(ctx context.Context, config Config, opts 
 	return result, nil
 }
 
+// ExecuteAzureBuild performs a complete Azure image build workflow with the
+// provided Azure builder. Mirrors ExecuteAMIBuild: handles target selection
+// and location/identity resolution, then delegates to the builder.
+// The caller is responsible for creating and closing the Azure builder to
+// avoid import cycles.
+func (s *BuildService) ExecuteAzureBuild(ctx context.Context, config Config, opts BuildOptions, azBuilder AzureImageBuilder) (*BuildResult, error) {
+	logging.InfoContext(ctx, "Executing Azure image build")
+
+	azureTarget := findAzureTarget(config.Targets)
+	if azureTarget == nil {
+		return nil, fmt.Errorf("no azure target found in configuration")
+	}
+
+	s.applyAzureGlobalDefaults(azureTarget)
+
+	if azureTarget.Location == "" {
+		return nil, fmt.Errorf("azure location must be specified (target.location, --location, or global config azure.location)")
+	}
+
+	result, err := azBuilder.Build(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("azure build failed: %w", err)
+	}
+
+	if len(azureTarget.ShareWith) > 0 {
+		logging.InfoContext(ctx, "Sharing gallery image version with %d principal(s)", len(azureTarget.ShareWith))
+		if err := azBuilder.Share(ctx, result.GalleryImageVersionID, azureTarget.ShareWith); err != nil {
+			return nil, fmt.Errorf("azure share failed: %w", err)
+		}
+	}
+
+	logging.InfoContext(ctx, "Azure image build completed: %s", result.GalleryImageVersionID)
+	return result, nil
+}
+
+// findAzureTarget returns a pointer to the first azure target in targets, or
+// nil if none exists.
+func findAzureTarget(targets []Target) *Target {
+	for i := range targets {
+		if targets[i].Type == "azure" {
+			return &targets[i]
+		}
+	}
+	return nil
+}
+
+// applyAzureGlobalDefaults fills empty fields on azureTarget from the service's
+// global config (if set). Fields already populated on the target take precedence.
+func (s *BuildService) applyAzureGlobalDefaults(azureTarget *Target) {
+	if s.globalConfig == nil {
+		return
+	}
+	if azureTarget.Location == "" {
+		azureTarget.Location = s.globalConfig.Azure.Location
+	}
+	if azureTarget.ResourceGroup == "" {
+		azureTarget.ResourceGroup = s.globalConfig.Azure.ResourceGroup
+	}
+	if azureTarget.IdentityID == "" {
+		azureTarget.IdentityID = s.globalConfig.Azure.IdentityID
+	}
+	if azureTarget.SubscriptionID == "" {
+		azureTarget.SubscriptionID = s.globalConfig.Azure.SubscriptionID
+	}
+	if azureTarget.VMSize == "" {
+		azureTarget.VMSize = s.globalConfig.Azure.Image.VMSize
+	}
+}
+
 // Push pushes build results to a registry and optionally saves digests.
 // For multi-arch builds, it also creates and pushes a multi-arch manifest.
 func (s *BuildService) Push(ctx context.Context, config Config, results []BuildResult, opts BuildOptions) error {

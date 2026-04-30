@@ -141,32 +141,48 @@ warpgate build myimage --push --registry ghcr.io/myorg
 # Build AMI
 warpgate build my-ami-template --target ami
 
+# Build Azure VM image (publishes to Compute Gallery)
+warpgate build my-azure-template --target azure \
+  --azure-location eastus \
+  --azure-resource-group my-build-rg \
+  --azure-gallery myGallery \
+  --azure-image-definition ubuntu-22-04 \
+  --azure-identity-id /subscriptions/.../userAssignedIdentities/aib-uami
+
 # Save build digests for signing
 warpgate build myimage --save-digests --digest-dir ./digests
 ```
 
 ### Flags
 
-| Flag              | Type     | Description                              |
-| ----------------- | -------- | ---------------------------------------- |
-| `--arch`          | string   | Architectures: `amd64`, `arm64`          |
-| `--var`           | string   | Override variable (`KEY=value`)          |
-| `--var-file`      | string   | Load variables from YAML file            |
-| `--push`          | bool     | Push image to registry after build       |
-| `--registry`      | string   | Container registry URL                   |
-| `--tag`           | string[] | Additional tags for the image            |
-| `--label`         | string[] | Set image labels (`key=value`)           |
-| `--build-arg`     | string[] | Set Dockerfile build args (`key=value`)  |
-| `--save-digests`  | bool     | Save image digests to files              |
-| `--digest-dir`    | string   | Directory for digests (default: `.`)     |
-| `--target`        | string   | Build target: `container`, `ami`         |
-| `--template`      | string   | Use named template from registry         |
-| `--from-git`      | string   | Build from Git repository URL            |
-| `--cache-from`    | string[] | External cache sources for BuildKit      |
-| `--cache-to`      | string[] | External cache destinations for BuildKit |
-| `--no-cache`      | bool     | Disable all caching                      |
-| `--region`        | string   | AWS region for AMI builds                |
-| `--instance-type` | string   | EC2 instance type for AMI builds         |
+| Flag                       | Type     | Description                       |
+| -------------------------- | -------- | --------------------------------- |
+| `--arch`                   | string   | Architectures: `amd64`, `arm64`   |
+| `--var`                    | string   | Override variable (`KEY=value`)   |
+| `--var-file`               | string   | Load variables from YAML file     |
+| `--push`                   | bool     | Push image to registry            |
+| `--registry`               | string   | Container registry URL            |
+| `--tag`                    | string[] | Additional tags for the image     |
+| `--label`                  | string[] | Set image labels (`key=value`)    |
+| `--build-arg`              | string[] | Dockerfile build args             |
+| `--save-digests`           | bool     | Save image digests to files       |
+| `--digest-dir`             | string   | Directory for digests             |
+| `--target`                 | string   | Build target: ami/azure/container |
+| `--template`               | string   | Use named template from registry  |
+| `--from-git`               | string   | Build from Git repository URL     |
+| `--cache-from`             | string[] | BuildKit cache sources            |
+| `--cache-to`               | string[] | BuildKit cache destinations       |
+| `--no-cache`               | bool     | Disable all caching               |
+| `--region`                 | string   | AWS region for AMI builds         |
+| `--instance-type`          | string   | EC2 instance type for AMI builds  |
+| `--azure-subscription-id`  | string   | Azure subscription ID             |
+| `--azure-location`         | string   | Azure region                      |
+| `--azure-resource-group`   | string   | Azure resource group              |
+| `--azure-gallery`          | string   | Compute Gallery name              |
+| `--azure-image-definition` | string   | Gallery image definition          |
+| `--azure-vm-size`          | string   | Build VM size                     |
+| `--azure-identity-id`      | string   | UAMI resource ID                  |
+| `--target-regions`         | string[] | Gallery image replication regions |
 
 ### Variable Precedence
 

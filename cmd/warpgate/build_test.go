@@ -466,7 +466,7 @@ func TestExecuteBuild_UnsupportedTarget(t *testing.T) {
 	ctx := setupTestContext(t)
 	cfg := &config.Config{}
 
-	_, err := executeBuild(ctx, "unknown-target", nil, cfg, nil, builder.BuildOptions{}, &buildOptions{})
+	_, err := executeBuild(ctx, nil, "unknown-target", nil, cfg, nil, builder.BuildOptions{}, &buildOptions{})
 	if err == nil {
 		t.Fatal("expected error for unsupported target type")
 	}
@@ -782,7 +782,7 @@ func TestExecuteBuild_UnsupportedTargetType(t *testing.T) {
 	ctx := setupTestContext(t)
 	cfg := &config.Config{}
 
-	_, err := executeBuild(ctx, "vmware", nil, cfg, nil, builder.BuildOptions{}, &buildOptions{})
+	_, err := executeBuild(ctx, nil, "vmware", nil, cfg, nil, builder.BuildOptions{}, &buildOptions{})
 	if err == nil {
 		t.Fatal("expected error for unsupported target type")
 	}
@@ -806,7 +806,7 @@ func TestExecuteBuild_ContainerPath_NilService(t *testing.T) {
 		return nil, fmt.Errorf("mock: no BuildKit available")
 	})
 
-	_, err := executeBuild(ctx, "container", service, cfg, buildConfig, builder.BuildOptions{}, &buildOptions{})
+	_, err := executeBuild(ctx, nil, "container", service, cfg, buildConfig, builder.BuildOptions{}, &buildOptions{})
 	if err == nil {
 		t.Fatal("expected error for container build without BuildKit")
 	}
@@ -836,7 +836,7 @@ func TestExecuteBuild_AMIPath_NoAWSCredentials(t *testing.T) {
 	}
 
 	// AMI build will fail when trying to create the AMI builder with mock credentials
-	_, err := executeBuild(ctx, "ami", service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	_, err := executeBuild(ctx, nil, "ami", service, cfg, buildConfig, builder.BuildOptions{}, opts)
 	// Should fail at the AMI builder creation or build step, not at dispatch
 	if err == nil {
 		t.Log("AMI build succeeded unexpectedly (likely had real AWS credentials)")
@@ -849,7 +849,7 @@ func TestExecuteBuild_EmptyTargetType(t *testing.T) {
 	ctx := setupTestContext(t)
 	cfg := &config.Config{}
 
-	_, err := executeBuild(ctx, "", nil, cfg, nil, builder.BuildOptions{}, &buildOptions{})
+	_, err := executeBuild(ctx, nil, "", nil, cfg, nil, builder.BuildOptions{}, &buildOptions{})
 	if err == nil {
 		t.Fatal("expected error for empty target type")
 	}
@@ -1186,6 +1186,50 @@ func TestResolveSourceReference_InvalidFormat(t *testing.T) {
 	result := resolveSourceReference(ctx, "${invalid.arsenal}", sourceMap)
 	if result != "${invalid.arsenal}" {
 		t.Errorf("resolveSourceReference() = %q, want original reference", result)
+	}
+}
+
+// TestResolveAzureCleanup verifies the Azure-specific cleanup default flip.
+// Azure builds default cleanup=true (delete the AIB ImageTemplate after a
+// successful build) but always defer to an explicit --cleanup flag.
+func TestResolveAzureCleanup(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		flagPassed     bool
+		flagValue      bool
+		wantCleanup    bool
+		wantNilCmdSafe bool // nil cmd should fall through to the default true
+	}{
+		{name: "default with no cmd", wantCleanup: true, wantNilCmdSafe: true},
+		{name: "default without explicit flag", flagPassed: false, flagValue: false, wantCleanup: true},
+		{name: "explicit --cleanup=true", flagPassed: true, flagValue: true, wantCleanup: true},
+		{name: "explicit --cleanup=false keeps template", flagPassed: true, flagValue: false, wantCleanup: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := &buildOptions{cleanupOnFinish: tt.flagValue}
+
+			var cmd *cobra.Command
+			if !tt.wantNilCmdSafe {
+				cmd = &cobra.Command{}
+				cmd.Flags().BoolVar(&opts.cleanupOnFinish, "cleanup", false, "")
+				if tt.flagPassed {
+					if err := cmd.Flags().Set("cleanup", fmt.Sprintf("%t", tt.flagValue)); err != nil {
+						t.Fatalf("set flag: %v", err)
+					}
+				}
+			}
+
+			got := resolveAzureCleanup(cmd, opts)
+			if got != tt.wantCleanup {
+				t.Errorf("resolveAzureCleanup() = %v, want %v", got, tt.wantCleanup)
+			}
+		})
 	}
 }
 

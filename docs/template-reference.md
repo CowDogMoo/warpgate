@@ -452,6 +452,162 @@ This reduces launch times from ~10 minutes to ~3 minutes.
 - The default quota is 40 max parallel launches per region across all AMIs
 - Only applicable to Windows AMIs (Linux AMIs already launch quickly)
 
+### Azure Target
+
+Build Azure VM images using Azure VM Image Builder (AIB) and publish them to
+an Azure Compute Gallery:
+
+```yaml
+targets:
+  - type: azure
+    subscription_id: 00000000-0000-0000-0000-000000000000
+    resource_group: my-build-rg
+    location: eastus
+    gallery: myGallery
+    gallery_image_definition: ubuntu-22-04
+    os_type: Linux
+    vm_size: Standard_D2s_v3
+    identity_id: /subscriptions/.../userAssignedIdentities/aib-uami
+    source_image:
+      marketplace:
+        publisher: Canonical
+        offer: 0001-com-ubuntu-server-jammy
+        sku: 22_04-lts-gen2
+        version: latest
+    target_regions:
+      - westus2
+      - westeurope
+    image_tags:
+      Owner: redteam
+      Environment: prod
+```
+
+**How it works:**
+
+Warpgate uses Azure VM Image Builder as the build backend (no Packer):
+
+1. Generates an AIB ImageTemplate that references the source image and your
+   provisioners (mapped to AIB shell, PowerShell, and File customizers).
+2. Submits the template and runs it. AIB launches a build VM, runs the
+   customizers, and captures the result.
+3. Publishes the captured image as a new gallery image version
+   (`YYYY.MMDD.HHMMSS` UTC) into the configured Compute Gallery.
+4. Optionally replicates to additional regions via `target_regions`.
+5. Deletes the AIB ImageTemplate resource on success by default (pass
+   `--cleanup=false` to keep it around for debugging — Azure cleanup defaults
+   to on; AMI cleanup defaults to off).
+
+**Prerequisites:**
+
+- Azure credentials reachable by `DefaultAzureCredential` (env vars, `az login`,
+  managed identity).
+- A user-assigned managed identity with the AIB role on the build resource
+  group and Contributor on the gallery resource group.
+- The Compute Gallery and gallery image definition already exist.
+
+**Auto-discovery:**
+
+When you omit the `gallery`, `resource_group`, `location`,
+`gallery_image_definition`, `os_type`, or `identity_id` fields, warpgate looks
+them up from your subscription before submitting the build:
+
+- The Compute Gallery is selected by tag (`warpgate=<template-name>` or
+  `warpgate=true`), then by exact name match against the template name, then
+  by single-match.
+- `resource_group` and `location` come from the chosen gallery.
+- The gallery image definition is selected the same way (tag → name match →
+  single-match) within the chosen gallery, and `os_type` is read from it.
+- The user-assigned managed identity is selected from the chosen resource
+  group (tagged candidate wins; otherwise must be the only UAMI in that RG).
+
+`subscription_id` is **not** auto-discovered — set it explicitly via
+`--subscription`, `AZURE_SUBSCRIPTION_ID`, or the global warpgate config so
+discovery has a scope to query.
+
+If discovery finds multiple candidates with no way to disambiguate, the build
+fails with the list of candidates and how to pick one. Pass `--no-discover`
+to skip discovery and require everything to be explicit.
+
+**Required options (after discovery):**
+
+- `subscription_id` - Azure subscription (or set `AZURE_SUBSCRIPTION_ID`).
+- `source_image` - Either `marketplace` (publisher/offer/sku/version) or
+  `gallery_image_version_id` (full resource ID).
+- `vm_size` - Build VM size (e.g., `Standard_D2s_v3`). SKU availability
+  depends on subscription quota and region capacity, so we don't guess this.
+
+**Discoverable options (set explicitly to skip lookup):**
+
+- `resource_group` - Resource group hosting the build resources.
+- `location` - Azure region for the build (e.g., `eastus`).
+- `gallery` - Compute Gallery name where the image is published.
+- `gallery_image_definition` - Image definition (parent of versions).
+- `os_type` - `Linux` or `Windows`.
+- `identity_id` - Resource ID of the user-assigned managed identity used by AIB.
+
+**Optional:**
+
+- `staging_resource_group` - Resource group AIB uses for ephemeral build
+  resources. AIB creates one automatically when omitted.
+- `target_regions` - Additional regions for replication (CLI flag
+  `--target-regions` overrides).
+- `share_with` - List of Azure AD principal object IDs (users, groups, or
+  service principals) that should receive the Reader role on the published
+  gallery image version after a successful build. Sharing is idempotent;
+  re-running with the same list is a safe no-op. Requires the build credential
+  to hold User Access Administrator (or higher) on the gallery's resource
+  group scope.
+- `subnet_id` - Resource ID of a pre-existing subnet
+  (`/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<subnet>`).
+  When set, AIB places the build VM on this subnet without a public IP and
+  provisions a small proxy VM in the same subnet to relay control traffic.
+  The subnet must allow outbound internet (NAT gateway, Azure Firewall, or
+  service endpoints to storage/keyvault/ARM) so apt/pip and AIB callbacks can
+  reach their destinations. CLI flag `--subnet-id` overrides.
+- `proxy_vm_size` - VM size for the AIB proxy VM (defaults to
+  `Standard_A1_v2`). Has no effect unless `subnet_id` is set. CLI flag
+  `--proxy-vm-size` overrides.
+- `image_tags` - Map of tags applied to the published gallery image version.
+
+**Provisioner support:**
+
+- `shell` (Linux) - inline commands.
+- `powershell` (Windows) - inline commands; runs elevated.
+- `file` - Source can be an HTTPS/SAS URL, or a local path when
+  `azure.image.file_staging_storage_account` and
+  `azure.image.file_staging_container` are configured (the local file is
+  uploaded to blob storage before the build, and cleaned up afterwards).
+- `ansible` - Runs an Ansible playbook on the build VM. The playbook (and an
+  optional `galaxy_file`) are embedded into the build via base64 inline
+  commands, so no extra storage is required. Linux targets emit a Shell
+  customizer that auto-installs `ansible` via apt/dnf/yum; Windows targets
+  emit a PowerShell customizer that installs Python via Chocolatey and pip
+  installs `ansible`/`pywinrm`. Recognised provisioner fields:
+  `playbook_path`, `galaxy_file`, `inventory`, `extra_vars`. Connection-flavor
+  vars (`ansible_connection`, `ansible_aws_ssm_*`, and on Windows also
+  `ansible_shell_type`) are stripped — the playbook is run with
+  `--connection=local`.
+- `script` is not yet supported on Azure builds; use `shell`/`powershell`
+  instead.
+
+Windows targets are detected from `os_type: Windows` on the target, or from
+`ansible_shell_type: powershell` (or `cmd`) in an ansible provisioner's
+`extra_vars`.
+
+**CLI flags:**
+
+```bash
+warpgate build my-template.yaml \
+  --target-type azure \
+  --azure-subscription-id <sub> \
+  --azure-location eastus \
+  --azure-resource-group my-build-rg \
+  --azure-gallery myGallery \
+  --azure-image-definition ubuntu-22-04 \
+  --azure-identity-id /subscriptions/.../userAssignedIdentities/aib-uami \
+  --target-regions westus2,westeurope
+```
+
 ### Multiple Targets
 
 Build both containers and AMIs:

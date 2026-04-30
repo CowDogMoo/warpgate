@@ -66,6 +66,7 @@ type Config struct {
 	Manifests ManifestsConfig `mapstructure:"manifests"`
 	Log       LogConfig       `mapstructure:"log"`
 	AWS       AWSConfig       `mapstructure:"aws"`
+	Azure     AzureConfig     `mapstructure:"azure"`
 	Container ContainerConfig `mapstructure:"container"`
 	Convert   ConvertConfig   `mapstructure:"convert"`
 	BuildKit  BuildKitConfig  `mapstructure:"buildkit"`
@@ -154,6 +155,52 @@ type AMIConfig struct {
 	// type=file. The InstanceProfileName must grant s3:GetObject on this
 	// bucket so the build instance can pull the staged objects.
 	FileStagingBucket string `mapstructure:"file_staging_bucket"`
+}
+
+// AzureConfig holds Azure-related configuration shared across builds.
+// Per-target overrides live on builder.Target (Azure-specific fields).
+type AzureConfig struct {
+	// SubscriptionID is the default Azure subscription used when a target does not
+	// specify one. Can be overridden via AZURE_SUBSCRIPTION_ID.
+	SubscriptionID string `mapstructure:"subscription_id" yaml:"subscription_id,omitempty"`
+
+	// TenantID is the Azure AD tenant. Usually inferred from the credential
+	// (DefaultAzureCredential), but can be set explicitly.
+	TenantID string `mapstructure:"tenant_id" yaml:"tenant_id,omitempty"`
+
+	// ResourceGroup is the default resource group for Azure builds.
+	ResourceGroup string `mapstructure:"resource_group" yaml:"resource_group,omitempty"`
+
+	// Location is the default Azure region (e.g., "eastus").
+	Location string `mapstructure:"location" yaml:"location,omitempty"`
+
+	// IdentityID is the default user-assigned managed identity resource ID used
+	// by AIB to access gallery and staging resources.
+	IdentityID string `mapstructure:"identity_id" yaml:"identity_id,omitempty"`
+
+	// Image holds AIB build defaults (timeout, polling, vm size).
+	Image AzureImageConfig `mapstructure:"image" yaml:"image,omitempty"`
+}
+
+// AzureImageConfig holds default settings for the Azure VM Image Builder pipeline.
+type AzureImageConfig struct {
+	// VMSize is the default VM size used by AIB during the build.
+	VMSize string `mapstructure:"vm_size" yaml:"vm_size,omitempty"`
+
+	// PollingIntervalSec is how frequently to poll the AIB image template build status.
+	PollingIntervalSec int `mapstructure:"polling_interval_sec" yaml:"polling_interval_sec,omitempty"`
+
+	// BuildTimeoutMin is the AIB image template build timeout in minutes.
+	BuildTimeoutMin int `mapstructure:"build_timeout_min" yaml:"build_timeout_min,omitempty"`
+
+	// FileStagingStorageAccount is the storage account warpgate uploads `file`
+	// provisioner sources to before the AIB build starts. The IdentityID must
+	// have Storage Blob Data Reader on this account.
+	FileStagingStorageAccount string `mapstructure:"file_staging_storage_account" yaml:"file_staging_storage_account,omitempty"`
+
+	// FileStagingContainer is the blob container within FileStagingStorageAccount
+	// where staged files are uploaded.
+	FileStagingContainer string `mapstructure:"file_staging_container" yaml:"file_staging_container,omitempty"`
 }
 
 // ContainerConfig holds container build configuration
@@ -381,6 +428,18 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("aws.ami.build_timeout_min", 30)
 	v.SetDefault("aws.ami.default_parent_image", "") // Empty = user must specify
 
+	// Azure defaults
+	v.SetDefault("azure.subscription_id", "")
+	v.SetDefault("azure.tenant_id", "")
+	v.SetDefault("azure.resource_group", "")
+	v.SetDefault("azure.location", "")
+	v.SetDefault("azure.identity_id", "")
+	v.SetDefault("azure.image.vm_size", "Standard_D2s_v3")
+	v.SetDefault("azure.image.polling_interval_sec", 30)
+	v.SetDefault("azure.image.build_timeout_min", 60)
+	v.SetDefault("azure.image.file_staging_storage_account", "")
+	v.SetDefault("azure.image.file_staging_container", "")
+
 	// Container defaults
 	v.SetDefault("container.default_platform", "linux/amd64")
 	v.SetDefault("container.default_platforms", []string{"linux/amd64", "linux/arm64"})
@@ -460,6 +519,18 @@ func bindEnvVars(v *viper.Viper) {
 	bind("aws.ami.polling_interval_sec", "WARPGATE_AWS_AMI_POLLING_INTERVAL_SEC")
 	bind("aws.ami.build_timeout_min", "WARPGATE_AWS_AMI_BUILD_TIMEOUT_MIN")
 	bind("aws.ami.default_parent_image", "WARPGATE_AWS_AMI_DEFAULT_PARENT_IMAGE")
+
+	// Azure (also supports standard AZURE_ env vars through azidentity)
+	bind("azure.subscription_id", "AZURE_SUBSCRIPTION_ID", "WARPGATE_AZURE_SUBSCRIPTION_ID")
+	bind("azure.tenant_id", "AZURE_TENANT_ID", "WARPGATE_AZURE_TENANT_ID")
+	bind("azure.resource_group", "WARPGATE_AZURE_RESOURCE_GROUP")
+	bind("azure.location", "WARPGATE_AZURE_LOCATION")
+	bind("azure.identity_id", "WARPGATE_AZURE_IDENTITY_ID")
+	bind("azure.image.vm_size", "WARPGATE_AZURE_IMAGE_VM_SIZE")
+	bind("azure.image.polling_interval_sec", "WARPGATE_AZURE_IMAGE_POLLING_INTERVAL_SEC")
+	bind("azure.image.build_timeout_min", "WARPGATE_AZURE_IMAGE_BUILD_TIMEOUT_MIN")
+	bind("azure.image.file_staging_storage_account", "WARPGATE_AZURE_IMAGE_FILE_STAGING_STORAGE_ACCOUNT")
+	bind("azure.image.file_staging_container", "WARPGATE_AZURE_IMAGE_FILE_STAGING_CONTAINER")
 
 	// Container
 	bind("container.default_platform", "WARPGATE_CONTAINER_DEFAULT_PLATFORM")

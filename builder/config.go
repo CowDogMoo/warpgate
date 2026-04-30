@@ -389,7 +389,8 @@ type Provisioner struct {
 
 // Target represents a build target
 type Target struct {
-	// Type is the type of build target: "container" for Docker images or "ami" for AWS AMIs
+	// Type is the type of build target: "container" for Docker images,
+	// "ami" for AWS AMIs, or "azure" for Azure Compute Gallery images
 	Type string `yaml:"type" json:"type"`
 
 	// Container-specific fields
@@ -420,7 +421,11 @@ type Target struct {
 	// AMITags are key-value tags to apply to the AMI
 	AMITags map[string]string `yaml:"ami_tags,omitempty" json:"ami_tags,omitempty"`
 
-	// SubnetID is the VPC subnet ID to use for the build instance
+	// SubnetID is the subnet to attach the build VM to.
+	//   AMI: VPC subnet ID like "subnet-abcd1234".
+	//   Azure: ARM resource ID under Microsoft.Network/virtualNetworks/.../subnets.
+	// When set on an Azure target, AIB skips its default public IP and routes
+	// traffic through a proxy VM in the same subnet (see ProxyVMSize).
 	SubnetID string `yaml:"subnet_id,omitempty" json:"subnet_id,omitempty"`
 
 	// VolumeSize is the root volume size in GB for the AMI
@@ -447,6 +452,85 @@ type Target struct {
 	// SecurityGroupIDs specifies the security groups for the build instance
 	// If not specified, uses the default security group for the VPC
 	SecurityGroupIDs []string `yaml:"security_group_ids,omitempty" json:"security_group_ids,omitempty"`
+
+	// Azure-specific fields (used when Type == "azure")
+
+	// SubscriptionID is the Azure subscription that owns the build resources
+	SubscriptionID string `yaml:"subscription_id,omitempty" json:"subscription_id,omitempty"`
+
+	// ResourceGroup is the Azure resource group hosting the gallery and image template
+	ResourceGroup string `yaml:"resource_group,omitempty" json:"resource_group,omitempty"`
+
+	// Location is the Azure region for the build (e.g., "eastus", "westus2")
+	Location string `yaml:"location,omitempty" json:"location,omitempty"`
+
+	// Gallery is the Azure Compute Gallery name where the image version is published
+	Gallery string `yaml:"gallery,omitempty" json:"gallery,omitempty"`
+
+	// GalleryImageDefinition is the image definition (parent of versions) within the gallery
+	GalleryImageDefinition string `yaml:"gallery_image_definition,omitempty" json:"gallery_image_definition,omitempty"`
+
+	// VMSize is the VM size used by Azure Image Builder during the build (e.g., "Standard_D2s_v3")
+	VMSize string `yaml:"vm_size,omitempty" json:"vm_size,omitempty"`
+
+	// OSType is the operating system family of the source image: "Linux" or "Windows"
+	OSType string `yaml:"os_type,omitempty" json:"os_type,omitempty"`
+
+	// IdentityID is the resource ID of the user-assigned managed identity that AIB
+	// uses to access the gallery and staging resources
+	IdentityID string `yaml:"identity_id,omitempty" json:"identity_id,omitempty"`
+
+	// StagingResourceGroup is the resource group used by AIB for ephemeral build resources
+	// If empty, AIB creates one automatically
+	StagingResourceGroup string `yaml:"staging_resource_group,omitempty" json:"staging_resource_group,omitempty"`
+
+	// ProxyVMSize overrides the AIB proxy VM size used when SubnetID is set
+	// (Azure builds). AIB defaults to Standard_A1_v2 if empty. Has no effect
+	// for AMI builds.
+	ProxyVMSize string `yaml:"proxy_vm_size,omitempty" json:"proxy_vm_size,omitempty"`
+
+	// SourceImage references the parent image. Use either a marketplace reference
+	// (publisher/offer/sku/version) or a Compute Gallery image version resource ID.
+	SourceImage *AzureSourceImage `yaml:"source_image,omitempty" json:"source_image,omitempty"`
+
+	// TargetRegions lists Azure regions where the gallery image version is replicated.
+	// If empty, only the build Location receives the image version.
+	TargetRegions []string `yaml:"target_regions,omitempty" json:"target_regions,omitempty"`
+
+	// ShareWith lists Azure AD principal object IDs (users, groups, service
+	// principals) that should be granted the Reader role on the published
+	// gallery image version after a successful build. Sharing is idempotent;
+	// re-running with the same list is a no-op.
+	ShareWith []string `yaml:"share_with,omitempty" json:"share_with,omitempty"`
+
+	// ImageTags are key-value tags applied to the generated gallery image version
+	ImageTags map[string]string `yaml:"image_tags,omitempty" json:"image_tags,omitempty"`
+}
+
+// AzureSourceImage references the parent image for an Azure build. Exactly one
+// of MarketplaceImage or GalleryImageVersionID must be set.
+type AzureSourceImage struct {
+	// Marketplace references an Azure Marketplace image (publisher/offer/sku/version)
+	Marketplace *AzureMarketplaceImage `yaml:"marketplace,omitempty" json:"marketplace,omitempty"`
+
+	// GalleryImageVersionID is the resource ID of an existing gallery image version
+	// (e.g., "/subscriptions/.../galleries/myGallery/images/myDef/versions/1.0.0")
+	GalleryImageVersionID string `yaml:"gallery_image_version_id,omitempty" json:"gallery_image_version_id,omitempty"`
+}
+
+// AzureMarketplaceImage identifies an Azure Marketplace image
+type AzureMarketplaceImage struct {
+	// Publisher is the marketplace publisher (e.g., "Canonical")
+	Publisher string `yaml:"publisher" json:"publisher"`
+
+	// Offer is the offer name (e.g., "0001-com-ubuntu-server-jammy")
+	Offer string `yaml:"offer" json:"offer"`
+
+	// SKU is the offer SKU (e.g., "22_04-lts-gen2")
+	SKU string `yaml:"sku" json:"sku"`
+
+	// Version is the marketplace image version, or "latest"
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
 
 // BuildResult represents the result of a build operation
@@ -468,6 +552,18 @@ type BuildResult struct {
 
 	// Region where AMI was created
 	Region string `json:"region,omitempty"`
+
+	// GalleryImageVersionID is the resource ID of the published Azure Compute
+	// Gallery image version (set for Azure builds)
+	GalleryImageVersionID string `json:"gallery_image_version_id,omitempty"`
+
+	// ManagedImageID is the resource ID of the managed image AIB produced as the
+	// distribution intermediate (set for Azure builds when a managed image
+	// distribution is configured)
+	ManagedImageID string `json:"managed_image_id,omitempty"`
+
+	// Location is the Azure region of the published image version (set for Azure builds)
+	Location string `json:"location,omitempty"`
 
 	// Build duration
 	Duration string `json:"duration"`
