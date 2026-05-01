@@ -87,14 +87,17 @@ jobs:
           # Install gocyclo
           go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
 
-          # Install golangci-lint
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b "$(go env GOPATH)/bin"
-
           # Install gocritic
           go install github.com/go-critic/go-critic/cmd/gocritic@latest
 
           # Add Go bin directory to PATH
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
+        with:
+          version: latest
+          install-only: true
 
       - name: Renovate
         uses: renovatebot/github-action@83ec54fee49ab67d9cd201084c1ff325b4b462e4 # v46.1.10
