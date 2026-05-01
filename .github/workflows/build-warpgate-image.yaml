@@ -39,7 +39,6 @@ concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
 
 env:
-  GO_VERSION: "1.25.7"
   TASK_VERSION: "3.38.0"
   TASK_X_REMOTE_TASKFILES: 1
 
@@ -66,7 +65,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           check-latest: true
 
       - name: Verify Go Installation and Add to PATH
@@ -233,7 +232,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           check-latest: true
 
       - name: Verify Go Installation and Add to PATH

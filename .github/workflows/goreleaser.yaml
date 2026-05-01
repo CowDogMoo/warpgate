@@ -5,9 +5,6 @@ on:
     tags:
       - "*"
 
-env:
-  GO_VERSION: 1.26.2
-
 jobs:
   goreleaser:
     name: Run GoReleaser
@@ -24,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version: "${{ env.GO_VERSION }}"
+          go-version-file: go.mod
           cache-dependency-path: "**/*.sum"
 
       - name: Fix GOPATH

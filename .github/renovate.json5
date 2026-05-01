@@ -92,19 +92,4 @@
     enabled: true,
     automerge: true,
   },
-  customManagers: [
-    {
-      customType: 'regex',
-      description: 'Update GO_VERSION environment variable in workflows',
-      managerFilePatterns: [
-        '/^\\.github/workflows/[^/]+\\.ya?ml$/',
-      ],
-      matchStrings: [
-        'GO_VERSION:\\s*(?<currentValue>\\S+)',
-      ],
-      depNameTemplate: 'golang',
-      datasourceTemplate: 'golang-version',
-      versioningTemplate: 'loose',
-    },
-  ],
 }
