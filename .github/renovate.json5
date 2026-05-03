@@ -70,7 +70,7 @@
       ],
       automerge: true,
       automergeType: 'pr',
-      automergeStrategy: 'squash',
+      automergeStrategy: 'merge-queue',
     },
     {
       description: 'Group Go indirect dependencies (non-major)',
