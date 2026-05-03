@@ -31,7 +31,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder/v2"
 	"github.com/cowdogmoo/warpgate/v3/builder"
 )
 
@@ -99,7 +99,7 @@ func buildImageTemplate(cfg builder.Config, target *builder.Target, versionTag s
 		Properties: props,
 		Identity: &armvirtualmachineimagebuilder.ImageTemplateIdentity{
 			Type: to.Ptr(armvirtualmachineimagebuilder.ResourceIdentityTypeUserAssigned),
-			UserAssignedIdentities: map[string]*armvirtualmachineimagebuilder.ComponentsVrq145SchemasImagetemplateidentityPropertiesUserassignedidentitiesAdditionalproperties{
+			UserAssignedIdentities: map[string]*armvirtualmachineimagebuilder.UserAssignedIdentity{
 				target.IdentityID: {},
 			},
 		},

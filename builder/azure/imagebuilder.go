@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder/v2"
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/logging"
 )
