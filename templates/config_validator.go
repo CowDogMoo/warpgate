@@ -469,7 +469,8 @@ func validateSourceName(name string, index int, seenNames map[string]bool) error
 		isLower := r >= 'a' && r <= 'z'
 		isUpper := r >= 'A' && r <= 'Z'
 		isDigit := r >= '0' && r <= '9'
-		if !(isLower || isUpper || isDigit || r == '-' || r == '_') {
+		isValid := isLower || isUpper || isDigit || r == '-' || r == '_'
+		if !isValid {
 			return fmt.Errorf("sources[%d]: name %q contains invalid characters (use alphanumeric, hyphens, underscores)", index, name)
 		}
 	}
