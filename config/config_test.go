@@ -618,6 +618,11 @@ func TestLoad_FindsConfigInCurrentDir(t *testing.T) {
 		t.Fatalf("Failed to write test config: %v", err)
 	}
 
+	isolated := t.TempDir()
+	t.Setenv("HOME", isolated)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(isolated, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(isolated, ".cache"))
+
 	originalDir, _ := os.Getwd()
 	defer func() {
 		_ = os.Chdir(originalDir)
@@ -642,6 +647,12 @@ func TestLoad_FindsConfigInCurrentDir(t *testing.T) {
 // TestLoad_NoConfigFile tests Load with no config file returns defaults + ErrConfigNotFound
 func TestLoad_NoConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
+
+	isolated := t.TempDir()
+	t.Setenv("HOME", isolated)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(isolated, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(isolated, ".cache"))
+
 	originalDir, _ := os.Getwd()
 	defer func() {
 		_ = os.Chdir(originalDir)

@@ -315,6 +315,20 @@
       "type": "object",
       "description": "ImageAuth contains authentication information for pulling images"
     },
+    "LocalSource": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path is the directory to use as the source\nRelative paths are resolved relative to the template config file's directory\nExamples: \"./ansible\", \"../shared/playbooks\", \"/abs/path/to/dir\""
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "description": "LocalSource defines a directory on the local filesystem to use as a source."
+    },
     "Metadata": {
       "properties": {
         "name": {
@@ -521,6 +535,10 @@
         "git": {
           "$ref": "#/$defs/GitSource",
           "description": "Git specifies a git repository to clone"
+        },
+        "local": {
+          "$ref": "#/$defs/LocalSource",
+          "description": "Local specifies a directory on the local filesystem\nUseful when provisioner assets live in the same repository as the template"
         }
       },
       "additionalProperties": false,
@@ -528,7 +546,7 @@
       "required": [
         "name"
       ],
-      "description": "Source defines an external source to fetch before the build starts Sources are fetched to a temporary directory and can be referenced by provisioners"
+      "description": "Source defines an external source to fetch before the build starts Sources are fetched to a temporary directory and can be referenced by provisioners Exactly one of Git or Local must be specified."
     },
     "Target": {
       "properties": {

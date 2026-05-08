@@ -246,6 +246,7 @@ type ImageAuth struct {
 
 // Source defines an external source to fetch before the build starts
 // Sources are fetched to a temporary directory and can be referenced by provisioners
+// Exactly one of Git or Local must be specified.
 type Source struct {
 	// Name is a unique identifier for this source, used to reference it in provisioners
 	// Reference sources in provisioners using ${sources.<name>}
@@ -254,8 +255,21 @@ type Source struct {
 	// Git specifies a git repository to clone
 	Git *GitSource `yaml:"git,omitempty" json:"git,omitempty"`
 
+	// Local specifies a directory on the local filesystem
+	// Useful when provisioner assets live in the same repository as the template
+	Local *LocalSource `yaml:"local,omitempty" json:"local,omitempty"`
+
 	// Path is populated at runtime with the local path where the source was fetched
 	Path string `yaml:"-" json:"-"`
+}
+
+// LocalSource defines a directory on the local filesystem to use as a source.
+// Relative paths are resolved relative to the directory containing the template config file.
+type LocalSource struct {
+	// Path is the directory to use as the source
+	// Relative paths are resolved relative to the template config file's directory
+	// Examples: "./ansible", "../shared/playbooks", "/abs/path/to/dir"
+	Path string `yaml:"path" json:"path"`
 }
 
 // GitSource defines a git repository to clone

@@ -432,40 +432,77 @@ func (v *Validator) validateTarget(target *builder.Target, index int) error {
 
 // validateSource validates a single source definition
 func (v *Validator) validateSource(ctx context.Context, source *builder.Source, index int, seenNames map[string]bool) error {
-	// Name is required
-	if source.Name == "" {
-		return fmt.Errorf("sources[%d]: name is required", index)
+	if err := validateSourceName(source.Name, index, seenNames); err != nil {
+		return err
 	}
 
-	// Check for duplicate names
-	if seenNames[source.Name] {
-		return fmt.Errorf("sources[%d]: duplicate source name %q", index, source.Name)
-	}
-	seenNames[source.Name] = true
-
-	// Validate source name format (alphanumeric, hyphens, underscores)
-	for _, r := range source.Name {
-		isLower := r >= 'a' && r <= 'z'
-		isUpper := r >= 'A' && r <= 'Z'
-		isDigit := r >= '0' && r <= '9'
-		isValid := isLower || isUpper || isDigit || r == '-' || r == '_'
-		if !isValid {
-			return fmt.Errorf("sources[%d]: name %q contains invalid characters (use alphanumeric, hyphens, underscores)", index, source.Name)
-		}
+	if err := validateSourceTypeCardinality(source, index); err != nil {
+		return err
 	}
 
-	// Must have at least one source type defined
-	if source.Git == nil {
-		return fmt.Errorf("sources[%d]: must specify a source type (git)", index)
-	}
-
-	// Validate git source
 	if source.Git != nil {
 		if err := v.validateGitSource(ctx, source.Git, index); err != nil {
 			return err
 		}
 	}
 
+	if source.Local != nil {
+		if err := v.validateLocalSource(source.Local, index); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateSourceName checks the source name is non-empty, unique, and uses a valid character set.
+func validateSourceName(name string, index int, seenNames map[string]bool) error {
+	if name == "" {
+		return fmt.Errorf("sources[%d]: name is required", index)
+	}
+	if seenNames[name] {
+		return fmt.Errorf("sources[%d]: duplicate source name %q", index, name)
+	}
+	seenNames[name] = true
+
+	for _, r := range name {
+		isLower := r >= 'a' && r <= 'z'
+		isUpper := r >= 'A' && r <= 'Z'
+		isDigit := r >= '0' && r <= '9'
+		isValid := isLower || isUpper || isDigit || r == '-' || r == '_'
+		if !isValid {
+			return fmt.Errorf("sources[%d]: name %q contains invalid characters (use alphanumeric, hyphens, underscores)", index, name)
+		}
+	}
+	return nil
+}
+
+// validateSourceTypeCardinality enforces that exactly one source type is set.
+func validateSourceTypeCardinality(source *builder.Source, index int) error {
+	typesSet := 0
+	if source.Git != nil {
+		typesSet++
+	}
+	if source.Local != nil {
+		typesSet++
+	}
+	switch typesSet {
+	case 0:
+		return fmt.Errorf("sources[%d]: must specify a source type (git, local)", index)
+	case 1:
+		return nil
+	default:
+		return fmt.Errorf("sources[%d]: only one source type may be specified (git, local)", index)
+	}
+}
+
+// validateLocalSource validates a local source configuration.
+// Path existence is not checked here — that happens at fetch time, since
+// validation may run in lint contexts where the path is not yet available.
+func (v *Validator) validateLocalSource(local *builder.LocalSource, index int) error {
+	if local.Path == "" {
+		return fmt.Errorf("sources[%d].local: path is required", index)
+	}
 	return nil
 }
 

@@ -23,6 +23,7 @@ THE SOFTWARE.
 package config
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,11 @@ import (
 )
 
 func TestNewConfigViper(t *testing.T) {
-	t.Parallel()
+	isolated := t.TempDir()
+	t.Setenv("HOME", isolated)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(isolated, ".config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(isolated, ".cache"))
+	t.Chdir(isolated)
 
 	v := NewConfigViper()
 	require.NotNil(t, v)

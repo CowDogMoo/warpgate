@@ -973,6 +973,39 @@ func TestValidator_ValidateSource(t *testing.T) {
 			},
 			shouldError: false,
 		},
+		{
+			name: "Valid local source",
+			sources: []builder.Source{
+				{
+					Name:  "ansible",
+					Local: &builder.LocalSource{Path: "./ansible"},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name: "Local source without path",
+			sources: []builder.Source{
+				{
+					Name:  "ansible",
+					Local: &builder.LocalSource{},
+				},
+			},
+			shouldError: true,
+			errContains: "local: path is required",
+		},
+		{
+			name: "Both git and local set",
+			sources: []builder.Source{
+				{
+					Name:  "conflict",
+					Git:   &builder.GitSource{Repository: "https://github.com/org/repo.git"},
+					Local: &builder.LocalSource{Path: "./ansible"},
+				},
+			},
+			shouldError: true,
+			errContains: "only one source type",
+		},
 	}
 
 	for _, tt := range tests {
