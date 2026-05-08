@@ -49,6 +49,9 @@ const (
 
 type SourceFetcher struct {
 	BaseDir string
+	// ConfigFilePath is the path to the template config file.
+	// Used to resolve relative paths in local sources.
+	ConfigFilePath string
 }
 
 // If baseDir is empty, a temporary directory will be created
@@ -81,9 +84,42 @@ func (f *SourceFetcher) fetchSource(ctx context.Context, source *builder.Source)
 	if source.Git != nil {
 		return f.fetchGitSource(ctx, source)
 	}
+	if source.Local != nil {
+		return f.fetchLocalSource(ctx, source)
+	}
 
 	// Future: support other source types (http, s3, etc.)
-	return fmt.Errorf("source %q has no valid source type defined (git, etc.)", source.Name)
+	return fmt.Errorf("source %q has no valid source type defined (git, local, etc.)", source.Name)
+}
+
+func (f *SourceFetcher) fetchLocalSource(ctx context.Context, source *builder.Source) error {
+	local := source.Local
+
+	resolved := expandPath(local.Path)
+	if !filepath.IsAbs(resolved) {
+		baseDir := "."
+		if f.ConfigFilePath != "" {
+			baseDir = filepath.Dir(f.ConfigFilePath)
+		}
+		resolved = filepath.Join(baseDir, resolved)
+	}
+
+	absPath, err := filepath.Abs(resolved)
+	if err != nil {
+		return fmt.Errorf("failed to resolve local source path %q: %w", local.Path, err)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to access local source path %q: %w", absPath, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("local source path %q is not a directory", absPath)
+	}
+
+	source.Path = absPath
+	logging.InfoContext(ctx, "Resolved local source %s at %s", source.Name, absPath)
+	return nil
 }
 
 func (f *SourceFetcher) fetchGitSource(ctx context.Context, source *builder.Source) error {
@@ -278,6 +314,7 @@ func FetchSourcesWithCleanup(ctx context.Context, sources []builder.Source, conf
 	if err != nil {
 		return nil, fmt.Errorf("failed to create source fetcher: %w", err)
 	}
+	fetcher.ConfigFilePath = configFilePath
 
 	if err := fetcher.FetchSources(ctx, sources); err != nil {
 		_ = fetcher.Cleanup()

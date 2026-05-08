@@ -2292,3 +2292,117 @@ func TestGetGitAuth_EmptyAuth(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, auth)
 }
+
+func TestFetchLocalSource_AbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "playbook.yml"), []byte("- hosts: all"), 0644))
+
+	fetcher, err := NewSourceFetcher(t.TempDir())
+	require.NoError(t, err)
+
+	source := &builder.Source{
+		Name:  "ansible",
+		Local: &builder.LocalSource{Path: srcDir},
+	}
+
+	require.NoError(t, fetcher.fetchLocalSource(context.Background(), source))
+
+	expected, err := filepath.Abs(srcDir)
+	require.NoError(t, err)
+	assert.Equal(t, expected, source.Path)
+}
+
+func TestFetchLocalSource_RelativePathResolvesToConfigDir(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	ansibleDir := filepath.Join(configDir, "ansible")
+	require.NoError(t, os.MkdirAll(ansibleDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(ansibleDir, "site.yml"), []byte(""), 0644))
+
+	fetcher, err := NewSourceFetcher(t.TempDir())
+	require.NoError(t, err)
+	fetcher.ConfigFilePath = filepath.Join(configDir, "warpgate.yaml")
+
+	source := &builder.Source{
+		Name:  "ansible",
+		Local: &builder.LocalSource{Path: "./ansible"},
+	}
+
+	require.NoError(t, fetcher.fetchLocalSource(context.Background(), source))
+
+	expected, err := filepath.Abs(ansibleDir)
+	require.NoError(t, err)
+	assert.Equal(t, expected, source.Path)
+}
+
+func TestFetchLocalSource_MissingDirectory(t *testing.T) {
+	t.Parallel()
+
+	fetcher, err := NewSourceFetcher(t.TempDir())
+	require.NoError(t, err)
+
+	source := &builder.Source{
+		Name:  "missing",
+		Local: &builder.LocalSource{Path: "/definitely/does/not/exist/warpgate-test"},
+	}
+
+	err = fetcher.fetchLocalSource(context.Background(), source)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to access local source path")
+}
+
+func TestFetchLocalSource_NotADirectory(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "file.txt")
+	require.NoError(t, os.WriteFile(filePath, []byte("hi"), 0644))
+
+	fetcher, err := NewSourceFetcher(t.TempDir())
+	require.NoError(t, err)
+
+	source := &builder.Source{
+		Name:  "is-file",
+		Local: &builder.LocalSource{Path: filePath},
+	}
+
+	err = fetcher.fetchLocalSource(context.Background(), source)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is not a directory")
+}
+
+func TestFetchSourcesWithCleanup_LocalSource_CopiedIntoBuildContext(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "warpgate.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(""), 0644))
+
+	ansibleDir := filepath.Join(configDir, "ansible")
+	require.NoError(t, os.MkdirAll(ansibleDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(ansibleDir, "playbook.yml"), []byte("- hosts: all"), 0644))
+
+	sources := []builder.Source{
+		{
+			Name:  "ansible",
+			Local: &builder.LocalSource{Path: "./ansible"},
+		},
+	}
+
+	cleanup, err := FetchSourcesWithCleanup(context.Background(), sources, configPath)
+	require.NoError(t, err)
+	defer cleanup()
+
+	assert.NotEmpty(t, sources[0].Path)
+	assert.DirExists(t, sources[0].Path)
+	assert.FileExists(t, filepath.Join(sources[0].Path, "playbook.yml"))
+
+	// Source should have been copied into the build-context sources dir
+	expectedCopiedRoot := filepath.Join(configDir, sourcesLocalDirName, "ansible")
+	expectedAbs, err := filepath.Abs(expectedCopiedRoot)
+	require.NoError(t, err)
+	assert.Equal(t, expectedAbs, sources[0].Path)
+}

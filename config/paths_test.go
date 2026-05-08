@@ -66,6 +66,11 @@ func TestGetCacheDir(t *testing.T) {
 		configContent := "templates:\n  cache_dir: " + customCacheDir + "\n"
 		require.NoError(t, os.WriteFile(configPath, []byte(configContent), 0644))
 
+		isolated := t.TempDir()
+		t.Setenv("HOME", isolated)
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(isolated, ".config"))
+		t.Setenv("XDG_CACHE_HOME", filepath.Join(isolated, ".cache"))
+
 		// Change to directory with config so Load() picks it up
 		originalDir, _ := os.Getwd()
 		defer func() { _ = os.Chdir(originalDir) }()
