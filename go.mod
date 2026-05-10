@@ -20,7 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.54.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.6
-	github.com/docker/cli v29.4.2+incompatible
+	github.com/docker/cli v29.4.3+incompatible
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.19.0
 	github.com/google/go-containerregistry v0.21.5
