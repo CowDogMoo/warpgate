@@ -27,7 +27,7 @@ require (
 	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/invopop/jsonschema v0.14.0
 	github.com/lithammer/fuzzysearch v1.1.8
-	github.com/moby/buildkit v0.29.0
+	github.com/moby/buildkit v0.30.0
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
 	github.com/opencontainers/go-digest v1.0.0
@@ -146,7 +146,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/tonistiigi/fsutil v0.0.0-20251211185533-a2aa163d723f // indirect
+	github.com/tonistiigi/fsutil v0.0.0-20251211185533-a2aa163d723f
 	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 // indirect
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect
