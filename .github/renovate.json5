@@ -54,9 +54,11 @@
         'major',
         'minor',
         'patch',
+        'digest',
       ],
       automerge: true,
-      automergeType: 'branch',
+      automergeType: 'pr',
+      automergeStrategy: 'merge-queue',
     },
     {
       description: 'Auto merge Go dependency updates',
@@ -91,5 +93,7 @@
   lockFileMaintenance: {
     enabled: true,
     automerge: true,
+    automergeType: 'pr',
+    automergeStrategy: 'merge-queue',
   },
 }
