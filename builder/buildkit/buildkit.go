@@ -53,6 +53,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	specsgo "github.com/opencontainers/image-spec/specs-go"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/tonistiigi/fsutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -1237,8 +1238,9 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 
 	exportAttrs := buildExportAttributes(imageName, cfg.Labels)
 
-	localDirs := map[string]string{
-		"context": contextDir,
+	contextFS, err := fsutil.NewFS(contextDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create context fsutil.FS: %w", err)
 	}
 
 	solveOpt := client.SolveOpt{
@@ -1249,8 +1251,10 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 				Attrs:  exportAttrs,
 			},
 		},
-		LocalDirs: localDirs,
-		Session:   createAuthProvider(),
+		LocalMounts: map[string]fsutil.FS{
+			"context": contextFS,
+		},
+		Session: createAuthProvider(),
 	}
 
 	b.configureCacheOptions(&solveOpt, cfg)
@@ -1875,6 +1879,15 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 
 	exportAttrs := buildExportAttributes(imageName, cfg.Labels)
 
+	contextFS, err := fsutil.NewFS(buildContext)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create context fsutil.FS: %w", err)
+	}
+	dockerfileFS, err := fsutil.NewFS(filepath.Dir(dockerfilePath))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dockerfile fsutil.FS: %w", err)
+	}
+
 	solveOpt := client.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
@@ -1885,9 +1898,9 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 				Attrs:  exportAttrs,
 			},
 		},
-		LocalDirs: map[string]string{
-			"context":    buildContext,
-			"dockerfile": filepath.Dir(dockerfilePath),
+		LocalMounts: map[string]fsutil.FS{
+			"context":    contextFS,
+			"dockerfile": dockerfileFS,
 		},
 		Session: createAuthProvider(),
 	}
