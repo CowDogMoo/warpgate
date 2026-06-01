@@ -1537,3 +1537,136 @@ func TestExecuteAzureBuild_AppliesGlobalDefaults(t *testing.T) {
 		t.Fatal("expected build result")
 	}
 }
+
+// mockProxmoxImageBuilder implements ProxmoxImageBuilder for testing the
+// ExecuteProxmoxBuild orchestration. Mirrors mockAzureImageBuilder.
+type mockProxmoxImageBuilder struct {
+	buildFunc func(ctx context.Context, cfg Config) (*BuildResult, error)
+
+	shareCalled  bool
+	deleteCalled bool
+}
+
+func (m *mockProxmoxImageBuilder) Build(ctx context.Context, cfg Config) (*BuildResult, error) {
+	if m.buildFunc != nil {
+		return m.buildFunc(ctx, cfg)
+	}
+	return &BuildResult{TemplateVMID: 9100, TemplateName: "img-test", Node: "pve1"}, nil
+}
+
+func (m *mockProxmoxImageBuilder) Share(_ context.Context, _ int, _ []string) error {
+	m.shareCalled = true
+	return nil
+}
+
+func (m *mockProxmoxImageBuilder) Delete(_ context.Context, _ int) error {
+	m.deleteCalled = true
+	return nil
+}
+
+func (m *mockProxmoxImageBuilder) Close() error { return nil }
+
+func proxmoxBuildConfig(node string) Config {
+	return Config{
+		Name: "img",
+		Targets: []Target{
+			{
+				Type:           "proxmox",
+				Node:           node,
+				SourceTemplate: 9000,
+				TemplateName:   "img",
+			},
+		},
+	}
+}
+
+func TestExecuteProxmoxBuild_HappyPath(t *testing.T) {
+	mb := &mockProxmoxImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	res, err := svc.ExecuteProxmoxBuild(context.Background(), proxmoxBuildConfig("pve1"), BuildOptions{}, mb)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil || res.TemplateVMID != 9100 {
+		t.Fatalf("expected TemplateVMID 9100, got %+v", res)
+	}
+}
+
+func TestExecuteProxmoxBuild_NoProxmoxTarget(t *testing.T) {
+	mb := &mockProxmoxImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	_, err := svc.ExecuteProxmoxBuild(context.Background(), Config{Targets: []Target{{Type: "container"}}}, BuildOptions{}, mb)
+	if err == nil || !strings.Contains(err.Error(), "no proxmox target") {
+		t.Fatalf("expected no-target error, got %v", err)
+	}
+}
+
+func TestExecuteProxmoxBuild_MissingNode(t *testing.T) {
+	mb := &mockProxmoxImageBuilder{}
+	svc := NewBuildService(nil, nil)
+
+	_, err := svc.ExecuteProxmoxBuild(context.Background(), proxmoxBuildConfig(""), BuildOptions{}, mb)
+	if err == nil || !strings.Contains(err.Error(), "node must be specified") {
+		t.Fatalf("expected node-required error, got %v", err)
+	}
+}
+
+func TestExecuteProxmoxBuild_BuildErrorPropagates(t *testing.T) {
+	mb := &mockProxmoxImageBuilder{
+		buildFunc: func(_ context.Context, _ Config) (*BuildResult, error) {
+			return nil, fmt.Errorf("clone failed")
+		},
+	}
+	svc := NewBuildService(nil, nil)
+
+	_, err := svc.ExecuteProxmoxBuild(context.Background(), proxmoxBuildConfig("pve1"), BuildOptions{}, mb)
+	if err == nil || !strings.Contains(err.Error(), "clone failed") {
+		t.Fatalf("expected build error to propagate, got %v", err)
+	}
+}
+
+func TestExecuteProxmoxBuild_GlobalDefaultsAppliedWhenTargetEmpty(t *testing.T) {
+	mb := &mockProxmoxImageBuilder{}
+	svc := NewBuildService(&config.Config{
+		Proxmox: config.ProxmoxConfig{
+			Node:    "pve-global",
+			Storage: "local-zfs",
+			Pool:    "deploy",
+		},
+	}, nil)
+
+	// Target with empty Node/Storage/Pool should pick up global defaults.
+	cfg := Config{
+		Name: "img",
+		Targets: []Target{{
+			Type:           "proxmox",
+			SourceTemplate: 9000,
+			TemplateName:   "img",
+		}},
+	}
+	_, err := svc.ExecuteProxmoxBuild(context.Background(), cfg, BuildOptions{}, mb)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if cfg.Targets[0].Node != "pve-global" {
+		t.Fatalf("expected target node defaulted from global, got %q", cfg.Targets[0].Node)
+	}
+	if cfg.Targets[0].Storage != "local-zfs" {
+		t.Fatalf("expected storage defaulted from global, got %q", cfg.Targets[0].Storage)
+	}
+	if cfg.Targets[0].Pool != "deploy" {
+		t.Fatalf("expected pool defaulted from global, got %q", cfg.Targets[0].Pool)
+	}
+}
+
+func TestFindProxmoxTarget(t *testing.T) {
+	cfg := []Target{{Type: "container"}, {Type: "proxmox", Node: "pve1"}}
+	if got := findProxmoxTarget(cfg); got == nil || got.Node != "pve1" {
+		t.Fatalf("expected to find proxmox target, got %+v", got)
+	}
+	if got := findProxmoxTarget([]Target{{Type: "ami"}}); got != nil {
+		t.Fatalf("expected nil when no proxmox target, got %+v", got)
+	}
+}

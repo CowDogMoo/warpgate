@@ -199,6 +199,18 @@ func TestLiveRunner_RunProvisioners_FactoryError(t *testing.T) {
 	}
 }
 
+func TestLiveRunner_AllocateVMID_UsesConfiguredVMID(t *testing.T) {
+	t.Parallel()
+	r := &liveRunner{clients: &ProxmoxClients{Node: "pve1"}}
+	got, err := r.allocateVMID(context.Background(), &builder.Target{NewVMID: 9123})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != 9123 {
+		t.Fatalf("expected configured VMID 9123, got %d", got)
+	}
+}
+
 func TestLiveRunner_RunProvisioners_RunsWithFakeRunner(t *testing.T) {
 	t.Parallel()
 	captured := &fakeRunner{}

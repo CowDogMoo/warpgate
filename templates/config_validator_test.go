@@ -1367,6 +1367,131 @@ func TestValidator_AzureTargetValidation(t *testing.T) {
 	}
 }
 
+func proxmoxBaseConfig(target builder.Target) *builder.Config {
+	return &builder.Config{
+		Name: "proxmox-test",
+		Base: builder.BaseImage{Image: "ubuntu:22.04"},
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo hi"}},
+		},
+		Targets: []builder.Target{target},
+	}
+}
+
+func TestValidator_ProxmoxTargetValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		target      builder.Target
+		shouldError bool
+		errContains string
+	}{
+		{
+			name: "valid VMID-based target",
+			target: builder.Target{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 9000,
+				TemplateName:   "kali",
+			},
+		},
+		{
+			name: "valid name-based target",
+			target: builder.Target{
+				Type:               "proxmox",
+				Node:               "pve1",
+				SourceTemplateName: "kali-template",
+				TemplateName:       "kali",
+			},
+		},
+		{
+			name: "missing node",
+			target: builder.Target{
+				Type:           "proxmox",
+				SourceTemplate: 9000,
+				TemplateName:   "kali",
+			},
+			shouldError: true,
+			errContains: "node",
+		},
+		{
+			name: "missing template_name",
+			target: builder.Target{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 9000,
+			},
+			shouldError: true,
+			errContains: "template_name",
+		},
+		{
+			name: "missing source",
+			target: builder.Target{
+				Type:         "proxmox",
+				Node:         "pve1",
+				TemplateName: "kali",
+			},
+			shouldError: true,
+			errContains: "source_template",
+		},
+		{
+			name: "both source vmid and name set",
+			target: builder.Target{
+				Type:               "proxmox",
+				Node:               "pve1",
+				SourceTemplate:     9000,
+				SourceTemplateName: "kali-template",
+				TemplateName:       "kali",
+			},
+			shouldError: true,
+			errContains: "not both",
+		},
+		{
+			name: "source vmid too low",
+			target: builder.Target{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 50,
+				TemplateName:   "kali",
+			},
+			shouldError: true,
+			errContains: ">= 100",
+		},
+		{
+			name: "new vmid too low",
+			target: builder.Target{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 9000,
+				NewVMID:        50,
+				TemplateName:   "kali",
+			},
+			shouldError: true,
+			errContains: "new_vmid",
+		},
+	}
+	validator := NewValidator()
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := proxmoxBaseConfig(tc.target)
+			err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true})
+			if tc.shouldError {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.errContains)
+				}
+				if tc.errContains != "" && !contains(err.Error(), tc.errContains) {
+					t.Fatalf("expected error containing %q, got: %v", tc.errContains, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))

@@ -1709,3 +1709,82 @@ func TestSourceRefPattern_MatchCases(t *testing.T) {
 		})
 	}
 }
+
+func proxmoxTargetConfig() builder.Config {
+	return builder.Config{
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve-target",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+			Storage:        "local-zfs-target",
+			Pool:           "deploy-target",
+		}},
+	}
+}
+
+func TestFirstProxmoxTargetNode(t *testing.T) {
+	t.Parallel()
+	cfg := proxmoxTargetConfig()
+	if got := firstProxmoxTargetNode(&cfg); got != "pve-target" {
+		t.Errorf("got %q, want pve-target", got)
+	}
+	empty := builder.Config{}
+	if got := firstProxmoxTargetNode(&empty); got != "" {
+		t.Errorf("expected empty for no targets, got %q", got)
+	}
+}
+
+func TestApplyProxmoxCLIOverrides_FlagsWin(t *testing.T) {
+	t.Parallel()
+	cfg := proxmoxTargetConfig()
+	globalCfg := &config.Config{Proxmox: config.ProxmoxConfig{Node: "g-node", Storage: "g-storage", Pool: "g-pool"}}
+	opts := &buildOptions{proxmoxNode: "flag-node", proxmoxStorage: "flag-storage", proxmoxPool: "flag-pool"}
+
+	applyProxmoxCLIOverrides(&cfg, globalCfg, opts)
+
+	if cfg.Targets[0].Node != "flag-node" {
+		t.Errorf("flag did not override Node, got %q", cfg.Targets[0].Node)
+	}
+	if cfg.Targets[0].Storage != "flag-storage" {
+		t.Errorf("flag did not override Storage, got %q", cfg.Targets[0].Storage)
+	}
+	if cfg.Targets[0].Pool != "flag-pool" {
+		t.Errorf("flag did not override Pool, got %q", cfg.Targets[0].Pool)
+	}
+}
+
+func TestApplyProxmoxCLIOverrides_GlobalFillsEmptyTarget(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{Targets: []builder.Target{{
+		Type:           "proxmox",
+		SourceTemplate: 9000,
+		TemplateName:   "kali",
+	}}}
+	globalCfg := &config.Config{Proxmox: config.ProxmoxConfig{Node: "g-node", Storage: "g-storage", Pool: "g-pool"}}
+	opts := &buildOptions{}
+
+	applyProxmoxCLIOverrides(&cfg, globalCfg, opts)
+
+	if cfg.Targets[0].Node != "g-node" {
+		t.Errorf("global did not fill empty Node, got %q", cfg.Targets[0].Node)
+	}
+	if cfg.Targets[0].Storage != "g-storage" {
+		t.Errorf("global did not fill empty Storage, got %q", cfg.Targets[0].Storage)
+	}
+	if cfg.Targets[0].Pool != "g-pool" {
+		t.Errorf("global did not fill empty Pool, got %q", cfg.Targets[0].Pool)
+	}
+}
+
+func TestApplyProxmoxCLIOverrides_SkipsNonProxmoxTargets(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{Targets: []builder.Target{
+		{Type: "container", Node: "should-not-touch"},
+	}}
+	opts := &buildOptions{proxmoxNode: "flag-node"}
+	applyProxmoxCLIOverrides(&cfg, &config.Config{}, opts)
+	if cfg.Targets[0].Node != "should-not-touch" {
+		t.Errorf("CLI override leaked into non-proxmox target: got %q", cfg.Targets[0].Node)
+	}
+}
