@@ -519,6 +519,73 @@ type Target struct {
 
 	// ImageTags are key-value tags applied to the generated gallery image version
 	ImageTags map[string]string `yaml:"image_tags,omitempty" json:"image_tags,omitempty"`
+
+	// Proxmox-specific fields (used when Type == "proxmox")
+
+	// Node is the Proxmox VE node name to operate against (e.g., "pve1")
+	Node string `yaml:"node,omitempty" json:"node,omitempty"`
+
+	// SourceTemplate is the VMID of the Proxmox template to clone from.
+	// Mutually exclusive with SourceTemplateName.
+	SourceTemplate int `yaml:"source_template,omitempty" json:"source_template,omitempty"`
+
+	// SourceTemplateName is the name of the Proxmox template to clone from.
+	// Resolved to a VMID at build time. Mutually exclusive with SourceTemplate.
+	SourceTemplateName string `yaml:"source_template_name,omitempty" json:"source_template_name,omitempty"`
+
+	// NewVMID is the VMID assigned to the new clone. When zero, the
+	// cluster-wide /cluster/nextid endpoint is used to allocate one.
+	NewVMID int `yaml:"new_vmid,omitempty" json:"new_vmid,omitempty"`
+
+	// TemplateName is the human-readable name applied to the produced template.
+	// Combined with a build timestamp to form the final PVE VM name.
+	TemplateName string `yaml:"template_name,omitempty" json:"template_name,omitempty"`
+
+	// Storage is the Proxmox storage where the cloned disk lives.
+	// If empty, PVE uses the source template's storage.
+	Storage string `yaml:"storage,omitempty" json:"storage,omitempty"`
+
+	// Pool is the optional Proxmox resource pool to assign the new VM to.
+	Pool string `yaml:"pool,omitempty" json:"pool,omitempty"`
+
+	// LinkedClone toggles linked-clone mode. When true, the clone shares
+	// disk pages with the source template. Default is full clone.
+	LinkedClone bool `yaml:"linked_clone,omitempty" json:"linked_clone,omitempty"`
+
+	// AgentTimeoutSeconds bounds how long to wait for the QEMU guest agent
+	// after boot. Defaults to 300s when zero.
+	AgentTimeoutSeconds int `yaml:"agent_timeout_seconds,omitempty" json:"agent_timeout_seconds,omitempty"`
+
+	// CloudInitUser sets cloud-init's default user account on the cloned VM.
+	CloudInitUser string `yaml:"cloud_init_user,omitempty" json:"cloud_init_user,omitempty"`
+
+	// CloudInitPassword sets the default user's password. Use env expansion
+	// (${PROXMOX_CI_PASSWORD}) — do not commit plaintext.
+	CloudInitPassword string `yaml:"cloud_init_password,omitempty" json:"cloud_init_password,omitempty"`
+
+	// CloudInitSSHKey is one or more authorized SSH keys for the default user.
+	CloudInitSSHKey string `yaml:"cloud_init_ssh_key,omitempty" json:"cloud_init_ssh_key,omitempty"`
+
+	// CloudInitIPConfig sets the first NIC's IP config string in PVE's
+	// `ipconfig0` syntax (e.g., "ip=dhcp" or "ip=10.0.0.5/24,gw=10.0.0.1").
+	CloudInitIPConfig string `yaml:"cloud_init_ipconfig,omitempty" json:"cloud_init_ipconfig,omitempty"`
+
+	// CloudInitNameserver is the nameserver address pushed to the VM.
+	CloudInitNameserver string `yaml:"cloud_init_nameserver,omitempty" json:"cloud_init_nameserver,omitempty"`
+
+	// SSHUsername overrides the user the provisioner SSH session connects as.
+	// Defaults to CloudInitUser when empty.
+	SSHUsername string `yaml:"ssh_username,omitempty" json:"ssh_username,omitempty"`
+
+	// SSHPrivateKey is the PEM-encoded private key for SSH provisioning.
+	// Either SSHPrivateKey or SSHPassword must be set when provisioners run.
+	SSHPrivateKey string `yaml:"ssh_private_key,omitempty" json:"ssh_private_key,omitempty"`
+
+	// SSHPassword is the password for SSH provisioning. Prefer SSHPrivateKey.
+	SSHPassword string `yaml:"ssh_password,omitempty" json:"ssh_password,omitempty"`
+
+	// SSHPort overrides the SSH port; 22 when zero.
+	SSHPort int `yaml:"ssh_port,omitempty" json:"ssh_port,omitempty"`
 }
 
 // AzureSourceImage references the parent image for an Azure build. Exactly one
@@ -596,6 +663,15 @@ type BuildResult struct {
 
 	// Location is the Azure region of the published image version (set for Azure builds)
 	Location string `json:"location,omitempty"`
+
+	// TemplateVMID is the VMID of the produced Proxmox template (set for proxmox builds)
+	TemplateVMID int `json:"template_vmid,omitempty"`
+
+	// TemplateName is the name of the produced Proxmox template (set for proxmox builds)
+	TemplateName string `json:"template_name,omitempty"`
+
+	// Node is the Proxmox node hosting the produced template (set for proxmox builds)
+	Node string `json:"node,omitempty"`
 
 	// Build duration
 	Duration string `json:"duration"`

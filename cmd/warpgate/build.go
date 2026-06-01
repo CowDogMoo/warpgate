@@ -33,6 +33,7 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/builder/ami"
 	"github.com/cowdogmoo/warpgate/v3/builder/azure"
+	"github.com/cowdogmoo/warpgate/v3/builder/proxmox"
 	"github.com/cowdogmoo/warpgate/v3/cli"
 	"github.com/cowdogmoo/warpgate/v3/config"
 	wgit "github.com/cowdogmoo/warpgate/v3/git"
@@ -83,6 +84,12 @@ type buildOptions struct {
 	azureTargetRegion []string // Replicate gallery image version to additional regions
 	azureSubnetID     string   // Pre-existing subnet for AIB build VM (no public IP)
 	azureProxyVMSize  string   // VM size for the AIB proxy (only used when SubnetID is set)
+
+	// Proxmox-specific flags
+	proxmoxEndpoint string // Proxmox API endpoint (overrides config)
+	proxmoxNode     string // Proxmox node name (overrides config and target)
+	proxmoxStorage  string // Proxmox storage for cloned disks (overrides target)
+	proxmoxPool     string // Proxmox resource pool (overrides target)
 }
 
 var buildCmd *cobra.Command
@@ -191,6 +198,12 @@ Examples:
 	_ = buildCmd.Flags().MarkHidden("azure-vm-size")
 	_ = buildCmd.Flags().MarkHidden("azure-identity-id")
 
+	// Proxmox-specific flags
+	buildCmd.Flags().StringVar(&opts.proxmoxEndpoint, "proxmox-endpoint", "", "Proxmox API endpoint (Proxmox builds only)")
+	buildCmd.Flags().StringVar(&opts.proxmoxNode, "proxmox-node", "", "Proxmox node name (Proxmox builds only)")
+	buildCmd.Flags().StringVar(&opts.proxmoxStorage, "proxmox-storage", "", "Proxmox storage for cloned disks (Proxmox builds only)")
+	buildCmd.Flags().StringVar(&opts.proxmoxPool, "proxmox-pool", "", "Proxmox resource pool (Proxmox builds only)")
+
 	registerBuildCompletions(buildCmd)
 }
 
@@ -215,6 +228,7 @@ func registerBuildCompletions(cmd *cobra.Command) {
 			"container\tBuild a container image",
 			"ami\tBuild an AWS AMI",
 			"azure\tBuild an Azure Compute Gallery image",
+			"proxmox\tBuild a Proxmox VE VM template",
 		}, cobra.ShellCompDirectiveNoFileComp
 	})
 
@@ -280,6 +294,7 @@ var validBuildTargets = map[string]bool{
 	"container": true,
 	"ami":       true,
 	"azure":     true,
+	"proxmox":   true,
 	"":          true, // Empty is valid (auto-detected from config)
 }
 
@@ -293,7 +308,7 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildOptions) error {
 
 	// Validate --target flag if specified
 	if !validBuildTargets[opts.targetType] {
-		return fmt.Errorf("invalid target: %q. Valid options: container, ami, azure", opts.targetType)
+		return fmt.Errorf("invalid target: %q. Valid options: container, ami, azure, proxmox", opts.targetType)
 	}
 
 	logging.InfoContext(ctx, "Starting build process")
@@ -409,6 +424,8 @@ func executeBuild(ctx context.Context, cmd *cobra.Command, targetType string, se
 		return executeAMIBuildTarget(ctx, service, cfg, buildConfig, builderOpts, opts)
 	case "azure":
 		return executeAzureBuildTarget(ctx, cmd, service, cfg, buildConfig, builderOpts, opts)
+	case "proxmox":
+		return executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builderOpts, opts)
 	default:
 		return nil, fmt.Errorf("unsupported target type: %s", targetType)
 	}
@@ -481,6 +498,96 @@ func executeAzureBuildTarget(ctx context.Context, cmd *cobra.Command, service *b
 	}
 
 	return []builder.BuildResult{*result}, nil
+}
+
+// executeProxmoxBuildTarget handles the Proxmox-specific build logic. Loads
+// credentials from config (which is itself populated from env vars), applies
+// CLI overrides, then delegates to the Proxmox image builder.
+func executeProxmoxBuildTarget(ctx context.Context, cmd *cobra.Command, service *builder.BuildService, cfg *config.Config, buildConfig *builder.Config, builderOpts builder.BuildOptions, opts *buildOptions) ([]builder.BuildResult, error) {
+	applyProxmoxCLIOverrides(buildConfig, cfg, opts)
+
+	endpoint := opts.proxmoxEndpoint
+	if endpoint == "" {
+		endpoint = cfg.Proxmox.Endpoint
+	}
+	node := opts.proxmoxNode
+	if node == "" {
+		node = cfg.Proxmox.Node
+	}
+	if node == "" {
+		node = firstProxmoxTargetNode(buildConfig)
+	}
+
+	pmCfg := proxmox.ClientConfig{
+		Endpoint:           endpoint,
+		Node:               node,
+		APITokenID:         cfg.Proxmox.APITokenID,
+		APIToken:           cfg.Proxmox.APIToken,
+		Username:           cfg.Proxmox.Username,
+		Password:           cfg.Proxmox.Password,
+		InsecureSkipVerify: cfg.Proxmox.InsecureSkipVerify,
+		HTTPTimeout:        time.Duration(cfg.Proxmox.HTTPTimeoutSec) * time.Second,
+	}
+
+	pmBuilder, err := proxmox.NewImageBuilderWithOptions(ctx, pmCfg, opts.forceRecreate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Proxmox builder: %w", err)
+	}
+	pmBuilder.SetCleanupOnFinish(opts.cleanupOnFinish)
+	defer func() {
+		if closeErr := pmBuilder.Close(); closeErr != nil {
+			logging.WarnContext(ctx, "Failed to close Proxmox builder: %v", closeErr)
+		}
+	}()
+
+	if opts.dryRun {
+		logging.InfoContext(ctx, "Dry-run: configuration validated, skipping Proxmox build")
+		return nil, nil
+	}
+
+	result, err := service.ExecuteProxmoxBuild(ctx, *buildConfig, builderOpts, pmBuilder)
+	if err != nil {
+		return nil, fmt.Errorf("proxmox build failed: %w", err)
+	}
+
+	return []builder.BuildResult{*result}, nil
+}
+
+// applyProxmoxCLIOverrides applies --proxmox-* CLI flags onto buildConfig
+// targets so they take effect for this run. Empty flag values are skipped.
+func applyProxmoxCLIOverrides(buildConfig *builder.Config, cfg *config.Config, opts *buildOptions) {
+	for i := range buildConfig.Targets {
+		t := &buildConfig.Targets[i]
+		if t.Type != "proxmox" {
+			continue
+		}
+		if opts.proxmoxNode != "" {
+			t.Node = opts.proxmoxNode
+		} else if t.Node == "" {
+			t.Node = cfg.Proxmox.Node
+		}
+		if opts.proxmoxStorage != "" {
+			t.Storage = opts.proxmoxStorage
+		} else if t.Storage == "" {
+			t.Storage = cfg.Proxmox.Storage
+		}
+		if opts.proxmoxPool != "" {
+			t.Pool = opts.proxmoxPool
+		} else if t.Pool == "" {
+			t.Pool = cfg.Proxmox.Pool
+		}
+	}
+}
+
+// firstProxmoxTargetNode returns the node of the first proxmox target in
+// buildConfig, or empty string when none exists.
+func firstProxmoxTargetNode(buildConfig *builder.Config) string {
+	for i := range buildConfig.Targets {
+		if buildConfig.Targets[i].Type == "proxmox" {
+			return buildConfig.Targets[i].Node
+		}
+	}
+	return ""
 }
 
 // resolveAzureCleanup picks the effective --cleanup value for Azure builds.

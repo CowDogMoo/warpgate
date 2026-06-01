@@ -244,6 +244,25 @@ type AMIBuilder interface {
 	Deregister(ctx context.Context, amiID, region string) error
 }
 
+// ProxmoxImageBuilder extends Builder with Proxmox VE template operations.
+// It manages cloning a source template, running provisioners over SSH, and
+// converting the result into a Proxmox template.
+//
+// Implementations:
+//   - proxmox.ImageBuilder: Uses the Proxmox VE REST API
+type ProxmoxImageBuilder interface {
+	Builder
+
+	// Share is a no-op for Proxmox templates; PVE ACLs and pools handle
+	// access control out-of-band. Included for interface symmetry with
+	// the AMI and Azure builders.
+	Share(ctx context.Context, vmid int, principals []string) error
+
+	// Delete removes a Proxmox template by VMID. This is the closest
+	// analogue to AMI Deregister or Azure Delete.
+	Delete(ctx context.Context, vmid int) error
+}
+
 // AzureImageBuilder extends Builder with Azure Compute Gallery operations.
 // It provides operations for building and managing Azure VM images via Azure
 // VM Image Builder (AIB) and publishing them to a Compute Gallery.

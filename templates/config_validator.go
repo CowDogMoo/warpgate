@@ -387,6 +387,29 @@ func validateAzureNetworking(target *builder.Target, index int) error {
 	return nil
 }
 
+// validateProxmoxTarget validates Proxmox-specific required fields on a target.
+func (v *Validator) validateProxmoxTarget(target *builder.Target, index int) error {
+	if target.Node == "" {
+		return fmt.Errorf("target[%d]: proxmox target requires 'node'", index)
+	}
+	if target.TemplateName == "" {
+		return fmt.Errorf("target[%d]: proxmox target requires 'template_name'", index)
+	}
+	if target.SourceTemplate == 0 && target.SourceTemplateName == "" {
+		return fmt.Errorf("target[%d]: proxmox target requires either 'source_template' (VMID) or 'source_template_name'", index)
+	}
+	if target.SourceTemplate != 0 && target.SourceTemplateName != "" {
+		return fmt.Errorf("target[%d]: proxmox target must set either 'source_template' or 'source_template_name', not both", index)
+	}
+	if target.SourceTemplate != 0 && target.SourceTemplate < 100 {
+		return fmt.Errorf("target[%d]: proxmox target 'source_template' VMID must be >= 100 (PVE reserves 1-99)", index)
+	}
+	if target.NewVMID != 0 && target.NewVMID < 100 {
+		return fmt.Errorf("target[%d]: proxmox target 'new_vmid' must be >= 100 (PVE reserves 1-99)", index)
+	}
+	return nil
+}
+
 // validateAMIFilters validates AMI filter configuration
 func (v *Validator) validateAMIFilters(filters *builder.AMIFilterConfig) error {
 	if len(filters.Owners) == 0 {
@@ -417,6 +440,11 @@ func (v *Validator) validateTarget(target *builder.Target, index int) error {
 
 	case "azure":
 		if err := v.validateAzureTarget(target, index); err != nil {
+			return err
+		}
+
+	case "proxmox":
+		if err := v.validateProxmoxTarget(target, index); err != nil {
 			return err
 		}
 
