@@ -38,8 +38,6 @@ const defaultTaskWaitTimeout = 30 * time.Minute
 // nodeAPI is the subset of *pveapi.Node operations we use. Defined as an
 // interface so tests can inject a fake without spinning up an HTTP server.
 type nodeAPI interface {
-	NewVirtualMachine(ctx context.Context, vmid int, options ...pveapi.VirtualMachineOption) (*pveapi.Task, error)
-	VirtualMachine(ctx context.Context, vmid int) (*pveapi.VirtualMachine, error)
 	VirtualMachines(ctx context.Context) (pveapi.VirtualMachines, error)
 }
 

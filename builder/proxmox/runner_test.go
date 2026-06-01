@@ -110,28 +110,6 @@ func TestResolveVMIPViaAgent_NoV4Found(t *testing.T) {
 // pickAgentIP is the pure portion of resolveVMIPViaAgent extracted for tests;
 // see resolveVMIPViaAgent for the live call.
 
-func TestVMAPIAdapter_PassesThroughVMID(t *testing.T) {
-	t.Parallel()
-	// We can't safely call methods that hit Proxmox, but constructing the
-	// adapter and reading VMID exercises the embedded-struct path and
-	// ensures the type assertion at the package boundary holds.
-	vm := &pveapi.VirtualMachine{VMID: 9100}
-	a := vmAPIAdapter{vm}
-	if a.VMID != 9100 {
-		t.Fatalf("expected embedded VMID 9100, got %d", a.VMID)
-	}
-}
-
-func TestNodeAPIAdapter_ConstructsWithoutPanic(t *testing.T) {
-	t.Parallel()
-	// Verifies the adapter type composes; calling its methods would hit
-	// the network so we deliberately do not invoke them here.
-	a := nodeAPIAdapter{&pveapi.Node{}}
-	if a.Node == nil {
-		t.Fatal("expected non-nil embedded Node")
-	}
-}
-
 func TestNewLiveRunner(t *testing.T) {
 	t.Parallel()
 	r := newLiveRunner(&ProxmoxClients{Node: "pve1"})

@@ -410,6 +410,59 @@ func TestImageBuilder_Delete_UnknownNode(t *testing.T) {
 	}
 }
 
+// failingPVE returns a client pointed at an httptest server that always
+// returns HTTP 500, so every PVE call surfaces an error. Used to drive the
+// error branches in the live runner methods.
+func failingPVE(t *testing.T, status int) *pveapi.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", status)
+	}))
+	t.Cleanup(srv.Close)
+	return pveapi.NewClient(srv.URL, pveapi.WithAPIToken("u@pve!t", "secret"))
+}
+
+func TestLiveRunner_ResolveSource_NodeError(t *testing.T) {
+	t.Parallel()
+	r := newLiveRunner(&ProxmoxClients{API: failingPVE(t, http.StatusInternalServerError), Node: "pve1"})
+	if _, err := r.resolveSource(context.Background(), &builder.Target{Node: "pve1", SourceTemplate: 9000}); err == nil {
+		t.Fatal("expected node read error")
+	}
+}
+
+func TestLiveRunner_Clone_NodeError(t *testing.T) {
+	t.Parallel()
+	r := newLiveRunner(&ProxmoxClients{API: failingPVE(t, http.StatusInternalServerError), Node: "pve1"})
+	if _, err := r.clone(context.Background(), 9000, 9100, "kali", &builder.Target{Node: "pve1"}); err == nil {
+		t.Fatal("expected node read error from clone")
+	}
+}
+
+func TestNextVMID_NetworkError(t *testing.T) {
+	t.Parallel()
+	client := failingPVE(t, http.StatusInternalServerError)
+	if _, err := nextVMID(context.Background(), client); err == nil {
+		t.Fatal("expected error from failing nextid endpoint")
+	}
+}
+
+func TestImageBuilder_Build_NoSourceTargetField(t *testing.T) {
+	t.Parallel()
+	b := &ImageBuilder{
+		clients: &ProxmoxClients{Node: "pve1"},
+		buildID: "test",
+	}
+	_, err := b.Build(context.Background(), builder.Config{Targets: []builder.Target{{
+		Type:         "proxmox",
+		Node:         "pve1",
+		TemplateName: "kali",
+		// no SourceTemplate or SourceTemplateName
+	}}})
+	if err == nil || !strings.Contains(err.Error(), "source_template") {
+		t.Fatalf("expected source_template required error, got %v", err)
+	}
+}
+
 func TestResolveVMIPViaAgent_LiveCall(t *testing.T) {
 	t.Parallel()
 	r, _ := newLiveRunnerFor(t)

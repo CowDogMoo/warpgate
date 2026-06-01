@@ -60,7 +60,7 @@ func (r *liveRunner) resolveSource(ctx context.Context, target *builder.Target) 
 	if err != nil {
 		return 0, WrapWithRemediation(err, fmt.Sprintf("read node %q", target.Node))
 	}
-	return resolveSourceTemplate(ctx, nodeAPIAdapter{node}, target.SourceTemplate, target.SourceTemplateName)
+	return resolveSourceTemplate(ctx, node, target.SourceTemplate, target.SourceTemplateName)
 }
 
 // allocateVMID returns the configured VMID or asks the cluster for the next
@@ -129,7 +129,7 @@ func (r *liveRunner) configureCloudInit(ctx context.Context, vm *pveapi.VirtualM
 
 // startAndWait powers on the VM and waits for the QEMU guest agent.
 func (r *liveRunner) startAndWait(ctx context.Context, vm *pveapi.VirtualMachine, target *builder.Target) error {
-	return startAndWait(ctx, vmAPIAdapter{vm}, target.AgentTimeoutSeconds)
+	return startAndWait(ctx, vm, target.AgentTimeoutSeconds)
 }
 
 // runProvisioners resolves the VM IP, opens an SSH connection, and executes
@@ -160,10 +160,10 @@ func (r *liveRunner) runProvisioners(ctx context.Context, vm *pveapi.VirtualMach
 
 // stopAndTemplate stops the VM and flips it into a template.
 func (r *liveRunner) stopAndTemplate(ctx context.Context, vm *pveapi.VirtualMachine) error {
-	if err := stopVM(ctx, vmAPIAdapter{vm}); err != nil {
+	if err := stopVM(ctx, vm); err != nil {
 		return err
 	}
-	return convertToTemplate(ctx, vmAPIAdapter{vm})
+	return convertToTemplate(ctx, vm)
 }
 
 // cleanup attempts to delete a partially built VM. Errors are logged but
@@ -176,72 +176,9 @@ func (r *liveRunner) cleanup(ctx context.Context, vm *pveapi.VirtualMachine) {
 	if task, err := vm.Stop(ctx); err == nil {
 		_ = waitForTask(ctx, task)
 	}
-	if err := deleteVM(ctx, vmAPIAdapter{vm}); err != nil {
+	if err := deleteVM(ctx, vm); err != nil {
 		logging.WarnContext(ctx, "cleanup: delete VMID %d: %v", vm.VMID, err)
 	}
-}
-
-// nodeAPIAdapter exposes a *pveapi.Node as the nodeAPI interface used by
-// the operations helpers.
-type nodeAPIAdapter struct{ *pveapi.Node }
-
-// VirtualMachine forwards to *pveapi.Node.VirtualMachine.
-func (a nodeAPIAdapter) VirtualMachine(ctx context.Context, vmid int) (*pveapi.VirtualMachine, error) {
-	return a.Node.VirtualMachine(ctx, vmid)
-}
-
-// VirtualMachines forwards to *pveapi.Node.VirtualMachines.
-func (a nodeAPIAdapter) VirtualMachines(ctx context.Context) (pveapi.VirtualMachines, error) {
-	return a.Node.VirtualMachines(ctx)
-}
-
-// NewVirtualMachine forwards to *pveapi.Node.NewVirtualMachine.
-func (a nodeAPIAdapter) NewVirtualMachine(ctx context.Context, vmid int, options ...pveapi.VirtualMachineOption) (*pveapi.Task, error) {
-	return a.Node.NewVirtualMachine(ctx, vmid, options...)
-}
-
-// vmAPIAdapter exposes a *pveapi.VirtualMachine as the vmAPI interface used
-// by the operations helpers.
-type vmAPIAdapter struct{ *pveapi.VirtualMachine }
-
-// Clone forwards to *pveapi.VirtualMachine.Clone.
-func (a vmAPIAdapter) Clone(ctx context.Context, params *pveapi.VirtualMachineCloneOptions) (int, *pveapi.Task, error) {
-	return a.VirtualMachine.Clone(ctx, params)
-}
-
-// Config forwards to *pveapi.VirtualMachine.Config.
-func (a vmAPIAdapter) Config(ctx context.Context, options ...pveapi.VirtualMachineOption) (*pveapi.Task, error) {
-	return a.VirtualMachine.Config(ctx, options...)
-}
-
-// Start forwards to *pveapi.VirtualMachine.Start.
-func (a vmAPIAdapter) Start(ctx context.Context) (*pveapi.Task, error) {
-	return a.VirtualMachine.Start(ctx)
-}
-
-// Stop forwards to *pveapi.VirtualMachine.Stop.
-func (a vmAPIAdapter) Stop(ctx context.Context) (*pveapi.Task, error) {
-	return a.VirtualMachine.Stop(ctx)
-}
-
-// Shutdown forwards to *pveapi.VirtualMachine.Shutdown.
-func (a vmAPIAdapter) Shutdown(ctx context.Context) (*pveapi.Task, error) {
-	return a.VirtualMachine.Shutdown(ctx)
-}
-
-// Delete forwards to *pveapi.VirtualMachine.Delete.
-func (a vmAPIAdapter) Delete(ctx context.Context) (*pveapi.Task, error) {
-	return a.VirtualMachine.Delete(ctx)
-}
-
-// ConvertToTemplate forwards to *pveapi.VirtualMachine.ConvertToTemplate.
-func (a vmAPIAdapter) ConvertToTemplate(ctx context.Context) (*pveapi.Task, error) {
-	return a.VirtualMachine.ConvertToTemplate(ctx)
-}
-
-// WaitForAgent forwards to *pveapi.VirtualMachine.WaitForAgent.
-func (a vmAPIAdapter) WaitForAgent(ctx context.Context, seconds int) error {
-	return a.VirtualMachine.WaitForAgent(ctx, seconds)
 }
 
 // resolveVMIPViaAgent asks the QEMU guest agent for the VM's IPv4 address

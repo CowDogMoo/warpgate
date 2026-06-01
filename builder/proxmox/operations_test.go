@@ -94,22 +94,10 @@ func (f *fakeVM) WaitForAgent(_ context.Context, _ int) error {
 
 // fakeNode implements nodeAPI for resolveSourceTemplate tests.
 type fakeNode struct {
-	vms       pveapi.VirtualMachines
-	listErr   error
-	vmByID    func(int) (*pveapi.VirtualMachine, error)
-	newVMResp *pveapi.Task
-	newVMErr  error
+	vms     pveapi.VirtualMachines
+	listErr error
 }
 
-func (f *fakeNode) NewVirtualMachine(_ context.Context, _ int, _ ...pveapi.VirtualMachineOption) (*pveapi.Task, error) {
-	return f.newVMResp, f.newVMErr
-}
-func (f *fakeNode) VirtualMachine(_ context.Context, vmid int) (*pveapi.VirtualMachine, error) {
-	if f.vmByID != nil {
-		return f.vmByID(vmid)
-	}
-	return nil, errors.New("not implemented")
-}
 func (f *fakeNode) VirtualMachines(_ context.Context) (pveapi.VirtualMachines, error) {
 	return f.vms, f.listErr
 }

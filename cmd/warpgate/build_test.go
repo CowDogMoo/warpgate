@@ -1835,6 +1835,41 @@ func TestExecuteProxmoxBuildTarget_DryRunStopsBeforeBuild(t *testing.T) {
 	}
 }
 
+func TestExecuteProxmoxBuildTarget_BuildErrorWrapped(t *testing.T) {
+	ctx := setupTestContext(t)
+	// Endpoint pointing at a port nothing's listening on so the build fails
+	// fast at the first API call.
+	cfg := &config.Config{
+		Proxmox: config.ProxmoxConfig{
+			Endpoint:           "http://127.0.0.1:1",
+			Node:               "pve1",
+			APITokenID:         "user@pve!warpgate",
+			APIToken:           "secret",
+			InsecureSkipVerify: true,
+			HTTPTimeoutSec:     1,
+		},
+	}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve1",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+	opts := &buildOptions{cleanupOnFinish: true}
+	cmd := &cobra.Command{}
+
+	_, err := executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	if err == nil || !strings.Contains(err.Error(), "proxmox build failed") {
+		t.Fatalf("expected wrapped build failure, got %v", err)
+	}
+}
+
 func TestExecuteProxmoxBuildTarget_NodeFromTarget(t *testing.T) {
 	ctx := setupTestContext(t)
 	cfg := &config.Config{

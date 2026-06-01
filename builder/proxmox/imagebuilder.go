@@ -152,7 +152,7 @@ func (b *ImageBuilder) Delete(ctx context.Context, vmid int) error {
 	if err != nil {
 		return WrapWithRemediation(err, fmt.Sprintf("read template VMID %d", vmid))
 	}
-	return deleteVM(ctx, vmAPIAdapter{vm})
+	return deleteVM(ctx, vm)
 }
 
 // Close releases the underlying client. Currently a no-op because the
