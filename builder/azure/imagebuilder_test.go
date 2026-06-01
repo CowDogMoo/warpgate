@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder/v3"
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
