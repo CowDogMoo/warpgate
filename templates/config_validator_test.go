@@ -1494,6 +1494,119 @@ func TestValidator_ProxmoxTargetValidation(t *testing.T) {
 	}
 }
 
+// TestValidator_ProxmoxNoBaseImage covers the rule that Proxmox-only builds
+// do not require Base.Image or Base.AMIFilters because the source comes
+// from the target's SourceTemplate/SourceTemplateName.
+func TestValidator_ProxmoxNoBaseImage(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *builder.Config
+		shouldError bool
+		errContains string
+	}{
+		{
+			name: "proxmox-only target without base image is allowed",
+			config: &builder.Config{
+				Name: "proxmox-noimage",
+				Provisioners: []builder.Provisioner{
+					{Type: "shell", Inline: []string{"echo hi"}},
+				},
+				Targets: []builder.Target{
+					{
+						Type:               "proxmox",
+						Node:               "pve1",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+				},
+			},
+		},
+		{
+			name: "two proxmox targets without base image are allowed",
+			config: &builder.Config{
+				Name: "proxmox-multi",
+				Provisioners: []builder.Provisioner{
+					{Type: "shell", Inline: []string{"echo hi"}},
+				},
+				Targets: []builder.Target{
+					{
+						Type:               "proxmox",
+						Node:               "pve1",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+					{
+						Type:               "proxmox",
+						Node:               "pve2",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+				},
+			},
+		},
+		{
+			name: "mixed proxmox + container still requires base image",
+			config: &builder.Config{
+				Name: "mixed",
+				Provisioners: []builder.Provisioner{
+					{Type: "shell", Inline: []string{"echo hi"}},
+				},
+				Targets: []builder.Target{
+					{
+						Type:               "proxmox",
+						Node:               "pve1",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			shouldError: true,
+			errContains: "config.base.image is required",
+		},
+		{
+			name: "proxmox + ami target without ami_filters still errors",
+			config: &builder.Config{
+				Name: "mixed-ami",
+				Provisioners: []builder.Provisioner{
+					{Type: "shell", Inline: []string{"echo hi"}},
+				},
+				Targets: []builder.Target{
+					{
+						Type:               "proxmox",
+						Node:               "pve1",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+					{Type: "ami", Region: "us-east-1", AMIName: "test-ami"},
+				},
+			},
+			shouldError: true,
+			errContains: "config.base.image is required",
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			validator := NewValidator()
+			err := validator.ValidateWithOptions(context.Background(), tc.config, ValidationOptions{SyntaxOnly: true})
+			if tc.shouldError {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.errContains)
+				}
+				if tc.errContains != "" && !contains(err.Error(), tc.errContains) {
+					t.Fatalf("expected error containing %q, got: %v", tc.errContains, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
