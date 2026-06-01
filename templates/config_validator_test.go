@@ -1378,6 +1378,51 @@ func proxmoxBaseConfig(target builder.Target) *builder.Config {
 	}
 }
 
+func TestValidator_ProxmoxOnlyBuildOmitsBaseImage(t *testing.T) {
+	t.Parallel()
+	// Proxmox-only builds source their root image from a Proxmox template
+	// (SourceTemplate/SourceTemplateName), so config.base.image is not
+	// required. This was added in e45d0cc — guard against regressions.
+	cfg := &builder.Config{
+		Name: "proxmox-only",
+		// Base intentionally empty.
+		Provisioners: []builder.Provisioner{{Type: "shell", Inline: []string{"echo hi"}}},
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve1",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	validator := NewValidator()
+	if err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true}); err != nil {
+		t.Fatalf("expected proxmox-only build to validate without base.image, got %v", err)
+	}
+}
+
+func TestValidator_MixedTargetsRequireBaseImage(t *testing.T) {
+	t.Parallel()
+	// A build that mixes proxmox with another target type still needs a
+	// base image because the non-proxmox target has nowhere else to source one.
+	cfg := &builder.Config{
+		Name:         "mixed",
+		Provisioners: []builder.Provisioner{{Type: "shell", Inline: []string{"echo hi"}}},
+		Targets: []builder.Target{
+			{Type: "container", Platforms: []string{"linux/amd64"}},
+			{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 9000,
+				TemplateName:   "kali",
+			},
+		},
+	}
+	validator := NewValidator()
+	if err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true}); err == nil {
+		t.Fatal("expected base.image required error for mixed-target build")
+	}
+}
+
 func TestValidator_ProxmoxTargetValidation(t *testing.T) {
 	tests := []struct {
 		name        string
