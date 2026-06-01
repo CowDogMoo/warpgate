@@ -404,7 +404,8 @@ type Provisioner struct {
 // Target represents a build target
 type Target struct {
 	// Type is the type of build target: "container" for Docker images,
-	// "ami" for AWS AMIs, or "azure" for Azure Compute Gallery images
+	// "ami" for AWS AMIs, "azure" for Azure Compute Gallery images, or
+	// "proxmox" for Proxmox VE VM templates
 	Type string `yaml:"type" json:"type"`
 
 	// Container-specific fields

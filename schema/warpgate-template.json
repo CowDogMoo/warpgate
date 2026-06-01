@@ -697,23 +697,23 @@
         },
         "source_template": {
           "type": "integer",
-          "description": "SourceTemplate is the VMID of the Proxmox template to clone from. Mutually exclusive with SourceTemplateName."
+          "description": "SourceTemplate is the VMID of the Proxmox template to clone from.\nMutually exclusive with SourceTemplateName."
         },
         "source_template_name": {
           "type": "string",
-          "description": "SourceTemplateName is the name of the Proxmox template to clone from. Mutually exclusive with SourceTemplate."
+          "description": "SourceTemplateName is the name of the Proxmox template to clone from.\nResolved to a VMID at build time. Mutually exclusive with SourceTemplate."
         },
         "new_vmid": {
           "type": "integer",
-          "description": "NewVMID is the VMID assigned to the new clone. When zero, the cluster /cluster/nextid endpoint allocates one."
+          "description": "NewVMID is the VMID assigned to the new clone. When zero, the\ncluster-wide /cluster/nextid endpoint is used to allocate one."
         },
         "template_name": {
           "type": "string",
-          "description": "TemplateName is the human-readable name applied to the produced Proxmox template (combined with a build timestamp)."
+          "description": "TemplateName is the human-readable name applied to the produced template.\nCombined with a build timestamp to form the final PVE VM name."
         },
         "storage": {
           "type": "string",
-          "description": "Storage is the Proxmox storage where the cloned disk lives. If empty, PVE uses the source template's storage."
+          "description": "Storage is the Proxmox storage where the cloned disk lives.\nIf empty, PVE uses the source template's storage."
         },
         "pool": {
           "type": "string",
@@ -721,11 +721,11 @@
         },
         "linked_clone": {
           "type": "boolean",
-          "description": "LinkedClone toggles linked-clone mode. Default is full clone."
+          "description": "LinkedClone toggles linked-clone mode. When true, the clone shares\ndisk pages with the source template. Default is full clone."
         },
         "agent_timeout_seconds": {
           "type": "integer",
-          "description": "AgentTimeoutSeconds bounds the wait for the QEMU guest agent after boot. Defaults to 300s when zero."
+          "description": "AgentTimeoutSeconds bounds how long to wait for the QEMU guest agent\nafter boot. Defaults to 300s when zero."
         },
         "cloud_init_user": {
           "type": "string",
@@ -733,15 +733,15 @@
         },
         "cloud_init_password": {
           "type": "string",
-          "description": "CloudInitPassword sets the default user's password. Prefer env expansion (${PROXMOX_CI_PASSWORD})."
+          "description": "CloudInitPassword sets the default user's password. Use env expansion\n(${PROXMOX_CI_PASSWORD}) — do not commit plaintext."
         },
         "cloud_init_ssh_key": {
           "type": "string",
-          "description": "CloudInitSSHKey contains one or more authorized SSH keys for the default user."
+          "description": "CloudInitSSHKey is one or more authorized SSH keys for the default user."
         },
         "cloud_init_ipconfig": {
           "type": "string",
-          "description": "CloudInitIPConfig sets the first NIC's IP config string in PVE's ipconfig0 syntax."
+          "description": "CloudInitIPConfig sets the first NIC's IP config string in PVE's\n`ipconfig0` syntax (e.g., \"ip=dhcp\" or \"ip=10.0.0.5/24,gw=10.0.0.1\")."
         },
         "cloud_init_nameserver": {
           "type": "string",
@@ -749,11 +749,11 @@
         },
         "ssh_username": {
           "type": "string",
-          "description": "SSHUsername overrides the user the provisioner SSH session connects as. Defaults to CloudInitUser when empty."
+          "description": "SSHUsername overrides the user the provisioner SSH session connects as.\nDefaults to CloudInitUser when empty."
         },
         "ssh_private_key": {
           "type": "string",
-          "description": "SSHPrivateKey is the PEM-encoded private key for SSH provisioning."
+          "description": "SSHPrivateKey is the PEM-encoded private key for SSH provisioning.\nEither SSHPrivateKey or SSHPassword must be set when provisioners run."
         },
         "ssh_password": {
           "type": "string",
