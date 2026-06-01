@@ -1777,6 +1777,93 @@ func TestApplyProxmoxCLIOverrides_GlobalFillsEmptyTarget(t *testing.T) {
 	}
 }
 
+func TestExecuteProxmoxBuildTarget_MissingAuth(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve1",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+	opts := &buildOptions{proxmoxEndpoint: "https://pve.example.com", proxmoxNode: "pve1"}
+	cmd := &cobra.Command{}
+
+	_, err := executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	if err == nil || !strings.Contains(err.Error(), "APITokenID") {
+		t.Fatalf("expected auth required error, got %v", err)
+	}
+}
+
+func TestExecuteProxmoxBuildTarget_DryRunStopsBeforeBuild(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{
+		Proxmox: config.ProxmoxConfig{
+			Endpoint:   "https://pve.example.com",
+			Node:       "pve1",
+			APITokenID: "user@pve!warpgate",
+			APIToken:   "secret",
+		},
+	}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve1",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+	opts := &buildOptions{dryRun: true}
+	cmd := &cobra.Command{}
+
+	results, err := executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	if err != nil {
+		t.Fatalf("dry-run should not error, got %v", err)
+	}
+	if results != nil {
+		t.Fatalf("expected nil results in dry-run, got %v", results)
+	}
+}
+
+func TestExecuteProxmoxBuildTarget_NodeFromTarget(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{
+		Proxmox: config.ProxmoxConfig{
+			Endpoint:   "https://pve.example.com",
+			APITokenID: "user@pve!warpgate",
+			APIToken:   "secret",
+		},
+	}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve-from-target",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+	opts := &buildOptions{dryRun: true}
+	cmd := &cobra.Command{}
+
+	if _, err := executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts); err != nil {
+		t.Fatalf("dry-run should not error when node comes from target, got %v", err)
+	}
+}
+
 func TestApplyProxmoxCLIOverrides_SkipsNonProxmoxTargets(t *testing.T) {
 	t.Parallel()
 	cfg := builder.Config{Targets: []builder.Target{
