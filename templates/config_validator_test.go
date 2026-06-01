@@ -1469,11 +1469,13 @@ func TestValidator_ProxmoxTargetValidation(t *testing.T) {
 			errContains: "new_vmid",
 		},
 	}
-	validator := NewValidator()
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			// Fresh validator per subtest: ValidateWithOptions mutates
+			// v.options, so sharing across parallel goroutines races.
+			validator := NewValidator()
 			cfg := proxmoxBaseConfig(tc.target)
 			err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true})
 			if tc.shouldError {
