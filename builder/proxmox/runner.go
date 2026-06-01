@@ -252,6 +252,14 @@ func resolveVMIPViaAgent(ctx context.Context, vm *pveapi.VirtualMachine) (string
 	if err != nil {
 		return "", err
 	}
+	return pickAgentIP(ifaces)
+}
+
+// pickAgentIP is the pure portion of resolveVMIPViaAgent. It walks the
+// supplied interfaces and returns the first IPv4 address that is neither
+// blank nor loopback. Extracted as a separate function so the address
+// selection logic can be unit-tested without an HTTP server.
+func pickAgentIP(ifaces []*pveapi.AgentNetworkIface) (string, error) {
 	for _, iface := range ifaces {
 		if iface == nil {
 			continue

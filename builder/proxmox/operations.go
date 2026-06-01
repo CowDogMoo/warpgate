@@ -79,19 +79,17 @@ func resolveSourceTemplate(ctx context.Context, node nodeAPI, sourceVMID int, so
 }
 
 // nextVMID returns a free VMID using Proxmox's cluster-wide /cluster/nextid
-// endpoint. The Proxmox client takes a uint64; we narrow back to int because
-// PVE VMIDs are bounded well below 2^31.
+// endpoint. PVE's response is a stringified integer ("9105") inside the
+// standard {"data": ...} envelope, which the SDK unwraps for us, so the
+// caller-facing payload is just a JSON string.
 func nextVMID(ctx context.Context, client *pveapi.Client) (int, error) {
-	type nextIDResp struct {
-		Data string `json:"data"`
-	}
-	var resp nextIDResp
-	if err := client.Get(ctx, "/cluster/nextid", &resp); err != nil {
+	var raw string
+	if err := client.Get(ctx, "/cluster/nextid", &raw); err != nil {
 		return 0, fmt.Errorf("allocate next vmid: %w", err)
 	}
 	var id int
-	if _, err := fmt.Sscanf(resp.Data, "%d", &id); err != nil {
-		return 0, fmt.Errorf("parse next vmid %q: %w", resp.Data, err)
+	if _, err := fmt.Sscanf(raw, "%d", &id); err != nil {
+		return 0, fmt.Errorf("parse next vmid %q: %w", raw, err)
 	}
 	return id, nil
 }

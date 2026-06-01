@@ -210,6 +210,66 @@ func TestImageBuilder_Build_MissingFields(t *testing.T) {
 	}
 }
 
+func TestNewImageBuilder(t *testing.T) {
+	t.Parallel()
+	b, err := NewImageBuilder(context.Background(), ClientConfig{
+		Endpoint:   "https://pve.example.com",
+		Node:       "pve1",
+		APITokenID: "u@pve!t",
+		APIToken:   "secret",
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if b.GetBuildID() == "" {
+		t.Fatal("expected non-empty build ID")
+	}
+	if err := b.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestNewImageBuilderWithOptions_Forwards(t *testing.T) {
+	t.Parallel()
+	b, err := NewImageBuilderWithOptions(context.Background(), ClientConfig{
+		Endpoint: "https://pve",
+		Node:     "pve1",
+		Username: "root@pam",
+		Password: "secret",
+	}, true)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !b.forceRecreate {
+		t.Fatal("expected forceRecreate=true")
+	}
+}
+
+func TestImageBuilder_SetCleanupOnFinish(t *testing.T) {
+	t.Parallel()
+	b := newBuilderWithFakeOps(t, &fakeOps{})
+	b.SetCleanupOnFinish(true)
+	if !b.cleanupOnFinish {
+		t.Fatal("expected cleanupOnFinish=true after Set")
+	}
+}
+
+func TestImageBuilder_Share_IsNoOp(t *testing.T) {
+	t.Parallel()
+	b := newBuilderWithFakeOps(t, &fakeOps{})
+	if err := b.Share(context.Background(), 9100, []string{"alice"}); err != nil {
+		t.Fatalf("expected Share to be a no-op, got %v", err)
+	}
+}
+
+func TestImageBuilder_Delete_RequiresVMID(t *testing.T) {
+	t.Parallel()
+	b := newBuilderWithFakeOps(t, &fakeOps{})
+	if err := b.Delete(context.Background(), 0); err == nil {
+		t.Fatal("expected vmid required error")
+	}
+}
+
 func TestGenerateBuildID(t *testing.T) {
 	t.Parallel()
 	id1 := generateBuildID()
