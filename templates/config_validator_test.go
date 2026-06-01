@@ -1367,6 +1367,291 @@ func TestValidator_AzureTargetValidation(t *testing.T) {
 	}
 }
 
+func proxmoxBaseConfig(target builder.Target) *builder.Config {
+	return &builder.Config{
+		Name: "proxmox-test",
+		Base: builder.BaseImage{Image: "ubuntu:22.04"},
+		Provisioners: []builder.Provisioner{
+			{Type: "shell", Inline: []string{"echo hi"}},
+		},
+		Targets: []builder.Target{target},
+	}
+}
+
+func TestValidator_ProxmoxOnlyBuildOmitsBaseImage(t *testing.T) {
+	t.Parallel()
+	// Proxmox-only builds source their root image from a Proxmox template
+	// (SourceTemplate/SourceTemplateName), so config.base.image is not
+	// required. This was added in e45d0cc — guard against regressions.
+	cfg := &builder.Config{
+		Name: "proxmox-only",
+		// Base intentionally empty.
+		Provisioners: []builder.Provisioner{{Type: "shell", Inline: []string{"echo hi"}}},
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve1",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	validator := NewValidator()
+	if err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true}); err != nil {
+		t.Fatalf("expected proxmox-only build to validate without base.image, got %v", err)
+	}
+}
+
+func TestValidator_MixedTargetsRequireBaseImage(t *testing.T) {
+	t.Parallel()
+	// A build that mixes proxmox with another target type still needs a
+	// base image because the non-proxmox target has nowhere else to source one.
+	cfg := &builder.Config{
+		Name:         "mixed",
+		Provisioners: []builder.Provisioner{{Type: "shell", Inline: []string{"echo hi"}}},
+		Targets: []builder.Target{
+			{Type: "container", Platforms: []string{"linux/amd64"}},
+			{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 9000,
+				TemplateName:   "kali",
+			},
+		},
+	}
+	validator := NewValidator()
+	if err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true}); err == nil {
+		t.Fatal("expected base.image required error for mixed-target build")
+	}
+}
+
+func TestValidator_ProxmoxTargetValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		target      builder.Target
+		shouldError bool
+		errContains string
+	}{
+		{
+			name: "valid VMID-based target",
+			target: builder.Target{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 9000,
+				TemplateName:   "kali",
+			},
+		},
+		{
+			name: "valid name-based target",
+			target: builder.Target{
+				Type:               "proxmox",
+				Node:               "pve1",
+				SourceTemplateName: "kali-template",
+				TemplateName:       "kali",
+			},
+		},
+		{
+			name: "missing node",
+			target: builder.Target{
+				Type:           "proxmox",
+				SourceTemplate: 9000,
+				TemplateName:   "kali",
+			},
+			shouldError: true,
+			errContains: "node",
+		},
+		{
+			name: "missing template_name",
+			target: builder.Target{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 9000,
+			},
+			shouldError: true,
+			errContains: "template_name",
+		},
+		{
+			name: "missing source",
+			target: builder.Target{
+				Type:         "proxmox",
+				Node:         "pve1",
+				TemplateName: "kali",
+			},
+			shouldError: true,
+			errContains: "source_template",
+		},
+		{
+			name: "both source vmid and name set",
+			target: builder.Target{
+				Type:               "proxmox",
+				Node:               "pve1",
+				SourceTemplate:     9000,
+				SourceTemplateName: "kali-template",
+				TemplateName:       "kali",
+			},
+			shouldError: true,
+			errContains: "not both",
+		},
+		{
+			name: "source vmid too low",
+			target: builder.Target{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 50,
+				TemplateName:   "kali",
+			},
+			shouldError: true,
+			errContains: ">= 100",
+		},
+		{
+			name: "new vmid too low",
+			target: builder.Target{
+				Type:           "proxmox",
+				Node:           "pve1",
+				SourceTemplate: 9000,
+				NewVMID:        50,
+				TemplateName:   "kali",
+			},
+			shouldError: true,
+			errContains: "new_vmid",
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// Fresh validator per subtest: ValidateWithOptions mutates
+			// v.options, so sharing across parallel goroutines races.
+			validator := NewValidator()
+			cfg := proxmoxBaseConfig(tc.target)
+			err := validator.ValidateWithOptions(context.Background(), cfg, ValidationOptions{SyntaxOnly: true})
+			if tc.shouldError {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.errContains)
+				}
+				if tc.errContains != "" && !contains(err.Error(), tc.errContains) {
+					t.Fatalf("expected error containing %q, got: %v", tc.errContains, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestValidator_ProxmoxNoBaseImage covers the rule that Proxmox-only builds
+// do not require Base.Image or Base.AMIFilters because the source comes
+// from the target's SourceTemplate/SourceTemplateName.
+func TestValidator_ProxmoxNoBaseImage(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *builder.Config
+		shouldError bool
+		errContains string
+	}{
+		{
+			name: "proxmox-only target without base image is allowed",
+			config: &builder.Config{
+				Name: "proxmox-noimage",
+				Provisioners: []builder.Provisioner{
+					{Type: "shell", Inline: []string{"echo hi"}},
+				},
+				Targets: []builder.Target{
+					{
+						Type:               "proxmox",
+						Node:               "pve1",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+				},
+			},
+		},
+		{
+			name: "two proxmox targets without base image are allowed",
+			config: &builder.Config{
+				Name: "proxmox-multi",
+				Provisioners: []builder.Provisioner{
+					{Type: "shell", Inline: []string{"echo hi"}},
+				},
+				Targets: []builder.Target{
+					{
+						Type:               "proxmox",
+						Node:               "pve1",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+					{
+						Type:               "proxmox",
+						Node:               "pve2",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+				},
+			},
+		},
+		{
+			name: "mixed proxmox + container still requires base image",
+			config: &builder.Config{
+				Name: "mixed",
+				Provisioners: []builder.Provisioner{
+					{Type: "shell", Inline: []string{"echo hi"}},
+				},
+				Targets: []builder.Target{
+					{
+						Type:               "proxmox",
+						Node:               "pve1",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+					{Type: "container", Platforms: []string{"linux/amd64"}},
+				},
+			},
+			shouldError: true,
+			errContains: "config.base.image is required",
+		},
+		{
+			name: "proxmox + ami target without ami_filters still errors",
+			config: &builder.Config{
+				Name: "mixed-ami",
+				Provisioners: []builder.Provisioner{
+					{Type: "shell", Inline: []string{"echo hi"}},
+				},
+				Targets: []builder.Target{
+					{
+						Type:               "proxmox",
+						Node:               "pve1",
+						SourceTemplateName: "kali-template",
+						TemplateName:       "kali",
+					},
+					{Type: "ami", Region: "us-east-1", AMIName: "test-ami"},
+				},
+			},
+			shouldError: true,
+			errContains: "config.base.image is required",
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			validator := NewValidator()
+			err := validator.ValidateWithOptions(context.Background(), tc.config, ValidationOptions{SyntaxOnly: true})
+			if tc.shouldError {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.errContains)
+				}
+				if tc.errContains != "" && !contains(err.Error(), tc.errContains) {
+					t.Fatalf("expected error containing %q, got: %v", tc.errContains, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))

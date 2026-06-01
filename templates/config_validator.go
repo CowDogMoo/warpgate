@@ -255,8 +255,8 @@ func (v *Validator) hasUnresolvedVariable(path string) bool {
 
 // validateProvisionerBuild validates base image and provisioners for non-Dockerfile builds.
 func (v *Validator) validateProvisionerBuild(ctx context.Context, config *builder.Config) error {
-	if config.Base.Image == "" && config.Base.AMIFilters == nil {
-		return fmt.Errorf("config.base.image is required (or use ami_filters for AMI targets, or dockerfile mode)")
+	if config.Base.Image == "" && config.Base.AMIFilters == nil && !allTargetsAreProxmox(config) {
+		return fmt.Errorf("config.base.image is required (or use ami_filters for AMI targets, source_template for Proxmox targets, or dockerfile mode)")
 	}
 
 	if config.Base.Image != "" && config.Base.AMIFilters != nil {
@@ -288,6 +288,22 @@ func (v *Validator) validateAMIFilterTarget(config *builder.Config) error {
 		}
 	}
 	return fmt.Errorf("config.base.ami_filters requires at least one AMI target")
+}
+
+// allTargetsAreProxmox reports whether every target in config is of type
+// "proxmox". Proxmox targets carry their own image source via
+// SourceTemplate/SourceTemplateName, so Base.Image and Base.AMIFilters are
+// not required when the build only produces Proxmox VM templates.
+func allTargetsAreProxmox(config *builder.Config) bool {
+	if len(config.Targets) == 0 {
+		return false
+	}
+	for _, t := range config.Targets {
+		if t.Type != "proxmox" {
+			return false
+		}
+	}
+	return true
 }
 
 // validateAzureTarget validates Azure-specific required fields on a target.
@@ -387,6 +403,29 @@ func validateAzureNetworking(target *builder.Target, index int) error {
 	return nil
 }
 
+// validateProxmoxTarget validates Proxmox-specific required fields on a target.
+func (v *Validator) validateProxmoxTarget(target *builder.Target, index int) error {
+	if target.Node == "" {
+		return fmt.Errorf("target[%d]: proxmox target requires 'node'", index)
+	}
+	if target.TemplateName == "" {
+		return fmt.Errorf("target[%d]: proxmox target requires 'template_name'", index)
+	}
+	if target.SourceTemplate == 0 && target.SourceTemplateName == "" {
+		return fmt.Errorf("target[%d]: proxmox target requires either 'source_template' (VMID) or 'source_template_name'", index)
+	}
+	if target.SourceTemplate != 0 && target.SourceTemplateName != "" {
+		return fmt.Errorf("target[%d]: proxmox target must set either 'source_template' or 'source_template_name', not both", index)
+	}
+	if target.SourceTemplate != 0 && target.SourceTemplate < 100 {
+		return fmt.Errorf("target[%d]: proxmox target 'source_template' VMID must be >= 100 (PVE reserves 1-99)", index)
+	}
+	if target.NewVMID != 0 && target.NewVMID < 100 {
+		return fmt.Errorf("target[%d]: proxmox target 'new_vmid' must be >= 100 (PVE reserves 1-99)", index)
+	}
+	return nil
+}
+
 // validateAMIFilters validates AMI filter configuration
 func (v *Validator) validateAMIFilters(filters *builder.AMIFilterConfig) error {
 	if len(filters.Owners) == 0 {
@@ -417,6 +456,11 @@ func (v *Validator) validateTarget(target *builder.Target, index int) error {
 
 	case "azure":
 		if err := v.validateAzureTarget(target, index); err != nil {
+			return err
+		}
+
+	case "proxmox":
+		if err := v.validateProxmoxTarget(target, index); err != nil {
 			return err
 		}
 

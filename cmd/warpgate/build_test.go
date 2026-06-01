@@ -1709,3 +1709,204 @@ func TestSourceRefPattern_MatchCases(t *testing.T) {
 		})
 	}
 }
+
+func proxmoxTargetConfig() builder.Config {
+	return builder.Config{
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve-target",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+			Storage:        "local-zfs-target",
+			Pool:           "deploy-target",
+		}},
+	}
+}
+
+func TestFirstProxmoxTargetNode(t *testing.T) {
+	t.Parallel()
+	cfg := proxmoxTargetConfig()
+	if got := firstProxmoxTargetNode(&cfg); got != "pve-target" {
+		t.Errorf("got %q, want pve-target", got)
+	}
+	empty := builder.Config{}
+	if got := firstProxmoxTargetNode(&empty); got != "" {
+		t.Errorf("expected empty for no targets, got %q", got)
+	}
+}
+
+func TestApplyProxmoxCLIOverrides_FlagsWin(t *testing.T) {
+	t.Parallel()
+	cfg := proxmoxTargetConfig()
+	globalCfg := &config.Config{Proxmox: config.ProxmoxConfig{Node: "g-node", Storage: "g-storage", Pool: "g-pool"}}
+	opts := &buildOptions{proxmoxNode: "flag-node", proxmoxStorage: "flag-storage", proxmoxPool: "flag-pool"}
+
+	applyProxmoxCLIOverrides(&cfg, globalCfg, opts)
+
+	if cfg.Targets[0].Node != "flag-node" {
+		t.Errorf("flag did not override Node, got %q", cfg.Targets[0].Node)
+	}
+	if cfg.Targets[0].Storage != "flag-storage" {
+		t.Errorf("flag did not override Storage, got %q", cfg.Targets[0].Storage)
+	}
+	if cfg.Targets[0].Pool != "flag-pool" {
+		t.Errorf("flag did not override Pool, got %q", cfg.Targets[0].Pool)
+	}
+}
+
+func TestApplyProxmoxCLIOverrides_GlobalFillsEmptyTarget(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{Targets: []builder.Target{{
+		Type:           "proxmox",
+		SourceTemplate: 9000,
+		TemplateName:   "kali",
+	}}}
+	globalCfg := &config.Config{Proxmox: config.ProxmoxConfig{Node: "g-node", Storage: "g-storage", Pool: "g-pool"}}
+	opts := &buildOptions{}
+
+	applyProxmoxCLIOverrides(&cfg, globalCfg, opts)
+
+	if cfg.Targets[0].Node != "g-node" {
+		t.Errorf("global did not fill empty Node, got %q", cfg.Targets[0].Node)
+	}
+	if cfg.Targets[0].Storage != "g-storage" {
+		t.Errorf("global did not fill empty Storage, got %q", cfg.Targets[0].Storage)
+	}
+	if cfg.Targets[0].Pool != "g-pool" {
+		t.Errorf("global did not fill empty Pool, got %q", cfg.Targets[0].Pool)
+	}
+}
+
+func TestExecuteProxmoxBuildTarget_MissingAuth(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve1",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+	opts := &buildOptions{proxmoxEndpoint: "https://pve.example.com", proxmoxNode: "pve1"}
+	cmd := &cobra.Command{}
+
+	_, err := executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	if err == nil || !strings.Contains(err.Error(), "APITokenID") {
+		t.Fatalf("expected auth required error, got %v", err)
+	}
+}
+
+func TestExecuteProxmoxBuildTarget_DryRunStopsBeforeBuild(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{
+		Proxmox: config.ProxmoxConfig{
+			Endpoint:   "https://pve.example.com",
+			Node:       "pve1",
+			APITokenID: "user@pve!warpgate",
+			APIToken:   "secret",
+		},
+	}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve1",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+	opts := &buildOptions{dryRun: true}
+	cmd := &cobra.Command{}
+
+	results, err := executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	if err != nil {
+		t.Fatalf("dry-run should not error, got %v", err)
+	}
+	if results != nil {
+		t.Fatalf("expected nil results in dry-run, got %v", results)
+	}
+}
+
+func TestExecuteProxmoxBuildTarget_BuildErrorWrapped(t *testing.T) {
+	ctx := setupTestContext(t)
+	// Endpoint pointing at a port nothing's listening on so the build fails
+	// fast at the first API call.
+	cfg := &config.Config{
+		Proxmox: config.ProxmoxConfig{
+			Endpoint:           "http://127.0.0.1:1",
+			Node:               "pve1",
+			APITokenID:         "user@pve!warpgate",
+			APIToken:           "secret",
+			InsecureSkipVerify: true,
+			HTTPTimeoutSec:     1,
+		},
+	}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve1",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+	opts := &buildOptions{cleanupOnFinish: true}
+	cmd := &cobra.Command{}
+
+	_, err := executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts)
+	if err == nil || !strings.Contains(err.Error(), "proxmox build failed") {
+		t.Fatalf("expected wrapped build failure, got %v", err)
+	}
+}
+
+func TestExecuteProxmoxBuildTarget_NodeFromTarget(t *testing.T) {
+	ctx := setupTestContext(t)
+	cfg := &config.Config{
+		Proxmox: config.ProxmoxConfig{
+			Endpoint:   "https://pve.example.com",
+			APITokenID: "user@pve!warpgate",
+			APIToken:   "secret",
+		},
+	}
+	buildConfig := &builder.Config{
+		Name: "test",
+		Targets: []builder.Target{{
+			Type:           "proxmox",
+			Node:           "pve-from-target",
+			SourceTemplate: 9000,
+			TemplateName:   "kali",
+		}},
+	}
+	service := builder.NewBuildService(cfg, func(context.Context) (builder.ContainerBuilder, error) {
+		return nil, fmt.Errorf("not used")
+	})
+	opts := &buildOptions{dryRun: true}
+	cmd := &cobra.Command{}
+
+	if _, err := executeProxmoxBuildTarget(ctx, cmd, service, cfg, buildConfig, builder.BuildOptions{}, opts); err != nil {
+		t.Fatalf("dry-run should not error when node comes from target, got %v", err)
+	}
+}
+
+func TestApplyProxmoxCLIOverrides_SkipsNonProxmoxTargets(t *testing.T) {
+	t.Parallel()
+	cfg := builder.Config{Targets: []builder.Target{
+		{Type: "container", Node: "should-not-touch"},
+	}}
+	opts := &buildOptions{proxmoxNode: "flag-node"}
+	applyProxmoxCLIOverrides(&cfg, &config.Config{}, opts)
+	if cfg.Targets[0].Node != "should-not-touch" {
+		t.Errorf("CLI override leaked into non-proxmox target: got %q", cfg.Targets[0].Node)
+	}
+}

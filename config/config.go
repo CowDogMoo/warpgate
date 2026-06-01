@@ -67,6 +67,7 @@ type Config struct {
 	Log       LogConfig       `mapstructure:"log"`
 	AWS       AWSConfig       `mapstructure:"aws"`
 	Azure     AzureConfig     `mapstructure:"azure"`
+	Proxmox   ProxmoxConfig   `mapstructure:"proxmox"`
 	Container ContainerConfig `mapstructure:"container"`
 	Convert   ConvertConfig   `mapstructure:"convert"`
 	BuildKit  BuildKitConfig  `mapstructure:"buildkit"`
@@ -203,6 +204,42 @@ type AzureImageConfig struct {
 	FileStagingContainer string `mapstructure:"file_staging_container" yaml:"file_staging_container,omitempty"`
 }
 
+// ProxmoxConfig holds Proxmox VE-related configuration shared across builds.
+// Per-target overrides live on builder.Target (Proxmox-specific fields).
+//
+// Credentials (APIToken / Password) are read from environment variables only
+// and are hidden from YAML output to prevent accidental commit to config files.
+type ProxmoxConfig struct {
+	// Endpoint is the Proxmox API URL including scheme and /api2/json path,
+	// e.g., "https://pve.example.com:8006/api2/json".
+	Endpoint string `mapstructure:"endpoint" yaml:"endpoint,omitempty"`
+
+	// Node is the default Proxmox node name (e.g., "pve1") used when a
+	// template config does not specify one.
+	Node string `mapstructure:"node" yaml:"node,omitempty"`
+
+	// Storage is the default Proxmox storage for cloned VMs and disks.
+	Storage string `mapstructure:"storage" yaml:"storage,omitempty"`
+
+	// Pool is the default Proxmox resource pool for cloned VMs.
+	Pool string `mapstructure:"pool" yaml:"pool,omitempty"`
+
+	// APITokenID is the API token ID in "user@realm!tokenname" form.
+	APITokenID string `mapstructure:"api_token_id" yaml:"api_token_id,omitempty"`
+
+	// InsecureSkipVerify disables TLS verification for the Proxmox API.
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify" yaml:"insecure_skip_verify,omitempty"`
+
+	// HTTPTimeoutSec bounds individual API calls. Default 60s when zero.
+	HTTPTimeoutSec int `mapstructure:"http_timeout_sec" yaml:"http_timeout_sec,omitempty"`
+
+	// Credentials are read from environment variables only (never from config file).
+	// Hidden from YAML output to prevent accidental storage.
+	APIToken string `mapstructure:"-" yaml:"-"` // From PROXMOX_API_TOKEN env var only
+	Username string `mapstructure:"-" yaml:"-"` // From PROXMOX_USERNAME env var only
+	Password string `mapstructure:"-" yaml:"-"` // From PROXMOX_PASSWORD env var only
+}
+
 // ContainerConfig holds container build configuration
 type ContainerConfig struct {
 	DefaultPlatform  string   `mapstructure:"default_platform"`
@@ -289,6 +326,9 @@ func loadConfigWithViper(setupFunc func(*viper.Viper) error) (*Config, error) {
 	// This ensures they can NEVER come from config files
 	populateAWSCredentials(&config)
 
+	// Populate Proxmox credentials directly from environment variables
+	populateProxmoxCredentials(&config)
+
 	// Return config with the setup error (may be ErrConfigNotFound or nil)
 	return &config, setupErr
 }
@@ -340,6 +380,15 @@ func populateAWSCredentials(cfg *Config) {
 	cfg.AWS.AccessKeyID = os.Getenv("AWS_ACCESS_KEY_ID")
 	cfg.AWS.SecretAccessKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
 	cfg.AWS.SessionToken = os.Getenv("AWS_SESSION_TOKEN")
+}
+
+// populateProxmoxCredentials reads Proxmox credentials directly from environment
+// variables so they are never persisted to a YAML config file. Mirrors
+// [populateAWSCredentials].
+func populateProxmoxCredentials(cfg *Config) {
+	cfg.Proxmox.APIToken = os.Getenv("PROXMOX_API_TOKEN")
+	cfg.Proxmox.Username = os.Getenv("PROXMOX_USERNAME")
+	cfg.Proxmox.Password = os.Getenv("PROXMOX_PASSWORD")
 }
 
 // DetectOCIRuntime finds an available OCI runtime on the system.
@@ -440,6 +489,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("azure.image.file_staging_storage_account", "")
 	v.SetDefault("azure.image.file_staging_container", "")
 
+	// Proxmox defaults
+	v.SetDefault("proxmox.endpoint", "")
+	v.SetDefault("proxmox.node", "")
+	v.SetDefault("proxmox.storage", "")
+	v.SetDefault("proxmox.pool", "")
+	v.SetDefault("proxmox.api_token_id", "")
+	v.SetDefault("proxmox.insecure_skip_verify", false)
+	v.SetDefault("proxmox.http_timeout_sec", 60)
+
 	// Container defaults
 	v.SetDefault("container.default_platform", "linux/amd64")
 	v.SetDefault("container.default_platforms", []string{"linux/amd64", "linux/arm64"})
@@ -531,6 +589,16 @@ func bindEnvVars(v *viper.Viper) {
 	bind("azure.image.build_timeout_min", "WARPGATE_AZURE_IMAGE_BUILD_TIMEOUT_MIN")
 	bind("azure.image.file_staging_storage_account", "WARPGATE_AZURE_IMAGE_FILE_STAGING_STORAGE_ACCOUNT")
 	bind("azure.image.file_staging_container", "WARPGATE_AZURE_IMAGE_FILE_STAGING_CONTAINER")
+
+	// Proxmox
+	bind("proxmox.endpoint", "PROXMOX_ENDPOINT", "WARPGATE_PROXMOX_ENDPOINT")
+	bind("proxmox.node", "PROXMOX_NODE", "WARPGATE_PROXMOX_NODE")
+	bind("proxmox.storage", "WARPGATE_PROXMOX_STORAGE")
+	bind("proxmox.pool", "WARPGATE_PROXMOX_POOL")
+	bind("proxmox.api_token_id", "PROXMOX_API_TOKEN_ID", "WARPGATE_PROXMOX_API_TOKEN_ID")
+	bind("proxmox.insecure_skip_verify", "WARPGATE_PROXMOX_INSECURE_SKIP_VERIFY")
+	bind("proxmox.http_timeout_sec", "WARPGATE_PROXMOX_HTTP_TIMEOUT_SEC")
+	// Note: PROXMOX_API_TOKEN/USERNAME/PASSWORD are read directly from env after unmarshal
 
 	// Container
 	bind("container.default_platform", "WARPGATE_CONTAINER_DEFAULT_PLATFORM")

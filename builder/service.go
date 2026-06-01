@@ -161,6 +161,63 @@ func (s *BuildService) ExecuteAzureBuild(ctx context.Context, config Config, opt
 	return result, nil
 }
 
+// ExecuteProxmoxBuild performs a complete Proxmox template build workflow
+// with the provided Proxmox builder. Mirrors ExecuteAzureBuild: handles
+// target selection and node defaulting, then delegates to the builder.
+// The caller is responsible for creating and closing the Proxmox builder
+// to avoid import cycles.
+func (s *BuildService) ExecuteProxmoxBuild(ctx context.Context, config Config, opts BuildOptions, pmBuilder ProxmoxImageBuilder) (*BuildResult, error) {
+	logging.InfoContext(ctx, "Executing Proxmox template build")
+
+	proxmoxTarget := findProxmoxTarget(config.Targets)
+	if proxmoxTarget == nil {
+		return nil, fmt.Errorf("no proxmox target found in configuration")
+	}
+
+	s.applyProxmoxGlobalDefaults(proxmoxTarget)
+
+	if proxmoxTarget.Node == "" {
+		return nil, fmt.Errorf("proxmox node must be specified (target.node or global config proxmox.node)")
+	}
+
+	result, err := pmBuilder.Build(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("proxmox build failed: %w", err)
+	}
+
+	logging.InfoContext(ctx, "Proxmox template build completed: VMID %d (%s)", result.TemplateVMID, result.TemplateName)
+	return result, nil
+}
+
+// findProxmoxTarget returns a pointer to the first proxmox target in
+// targets, or nil if none exists.
+func findProxmoxTarget(targets []Target) *Target {
+	for i := range targets {
+		if targets[i].Type == "proxmox" {
+			return &targets[i]
+		}
+	}
+	return nil
+}
+
+// applyProxmoxGlobalDefaults fills empty fields on proxmoxTarget from the
+// service's global config (if set). Fields already populated on the target
+// take precedence.
+func (s *BuildService) applyProxmoxGlobalDefaults(proxmoxTarget *Target) {
+	if s.globalConfig == nil {
+		return
+	}
+	if proxmoxTarget.Node == "" {
+		proxmoxTarget.Node = s.globalConfig.Proxmox.Node
+	}
+	if proxmoxTarget.Storage == "" {
+		proxmoxTarget.Storage = s.globalConfig.Proxmox.Storage
+	}
+	if proxmoxTarget.Pool == "" {
+		proxmoxTarget.Pool = s.globalConfig.Proxmox.Pool
+	}
+}
+
 // findAzureTarget returns a pointer to the first azure target in targets, or
 // nil if none exists.
 func findAzureTarget(targets []Target) *Target {

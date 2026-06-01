@@ -552,7 +552,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "description": "Type is the type of build target: \"container\" for Docker images,\n\"ami\" for AWS AMIs, or \"azure\" for Azure Compute Gallery images"
+          "description": "Type is the type of build target: \"container\" for Docker images,\n\"ami\" for AWS AMIs, \"azure\" for Azure Compute Gallery images, or\n\"proxmox\" for Proxmox VE VM templates"
         },
         "platforms": {
           "items": {
@@ -690,6 +690,78 @@
           },
           "type": "object",
           "description": "ImageTags are key-value tags applied to the generated gallery image version"
+        },
+        "node": {
+          "type": "string",
+          "description": "Node is the Proxmox VE node name to operate against (e.g., \"pve1\")"
+        },
+        "source_template": {
+          "type": "integer",
+          "description": "SourceTemplate is the VMID of the Proxmox template to clone from.\nMutually exclusive with SourceTemplateName."
+        },
+        "source_template_name": {
+          "type": "string",
+          "description": "SourceTemplateName is the name of the Proxmox template to clone from.\nResolved to a VMID at build time. Mutually exclusive with SourceTemplate."
+        },
+        "new_vmid": {
+          "type": "integer",
+          "description": "NewVMID is the VMID assigned to the new clone. When zero, the\ncluster-wide /cluster/nextid endpoint is used to allocate one."
+        },
+        "template_name": {
+          "type": "string",
+          "description": "TemplateName is the human-readable name applied to the produced template.\nCombined with a build timestamp to form the final PVE VM name."
+        },
+        "storage": {
+          "type": "string",
+          "description": "Storage is the Proxmox storage where the cloned disk lives.\nIf empty, PVE uses the source template's storage."
+        },
+        "pool": {
+          "type": "string",
+          "description": "Pool is the optional Proxmox resource pool to assign the new VM to."
+        },
+        "linked_clone": {
+          "type": "boolean",
+          "description": "LinkedClone toggles linked-clone mode. When true, the clone shares\ndisk pages with the source template. Default is full clone."
+        },
+        "agent_timeout_seconds": {
+          "type": "integer",
+          "description": "AgentTimeoutSeconds bounds how long to wait for the QEMU guest agent\nafter boot. Defaults to 300s when zero."
+        },
+        "cloud_init_user": {
+          "type": "string",
+          "description": "CloudInitUser sets cloud-init's default user account on the cloned VM."
+        },
+        "cloud_init_password": {
+          "type": "string",
+          "description": "CloudInitPassword sets the default user's password. Use env expansion\n(${PROXMOX_CI_PASSWORD}) — do not commit plaintext."
+        },
+        "cloud_init_ssh_key": {
+          "type": "string",
+          "description": "CloudInitSSHKey is one or more authorized SSH keys for the default user."
+        },
+        "cloud_init_ipconfig": {
+          "type": "string",
+          "description": "CloudInitIPConfig sets the first NIC's IP config string in PVE's\n`ipconfig0` syntax (e.g., \"ip=dhcp\" or \"ip=10.0.0.5/24,gw=10.0.0.1\")."
+        },
+        "cloud_init_nameserver": {
+          "type": "string",
+          "description": "CloudInitNameserver is the nameserver address pushed to the VM."
+        },
+        "ssh_username": {
+          "type": "string",
+          "description": "SSHUsername overrides the user the provisioner SSH session connects as.\nDefaults to CloudInitUser when empty."
+        },
+        "ssh_private_key": {
+          "type": "string",
+          "description": "SSHPrivateKey is the PEM-encoded private key for SSH provisioning.\nEither SSHPrivateKey or SSHPassword must be set when provisioners run."
+        },
+        "ssh_password": {
+          "type": "string",
+          "description": "SSHPassword is the password for SSH provisioning. Prefer SSHPrivateKey."
+        },
+        "ssh_port": {
+          "type": "integer",
+          "description": "SSHPort overrides the SSH port; 22 when zero."
         }
       },
       "additionalProperties": false,
