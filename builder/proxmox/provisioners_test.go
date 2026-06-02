@@ -195,6 +195,50 @@ func TestRunProvisioners_ShellWithSudo(t *testing.T) {
 	}
 }
 
+// Multi-line inline scripts wrapped with `sudo` must preserve literal
+// newlines so the remote `sh -c` parses them as separate statements. Go's
+// %q would emit the two-char sequence `\n` which `sh` does not unescape
+// inside its argument, producing exit 2 ("Syntax error") on the remote.
+func TestRunProvisioners_ShellSudoPreservesNewlines(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:   "shell",
+		Inline: []string{"echo one", "echo two", "echo three"},
+		Sudo:   true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	got := r.commands[0]
+	if !strings.Contains(got, "\necho one\n") || !strings.Contains(got, "\necho two\n") || !strings.Contains(got, "\necho three") {
+		t.Fatalf("expected each inline command on its own line, got %q", got)
+	}
+	if strings.Contains(got, `\necho one`) {
+		t.Fatalf("sudo wrap escaped newlines as \\n (Go %%q quoting bug), got %q", got)
+	}
+}
+
+func TestRunProvisioners_ShellUserSudoPreservesNewlines(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:   "shell",
+		Inline: []string{"echo one", "echo two"},
+		User:   "kali",
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	got := r.commands[0]
+	if !strings.Contains(got, "\necho one\n") || !strings.Contains(got, "\necho two") {
+		t.Fatalf("expected each inline command on its own line, got %q", got)
+	}
+	if strings.Contains(got, `\necho one`) {
+		t.Fatalf("user wrap escaped newlines as \\n, got %q", got)
+	}
+}
+
 func TestRunProvisioners_ShellUserBeatsSudo(t *testing.T) {
 	t.Parallel()
 	r := &fakeRunner{}

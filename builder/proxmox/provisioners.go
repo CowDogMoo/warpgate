@@ -120,17 +120,20 @@ func runShellProvisioner(ctx context.Context, runner SSHRunner, p builder.Provis
 	}
 	cmd := strings.Join(append([]string{"set -e"}, p.Inline...), "\n")
 	if p.WorkingDir != "" {
-		cmd = fmt.Sprintf("cd %q && %s", p.WorkingDir, cmd)
+		cmd = fmt.Sprintf("cd %s && %s", shellQuote(p.WorkingDir), cmd)
 	}
 	switch {
 	case p.User != "":
 		// Use sudo -u so env vars propagate correctly via sudo -E. When
 		// both User and Sudo are set, this wrap already elevates so we
-		// skip the plain sudo wrap below.
-		cmd = fmt.Sprintf("sudo -E -u %s -- sh -c %q", p.User, cmd)
+		// skip the plain sudo wrap below. shellQuote (single-quote style)
+		// preserves literal newlines inside the wrapped script; Go's %q
+		// would escape them as the two-char sequence `\n`, which `sh -c`
+		// does not unescape inside its double-quoted argument.
+		cmd = fmt.Sprintf("sudo -E -u %s -- sh -c %s", p.User, shellQuote(cmd))
 	case p.Sudo:
 		// sudo -E preserves env exports emitted by withEnvExports.
-		cmd = fmt.Sprintf("sudo -E sh -c %q", cmd)
+		cmd = fmt.Sprintf("sudo -E sh -c %s", shellQuote(cmd))
 	}
 	out, err := runner.Run(ctx, cmd, p.Environment)
 	logProvisionerOutput(ctx, "shell", out, err)
