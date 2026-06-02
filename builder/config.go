@@ -399,6 +399,11 @@ type Provisioner struct {
 
 	// User specifies which user to run the provisioner as
 	User string `yaml:"user,omitempty" json:"user,omitempty"`
+
+	// Sudo elevates privileges when running shell/file/script provisioners over SSH.
+	// Only meaningful for Linux Proxmox builds where the SSH user has NOPASSWD sudo;
+	// other backends ignore it. When combined with User the User wrap takes precedence.
+	Sudo bool `yaml:"sudo,omitempty" json:"sudo,omitempty"`
 }
 
 // Target represents a build target

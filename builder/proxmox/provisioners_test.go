@@ -23,12 +23,15 @@ THE SOFTWARE.
 package proxmox
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/cowdogmoo/warpgate/v3/logging"
 )
 
 // fakeRunner is a test double for SSHRunner that records every call.
@@ -40,7 +43,10 @@ type fakeRunner struct {
 	closed   bool
 }
 
-type upload struct{ src, dst, mode string }
+type upload struct {
+	src, dst, mode string
+	sudo           bool
+}
 
 func (f *fakeRunner) Run(_ context.Context, cmd string, _ map[string]string) (string, error) {
 	f.commands = append(f.commands, cmd)
@@ -50,8 +56,8 @@ func (f *fakeRunner) Run(_ context.Context, cmd string, _ map[string]string) (st
 	return "ok\n", nil
 }
 
-func (f *fakeRunner) UploadFile(_ context.Context, src, dst, mode string) error {
-	f.uploads = append(f.uploads, upload{src, dst, mode})
+func (f *fakeRunner) UploadFile(_ context.Context, src, dst string, opts UploadOptions) error {
+	f.uploads = append(f.uploads, upload{src, dst, opts.Mode, opts.Sudo})
 	if f.failUp {
 		return errors.New("upload failed")
 	}
@@ -150,8 +156,62 @@ func TestRunProvisioners_File(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if len(r.uploads) != 1 || r.uploads[0] != (upload{"src.tar", "/opt/dst.tar", "0644"}) {
+	if len(r.uploads) != 1 || r.uploads[0] != (upload{"src.tar", "/opt/dst.tar", "0644", false}) {
 		t.Fatalf("unexpected uploads: %+v", r.uploads)
+	}
+}
+
+func TestRunProvisioners_FilePropagatesSudo(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:        "file",
+		Source:      "src.tar",
+		Destination: "/root/dst.tar",
+		Mode:        "0600",
+		Sudo:        true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if len(r.uploads) != 1 || !r.uploads[0].sudo {
+		t.Fatalf("expected sudo upload, got %+v", r.uploads)
+	}
+}
+
+func TestRunProvisioners_ShellWithSudo(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:   "shell",
+		Inline: []string{"echo hi"},
+		Sudo:   true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.Contains(r.commands[0], "sudo -E sh -c") {
+		t.Fatalf("expected sudo wrap, got %q", r.commands[0])
+	}
+}
+
+func TestRunProvisioners_ShellUserBeatsSudo(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:   "shell",
+		Inline: []string{"true"},
+		User:   "kali",
+		Sudo:   true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.Contains(r.commands[0], "sudo -E -u kali") {
+		t.Fatalf("expected user wrap to take precedence, got %q", r.commands[0])
+	}
+	if strings.Contains(r.commands[0], "sudo -E sh -c") {
+		t.Fatalf("plain sudo wrap should not stack on top of user wrap, got %q", r.commands[0])
 	}
 }
 
@@ -179,6 +239,22 @@ func TestRunProvisioners_Script(t *testing.T) {
 	}
 	if len(r.commands) != 1 || !strings.HasSuffix(r.commands[0], "install.sh") {
 		t.Fatalf("expected execution of uploaded script, got %+v", r.commands)
+	}
+}
+
+func TestRunProvisioners_ScriptWithSudo(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:    "script",
+		Scripts: []string{"install.sh"},
+		Sudo:    true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.HasPrefix(r.commands[0], "sudo -E ") {
+		t.Fatalf("expected sudo prefix on script execution, got %q", r.commands[0])
 	}
 }
 
@@ -258,6 +334,81 @@ func TestRunProvisioners_RunFailurePropagates(t *testing.T) {
 	}})
 	if err == nil {
 		t.Fatal("expected run failure to propagate")
+	}
+}
+
+func TestLogProvisionerOutput_FailureRoutesToWarn(t *testing.T) {
+	t.Parallel()
+	// LogLevel=Warn would suppress Debug but pass Warn. If failed output
+	// reached Warn it survives; if it stayed at Debug it would be dropped.
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelWarn)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	logProvisionerOutput(ctx, "shell", "stderr line\n", errors.New("exit 100"))
+
+	if !bytes.Contains(buf.Bytes(), []byte("shell output (failed): stderr line")) {
+		t.Fatalf("expected failure message at warn level, got %q", buf.String())
+	}
+}
+
+func TestLogProvisionerOutput_SuccessStaysDebug(t *testing.T) {
+	t.Parallel()
+	// At LogLevel=Info, Debug is suppressed — successful output should
+	// stay debug and produce nothing.
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelInfo)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	logProvisionerOutput(ctx, "shell", "ok\n", nil)
+
+	if buf.Len() != 0 {
+		t.Fatalf("expected success output to stay debug-level (suppressed), got %q", buf.String())
+	}
+}
+
+func TestLogProvisionerOutput_EmptyOutputSkipped(t *testing.T) {
+	t.Parallel()
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelDebug)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	logProvisionerOutput(ctx, "shell", "   \n", nil)
+
+	if buf.Len() != 0 {
+		t.Fatalf("expected no output when remote output is empty, got %q", buf.String())
+	}
+}
+
+// scriptFailRunner runs UploadFile fine but returns an error with output
+// for Run, exercising the on-failure logging branch in runScriptProvisioner.
+type scriptFailRunner struct{ fakeRunner }
+
+func (r *scriptFailRunner) Run(_ context.Context, cmd string, _ map[string]string) (string, error) {
+	r.commands = append(r.commands, cmd)
+	return "boom\n", errors.New("exit 100")
+}
+
+func TestRunProvisioners_ScriptFailureSurfacesOutput(t *testing.T) {
+	t.Parallel()
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelInfo)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	r := &scriptFailRunner{}
+	err := runProvisioners(ctx, r, []builder.Provisioner{{
+		Type:    "script",
+		Scripts: []string{"/local/install.sh"},
+	}})
+	if err == nil {
+		t.Fatal("expected script error to propagate")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("script /local/install.sh output (failed): boom")) {
+		t.Fatalf("expected failure output captured, got %q", buf.String())
 	}
 }
 
