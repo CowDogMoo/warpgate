@@ -250,18 +250,6 @@ func TestNewSSHRunner_ContextCancellationStops(t *testing.T) {
 	}
 }
 
-func TestSortStringsInPlace(t *testing.T) {
-	t.Parallel()
-	s := []string{"c", "a", "b", "a"}
-	sortStrings(s)
-	want := []string{"a", "a", "b", "c"}
-	for i := range want {
-		if s[i] != want[i] {
-			t.Fatalf("sortStrings: got %v, want %v", s, want)
-		}
-	}
-}
-
 func TestSSHRunner_CloseNilCloser(t *testing.T) {
 	t.Parallel()
 	r := &sshRunner{}

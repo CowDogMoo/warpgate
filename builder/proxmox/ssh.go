@@ -29,6 +29,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -52,11 +53,7 @@ const (
 // inject a fake runCmdFunc; production wires sshRunCmd around an ssh.Client.
 type runCmdFunc func(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error
 
-// sshRunner is the production SSHRunner. The interesting logic — env
-// exports, quoting, the upload-as-cat trick, chmod, error wrapping —
-// lives here and is exercised against a fake runCmd. The actual SSH
-// session work lives in sshRunCmd and is verified end-to-end by
-// runner_live_test.go against a real cluster.
+// sshRunner is the production SSHRunner.
 type sshRunner struct {
 	addr   string
 	user   string
@@ -224,9 +221,7 @@ type sshSession interface {
 }
 
 // sshRunCmd returns a runCmdFunc that opens a fresh ssh.Session on client,
-// wires stdout/stderr, and hands the rest off to orchestrateSession. Kept
-// intentionally tiny so the (untestable) NewSession plumbing is isolated
-// from the orchestration logic.
+// wires stdout/stderr, and hands the rest off to orchestrateSession.
 func sshRunCmd(client *ssh.Client) runCmdFunc {
 	return func(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error {
 		sess, err := client.NewSession()
@@ -292,8 +287,7 @@ func withEnvExports(env map[string]string) string {
 	for k := range env {
 		keys = append(keys, k)
 	}
-	// Sort for deterministic output (tests, logs).
-	sortStrings(keys)
+	sort.Strings(keys)
 
 	var b strings.Builder
 	for _, k := range keys {
@@ -310,16 +304,6 @@ func withEnvExports(env map[string]string) string {
 // via the standard '\” trick. Safe for arbitrary bytes.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// sortStrings is a tiny stand-in for sort.Strings so this file doesn't have
-// to import "sort" for a single call site.
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j-1] > s[j]; j-- {
-			s[j-1], s[j] = s[j], s[j-1]
-		}
-	}
 }
 
 // resolveSSHConnection builds an SSHConnection from target. SSHUsername
