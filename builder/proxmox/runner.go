@@ -220,36 +220,9 @@ func pickAgentIP(ifaces []*pveapi.AgentNetworkIface) (string, error) {
 	return "", fmt.Errorf("no non-loopback IPv4 address reported by guest agent")
 }
 
-// defaultSSHRunnerFactory builds the default SSHRunner implementation.
-// Currently returns a stub runner that records commands without contacting
-// the host. The real ssh.Client wiring lives in a follow-up; this keeps
-// the package compilable and useful for integration scaffolding.
-func defaultSSHRunnerFactory(_ context.Context, host string, target *builder.Target) (SSHRunner, error) {
-	return &stubSSHRunner{host: host, user: target.SSHUsername}, nil
+// defaultSSHRunnerFactory builds the production SSHRunner that talks to
+// the cloned VM over an actual SSH connection.
+func defaultSSHRunnerFactory(ctx context.Context, host string, target *builder.Target) (SSHRunner, error) {
+	conn := resolveSSHConnection(host, target)
+	return newSSHRunner(ctx, conn, defaultSSHDialDeadline, nil)
 }
-
-// stubSSHRunner is a placeholder SSHRunner that logs the commands it would
-// run. A real implementation backed by golang.org/x/crypto/ssh will replace
-// this in a follow-up; until then it lets the pipeline be wired end-to-end
-// without crashing when no provisioners are present.
-type stubSSHRunner struct {
-	host string
-	user string
-}
-
-// Run records the command but does not actually execute it. Returns an
-// error so misconfigured templates fail loudly rather than silently
-// reporting success.
-func (s *stubSSHRunner) Run(ctx context.Context, command string, env map[string]string) (string, error) {
-	logging.InfoContext(ctx, "[stub-ssh %s@%s] would run: %s (env=%d)", s.user, s.host, command, len(env))
-	return "", fmt.Errorf("SSH provisioning is not yet wired up; configure target.ssh and template.provisioners stub will run real commands once builder/proxmox/ssh.go lands")
-}
-
-// UploadFile records the upload but does not actually transfer the file.
-func (s *stubSSHRunner) UploadFile(ctx context.Context, source, destination, mode string) error {
-	logging.InfoContext(ctx, "[stub-ssh %s@%s] would upload: %s → %s (mode %s)", s.user, s.host, source, destination, mode)
-	return fmt.Errorf("SSH file upload is not yet wired up")
-}
-
-// Close is a no-op for the stub.
-func (s *stubSSHRunner) Close() error { return nil }
