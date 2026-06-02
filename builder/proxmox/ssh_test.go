@@ -23,11 +23,16 @@ THE SOFTWARE.
 package proxmox
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
 	"errors"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -257,10 +262,286 @@ func TestSortStringsInPlace(t *testing.T) {
 	}
 }
 
-func TestSSHRunner_CloseNilClient(t *testing.T) {
+func TestSSHRunner_CloseNilCloser(t *testing.T) {
 	t.Parallel()
 	r := &sshRunner{}
 	if err := r.Close(); err != nil {
-		t.Fatalf("Close on nil client should be no-op, got %v", err)
+		t.Fatalf("Close with nil closer should be no-op, got %v", err)
+	}
+}
+
+// fakeCloser captures Close calls so we can assert sshRunner.Close
+// delegates to the underlying ssh client.
+type fakeCloser struct {
+	closed bool
+	err    error
+}
+
+func (f *fakeCloser) Close() error {
+	f.closed = true
+	return f.err
+}
+
+func TestSSHRunner_CloseDelegates(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCloser{}
+	r := &sshRunner{closer: fc}
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !fc.closed {
+		t.Fatal("expected closer to be invoked")
+	}
+}
+
+// fakeCmd captures one invocation of a runCmdFunc so tests can assert on
+// the command line, stdin payload, and emitted stdout/stderr.
+type fakeCmd struct {
+	command  string
+	stdinBuf []byte
+	stdout   string
+	stderr   string
+	err      error
+}
+
+func (f *fakeCmd) run(_ context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error {
+	f.command = command
+	if stdin != nil {
+		var b bytes.Buffer
+		if _, err := io.Copy(&b, stdin); err != nil {
+			return err
+		}
+		f.stdinBuf = b.Bytes()
+	}
+	if f.stdout != "" {
+		_, _ = stdout.Write([]byte(f.stdout))
+	}
+	if f.stderr != "" {
+		_, _ = stderr.Write([]byte(f.stderr))
+	}
+	return f.err
+}
+
+// chainCmd wires up a sequence of fakeCmd responses so tests can model
+// multi-step calls like UploadFile (cat then chmod).
+type chainCmd struct {
+	calls []*fakeCmd
+	idx   int
+}
+
+func (c *chainCmd) run(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if c.idx >= len(c.calls) {
+		return errors.New("chainCmd: no more scripted responses")
+	}
+	fc := c.calls[c.idx]
+	c.idx++
+	return fc.run(ctx, command, stdin, stdout, stderr)
+}
+
+func TestSSHRunner_Run_HappyPathReturnsStdout(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCmd{stdout: "hello\n"}
+	r := &sshRunner{runCmd: fc.run}
+	out, err := r.Run(context.Background(), "echo hello", nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out != "hello\n" {
+		t.Fatalf("out = %q, want %q", out, "hello\n")
+	}
+	if fc.command != "echo hello" {
+		t.Fatalf("command = %q, want plain command (no env)", fc.command)
+	}
+}
+
+func TestSSHRunner_Run_EnvPrefixedToCommand(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCmd{stdout: "ok"}
+	r := &sshRunner{runCmd: fc.run}
+	_, err := r.Run(context.Background(), "cmd", map[string]string{"BAR": "two", "AAA": "one"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := "export AAA='one'; export BAR='two'; cmd"
+	if fc.command != want {
+		t.Fatalf("command = %q, want %q", fc.command, want)
+	}
+}
+
+func TestSSHRunner_Run_WrapsErrorWithCommand(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCmd{stdout: "partial", err: errors.New("exit 1")}
+	r := &sshRunner{runCmd: fc.run}
+	out, err := r.Run(context.Background(), "fail.sh", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `run "fail.sh"`) {
+		t.Fatalf("expected wrapped command in error, got %v", err)
+	}
+	if out != "partial" {
+		t.Fatalf("partial output should still be returned, got %q", out)
+	}
+}
+
+func TestSSHRunner_UploadFile_StreamsAndChmod(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	body := []byte("payload\n")
+	if err := os.WriteFile(src, body, 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{{}, {}}}
+	r := &sshRunner{runCmd: chain.run}
+
+	if err := r.UploadFile(context.Background(), src, "/opt/dst", "0640"); err != nil {
+		t.Fatalf("UploadFile: %v", err)
+	}
+	if chain.idx != 2 {
+		t.Fatalf("expected 2 commands (cat + chmod), got %d", chain.idx)
+	}
+	if got := chain.calls[0].command; got != "cat > '/opt/dst'" {
+		t.Fatalf("first command = %q, want cat redirect", got)
+	}
+	if string(chain.calls[0].stdinBuf) != string(body) {
+		t.Fatalf("stdin = %q, want %q", chain.calls[0].stdinBuf, body)
+	}
+	if got := chain.calls[1].command; got != "chmod '0640' '/opt/dst'" {
+		t.Fatalf("second command = %q, want chmod", got)
+	}
+}
+
+func TestSSHRunner_UploadFile_NoModeSkipsChmod(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{{}}}
+	r := &sshRunner{runCmd: chain.run}
+
+	if err := r.UploadFile(context.Background(), src, "/opt/dst", ""); err != nil {
+		t.Fatalf("UploadFile: %v", err)
+	}
+	if chain.idx != 1 {
+		t.Fatalf("expected exactly 1 command (no chmod), got %d", chain.idx)
+	}
+}
+
+func TestSSHRunner_UploadFile_MissingSourceWraps(t *testing.T) {
+	t.Parallel()
+	r := &sshRunner{runCmd: (&fakeCmd{}).run}
+	err := r.UploadFile(context.Background(), filepath.Join(t.TempDir(), "missing"), "/tmp/dst", "")
+	if err == nil {
+		t.Fatal("expected error opening missing source")
+	}
+	if !strings.Contains(err.Error(), "open source") {
+		t.Fatalf("expected open source error, got %v", err)
+	}
+}
+
+func TestSSHRunner_UploadFile_CatFailureIncludesStderr(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{{
+		err:    errors.New("exit 1"),
+		stderr: "permission denied\n",
+	}}}
+	r := &sshRunner{runCmd: chain.run}
+	err := r.UploadFile(context.Background(), src, "/opt/dst", "0640")
+	if err == nil {
+		t.Fatal("expected upload failure")
+	}
+	if !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected stderr in error, got %v", err)
+	}
+}
+
+func TestSSHRunner_UploadFile_CatFailureBareWithoutStderr(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{{err: errors.New("eof")}}}
+	r := &sshRunner{runCmd: chain.run}
+	err := r.UploadFile(context.Background(), src, "/opt/dst", "0640")
+	if err == nil {
+		t.Fatal("expected upload failure")
+	}
+	if strings.Contains(err.Error(), "()") {
+		t.Fatalf("bare failure should not include empty parens, got %v", err)
+	}
+}
+
+func TestSSHRunner_UploadFile_ChmodFailureSurfaces(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{
+		{},
+		{err: errors.New("operation not permitted")},
+	}}
+	r := &sshRunner{runCmd: chain.run}
+	err := r.UploadFile(context.Background(), src, "/opt/dst", "0640")
+	if err == nil {
+		t.Fatal("expected chmod error to surface")
+	}
+	if !strings.Contains(err.Error(), "chmod 0640 /opt/dst") {
+		t.Fatalf("expected chmod context in error, got %v", err)
+	}
+}
+
+func TestDialSSH_ConnectionRefusedFails(t *testing.T) {
+	t.Parallel()
+	cfg := &ssh.ClientConfig{
+		User:            "x",
+		Auth:            []ssh.AuthMethod{ssh.Password("y")},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         200 * time.Millisecond,
+	}
+	// 127.0.0.1:1 is privileged and reliably refuses on Linux/macOS test runners.
+	_, err := dialSSH(context.Background(), "tcp", "127.0.0.1:1", cfg)
+	if err == nil {
+		t.Fatal("expected dial failure to an unreachable port")
+	}
+}
+
+func TestDialSSH_NonSSHListenerFailsHandshake(t *testing.T) {
+	t.Parallel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	// Accept and immediately close so the SSH handshake fails fast.
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	cfg := &ssh.ClientConfig{
+		User:            "x",
+		Auth:            []ssh.AuthMethod{ssh.Password("y")},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         500 * time.Millisecond,
+	}
+	_, err = dialSSH(context.Background(), "tcp", ln.Addr().String(), cfg)
+	if err == nil {
+		t.Fatal("expected ssh handshake failure against non-ssh listener")
 	}
 }

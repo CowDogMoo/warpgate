@@ -46,13 +46,22 @@ const (
 	sshConnectTimeout      = 15 * time.Second
 )
 
-// sshRunner is the production SSHRunner implementation backed by
-// golang.org/x/crypto/ssh. It opens a single client connection per build
-// and reuses it across provisioner steps, opening a fresh session per call.
+// runCmdFunc executes command on the remote host, optionally piping stdin
+// in and stdout/stderr out. It is the single seam between the testable
+// SSHRunner logic and the live golang.org/x/crypto/ssh plumbing. Tests
+// inject a fake runCmdFunc; production wires sshRunCmd around an ssh.Client.
+type runCmdFunc func(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error
+
+// sshRunner is the production SSHRunner. The interesting logic — env
+// exports, quoting, the upload-as-cat trick, chmod, error wrapping —
+// lives here and is exercised against a fake runCmd. The actual SSH
+// session work lives in sshRunCmd and is verified end-to-end by
+// runner_live_test.go against a real cluster.
 type sshRunner struct {
-	client *ssh.Client
 	addr   string
 	user   string
+	runCmd runCmdFunc
+	closer io.Closer
 }
 
 // dialSSHFunc is the indirection used to inject a fake dialer in tests.
@@ -83,7 +92,12 @@ func newSSHRunner(ctx context.Context, conn SSHConnection, dialDeadline time.Dur
 	for {
 		client, err := dial(ctx, "tcp", addr, cfg)
 		if err == nil {
-			return &sshRunner{client: client, addr: addr, user: conn.User}, nil
+			return &sshRunner{
+				addr:   addr,
+				user:   conn.User,
+				runCmd: sshRunCmd(client),
+				closer: client,
+			}, nil
 		}
 		lastErr = err
 		if ctx.Err() != nil {
@@ -149,31 +163,103 @@ func buildSSHClientConfig(conn SSHConnection) (*ssh.ClientConfig, error) {
 	}, nil
 }
 
-// Run opens a session, prefixes env exports, and executes command. Combined
-// stdout+stderr is returned so callers can log it on failure.
+// Run executes command on the remote host with env exported into the shell
+// before evaluation. Combined stdout+stderr is returned so callers can log
+// it on failure.
 func (s *sshRunner) Run(ctx context.Context, command string, env map[string]string) (string, error) {
-	sess, err := s.client.NewSession()
-	if err != nil {
-		return "", fmt.Errorf("open ssh session: %w", err)
-	}
-	defer func() { _ = sess.Close() }()
-
 	full := withEnvExports(env) + command
 	var out bytes.Buffer
-	sess.Stdout = &out
-	sess.Stderr = &out
+	if err := s.runCmd(ctx, full, nil, &out, &out); err != nil {
+		return out.String(), fmt.Errorf("run %q: %w", command, err)
+	}
+	return out.String(), nil
+}
 
-	done := make(chan error, 1)
-	go func() { done <- sess.Run(full) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			return out.String(), fmt.Errorf("run %q: %w", command, err)
+// UploadFile copies source to destination by piping the file body to a
+// remote `cat > destination`. Mode is applied with chmod afterwards. Using
+// cat-over-stdin avoids pulling in an SCP/SFTP dep.
+func (s *sshRunner) UploadFile(ctx context.Context, source, destination, mode string) error {
+	f, err := os.Open(source)
+	if err != nil {
+		return fmt.Errorf("open source %s: %w", source, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	var errBuf bytes.Buffer
+	cmd := fmt.Sprintf("cat > %s", shellQuote(destination))
+	if err := s.runCmd(ctx, cmd, f, io.Discard, &errBuf); err != nil {
+		stderr := strings.TrimSpace(errBuf.String())
+		if stderr != "" {
+			return fmt.Errorf("upload %s -> %s: %w (%s)", source, destination, err, stderr)
 		}
-		return out.String(), nil
-	case <-ctx.Done():
-		_ = sess.Signal(ssh.SIGKILL)
-		return out.String(), ctx.Err()
+		return fmt.Errorf("upload %s -> %s: %w", source, destination, err)
+	}
+
+	if mode != "" {
+		chmod := fmt.Sprintf("chmod %s %s", shellQuote(mode), shellQuote(destination))
+		if _, err := s.Run(ctx, chmod, nil); err != nil {
+			return fmt.Errorf("chmod %s %s: %w", mode, destination, err)
+		}
+	}
+	return nil
+}
+
+// Close shuts down the underlying ssh client connection.
+func (s *sshRunner) Close() error {
+	if s.closer == nil {
+		return nil
+	}
+	return s.closer.Close()
+}
+
+// sshRunCmd returns a runCmdFunc that executes the command in a fresh
+// ssh.Session on client. ctx cancellation sends SIGKILL to the remote
+// process. stdin is copied in a goroutine and signalled with channel-eof
+// when the source is exhausted.
+func sshRunCmd(client *ssh.Client) runCmdFunc {
+	return func(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error {
+		sess, err := client.NewSession()
+		if err != nil {
+			return fmt.Errorf("open ssh session: %w", err)
+		}
+		defer func() { _ = sess.Close() }()
+
+		sess.Stdout = stdout
+		sess.Stderr = stderr
+
+		var copyErr chan error
+		if stdin != nil {
+			pipe, err := sess.StdinPipe()
+			if err != nil {
+				return fmt.Errorf("open stdin pipe: %w", err)
+			}
+			copyErr = make(chan error, 1)
+			go func() {
+				_, err := io.Copy(pipe, stdin)
+				_ = pipe.Close()
+				copyErr <- err
+			}()
+		}
+
+		if err := sess.Start(command); err != nil {
+			return fmt.Errorf("start: %w", err)
+		}
+
+		done := make(chan error, 1)
+		go func() { done <- sess.Wait() }()
+
+		select {
+		case err := <-done:
+			if copyErr != nil {
+				if cerr := <-copyErr; cerr != nil {
+					return cerr
+				}
+			}
+			return err
+		case <-ctx.Done():
+			_ = sess.Signal(ssh.SIGKILL)
+			return ctx.Err()
+		}
 	}
 }
 
@@ -216,78 +302,6 @@ func sortStrings(s []string) {
 			s[j-1], s[j] = s[j], s[j-1]
 		}
 	}
-}
-
-// UploadFile copies source to destination via an ssh session that runs
-// `cat > destination`, then applies mode with chmod. We use cat-over-stdin
-// rather than SCP/SFTP so the package needs no extra deps.
-func (s *sshRunner) UploadFile(ctx context.Context, source, destination, mode string) error {
-	f, err := os.Open(source)
-	if err != nil {
-		return fmt.Errorf("open source %s: %w", source, err)
-	}
-	defer func() { _ = f.Close() }()
-
-	sess, err := s.client.NewSession()
-	if err != nil {
-		return fmt.Errorf("open ssh session for upload: %w", err)
-	}
-	defer func() { _ = sess.Close() }()
-
-	stdin, err := sess.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("open stdin pipe: %w", err)
-	}
-
-	var errBuf bytes.Buffer
-	sess.Stderr = &errBuf
-
-	cmd := fmt.Sprintf("cat > %s", shellQuote(destination))
-	if err := sess.Start(cmd); err != nil {
-		return fmt.Errorf("start upload: %w", err)
-	}
-
-	copyDone := make(chan error, 1)
-	go func() {
-		_, copyErr := io.Copy(stdin, f)
-		_ = stdin.Close()
-		copyDone <- copyErr
-	}()
-
-	select {
-	case err := <-copyDone:
-		if err != nil {
-			_ = sess.Signal(ssh.SIGKILL)
-			return fmt.Errorf("write upload body: %w", err)
-		}
-	case <-ctx.Done():
-		_ = sess.Signal(ssh.SIGKILL)
-		return ctx.Err()
-	}
-
-	if err := sess.Wait(); err != nil {
-		stderr := strings.TrimSpace(errBuf.String())
-		if stderr != "" {
-			return fmt.Errorf("upload %s -> %s: %w (%s)", source, destination, err, stderr)
-		}
-		return fmt.Errorf("upload %s -> %s: %w", source, destination, err)
-	}
-
-	if mode != "" {
-		chmod := fmt.Sprintf("chmod %s %s", shellQuote(mode), shellQuote(destination))
-		if _, err := s.Run(ctx, chmod, nil); err != nil {
-			return fmt.Errorf("chmod %s %s: %w", mode, destination, err)
-		}
-	}
-	return nil
-}
-
-// Close shuts down the underlying ssh client connection.
-func (s *sshRunner) Close() error {
-	if s.client == nil {
-		return nil
-	}
-	return s.client.Close()
 }
 
 // resolveSSHConnection builds an SSHConnection from target. SSHUsername
