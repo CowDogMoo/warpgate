@@ -49,12 +49,17 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 		return nil, errors.Wrap("read config file", path, err)
 	}
 
-	// Expand variables in the YAML content
-	// Precedence: CLI vars > Environment variables
-	expandedData := l.expandVariables(string(data), vars)
+	// Parse the YAML first, then expand ${VAR} on string scalars.
+	// Substituting on the raw text would corrupt multi-line values (SSH
+	// keys, PEM blobs) by injecting raw newlines into a YAML scalar.
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, errors.Wrap("parse config file", path, err)
+	}
+	expandScalarVars(&root, vars, l.expandVariables)
 
 	var config builder.Config
-	if err := yaml.Unmarshal([]byte(expandedData), &config); err != nil {
+	if err := root.Decode(&config); err != nil {
 		return nil, errors.Wrap("parse config file", path, err)
 	}
 
@@ -71,6 +76,63 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 	l.resolveRelativePaths(&config, baseDir)
 
 	return &config, nil
+}
+
+// expandScalarVars walks the YAML node tree and runs expand over the value
+// of every string scalar (mapping keys are left alone). For plain-style
+// scalars whose expanded value is a single line, the tag is re-resolved so
+// an expanded "true"/"123"/"null" still decodes to the corresponding Go
+// type.
+func expandScalarVars(n *yaml.Node, vars map[string]string, expand func(string, map[string]string) string) {
+	if n == nil {
+		return
+	}
+	switch n.Kind {
+	case yaml.DocumentNode, yaml.SequenceNode:
+		for _, c := range n.Content {
+			expandScalarVars(c, vars, expand)
+		}
+	case yaml.MappingNode:
+		// Mapping content alternates [key, value, key, value, ...].
+		// Skip keys (i even) and expand values (i odd).
+		for i := 1; i < len(n.Content); i += 2 {
+			expandScalarVars(n.Content[i], vars, expand)
+		}
+	case yaml.ScalarNode:
+		if n.Tag != "" && n.Tag != "!!str" {
+			return
+		}
+		old := n.Value
+		expanded := expand(old, vars)
+		if expanded == old {
+			return
+		}
+		n.Value = expanded
+		if n.Style == 0 && !strings.ContainsRune(expanded, '\n') {
+			if tag := inferScalarTag(expanded); tag != "" {
+				n.Tag = tag
+			}
+		}
+	}
+}
+
+// inferScalarTag re-parses s as a standalone YAML document and returns the
+// resolved tag of the resulting scalar (e.g. "!!bool", "!!int"). Returns ""
+// when s isn't a parseable single scalar so the caller leaves the existing
+// tag in place.
+func inferScalarTag(s string) string {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(s), &doc); err != nil {
+		return ""
+	}
+	if len(doc.Content) == 0 {
+		return ""
+	}
+	c := doc.Content[0]
+	if c.Kind != yaml.ScalarNode {
+		return ""
+	}
+	return c.Tag
 }
 
 // expandVariables expands ${VAR} style variables only

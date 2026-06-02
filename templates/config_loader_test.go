@@ -4440,3 +4440,242 @@ func TestGetLatestVersionEmpty(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no versions provided")
 }
+
+const multilineValue = `first line
+second line with: colon
+third line`
+
+func TestLoadFromFileWithVars_MultilineValueParses(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "warpgate.yaml")
+	content := `metadata:
+  name: ml-test
+  version: 1.0.0
+  description: Multi-line var
+  author: Test
+  license: MIT
+  requires:
+    warpgate: ">=1.0.0"
+name: ml-test
+version: latest
+base:
+  image: alpine:latest
+provisioners:
+  - type: shell
+    inline:
+      - ${PRIVATE_KEY}
+    user: deploy
+targets:
+  - type: container
+    platforms:
+      - linux/amd64
+`
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+	cfg, err := NewLoader().LoadFromFileWithVars(configPath, map[string]string{
+		"PRIVATE_KEY": multilineValue,
+	})
+	require.NoError(t, err)
+	require.Len(t, cfg.Provisioners, 1)
+	require.Len(t, cfg.Provisioners[0].Inline, 1)
+	assert.Equal(t, multilineValue, cfg.Provisioners[0].Inline[0])
+	assert.Equal(t, "deploy", cfg.Provisioners[0].User)
+}
+
+func TestLoadFromFileWithVars_PartialSubstitutionStillWorks(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "warpgate.yaml")
+	content := `metadata:
+  name: part-test
+  version: 1.0.0
+  description: Partial sub
+  author: Test
+  license: MIT
+  requires:
+    warpgate: ">=1.0.0"
+name: part-test
+version: latest
+base:
+  image: alpine:latest
+provisioners:
+  - type: script
+    scripts:
+      - ${SCRIPT_DIR}/install.sh
+targets:
+  - type: container
+    platforms:
+      - linux/amd64
+`
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+	cfg, err := NewLoader().LoadFromFileWithVars(configPath, map[string]string{
+		"SCRIPT_DIR": "/opt/scripts",
+	})
+	require.NoError(t, err)
+	require.Len(t, cfg.Provisioners[0].Scripts, 1)
+	assert.Equal(t, "/opt/scripts/install.sh", cfg.Provisioners[0].Scripts[0])
+}
+
+func TestLoadFromFileWithVars_PreservesSourcesReferences(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "warpgate.yaml")
+	// Use a shell inline command so the value isn't run through
+	// MustExpandPath (which would strip ${sources.*} via os.ExpandEnv).
+	content := `metadata:
+  name: src-test
+  version: 1.0.0
+  description: Sources passthrough
+  author: Test
+  license: MIT
+  requires:
+    warpgate: ">=1.0.0"
+name: src-test
+version: latest
+base:
+  image: alpine:latest
+provisioners:
+  - type: shell
+    inline:
+      - "cp ${sources.collection}/playbook.yml /etc/playbook.yml"
+targets:
+  - type: container
+    platforms:
+      - linux/amd64
+`
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0644))
+
+	cfg, err := NewLoader().LoadFromFileWithVars(configPath, nil)
+	require.NoError(t, err)
+	require.Len(t, cfg.Provisioners[0].Inline, 1)
+	// ${sources.*} references must survive the loader so the sources
+	// pipeline can resolve them after the sources are fetched.
+	assert.Contains(t, cfg.Provisioners[0].Inline[0], "${sources.collection}")
+}
+
+func TestExpandScalarVars_ReTagsPlainBool(t *testing.T) {
+	src := []byte("pull: ${FLAG}\nname: ${NAME}\n")
+	var n yaml.Node
+	require.NoError(t, yaml.Unmarshal(src, &n))
+
+	expand := func(s string, _ map[string]string) string {
+		if s == "${FLAG}" {
+			return "true"
+		}
+		if s == "${NAME}" {
+			return "alpine"
+		}
+		return s
+	}
+	expandScalarVars(&n, nil, expand)
+
+	var got struct {
+		Pull bool   `yaml:"pull"`
+		Name string `yaml:"name"`
+	}
+	require.NoError(t, n.Decode(&got))
+	assert.True(t, got.Pull)
+	assert.Equal(t, "alpine", got.Name)
+}
+
+func TestExpandScalarVars_MultilineStaysString(t *testing.T) {
+	src := []byte("key: ${K}\n")
+	var n yaml.Node
+	require.NoError(t, yaml.Unmarshal(src, &n))
+
+	expand := func(s string, _ map[string]string) string {
+		if s == "${K}" {
+			return "line one\ntrue\nline three"
+		}
+		return s
+	}
+	expandScalarVars(&n, nil, expand)
+
+	var got struct {
+		Key string `yaml:"key"`
+	}
+	require.NoError(t, n.Decode(&got))
+	assert.Equal(t, "line one\ntrue\nline three", got.Key)
+}
+
+func TestExpandScalarVars_SkipsNonStringScalars(t *testing.T) {
+	src := []byte("count: 5\nflag: false\nempty: null\n")
+	var n yaml.Node
+	require.NoError(t, yaml.Unmarshal(src, &n))
+
+	calls := 0
+	expand := func(s string, _ map[string]string) string {
+		calls++
+		return s + "-touched"
+	}
+	expandScalarVars(&n, nil, expand)
+	assert.Equal(t, 0, calls, "expander should not be called for non-string scalars")
+}
+
+func TestExpandScalarVars_NoChangeEarlyReturns(t *testing.T) {
+	src := []byte("key: literal\n")
+	var n yaml.Node
+	require.NoError(t, yaml.Unmarshal(src, &n))
+
+	identity := func(s string, _ map[string]string) string { return s }
+	expandScalarVars(&n, nil, identity)
+
+	var got struct {
+		Key string `yaml:"key"`
+	}
+	require.NoError(t, n.Decode(&got))
+	assert.Equal(t, "literal", got.Key)
+}
+
+func TestExpandScalarVars_NilNodeIsNoOp(t *testing.T) {
+	expandScalarVars(nil, nil, func(s string, _ map[string]string) string { return s })
+}
+
+func TestInferScalarTag_ReturnsStdlibTagsForKnownTypes(t *testing.T) {
+	cases := map[string]string{
+		"true":  "!!bool",
+		"false": "!!bool",
+		"123":   "!!int",
+		"1.5":   "!!float",
+		"null":  "!!null",
+		"hello": "!!str",
+	}
+	for in, want := range cases {
+		got := inferScalarTag(in)
+		assert.Equal(t, want, got, "inferScalarTag(%q)", in)
+	}
+}
+
+func TestInferScalarTag_UnparseableReturnsEmpty(t *testing.T) {
+	assert.Equal(t, "", inferScalarTag("{a: 1, b: 2}"))
+}
+
+func TestInferScalarTag_MalformedYAMLReturnsEmpty(t *testing.T) {
+	assert.Equal(t, "", inferScalarTag("{a:"))
+}
+
+func TestInferScalarTag_EmptyInputReturnsEmpty(t *testing.T) {
+	assert.Equal(t, "", inferScalarTag(""))
+}
+
+func TestLoadFromFileWithVars_DecodeErrorWrapped(t *testing.T) {
+	tmpDir := t.TempDir()
+	bad := filepath.Join(tmpDir, "shape.yaml")
+	content := `metadata:
+  name: bad
+  version: 1.0.0
+  description: bad
+  author: x
+  license: MIT
+  requires:
+    warpgate: ">=1.0.0"
+name: bad
+version: latest
+base:
+  image: alpine
+targets: "this should be a list"
+`
+	require.NoError(t, os.WriteFile(bad, []byte(content), 0644))
+	_, err := NewLoader().LoadFromFileWithVars(bad, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse config file")
+}
