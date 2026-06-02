@@ -33,31 +33,31 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/builder"
 )
 
-func TestDefaultSSHRunnerFactory(t *testing.T) {
+func TestDefaultSSHRunnerFactory_RequiresAuth(t *testing.T) {
 	t.Parallel()
-	r, err := defaultSSHRunnerFactory(context.Background(), "10.0.0.1", &builder.Target{SSHUsername: "ansible"})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
+	// No private key and no password — the factory must fail before any
+	// network I/O so misconfigured templates surface immediately.
+	_, err := defaultSSHRunnerFactory(context.Background(), "10.0.0.1", &builder.Target{SSHUsername: "ansible"})
+	if err == nil {
+		t.Fatal("expected error when no auth is configured")
 	}
-	if r == nil {
-		t.Fatal("expected non-nil runner")
-	}
-	if err := r.Close(); err != nil {
-		t.Fatalf("close failed: %v", err)
+	if !strings.Contains(err.Error(), "private key or password") {
+		t.Fatalf("expected auth-required error, got %v", err)
 	}
 }
 
-func TestStubSSHRunner_AlwaysFails(t *testing.T) {
+func TestDefaultSSHRunnerFactory_FallsBackToCloudInitUser(t *testing.T) {
 	t.Parallel()
-	r := &stubSSHRunner{host: "h", user: "u"}
-	if _, err := r.Run(context.Background(), "echo hi", nil); err == nil {
-		t.Fatal("expected Run to return error")
+	// When SSHUsername is unset, the runner should fall back to
+	// CloudInitUser. The factory will fail at auth (no key/password) but
+	// the user check fires first, so we assert the auth error rather than
+	// a missing-user error.
+	_, err := defaultSSHRunnerFactory(context.Background(), "10.0.0.1", &builder.Target{CloudInitUser: "kali"})
+	if err == nil {
+		t.Fatal("expected auth error")
 	}
-	if err := r.UploadFile(context.Background(), "src", "dst", "0644"); err == nil {
-		t.Fatal("expected UploadFile to return error")
-	}
-	if err := r.Close(); err != nil {
-		t.Fatalf("Close should be no-op nil, got %v", err)
+	if strings.Contains(err.Error(), "user is required") {
+		t.Fatalf("expected user fallback to CloudInitUser, got %v", err)
 	}
 }
 
