@@ -39,12 +39,27 @@ type SSHRunner interface {
 	// streamed into the returned string for callers that want to log it.
 	Run(ctx context.Context, command string, env map[string]string) (string, error)
 
-	// UploadFile copies a local file (or directory) to a destination path
-	// on the remote host with the given mode.
-	UploadFile(ctx context.Context, source, destination, mode string) error
+	// UploadFile copies a local file or directory to a destination path on
+	// the remote host. Directories are uploaded recursively via a tar
+	// pipeline. opts controls permissions and privilege escalation.
+	UploadFile(ctx context.Context, source, destination string, opts UploadOptions) error
 
 	// Close releases the underlying SSH session.
 	Close() error
+}
+
+// UploadOptions controls how SSHRunner.UploadFile transfers a file or
+// directory tree.
+type UploadOptions struct {
+	// Mode is the file permission applied via chmod after transfer
+	// (e.g., "0644"). Empty skips chmod. For directory uploads the mode
+	// is applied to the destination directory itself, not its contents.
+	Mode string
+
+	// Sudo elevates privileges for the remote write, mkdir, and chmod.
+	// Required when the destination is owned by a different user than
+	// the SSH login user (e.g., writing into /root or /etc).
+	Sudo bool
 }
 
 // SSHConnection bundles connection parameters for an SSHRunner.
@@ -107,23 +122,30 @@ func runShellProvisioner(ctx context.Context, runner SSHRunner, p builder.Provis
 	if p.WorkingDir != "" {
 		cmd = fmt.Sprintf("cd %q && %s", p.WorkingDir, cmd)
 	}
-	if p.User != "" {
-		// Use sudo -u so env vars propagate correctly via sudo -E.
+	switch {
+	case p.User != "":
+		// Use sudo -u so env vars propagate correctly via sudo -E. When
+		// both User and Sudo are set, this wrap already elevates so we
+		// skip the plain sudo wrap below.
 		cmd = fmt.Sprintf("sudo -E -u %s -- sh -c %q", p.User, cmd)
+	case p.Sudo:
+		// sudo -E preserves env exports emitted by withEnvExports.
+		cmd = fmt.Sprintf("sudo -E sh -c %q", cmd)
 	}
 	out, err := runner.Run(ctx, cmd, p.Environment)
-	if out != "" {
-		logging.DebugContext(ctx, "shell output: %s", out)
-	}
+	logProvisionerOutput(ctx, "shell", out, err)
 	return err
 }
 
-// runFileProvisioner uploads source to destination with mode.
+// runFileProvisioner uploads source (file or directory) to destination.
 func runFileProvisioner(ctx context.Context, runner SSHRunner, p builder.Provisioner) error {
 	if p.Source == "" || p.Destination == "" {
 		return fmt.Errorf("file provisioner requires source and destination")
 	}
-	return runner.UploadFile(ctx, p.Source, p.Destination, p.Mode)
+	return runner.UploadFile(ctx, p.Source, p.Destination, UploadOptions{
+		Mode: p.Mode,
+		Sudo: p.Sudo,
+	})
 }
 
 // runScriptProvisioner uploads each script and executes it on the remote
@@ -131,13 +153,15 @@ func runFileProvisioner(ctx context.Context, runner SSHRunner, p builder.Provisi
 func runScriptProvisioner(ctx context.Context, runner SSHRunner, p builder.Provisioner) error {
 	for _, script := range p.Scripts {
 		remote := fmt.Sprintf("/tmp/warpgate-%s", filepathBase(script))
-		if err := runner.UploadFile(ctx, script, remote, "0755"); err != nil {
+		if err := runner.UploadFile(ctx, script, remote, UploadOptions{Mode: "0755"}); err != nil {
 			return fmt.Errorf("upload %s: %w", script, err)
 		}
-		out, err := runner.Run(ctx, remote, p.Environment)
-		if out != "" {
-			logging.DebugContext(ctx, "script %s output: %s", script, out)
+		cmd := remote
+		if p.Sudo {
+			cmd = "sudo -E " + remote
 		}
+		out, err := runner.Run(ctx, cmd, p.Environment)
+		logProvisionerOutput(ctx, fmt.Sprintf("script %s", script), out, err)
 		if err != nil {
 			return err
 		}
@@ -154,7 +178,7 @@ func runPowerShellProvisioner(ctx context.Context, runner SSHRunner, p builder.P
 	}
 	for _, script := range p.PSScripts {
 		remote := fmt.Sprintf("C:\\Windows\\Temp\\warpgate-%s", filepathBase(script))
-		if err := runner.UploadFile(ctx, script, remote, ""); err != nil {
+		if err := runner.UploadFile(ctx, script, remote, UploadOptions{}); err != nil {
 			return fmt.Errorf("upload %s: %w", script, err)
 		}
 		cmd := fmt.Sprintf("powershell.exe -ExecutionPolicy %s -File %s", policy, remote)
@@ -163,6 +187,22 @@ func runPowerShellProvisioner(ctx context.Context, runner SSHRunner, p builder.P
 		}
 	}
 	return nil
+}
+
+// logProvisionerOutput routes captured remote output to the appropriate
+// level. On failure the output is the only diagnostic available, so it
+// surfaces at warn level regardless of --log-level. On success it stays
+// at debug since it can be high-volume.
+func logProvisionerOutput(ctx context.Context, label, out string, err error) {
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return
+	}
+	if err != nil {
+		logging.WarnContext(ctx, "%s output (failed): %s", label, out)
+		return
+	}
+	logging.DebugContext(ctx, "%s output: %s", label, out)
 }
 
 // filepathBase returns the trailing element of a path without importing

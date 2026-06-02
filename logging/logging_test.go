@@ -575,22 +575,52 @@ func TestCustomLogger_VerboseMode_ShowsDebug(t *testing.T) {
 }
 
 func TestCustomLogger_DefaultMode_HidesDebug(t *testing.T) {
-	// Default mode (not verbose, not quiet) should hide debug messages
+	// At the default LogLevel (Info) with neither verbose nor quiet,
+	// DEBUG messages are filtered out and INFO+ pass through.
 	buf := &bytes.Buffer{}
-	logger := logging.NewCustomLogger(slog.LevelDebug)
+	logger := logging.NewCustomLogger(slog.LevelInfo)
 	logger.ConsoleWriter = buf
-	// Default: verbose=false, quiet=false
 
 	logger.Debug("debug should be hidden")
 	output := buf.String()
 	if output != "" {
-		t.Errorf("expected debug to be hidden in default mode, got %q", output)
+		t.Errorf("expected debug to be hidden at info level, got %q", output)
 	}
 
 	logger.Info("info should appear")
 	output = buf.String()
 	if !bytes.Contains(buf.Bytes(), []byte("info should appear")) {
-		t.Errorf("expected info to appear in default mode, got %q", output)
+		t.Errorf("expected info to appear at info level, got %q", output)
+	}
+}
+
+func TestCustomLogger_DebugLevel_ShowsDebugWithoutVerbose(t *testing.T) {
+	// --log-level=debug should surface DEBUG without requiring --verbose.
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelDebug)
+	logger.ConsoleWriter = buf
+
+	logger.Debug("debug should appear at debug level")
+	if !bytes.Contains(buf.Bytes(), []byte("debug should appear at debug level")) {
+		t.Errorf("expected debug to appear at debug level without verbose, got %q", buf.String())
+	}
+}
+
+func TestCustomLogger_WarnLevel_HidesInfo(t *testing.T) {
+	// --log-level=warn should suppress INFO and DEBUG.
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelWarn)
+	logger.ConsoleWriter = buf
+
+	logger.Info("info should be hidden")
+	logger.Debug("debug should be hidden")
+	if buf.Len() != 0 {
+		t.Errorf("expected no output at warn level for info/debug, got %q", buf.String())
+	}
+
+	logger.Warn("warn should appear")
+	if !bytes.Contains(buf.Bytes(), []byte("warn should appear")) {
+		t.Errorf("expected warn to appear at warn level, got %q", buf.String())
 	}
 }
 

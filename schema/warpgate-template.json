@@ -503,6 +503,10 @@
         "user": {
           "type": "string",
           "description": "User specifies which user to run the provisioner as"
+        },
+        "sudo": {
+          "type": "boolean",
+          "description": "Sudo elevates privileges when running shell/file/script provisioners over SSH.\nOnly meaningful for Linux Proxmox builds where the SSH user has NOPASSWD sudo;\nother backends ignore it. When combined with User the User wrap takes precedence."
         }
       },
       "additionalProperties": false,

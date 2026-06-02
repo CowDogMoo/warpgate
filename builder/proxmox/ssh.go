@@ -23,12 +23,15 @@ THE SOFTWARE.
 package proxmox
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -172,19 +175,41 @@ func (s *sshRunner) Run(ctx context.Context, command string, env map[string]stri
 	return out.String(), nil
 }
 
-// UploadFile copies source to destination by piping the file body to a
-// remote `cat > destination`. Mode is applied with chmod afterwards. Using
-// cat-over-stdin avoids pulling in an SCP/SFTP dep.
-func (s *sshRunner) UploadFile(ctx context.Context, source, destination, mode string) error {
+// UploadFile copies source to destination over SSH. Regular files stream
+// through `cat > destination` (or `sudo tee` when elevation is requested).
+// Directories are streamed as an in-process tar archive piped into a remote
+// `tar -xf -`, which preserves permissions and symlinks without requiring
+// SCP/SFTP on either side.
+func (s *sshRunner) UploadFile(ctx context.Context, source, destination string, opts UploadOptions) error {
+	info, err := os.Stat(source)
+	if err != nil {
+		return fmt.Errorf("stat source %s: %w", source, err)
+	}
+	if info.IsDir() {
+		return s.uploadDir(ctx, source, destination, opts)
+	}
+	return s.uploadRegularFile(ctx, source, destination, opts)
+}
+
+// uploadRegularFile pipes a single file's body to the remote host.
+func (s *sshRunner) uploadRegularFile(ctx context.Context, source, destination string, opts UploadOptions) error {
 	f, err := os.Open(source)
 	if err != nil {
 		return fmt.Errorf("open source %s: %w", source, err)
 	}
 	defer func() { _ = f.Close() }()
 
+	// `tee` overwrites the destination by default; `cat > path` does the
+	// same in the non-sudo path. Both create the file when missing.
+	var writeCmd string
+	if opts.Sudo {
+		writeCmd = fmt.Sprintf("sudo tee %s >/dev/null", shellQuote(destination))
+	} else {
+		writeCmd = fmt.Sprintf("cat > %s", shellQuote(destination))
+	}
+
 	var errBuf bytes.Buffer
-	cmd := fmt.Sprintf("cat > %s", shellQuote(destination))
-	if err := s.runCmd(ctx, cmd, f, io.Discard, &errBuf); err != nil {
+	if err := s.runCmd(ctx, writeCmd, f, io.Discard, &errBuf); err != nil {
 		stderr := strings.TrimSpace(errBuf.String())
 		if stderr != "" {
 			return fmt.Errorf("upload %s -> %s: %w (%s)", source, destination, err, stderr)
@@ -192,13 +217,118 @@ func (s *sshRunner) UploadFile(ctx context.Context, source, destination, mode st
 		return fmt.Errorf("upload %s -> %s: %w", source, destination, err)
 	}
 
-	if mode != "" {
-		chmod := fmt.Sprintf("chmod %s %s", shellQuote(mode), shellQuote(destination))
+	if opts.Mode != "" {
+		chmod := fmt.Sprintf("chmod %s %s", shellQuote(opts.Mode), shellQuote(destination))
+		if opts.Sudo {
+			chmod = "sudo " + chmod
+		}
 		if _, err := s.Run(ctx, chmod, nil); err != nil {
-			return fmt.Errorf("chmod %s %s: %w", mode, destination, err)
+			return fmt.Errorf("chmod %s %s: %w", opts.Mode, destination, err)
 		}
 	}
 	return nil
+}
+
+// uploadDir streams source as a tar archive into a remote `tar -xf -`. The
+// destination is created if missing; archive entries are written relative
+// to it so the directory's contents end up under destination/.
+func (s *sshRunner) uploadDir(ctx context.Context, source, destination string, opts UploadOptions) error {
+	mkdir := fmt.Sprintf("mkdir -p %s", shellQuote(destination))
+	if opts.Sudo {
+		mkdir = "sudo " + mkdir
+	}
+	if _, err := s.Run(ctx, mkdir, nil); err != nil {
+		return fmt.Errorf("mkdir %s: %w", destination, err)
+	}
+
+	pr, pw := io.Pipe()
+	go func() {
+		tw := tar.NewWriter(pw)
+		writeErr := writeDirAsTar(tw, source)
+		closeErr := tw.Close()
+		if writeErr == nil {
+			writeErr = closeErr
+		}
+		_ = pw.CloseWithError(writeErr)
+	}()
+
+	extract := fmt.Sprintf("tar -C %s -xf -", shellQuote(destination))
+	if opts.Sudo {
+		extract = "sudo " + extract
+	}
+
+	var errBuf bytes.Buffer
+	if err := s.runCmd(ctx, extract, pr, io.Discard, &errBuf); err != nil {
+		stderr := strings.TrimSpace(errBuf.String())
+		if stderr != "" {
+			return fmt.Errorf("upload dir %s -> %s: %w (%s)", source, destination, err, stderr)
+		}
+		return fmt.Errorf("upload dir %s -> %s: %w", source, destination, err)
+	}
+
+	if opts.Mode != "" {
+		chmod := fmt.Sprintf("chmod %s %s", shellQuote(opts.Mode), shellQuote(destination))
+		if opts.Sudo {
+			chmod = "sudo " + chmod
+		}
+		if _, err := s.Run(ctx, chmod, nil); err != nil {
+			return fmt.Errorf("chmod %s %s: %w", opts.Mode, destination, err)
+		}
+	}
+	return nil
+}
+
+// writeDirAsTar walks root and writes each entry to tw with paths relative
+// to root. Symlinks are preserved as-is; regular files are streamed. The
+// root entry itself is skipped — its contents become the archive top level.
+func writeDirAsTar(tw *tar.Writer, root string) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		var linkname string
+		if info.Mode()&os.ModeSymlink != 0 {
+			linkname, err = os.Readlink(path)
+			if err != nil {
+				return err
+			}
+		}
+		hdr, err := tar.FileInfoHeader(info, linkname)
+		if err != nil {
+			return err
+		}
+		hdr.Name = filepath.ToSlash(rel)
+		if d.IsDir() {
+			hdr.Name += "/"
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(tw, f)
+		closeErr := f.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
 }
 
 // Close shuts down the underlying ssh client connection.

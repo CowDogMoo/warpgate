@@ -126,9 +126,11 @@ func (l *CustomLogger) formatMessage(level LogLevel, message string, args ...int
 // shouldShowOnConsoleLocked determines if a message should be shown on console.
 // This method must be called while holding l.mu.
 // Logic:
-// - In quiet mode, only errors are shown
-// - In verbose mode, all messages are shown
-// - Otherwise, show messages at INFO level and above (INFO, WARN, ERROR)
+//   - In quiet mode, only errors are shown
+//   - In verbose mode, all messages are shown
+//   - Otherwise, the configured LogLevel acts as a floor: messages at that
+//     level or higher pass through. So --log-level=debug shows DEBUG, while
+//     --log-level=warn hides INFO.
 func (l *CustomLogger) shouldShowOnConsoleLocked(level LogLevel) bool {
 	// In quiet mode, only show errors
 	if l.Quiet {
@@ -140,8 +142,22 @@ func (l *CustomLogger) shouldShowOnConsoleLocked(level LogLevel) bool {
 		return true
 	}
 
-	// Default: show INFO and above (INFO, WARN, ERROR but not DEBUG)
-	return level >= InfoLevel
+	return level >= logLevelFromSlog(l.LogLevel)
+}
+
+// logLevelFromSlog translates the slog.Level threshold stored on the logger
+// back into the local LogLevel scale used for filtering.
+func logLevelFromSlog(level slog.Level) LogLevel {
+	switch {
+	case level <= slog.LevelDebug:
+		return DebugLevel
+	case level <= slog.LevelInfo:
+		return InfoLevel
+	case level <= slog.LevelWarn:
+		return WarnLevel
+	default:
+		return ErrorLevel
+	}
 }
 
 func (l *CustomLogger) log(level LogLevel, message string, args ...interface{}) {

@@ -40,7 +40,10 @@ type fakeRunner struct {
 	closed   bool
 }
 
-type upload struct{ src, dst, mode string }
+type upload struct {
+	src, dst, mode string
+	sudo           bool
+}
 
 func (f *fakeRunner) Run(_ context.Context, cmd string, _ map[string]string) (string, error) {
 	f.commands = append(f.commands, cmd)
@@ -50,8 +53,8 @@ func (f *fakeRunner) Run(_ context.Context, cmd string, _ map[string]string) (st
 	return "ok\n", nil
 }
 
-func (f *fakeRunner) UploadFile(_ context.Context, src, dst, mode string) error {
-	f.uploads = append(f.uploads, upload{src, dst, mode})
+func (f *fakeRunner) UploadFile(_ context.Context, src, dst string, opts UploadOptions) error {
+	f.uploads = append(f.uploads, upload{src, dst, opts.Mode, opts.Sudo})
 	if f.failUp {
 		return errors.New("upload failed")
 	}
@@ -150,8 +153,62 @@ func TestRunProvisioners_File(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if len(r.uploads) != 1 || r.uploads[0] != (upload{"src.tar", "/opt/dst.tar", "0644"}) {
+	if len(r.uploads) != 1 || r.uploads[0] != (upload{"src.tar", "/opt/dst.tar", "0644", false}) {
 		t.Fatalf("unexpected uploads: %+v", r.uploads)
+	}
+}
+
+func TestRunProvisioners_FilePropagatesSudo(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:        "file",
+		Source:      "src.tar",
+		Destination: "/root/dst.tar",
+		Mode:        "0600",
+		Sudo:        true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if len(r.uploads) != 1 || !r.uploads[0].sudo {
+		t.Fatalf("expected sudo upload, got %+v", r.uploads)
+	}
+}
+
+func TestRunProvisioners_ShellWithSudo(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:   "shell",
+		Inline: []string{"echo hi"},
+		Sudo:   true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.Contains(r.commands[0], "sudo -E sh -c") {
+		t.Fatalf("expected sudo wrap, got %q", r.commands[0])
+	}
+}
+
+func TestRunProvisioners_ShellUserBeatsSudo(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:   "shell",
+		Inline: []string{"true"},
+		User:   "kali",
+		Sudo:   true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.Contains(r.commands[0], "sudo -E -u kali") {
+		t.Fatalf("expected user wrap to take precedence, got %q", r.commands[0])
+	}
+	if strings.Contains(r.commands[0], "sudo -E sh -c") {
+		t.Fatalf("plain sudo wrap should not stack on top of user wrap, got %q", r.commands[0])
 	}
 }
 
@@ -179,6 +236,22 @@ func TestRunProvisioners_Script(t *testing.T) {
 	}
 	if len(r.commands) != 1 || !strings.HasSuffix(r.commands[0], "install.sh") {
 		t.Fatalf("expected execution of uploaded script, got %+v", r.commands)
+	}
+}
+
+func TestRunProvisioners_ScriptWithSudo(t *testing.T) {
+	t.Parallel()
+	r := &fakeRunner{}
+	err := runProvisioners(context.Background(), r, []builder.Provisioner{{
+		Type:    "script",
+		Scripts: []string{"install.sh"},
+		Sudo:    true,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !strings.HasPrefix(r.commands[0], "sudo -E ") {
+		t.Fatalf("expected sudo prefix on script execution, got %q", r.commands[0])
 	}
 }
 

@@ -23,6 +23,7 @@ THE SOFTWARE.
 package proxmox
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -383,7 +384,7 @@ func TestSSHRunner_UploadFile_StreamsAndChmod(t *testing.T) {
 	chain := &chainCmd{calls: []*fakeCmd{{}, {}}}
 	r := &sshRunner{runCmd: chain.run}
 
-	if err := r.UploadFile(context.Background(), src, "/opt/dst", "0640"); err != nil {
+	if err := r.UploadFile(context.Background(), src, "/opt/dst", UploadOptions{Mode: "0640"}); err != nil {
 		t.Fatalf("UploadFile: %v", err)
 	}
 	if chain.idx != 2 {
@@ -410,7 +411,7 @@ func TestSSHRunner_UploadFile_NoModeSkipsChmod(t *testing.T) {
 	chain := &chainCmd{calls: []*fakeCmd{{}}}
 	r := &sshRunner{runCmd: chain.run}
 
-	if err := r.UploadFile(context.Background(), src, "/opt/dst", ""); err != nil {
+	if err := r.UploadFile(context.Background(), src, "/opt/dst", UploadOptions{}); err != nil {
 		t.Fatalf("UploadFile: %v", err)
 	}
 	if chain.idx != 1 {
@@ -421,12 +422,12 @@ func TestSSHRunner_UploadFile_NoModeSkipsChmod(t *testing.T) {
 func TestSSHRunner_UploadFile_MissingSourceWraps(t *testing.T) {
 	t.Parallel()
 	r := &sshRunner{runCmd: (&fakeCmd{}).run}
-	err := r.UploadFile(context.Background(), filepath.Join(t.TempDir(), "missing"), "/tmp/dst", "")
+	err := r.UploadFile(context.Background(), filepath.Join(t.TempDir(), "missing"), "/tmp/dst", UploadOptions{})
 	if err == nil {
 		t.Fatal("expected error opening missing source")
 	}
-	if !strings.Contains(err.Error(), "open source") {
-		t.Fatalf("expected open source error, got %v", err)
+	if !strings.Contains(err.Error(), "stat source") {
+		t.Fatalf("expected stat source error, got %v", err)
 	}
 }
 
@@ -442,7 +443,7 @@ func TestSSHRunner_UploadFile_CatFailureIncludesStderr(t *testing.T) {
 		stderr: "permission denied\n",
 	}}}
 	r := &sshRunner{runCmd: chain.run}
-	err := r.UploadFile(context.Background(), src, "/opt/dst", "0640")
+	err := r.UploadFile(context.Background(), src, "/opt/dst", UploadOptions{Mode: "0640"})
 	if err == nil {
 		t.Fatal("expected upload failure")
 	}
@@ -460,7 +461,7 @@ func TestSSHRunner_UploadFile_CatFailureBareWithoutStderr(t *testing.T) {
 	}
 	chain := &chainCmd{calls: []*fakeCmd{{err: errors.New("eof")}}}
 	r := &sshRunner{runCmd: chain.run}
-	err := r.UploadFile(context.Background(), src, "/opt/dst", "0640")
+	err := r.UploadFile(context.Background(), src, "/opt/dst", UploadOptions{Mode: "0640"})
 	if err == nil {
 		t.Fatal("expected upload failure")
 	}
@@ -481,12 +482,163 @@ func TestSSHRunner_UploadFile_ChmodFailureSurfaces(t *testing.T) {
 		{err: errors.New("operation not permitted")},
 	}}
 	r := &sshRunner{runCmd: chain.run}
-	err := r.UploadFile(context.Background(), src, "/opt/dst", "0640")
+	err := r.UploadFile(context.Background(), src, "/opt/dst", UploadOptions{Mode: "0640"})
 	if err == nil {
 		t.Fatal("expected chmod error to surface")
 	}
 	if !strings.Contains(err.Error(), "chmod 0640 /opt/dst") {
 		t.Fatalf("expected chmod context in error, got %v", err)
+	}
+}
+
+func TestSSHRunner_UploadFile_SudoUsesTeeAndSudoChmod(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	if err := os.WriteFile(src, []byte("hi"), 0o600); err != nil {
+		t.Fatalf("write src: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{{}, {}}}
+	r := &sshRunner{runCmd: chain.run}
+
+	if err := r.UploadFile(context.Background(), src, "/root/dst", UploadOptions{Mode: "0600", Sudo: true}); err != nil {
+		t.Fatalf("UploadFile: %v", err)
+	}
+	if got := chain.calls[0].command; got != "sudo tee '/root/dst' >/dev/null" {
+		t.Fatalf("write command = %q, want sudo tee", got)
+	}
+	if got := chain.calls[1].command; got != "sudo chmod '0600' '/root/dst'" {
+		t.Fatalf("chmod command = %q, want sudo chmod", got)
+	}
+}
+
+func TestSSHRunner_UploadFile_DirectoryStreamsTar(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// a/
+	//   b.txt  "hello"
+	//   c/
+	//     d.txt "world"
+	if err := os.MkdirAll(filepath.Join(root, "a", "c"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "b.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "c", "d.txt"), []byte("world"), 0o644); err != nil {
+		t.Fatalf("write d: %v", err)
+	}
+
+	chain := &chainCmd{calls: []*fakeCmd{{}, {}}}
+	r := &sshRunner{runCmd: chain.run}
+
+	src := filepath.Join(root, "a")
+	if err := r.UploadFile(context.Background(), src, "/opt/dst", UploadOptions{}); err != nil {
+		t.Fatalf("UploadFile dir: %v", err)
+	}
+	if chain.idx != 2 {
+		t.Fatalf("expected 2 commands (mkdir + tar), got %d", chain.idx)
+	}
+	if got := chain.calls[0].command; got != "mkdir -p '/opt/dst'" {
+		t.Fatalf("mkdir command = %q", got)
+	}
+	if got := chain.calls[1].command; got != "tar -C '/opt/dst' -xf -" {
+		t.Fatalf("tar command = %q", got)
+	}
+
+	tr := tar.NewReader(bytes.NewReader(chain.calls[1].stdinBuf))
+	entries := map[string]string{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar read: %v", err)
+		}
+		var body bytes.Buffer
+		if _, err := io.Copy(&body, tr); err != nil {
+			t.Fatalf("tar copy: %v", err)
+		}
+		entries[hdr.Name] = body.String()
+	}
+	if _, ok := entries["c/"]; !ok {
+		t.Errorf("expected c/ dir entry, got %v", entries)
+	}
+	if got := entries["b.txt"]; got != "hello" {
+		t.Errorf("b.txt = %q", got)
+	}
+	if got := entries["c/d.txt"]; got != "world" {
+		t.Errorf("c/d.txt = %q", got)
+	}
+}
+
+func TestSSHRunner_UploadFile_DirectorySudo(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "x"), []byte("y"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{{}, {}, {}}}
+	r := &sshRunner{runCmd: chain.run}
+
+	if err := r.UploadFile(context.Background(), root, "/root/dst", UploadOptions{Mode: "0700", Sudo: true}); err != nil {
+		t.Fatalf("UploadFile: %v", err)
+	}
+	if got := chain.calls[0].command; got != "sudo mkdir -p '/root/dst'" {
+		t.Fatalf("mkdir = %q", got)
+	}
+	if got := chain.calls[1].command; got != "sudo tar -C '/root/dst' -xf -" {
+		t.Fatalf("tar = %q", got)
+	}
+	if got := chain.calls[2].command; got != "sudo chmod '0700' '/root/dst'" {
+		t.Fatalf("chmod = %q", got)
+	}
+}
+
+func TestWriteDirAsTar_PreservesSymlinkAsLink(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	target := filepath.Join(root, "target.txt")
+	if err := os.WriteFile(target, []byte("t"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(root, "link.txt")
+	if err := os.Symlink("target.txt", link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := writeDirAsTar(tw, root); err != nil {
+		t.Fatalf("writeDirAsTar: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar: %v", err)
+	}
+
+	tr := tar.NewReader(&buf)
+	sawLink := false
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar read: %v", err)
+		}
+		if hdr.Name == "link.txt" {
+			sawLink = true
+			if hdr.Typeflag != tar.TypeSymlink {
+				t.Errorf("link.txt Typeflag = %v, want %v", hdr.Typeflag, tar.TypeSymlink)
+			}
+			if hdr.Linkname != "target.txt" {
+				t.Errorf("Linkname = %q, want target.txt", hdr.Linkname)
+			}
+		}
+	}
+	if !sawLink {
+		t.Error("symlink entry missing from archive")
 	}
 }
 
