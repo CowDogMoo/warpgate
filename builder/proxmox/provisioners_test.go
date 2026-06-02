@@ -23,12 +23,15 @@ THE SOFTWARE.
 package proxmox
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/cowdogmoo/warpgate/v3/logging"
 )
 
 // fakeRunner is a test double for SSHRunner that records every call.
@@ -331,6 +334,81 @@ func TestRunProvisioners_RunFailurePropagates(t *testing.T) {
 	}})
 	if err == nil {
 		t.Fatal("expected run failure to propagate")
+	}
+}
+
+func TestLogProvisionerOutput_FailureRoutesToWarn(t *testing.T) {
+	t.Parallel()
+	// LogLevel=Warn would suppress Debug but pass Warn. If failed output
+	// reached Warn it survives; if it stayed at Debug it would be dropped.
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelWarn)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	logProvisionerOutput(ctx, "shell", "stderr line\n", errors.New("exit 100"))
+
+	if !bytes.Contains(buf.Bytes(), []byte("shell output (failed): stderr line")) {
+		t.Fatalf("expected failure message at warn level, got %q", buf.String())
+	}
+}
+
+func TestLogProvisionerOutput_SuccessStaysDebug(t *testing.T) {
+	t.Parallel()
+	// At LogLevel=Info, Debug is suppressed — successful output should
+	// stay debug and produce nothing.
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelInfo)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	logProvisionerOutput(ctx, "shell", "ok\n", nil)
+
+	if buf.Len() != 0 {
+		t.Fatalf("expected success output to stay debug-level (suppressed), got %q", buf.String())
+	}
+}
+
+func TestLogProvisionerOutput_EmptyOutputSkipped(t *testing.T) {
+	t.Parallel()
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelDebug)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	logProvisionerOutput(ctx, "shell", "   \n", nil)
+
+	if buf.Len() != 0 {
+		t.Fatalf("expected no output when remote output is empty, got %q", buf.String())
+	}
+}
+
+// scriptFailRunner runs UploadFile fine but returns an error with output
+// for Run, exercising the on-failure logging branch in runScriptProvisioner.
+type scriptFailRunner struct{ fakeRunner }
+
+func (r *scriptFailRunner) Run(_ context.Context, cmd string, _ map[string]string) (string, error) {
+	r.commands = append(r.commands, cmd)
+	return "boom\n", errors.New("exit 100")
+}
+
+func TestRunProvisioners_ScriptFailureSurfacesOutput(t *testing.T) {
+	t.Parallel()
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelInfo)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	r := &scriptFailRunner{}
+	err := runProvisioners(ctx, r, []builder.Provisioner{{
+		Type:    "script",
+		Scripts: []string{"/local/install.sh"},
+	}})
+	if err == nil {
+		t.Fatal("expected script error to propagate")
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("script /local/install.sh output (failed): boom")) {
+		t.Fatalf("expected failure output captured, got %q", buf.String())
 	}
 }
 

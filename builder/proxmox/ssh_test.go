@@ -596,6 +596,99 @@ func TestSSHRunner_UploadFile_DirectorySudo(t *testing.T) {
 	}
 }
 
+func TestSSHRunner_UploadFile_DirectoryMkdirFailure(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "x"), []byte("y"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{{err: errors.New("permission denied")}}}
+	r := &sshRunner{runCmd: chain.run}
+
+	err := r.UploadFile(context.Background(), root, "/root/dst", UploadOptions{})
+	if err == nil {
+		t.Fatal("expected mkdir failure to propagate")
+	}
+	if !strings.Contains(err.Error(), "mkdir /root/dst") {
+		t.Fatalf("expected mkdir error context, got %v", err)
+	}
+}
+
+func TestSSHRunner_UploadFile_DirectoryTarFailureIncludesStderr(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "x"), []byte("y"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{
+		{}, // mkdir ok
+		{err: errors.New("exit 2"), stderr: "tar: bad input\n"},
+	}}
+	r := &sshRunner{runCmd: chain.run}
+
+	err := r.UploadFile(context.Background(), root, "/opt/dst", UploadOptions{})
+	if err == nil {
+		t.Fatal("expected tar failure")
+	}
+	if !strings.Contains(err.Error(), "upload dir") || !strings.Contains(err.Error(), "tar: bad input") {
+		t.Fatalf("expected tar stderr in error, got %v", err)
+	}
+}
+
+func TestSSHRunner_UploadFile_DirectoryTarFailureBareWithoutStderr(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "x"), []byte("y"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{
+		{},
+		{err: errors.New("eof")},
+	}}
+	r := &sshRunner{runCmd: chain.run}
+
+	err := r.UploadFile(context.Background(), root, "/opt/dst", UploadOptions{})
+	if err == nil {
+		t.Fatal("expected tar failure")
+	}
+	if strings.Contains(err.Error(), "()") {
+		t.Fatalf("bare failure should omit empty parens, got %v", err)
+	}
+}
+
+func TestSSHRunner_UploadFile_DirectoryChmodFailure(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "x"), []byte("y"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	chain := &chainCmd{calls: []*fakeCmd{
+		{}, // mkdir
+		{}, // tar
+		{err: errors.New("operation not permitted")},
+	}}
+	r := &sshRunner{runCmd: chain.run}
+
+	err := r.UploadFile(context.Background(), root, "/opt/dst", UploadOptions{Mode: "0700"})
+	if err == nil {
+		t.Fatal("expected chmod failure")
+	}
+	if !strings.Contains(err.Error(), "chmod 0700 /opt/dst") {
+		t.Fatalf("expected chmod context, got %v", err)
+	}
+}
+
+func TestWriteDirAsTar_WalkErrorPropagates(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	err := writeDirAsTar(tw, filepath.Join(t.TempDir(), "does-not-exist"))
+	_ = tw.Close()
+	if err == nil {
+		t.Fatal("expected walk error on missing root")
+	}
+}
+
 func TestWriteDirAsTar_PreservesSymlinkAsLink(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
