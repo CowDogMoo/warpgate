@@ -212,54 +212,72 @@ func (s *sshRunner) Close() error {
 	return s.closer.Close()
 }
 
-// sshRunCmd returns a runCmdFunc that executes the command in a fresh
-// ssh.Session on client. ctx cancellation sends SIGKILL to the remote
-// process. stdin is copied in a goroutine and signalled with channel-eof
-// when the source is exhausted.
+// sshSession is the subset of *ssh.Session that orchestrateSession needs.
+// Pulling it behind an interface lets the orchestration be tested without a
+// live SSH connection.
+type sshSession interface {
+	StdinPipe() (io.WriteCloser, error)
+	Start(cmd string) error
+	Wait() error
+	Signal(sig ssh.Signal) error
+	Close() error
+}
+
+// sshRunCmd returns a runCmdFunc that opens a fresh ssh.Session on client,
+// wires stdout/stderr, and hands the rest off to orchestrateSession. Kept
+// intentionally tiny so the (untestable) NewSession plumbing is isolated
+// from the orchestration logic.
 func sshRunCmd(client *ssh.Client) runCmdFunc {
 	return func(ctx context.Context, command string, stdin io.Reader, stdout, stderr io.Writer) error {
 		sess, err := client.NewSession()
 		if err != nil {
 			return fmt.Errorf("open ssh session: %w", err)
 		}
-		defer func() { _ = sess.Close() }()
-
 		sess.Stdout = stdout
 		sess.Stderr = stderr
+		return orchestrateSession(ctx, sess, command, stdin)
+	}
+}
 
-		var copyErr chan error
-		if stdin != nil {
-			pipe, err := sess.StdinPipe()
-			if err != nil {
-				return fmt.Errorf("open stdin pipe: %w", err)
+// orchestrateSession starts command on sess, pipes stdin in when supplied,
+// waits for completion, and sends SIGKILL on ctx cancellation. stdout and
+// stderr must already be wired on sess before the call. The session is
+// closed before returning.
+func orchestrateSession(ctx context.Context, sess sshSession, command string, stdin io.Reader) error {
+	defer func() { _ = sess.Close() }()
+
+	var copyErr chan error
+	if stdin != nil {
+		pipe, err := sess.StdinPipe()
+		if err != nil {
+			return fmt.Errorf("open stdin pipe: %w", err)
+		}
+		copyErr = make(chan error, 1)
+		go func() {
+			_, err := io.Copy(pipe, stdin)
+			_ = pipe.Close()
+			copyErr <- err
+		}()
+	}
+
+	if err := sess.Start(command); err != nil {
+		return fmt.Errorf("start: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- sess.Wait() }()
+
+	select {
+	case err := <-done:
+		if copyErr != nil {
+			if cerr := <-copyErr; cerr != nil {
+				return cerr
 			}
-			copyErr = make(chan error, 1)
-			go func() {
-				_, err := io.Copy(pipe, stdin)
-				_ = pipe.Close()
-				copyErr <- err
-			}()
 		}
-
-		if err := sess.Start(command); err != nil {
-			return fmt.Errorf("start: %w", err)
-		}
-
-		done := make(chan error, 1)
-		go func() { done <- sess.Wait() }()
-
-		select {
-		case err := <-done:
-			if copyErr != nil {
-				if cerr := <-copyErr; cerr != nil {
-					return cerr
-				}
-			}
-			return err
-		case <-ctx.Done():
-			_ = sess.Signal(ssh.SIGKILL)
-			return ctx.Err()
-		}
+		return err
+	case <-ctx.Done():
+		_ = sess.Signal(ssh.SIGKILL)
+		return ctx.Err()
 	}
 }
 

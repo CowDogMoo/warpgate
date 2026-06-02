@@ -517,6 +517,177 @@ func TestDialSSH_ConnectionRefusedFails(t *testing.T) {
 	}
 }
 
+// fakeSession is a stand-in for *ssh.Session that lets us drive
+// orchestrateSession's branches without a live SSH connection.
+type fakeSession struct {
+	stdinPipeErr error
+	startErr     error
+	waitErr      error
+	waitDelay    time.Duration
+	startCalled  string
+	signaled     ssh.Signal
+	closed       bool
+	pipeWritten  []byte
+	pipeCloseErr error
+}
+
+type fakePipe struct {
+	parent *fakeSession
+	buf    bytes.Buffer
+}
+
+func (p *fakePipe) Write(b []byte) (int, error) { return p.buf.Write(b) }
+func (p *fakePipe) Close() error {
+	p.parent.pipeWritten = p.buf.Bytes()
+	return p.parent.pipeCloseErr
+}
+
+func (s *fakeSession) StdinPipe() (io.WriteCloser, error) {
+	if s.stdinPipeErr != nil {
+		return nil, s.stdinPipeErr
+	}
+	return &fakePipe{parent: s}, nil
+}
+
+func (s *fakeSession) Start(cmd string) error {
+	s.startCalled = cmd
+	return s.startErr
+}
+
+func (s *fakeSession) Wait() error {
+	if s.waitDelay > 0 {
+		time.Sleep(s.waitDelay)
+	}
+	return s.waitErr
+}
+
+func (s *fakeSession) Signal(sig ssh.Signal) error { s.signaled = sig; return nil }
+func (s *fakeSession) Close() error                { s.closed = true; return nil }
+
+func TestOrchestrateSession_StartErrorWraps(t *testing.T) {
+	t.Parallel()
+	sess := &fakeSession{startErr: errors.New("boom")}
+	err := orchestrateSession(context.Background(), sess, "cmd", nil)
+	if err == nil || !strings.Contains(err.Error(), "start:") {
+		t.Fatalf("expected wrapped start error, got %v", err)
+	}
+	if !sess.closed {
+		t.Fatal("expected session to be closed on error path")
+	}
+}
+
+func TestOrchestrateSession_HappyPathReturnsWaitNil(t *testing.T) {
+	t.Parallel()
+	sess := &fakeSession{}
+	if err := orchestrateSession(context.Background(), sess, "cmd", nil); err != nil {
+		t.Fatalf("orchestrateSession: %v", err)
+	}
+	if sess.startCalled != "cmd" {
+		t.Fatalf("Start called with %q, want %q", sess.startCalled, "cmd")
+	}
+	if !sess.closed {
+		t.Fatal("expected session to be closed")
+	}
+}
+
+func TestOrchestrateSession_WaitErrorPropagates(t *testing.T) {
+	t.Parallel()
+	sess := &fakeSession{waitErr: errors.New("exit 1")}
+	err := orchestrateSession(context.Background(), sess, "cmd", nil)
+	if err == nil || err.Error() != "exit 1" {
+		t.Fatalf("expected raw wait error, got %v", err)
+	}
+}
+
+func TestOrchestrateSession_StdinPipedToSession(t *testing.T) {
+	t.Parallel()
+	sess := &fakeSession{}
+	body := strings.NewReader("payload-bytes")
+	if err := orchestrateSession(context.Background(), sess, "cat > /dst", body); err != nil {
+		t.Fatalf("orchestrateSession: %v", err)
+	}
+	if string(sess.pipeWritten) != "payload-bytes" {
+		t.Fatalf("pipe got %q, want %q", sess.pipeWritten, "payload-bytes")
+	}
+}
+
+func TestOrchestrateSession_StdinPipeErrorWraps(t *testing.T) {
+	t.Parallel()
+	sess := &fakeSession{stdinPipeErr: errors.New("ENOMEM")}
+	err := orchestrateSession(context.Background(), sess, "cat > /dst", strings.NewReader("x"))
+	if err == nil || !strings.Contains(err.Error(), "open stdin pipe") {
+		t.Fatalf("expected stdin pipe error, got %v", err)
+	}
+}
+
+// erroringReader fails on every Read so io.Copy in the stdin goroutine
+// returns a non-nil error.
+type erroringReader struct{ err error }
+
+func (e erroringReader) Read([]byte) (int, error) { return 0, e.err }
+
+func TestOrchestrateSession_CopyErrorBeatsWaitNil(t *testing.T) {
+	t.Parallel()
+	sess := &fakeSession{}
+	err := orchestrateSession(context.Background(), sess, "cat > /dst", erroringReader{err: errors.New("read fail")})
+	if err == nil || !strings.Contains(err.Error(), "read fail") {
+		t.Fatalf("expected copy error to surface, got %v", err)
+	}
+}
+
+func TestOrchestrateSession_ContextCancelSendsSIGKILL(t *testing.T) {
+	t.Parallel()
+	sess := &fakeSession{waitDelay: 200 * time.Millisecond, waitErr: errors.New("wait")}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := orchestrateSession(ctx, sess, "cmd", nil)
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected ctx.Canceled, got %v", err)
+	}
+	if sess.signaled != ssh.SIGKILL {
+		t.Fatalf("expected SIGKILL on cancel, got %q", sess.signaled)
+	}
+}
+
+// stubDial just hands back a *ssh.Client we ignore — used to drive
+// newSSHRunner happy and ctx-during-retry paths without real I/O.
+func stubDialSuccess(_ context.Context, _, _ string, _ *ssh.ClientConfig) (*ssh.Client, error) {
+	return &ssh.Client{}, nil
+}
+
+func TestNewSSHRunner_SuccessFirstAttemptReturnsRunner(t *testing.T) {
+	t.Parallel()
+	r, err := newSSHRunner(context.Background(), SSHConnection{
+		Host: "h", User: "u", Password: "pw",
+	}, time.Second, stubDialSuccess)
+	if err != nil {
+		t.Fatalf("newSSHRunner: %v", err)
+	}
+	if r == nil || r.runCmd == nil || r.closer == nil {
+		t.Fatal("expected fully populated runner")
+	}
+}
+
+func TestNewSSHRunner_CtxCancelledMidRetryReturns(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	dial := func(context.Context, string, string, *ssh.ClientConfig) (*ssh.Client, error) {
+		calls++
+		// First call fails so we enter the retry select; cancel ctx so
+		// the select's ctx.Done branch fires.
+		go cancel()
+		return nil, errors.New("not ready")
+	}
+	_, err := newSSHRunner(ctx, SSHConnection{Host: "h", User: "u", Password: "pw"}, time.Hour, dial)
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected ctx.Canceled, got %v", err)
+	}
+	if calls == 0 {
+		t.Fatal("expected at least one dial attempt")
+	}
+}
+
 func TestDialSSH_NonSSHListenerFailsHandshake(t *testing.T) {
 	t.Parallel()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
