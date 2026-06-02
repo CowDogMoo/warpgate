@@ -101,22 +101,7 @@ func (r *liveRunner) clone(ctx context.Context, sourceVMID, newVMID int, name st
 // drive configured, callers should pre-bake one or run with cloud-init
 // disabled by leaving target.CloudInitUser empty.
 func (r *liveRunner) configureCloudInit(ctx context.Context, vm *pveapi.VirtualMachine, target *builder.Target) error {
-	opts := []pveapi.VirtualMachineOption{}
-	if target.CloudInitUser != "" {
-		opts = append(opts, pveapi.VirtualMachineOption{Name: "ciuser", Value: target.CloudInitUser})
-	}
-	if target.CloudInitPassword != "" {
-		opts = append(opts, pveapi.VirtualMachineOption{Name: "cipassword", Value: target.CloudInitPassword})
-	}
-	if target.CloudInitSSHKey != "" {
-		opts = append(opts, pveapi.VirtualMachineOption{Name: "sshkeys", Value: target.CloudInitSSHKey})
-	}
-	if target.CloudInitIPConfig != "" {
-		opts = append(opts, pveapi.VirtualMachineOption{Name: "ipconfig0", Value: target.CloudInitIPConfig})
-	}
-	if target.CloudInitNameserver != "" {
-		opts = append(opts, pveapi.VirtualMachineOption{Name: "nameserver", Value: target.CloudInitNameserver})
-	}
+	opts := buildCloudInitOptions(target)
 	if len(opts) == 0 {
 		return nil
 	}
@@ -125,6 +110,30 @@ func (r *liveRunner) configureCloudInit(ctx context.Context, vm *pveapi.VirtualM
 		return WrapWithRemediation(err, "apply cloud-init config")
 	}
 	return WrapWithRemediation(waitForTask(ctx, task), "wait for cloud-init config")
+}
+
+// buildCloudInitOptions translates target into the PVE VirtualMachineOption
+// slice expected by vm.Config. The sshkeys value goes through
+// pveapi.EncodeSSHKeys because PVE's API validator rejects raw key strings
+// (it requires its specific urlencoded form — see go-proxmox #144).
+func buildCloudInitOptions(target *builder.Target) []pveapi.VirtualMachineOption {
+	opts := []pveapi.VirtualMachineOption{}
+	if target.CloudInitUser != "" {
+		opts = append(opts, pveapi.VirtualMachineOption{Name: "ciuser", Value: target.CloudInitUser})
+	}
+	if target.CloudInitPassword != "" {
+		opts = append(opts, pveapi.VirtualMachineOption{Name: "cipassword", Value: target.CloudInitPassword})
+	}
+	if target.CloudInitSSHKey != "" {
+		opts = append(opts, pveapi.VirtualMachineOption{Name: "sshkeys", Value: pveapi.EncodeSSHKeys(target.CloudInitSSHKey)})
+	}
+	if target.CloudInitIPConfig != "" {
+		opts = append(opts, pveapi.VirtualMachineOption{Name: "ipconfig0", Value: target.CloudInitIPConfig})
+	}
+	if target.CloudInitNameserver != "" {
+		opts = append(opts, pveapi.VirtualMachineOption{Name: "nameserver", Value: target.CloudInitNameserver})
+	}
+	return opts
 }
 
 // startAndWait powers on the VM and waits for the QEMU guest agent.

@@ -46,6 +46,11 @@ type pveFakeServer struct {
 	calls  []string
 	mu     sync.Mutex
 	taskID string
+
+	// failConfigPOST, when true, makes the server return 500 for any
+	// non-GET request to a /config endpoint. Used to drive
+	// configureCloudInit's error branch.
+	failConfigPOST bool
 }
 
 func newPVEFakeServer(t *testing.T) (*pveFakeServer, *httptest.Server, *pveapi.Client) {
@@ -71,8 +76,13 @@ func (f *pveFakeServer) recorded() []string {
 func (f *pveFakeServer) handle(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.calls = append(f.calls, r.Method+" "+r.URL.Path)
+	failConfig := f.failConfigPOST
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
+	if failConfig && r.Method != http.MethodGet && strings.HasSuffix(r.URL.Path, "/config") {
+		http.Error(w, `{"errors":{"sshkeys":"forced failure"}}`, http.StatusInternalServerError)
+		return
+	}
 	if body := f.responseFor(r); body != "" {
 		_, _ = w.Write([]byte(body))
 		return
@@ -222,6 +232,35 @@ func TestLiveRunner_Clone(t *testing.T) {
 	}
 	if vm == nil {
 		t.Fatal("expected non-nil cloned VM")
+	}
+}
+
+func TestLiveRunner_ConfigureCloudInit_WrapsConfigError(t *testing.T) {
+	t.Parallel()
+	r, f := newLiveRunnerFor(t)
+	f.mu.Lock()
+	f.failConfigPOST = true
+	f.mu.Unlock()
+
+	// Resolve the VM via the SDK so it has a wired-up client.
+	node, err := r.clients.API.Node(context.Background(), "pve1")
+	if err != nil {
+		t.Fatalf("Node: %v", err)
+	}
+	vm, err := node.VirtualMachine(context.Background(), 9100)
+	if err != nil {
+		t.Fatalf("VirtualMachine: %v", err)
+	}
+	err = r.configureCloudInit(
+		context.Background(),
+		vm,
+		&builder.Target{CloudInitUser: "kali"},
+	)
+	if err == nil {
+		t.Fatal("expected error from /config POST 500")
+	}
+	if !strings.Contains(err.Error(), "apply cloud-init config") {
+		t.Fatalf("expected wrapped context, got %v", err)
 	}
 }
 

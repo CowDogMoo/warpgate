@@ -33,6 +33,102 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/builder"
 )
 
+// findOption returns the value paired with name in opts, or "" when name
+// isn't present. Keeps the assertion helpers below readable.
+func findOption(opts []pveapi.VirtualMachineOption, name string) string {
+	for _, o := range opts {
+		if o.Name == name {
+			if s, ok := o.Value.(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func TestBuildCloudInitOptions_EmptyTargetReturnsNoOptions(t *testing.T) {
+	t.Parallel()
+	if got := buildCloudInitOptions(&builder.Target{}); len(got) != 0 {
+		t.Fatalf("expected empty options for empty target, got %+v", got)
+	}
+}
+
+func TestBuildCloudInitOptions_SSHKeyIsURLEncoded(t *testing.T) {
+	t.Parallel()
+	opts := buildCloudInitOptions(&builder.Target{
+		CloudInitSSHKey: "ssh-ed25519 AAAAC3Nz key@host",
+	})
+	got := findOption(opts, "sshkeys")
+	// PVE's validator requires the Python urllib.parse.quote(s, safe='')
+	// style: spaces as %20, not '+'. Assert the actual encoding rather
+	// than re-implementing it.
+	want := "ssh-ed25519%20AAAAC3Nz%20key%40host"
+	if got != want {
+		t.Fatalf("sshkeys = %q, want %q", got, want)
+	}
+}
+
+func TestBuildCloudInitOptions_SSHKeyEncodingHasNoPlus(t *testing.T) {
+	t.Parallel()
+	// Regression guard: net/url.QueryEscape emits '+' for spaces, which
+	// PVE's sshkeys validator rejects. EncodeSSHKeys must never emit '+'.
+	opts := buildCloudInitOptions(&builder.Target{
+		CloudInitSSHKey: "ssh-rsa AAAA name with spaces",
+	})
+	got := findOption(opts, "sshkeys")
+	if strings.ContainsRune(got, '+') {
+		t.Fatalf("sshkeys must not contain '+'; got %q", got)
+	}
+}
+
+func TestBuildCloudInitOptions_MultipleKeysSeparatorEscaped(t *testing.T) {
+	t.Parallel()
+	opts := buildCloudInitOptions(&builder.Target{
+		CloudInitSSHKey: "ssh-ed25519 AAA one\nssh-ed25519 BBB two",
+	})
+	got := findOption(opts, "sshkeys")
+	// Newlines between keys must be present (as %0A) so PVE installs
+	// both. Embedded spaces in comments must be %20.
+	if !strings.Contains(got, "%0A") {
+		t.Fatalf("expected encoded newline between keys, got %q", got)
+	}
+	if strings.Contains(got, "+") {
+		t.Fatalf("sshkeys must not contain '+'; got %q", got)
+	}
+}
+
+func TestBuildCloudInitOptions_PassesThroughOtherFieldsRaw(t *testing.T) {
+	t.Parallel()
+	opts := buildCloudInitOptions(&builder.Target{
+		CloudInitUser:       "ansible",
+		CloudInitPassword:   "p@ssword!",
+		CloudInitIPConfig:   "ip=dhcp",
+		CloudInitNameserver: "1.1.1.1",
+	})
+	cases := map[string]string{
+		"ciuser":     "ansible",
+		"cipassword": "p@ssword!",
+		"ipconfig0":  "ip=dhcp",
+		"nameserver": "1.1.1.1",
+	}
+	for k, want := range cases {
+		if got := findOption(opts, k); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+}
+
+func TestBuildCloudInitOptions_SkipsEmptyFields(t *testing.T) {
+	t.Parallel()
+	opts := buildCloudInitOptions(&builder.Target{CloudInitUser: "only-this"})
+	if len(opts) != 1 {
+		t.Fatalf("expected exactly 1 option, got %d (%+v)", len(opts), opts)
+	}
+	if findOption(opts, "ciuser") != "only-this" {
+		t.Fatalf("unexpected ciuser value: %+v", opts)
+	}
+}
+
 func TestDefaultSSHRunnerFactory_RequiresAuth(t *testing.T) {
 	t.Parallel()
 	// No private key and no password — the factory must fail before any
