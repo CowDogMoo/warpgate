@@ -4441,18 +4441,6 @@ func TestGetLatestVersionEmpty(t *testing.T) {
 	assert.Contains(t, err.Error(), "no versions provided")
 }
 
-// ---------------------------------------------------------------------------
-// config_loader.go: multi-line env-var substitution (regression for #1886).
-// Pre-fix, expandVariables ran on the raw YAML text so a multi-line value
-// injected raw newlines into a scalar and broke the YAML parse. The new
-// node-walking expansion treats env values as literal scalar data.
-// ---------------------------------------------------------------------------
-
-// multilineValue is a generic multi-line payload used to exercise the
-// regression in #1886. The exact content doesn't matter — only that it
-// contains newlines, which the old text-level expansion would have
-// injected raw into the YAML and broken the parse. We avoid PEM-shaped
-// strings so the secret-detect pre-commit hook doesn't flag the test.
 const multilineValue = `first line
 second line with: colon
 third line`
@@ -4490,9 +4478,6 @@ targets:
 	require.NoError(t, err)
 	require.Len(t, cfg.Provisioners, 1)
 	require.Len(t, cfg.Provisioners[0].Inline, 1)
-	// The whole multi-line value round-trips into the scalar, newlines
-	// intact, without breaking the surrounding YAML structure
-	// (target type, user, etc.).
 	assert.Equal(t, multilineValue, cfg.Provisioners[0].Inline[0])
 	assert.Equal(t, "deploy", cfg.Provisioners[0].User)
 }
@@ -4568,9 +4553,6 @@ targets:
 }
 
 func TestExpandScalarVars_ReTagsPlainBool(t *testing.T) {
-	// Plain-style scalar that becomes "true" after substitution should
-	// decode as a bool so downstream struct fields keep their old type
-	// behaviour. Quoted scalars stay strings.
 	src := []byte("pull: ${FLAG}\nname: ${NAME}\n")
 	var n yaml.Node
 	require.NoError(t, yaml.Unmarshal(src, &n))
@@ -4596,9 +4578,6 @@ func TestExpandScalarVars_ReTagsPlainBool(t *testing.T) {
 }
 
 func TestExpandScalarVars_MultilineStaysString(t *testing.T) {
-	// Even if the expanded value contains "true" on one of its lines, a
-	// multi-line value must not be re-tagged as bool — that would lose
-	// the body.
 	src := []byte("key: ${K}\n")
 	var n yaml.Node
 	require.NoError(t, yaml.Unmarshal(src, &n))
@@ -4619,9 +4598,6 @@ func TestExpandScalarVars_MultilineStaysString(t *testing.T) {
 }
 
 func TestExpandScalarVars_SkipsNonStringScalars(t *testing.T) {
-	// !!int, !!bool, !!null scalars must be left alone by the expander —
-	// they can't contain ${VAR} syntax anyway and re-walking them risks
-	// changing their tag.
 	src := []byte("count: 5\nflag: false\nempty: null\n")
 	var n yaml.Node
 	require.NoError(t, yaml.Unmarshal(src, &n))
@@ -4636,8 +4612,6 @@ func TestExpandScalarVars_SkipsNonStringScalars(t *testing.T) {
 }
 
 func TestExpandScalarVars_NoChangeEarlyReturns(t *testing.T) {
-	// When the expander returns the input unchanged, the walker must
-	// leave the node alone (no re-tagging, no Value mutation).
 	src := []byte("key: literal\n")
 	var n yaml.Node
 	require.NoError(t, yaml.Unmarshal(src, &n))
@@ -4653,7 +4627,6 @@ func TestExpandScalarVars_NoChangeEarlyReturns(t *testing.T) {
 }
 
 func TestExpandScalarVars_NilNodeIsNoOp(t *testing.T) {
-	// Guard: defensive nil check shouldn't panic when called directly.
 	expandScalarVars(nil, nil, func(s string, _ map[string]string) string { return s })
 }
 
@@ -4673,28 +4646,18 @@ func TestInferScalarTag_ReturnsStdlibTagsForKnownTypes(t *testing.T) {
 }
 
 func TestInferScalarTag_UnparseableReturnsEmpty(t *testing.T) {
-	// A value that parses as a mapping (not a scalar) should not produce
-	// a tag — the caller will keep the original tag.
 	assert.Equal(t, "", inferScalarTag("{a: 1, b: 2}"))
 }
 
 func TestInferScalarTag_MalformedYAMLReturnsEmpty(t *testing.T) {
-	// Unterminated flow mapping is a real parse error, not a typed
-	// scalar — the helper must swallow that and return "".
 	assert.Equal(t, "", inferScalarTag("{a:"))
 }
 
 func TestInferScalarTag_EmptyInputReturnsEmpty(t *testing.T) {
-	// Empty input parses as an empty document with no content; helper
-	// must return "" so the caller keeps the original tag.
 	assert.Equal(t, "", inferScalarTag(""))
 }
 
 func TestLoadFromFileWithVars_DecodeErrorWrapped(t *testing.T) {
-	// YAML that parses as a node tree but doesn't fit builder.Config:
-	// `targets` must be a sequence, not a string. The new flow surfaces
-	// this in the Decode step (separate from yaml.Unmarshal) and must
-	// still return a "parse config file" wrapped error.
 	tmpDir := t.TempDir()
 	bad := filepath.Join(tmpDir, "shape.yaml")
 	content := `metadata:

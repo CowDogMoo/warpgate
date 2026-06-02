@@ -82,8 +82,7 @@ func (l *Loader) LoadFromFileWithVars(path string, vars map[string]string) (*bui
 // of every string scalar (mapping keys are left alone). For plain-style
 // scalars whose expanded value is a single line, the tag is re-resolved so
 // an expanded "true"/"123"/"null" still decodes to the corresponding Go
-// type — preserving the pre-fix behavior where text-level substitution
-// would have produced an implicit bool/int/null.
+// type.
 func expandScalarVars(n *yaml.Node, vars map[string]string, expand func(string, map[string]string) string) {
 	if n == nil {
 		return
