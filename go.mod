@@ -12,14 +12,14 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.7.0
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/aws/aws-sdk-go-v2 v1.41.12
-	github.com/aws/aws-sdk-go-v2/config v1.32.21
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.20
-	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.74.3
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.305.0
-	github.com/aws/aws-sdk-go-v2/service/iam v1.54.1
-	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.55.3
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.0
-	github.com/aws/aws-sdk-go-v2/service/ssm v1.69.0
+	github.com/aws/aws-sdk-go-v2/config v1.32.23
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.22
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.75.1
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.305.2
+	github.com/aws/aws-sdk-go-v2/service/iam v1.54.3
+	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.55.5
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.2
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.69.2
 	github.com/docker/cli v29.5.3+incompatible
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.19.1
