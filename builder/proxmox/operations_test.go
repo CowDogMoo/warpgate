@@ -79,7 +79,7 @@ func (f *fakeVM) Shutdown(_ context.Context) (*pveapi.Task, error) {
 	}
 	return nil, f.shutdownErr
 }
-func (f *fakeVM) Delete(_ context.Context) (*pveapi.Task, error) {
+func (f *fakeVM) Delete(_ context.Context, _ *pveapi.VirtualMachineDeleteOptions) (*pveapi.Task, error) {
 	f.calls = append(f.calls, "Delete")
 	return nil, f.deleteErr
 }
