@@ -49,7 +49,7 @@ type vmAPI interface {
 	Start(ctx context.Context) (*pveapi.Task, error)
 	Stop(ctx context.Context) (*pveapi.Task, error)
 	Shutdown(ctx context.Context) (*pveapi.Task, error)
-	Delete(ctx context.Context) (*pveapi.Task, error)
+	Delete(ctx context.Context, options *pveapi.VirtualMachineDeleteOptions) (*pveapi.Task, error)
 	ConvertToTemplate(ctx context.Context) (*pveapi.Task, error)
 	WaitForAgent(ctx context.Context, seconds int) error
 }
@@ -174,7 +174,7 @@ func convertToTemplate(ctx context.Context, vm vmAPI) error {
 
 // deleteVM removes the VM. Used to clean up partial builds on failure.
 func deleteVM(ctx context.Context, vm vmAPI) error {
-	task, err := vm.Delete(ctx)
+	task, err := vm.Delete(ctx, nil)
 	if err != nil {
 		return WrapWithRemediation(err, "delete VM")
 	}
