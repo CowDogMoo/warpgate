@@ -58,48 +58,20 @@
       ],
       automerge: true,
       automergeType: 'pr',
-      automergeStrategy: 'merge-queue',
     },
     {
-      description: 'Auto merge Go dependency updates (patch and digest)',
+      description: 'Collapse all non-major Go module updates (direct + indirect, including 0.x minors) into a single auto-merging PR. One branch touching go.mod means Renovate PRs cannot conflict with each other; majors are intentionally excluded so they get individual review.',
       matchManagers: [
         'gomod',
-      ],
-      matchUpdateTypes: [
-        'patch',
-        'digest',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-      automergeStrategy: 'merge-queue',
-    },
-    {
-      description: 'Auto merge stable (>= 1.0.0) Go minor updates',
-      matchManagers: [
-        'gomod',
-      ],
-      matchCurrentVersion: '>= 1.0.0',
-      matchUpdateTypes: [
-        'minor',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-      automergeStrategy: 'merge-queue',
-    },
-    {
-      description: 'Group Go indirect dependencies (non-major)',
-      matchManagers: [
-        'gomod',
-      ],
-      matchDepTypes: [
-        'indirect',
       ],
       matchUpdateTypes: [
         'minor',
         'patch',
         'digest',
       ],
-      groupName: 'go indirect dependencies',
+      groupName: 'go modules',
+      automerge: true,
+      automergeType: 'pr',
     },
     {
       description: 'Pin jinzhu/copier — go-proxmox v0.7.1 requires v0.3.4; v0.4.0 breaks Task deep-copy (nil-pointer panic in TestLiveRunner_StopAndTemplate)',
@@ -113,6 +85,5 @@
     enabled: true,
     automerge: true,
     automergeType: 'pr',
-    automergeStrategy: 'merge-queue',
   },
 }
