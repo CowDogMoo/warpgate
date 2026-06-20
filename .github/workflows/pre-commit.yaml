@@ -102,4 +102,4 @@ jobs:
 
       - name: Run pre-commit
         run: |
-          task -y pre-commit:run-pre-commit
+          task -y pre-commit:run-hooks
