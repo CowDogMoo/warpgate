@@ -37,7 +37,31 @@ import (
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
+
+// parsedComponent is a minimal view of a generated AWSTOE component document,
+// used by tests to assert step structure without string-scraping YAML.
+type parsedComponent struct {
+	Phases []struct {
+		Name  string `yaml:"name"`
+		Steps []struct {
+			Name   string `yaml:"name"`
+			Action string `yaml:"action"`
+			Inputs struct {
+				Commands []string `yaml:"commands"`
+			} `yaml:"inputs"`
+		} `yaml:"steps"`
+	} `yaml:"phases"`
+}
+
+func parseComponentDoc(t *testing.T, doc string) parsedComponent {
+	t.Helper()
+	var pc parsedComponent
+	require.NoError(t, yaml.Unmarshal([]byte(doc), &pc))
+	require.Len(t, pc.Phases, 1)
+	return pc
+}
 
 func TestNewComponentGenerator(t *testing.T) {
 	t.Parallel()
@@ -597,6 +621,133 @@ func TestShellComponent_WithEnvironmentSpecialChars(t *testing.T) {
 	assert.Contains(t, doc, "export GREETING='it'\\''s a test'")
 	// Command substitution should be safely quoted (single quotes prevent expansion)
 	assert.Contains(t, doc, "export CMD='$(whoami)'")
+}
+
+func TestShellComponent_NoReboot_SingleStep(t *testing.T) {
+	t.Parallel()
+	gen := &ComponentGenerator{}
+	provisioner := builder.Provisioner{
+		Type:   "shell",
+		Inline: []string{"apt-get update", "apt-get install -y nginx"},
+	}
+
+	doc, err := gen.createShellComponent(provisioner)
+	require.NoError(t, err)
+
+	pc := parseComponentDoc(t, doc)
+	require.Len(t, pc.Phases[0].Steps, 1)
+	step := pc.Phases[0].Steps[0]
+	assert.Equal(t, "ExecuteShellCommands", step.Name)
+	assert.Equal(t, "ExecuteBash", step.Action)
+	assert.Equal(t, []string{"apt-get update", "apt-get install -y nginx"}, step.Inputs.Commands)
+}
+
+// TestShellComponent_TrailingRebootSignal is the regression test for the NVIDIA
+// driver build hang: a provisioner that ends with a bare `exit 194` must emit a
+// dedicated native Reboot action step rather than embedding the exit code in the
+// ExecuteBash command list.
+func TestShellComponent_TrailingRebootSignal(t *testing.T) {
+	t.Parallel()
+	gen := &ComponentGenerator{}
+	provisioner := builder.Provisioner{
+		Type: "shell",
+		Inline: []string{
+			"apt-get install -y nvidia-driver",
+			"dkms status",
+			`echo "requesting Image Builder reboot (exit 194)"`,
+			"exit 194",
+		},
+	}
+
+	doc, err := gen.createShellComponent(provisioner)
+	require.NoError(t, err)
+
+	pc := parseComponentDoc(t, doc)
+	steps := pc.Phases[0].Steps
+	require.Len(t, steps, 2)
+
+	assert.Equal(t, "ExecuteBash", steps[0].Action)
+	assert.Equal(t, "ExecuteShellCommands", steps[0].Name)
+	// The bare exit 194 must be stripped; the echo that mentions it stays.
+	assert.NotContains(t, steps[0].Inputs.Commands, "exit 194")
+	assert.Contains(t, steps[0].Inputs.Commands, `echo "requesting Image Builder reboot (exit 194)"`)
+
+	assert.Equal(t, "Reboot", steps[1].Action)
+	assert.Equal(t, "RebootAfterShellCommands_0", steps[1].Name)
+	// No raw exit 194 anywhere in the rendered document.
+	assert.NotContains(t, doc, "- exit 194")
+}
+
+func TestShellComponent_RebootInMiddle_SplitsSteps(t *testing.T) {
+	t.Parallel()
+	gen := &ComponentGenerator{}
+	provisioner := builder.Provisioner{
+		Type: "shell",
+		Inline: []string{
+			"install-driver",
+			"exit 194",
+			"validate-driver",
+		},
+	}
+
+	doc, err := gen.createShellComponent(provisioner)
+	require.NoError(t, err)
+
+	steps := parseComponentDoc(t, doc).Phases[0].Steps
+	require.Len(t, steps, 3)
+
+	assert.Equal(t, "ExecuteBash", steps[0].Action)
+	assert.Equal(t, "ExecuteShellCommands", steps[0].Name)
+	assert.Equal(t, []string{"install-driver"}, steps[0].Inputs.Commands)
+
+	assert.Equal(t, "Reboot", steps[1].Action)
+
+	// AWSTOE resumes at the next step after the reboot.
+	assert.Equal(t, "ExecuteBash", steps[2].Action)
+	assert.Equal(t, "ExecuteShellCommands_1", steps[2].Name)
+	assert.Equal(t, []string{"validate-driver"}, steps[2].Inputs.Commands)
+}
+
+func TestShellComponent_EnvVarsPrecedeReboot(t *testing.T) {
+	t.Parallel()
+	gen := &ComponentGenerator{}
+	provisioner := builder.Provisioner{
+		Type:        "shell",
+		Inline:      []string{"install-driver", "exit 194"},
+		Environment: map[string]string{"FOO": "bar"},
+	}
+
+	doc, err := gen.createShellComponent(provisioner)
+	require.NoError(t, err)
+
+	steps := parseComponentDoc(t, doc).Phases[0].Steps
+	require.Len(t, steps, 2)
+	// Env exports land in the first (pre-reboot) ExecuteBash step.
+	assert.Contains(t, steps[0].Inputs.Commands, "export FOO='bar'")
+	assert.Equal(t, "Reboot", steps[1].Action)
+}
+
+func TestIsShellRebootSignal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		cmd  string
+		want bool
+	}{
+		{name: "bare exit 194", cmd: "exit 194", want: true},
+		{name: "leading and trailing whitespace", cmd: "  exit 194  ", want: true},
+		{name: "extra internal whitespace", cmd: "exit   194", want: true},
+		{name: "echo mentioning 194", cmd: `echo "requesting reboot (exit 194)"`, want: false},
+		{name: "different exit code", cmd: "exit 1", want: false},
+		{name: "exit 194 with trailing comment", cmd: "exit 194 # reboot", want: false},
+		{name: "unrelated command", cmd: "apt-get update", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isShellRebootSignal(tt.cmd))
+		})
+	}
 }
 
 func TestGetComponentARN_Success(t *testing.T) {
