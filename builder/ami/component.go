@@ -205,7 +205,16 @@ func (g *ComponentGenerator) createFileComponent(provisioner builder.Provisioner
 	return marshalComponentDocument(doc)
 }
 
-// createShellComponent creates a component document for shell provisioner
+// createShellComponent creates a component document for shell provisioner.
+//
+// A bare `exit 194` in the inline commands is AWS Image Builder's documented
+// request to reboot and resume at the next step. Emitting it as the last
+// command of an ExecuteBash step is unsafe: the reboot tears down the SSM
+// RunCommand that AWSTOE is using to execute the step, so the managed build
+// workflow's ApplyBuildComponents wait either hangs (the invocation vanishes)
+// or fails. Instead we strip the marker and emit a dedicated AWSTOE Reboot
+// action step, letting AWSTOE own the reboot/resume handshake and resume the
+// component at the following step. See buildShellSteps.
 func (g *ComponentGenerator) createShellComponent(provisioner builder.Provisioner) (string, error) {
 	if len(provisioner.Inline) == 0 {
 		return "", fmt.Errorf("shell provisioner has no inline commands")
@@ -213,35 +222,88 @@ func (g *ComponentGenerator) createShellComponent(provisioner builder.Provisione
 
 	commands := append([]string{}, provisioner.Inline...)
 
+	if len(provisioner.Environment) > 0 {
+		envVars := make([]string, 0, len(provisioner.Environment))
+		for key, value := range provisioner.Environment {
+			envVars = append(envVars, fmt.Sprintf("export %s='%s'", key, shellEscapeSingleQuote(value)))
+		}
+		commands = append(envVars, commands...)
+	}
+
 	doc := map[string]interface{}{
 		"schemaVersion": 1.0,
 		"name":          "ShellProvisioner",
 		"description":   "Shell provisioner component",
 		"phases": []map[string]interface{}{
 			{
-				"name": "build",
-				"steps": []map[string]interface{}{
-					{
-						"name":   "ExecuteShellCommands",
-						"action": "ExecuteBash",
-						"inputs": map[string]interface{}{
-							"commands": commands,
-						},
-					},
-				},
+				"name":  "build",
+				"steps": buildShellSteps(commands),
 			},
 		},
 	}
 
-	if len(provisioner.Environment) > 0 {
-		envVars := make([]string, 0, len(provisioner.Environment))
-		for key, value := range provisioner.Environment {
-			envVars = append(envVars, fmt.Sprintf("export %s='%s'", key, shellEscapeSingleQuote(value)))
+	return marshalComponentDocument(doc)
+}
+
+// buildShellSteps splits a flat shell command list into AWSTOE steps. Each run
+// of ordinary commands becomes an ExecuteBash step; every `exit 194` reboot
+// marker is removed and replaced with a native AWSTOE Reboot action step so
+// AWSTOE persists state, reboots, and resumes at the following step instead of
+// the SSM RunCommand being killed mid-invocation. The common case (no reboot
+// marker) yields a single ExecuteShellCommands step, identical to the prior
+// behavior.
+func buildShellSteps(commands []string) []map[string]interface{} {
+	steps := []map[string]interface{}{}
+	var current []string
+	execCount := 0
+	rebootCount := 0
+
+	flush := func() {
+		if len(current) == 0 {
+			return
 		}
-		doc["phases"].([]map[string]interface{})[0]["steps"].([]map[string]interface{})[0]["inputs"].(map[string]interface{})["commands"] = append(envVars, commands...)
+		name := "ExecuteShellCommands"
+		if execCount > 0 {
+			name = fmt.Sprintf("ExecuteShellCommands_%d", execCount)
+		}
+		steps = append(steps, map[string]interface{}{
+			"name":   name,
+			"action": "ExecuteBash",
+			"inputs": map[string]interface{}{
+				"commands": current,
+			},
+		})
+		execCount++
+		current = nil
 	}
 
-	return marshalComponentDocument(doc)
+	for _, cmd := range commands {
+		if isShellRebootSignal(cmd) {
+			flush()
+			steps = append(steps, map[string]interface{}{
+				"name":   fmt.Sprintf("RebootAfterShellCommands_%d", rebootCount),
+				"action": "Reboot",
+				"inputs": map[string]interface{}{
+					"delaySeconds": 0,
+				},
+			})
+			rebootCount++
+			continue
+		}
+		current = append(current, cmd)
+	}
+	flush()
+
+	return steps
+}
+
+// isShellRebootSignal reports whether a single shell command is a bare
+// `exit 194` — AWS Image Builder's documented reboot-and-resume request.
+// Surrounding whitespace is tolerated; anything else (for example an echo that
+// merely mentions 194) is left untouched.
+func isShellRebootSignal(cmd string) bool {
+	fields := strings.Fields(cmd)
+	return len(fields) == 2 && fields[0] == "exit" && fields[1] == "194"
 }
 
 // createScriptComponent creates a component document for script provisioner
