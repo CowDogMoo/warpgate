@@ -33,7 +33,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v8"
-	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v3"
+	armresources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/virtualmachineimagebuilder/armvirtualmachineimagebuilder/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -560,7 +560,8 @@ func TestGalleryImagesAdapter_ListImageDefs_Error(t *testing.T) {
 // TestResourcesAdapter_ListByResourceGroup_Success exercises the ARM resources pager.
 func TestResourcesAdapter_ListByResourceGroup_Success(t *testing.T) {
 	s := newAzTestServer(t)
-	s.register("/subscriptions/sub-1/resourceGroups/rg-1/resources", 200, `{
+	// armresources v4 requests lowercase "resourcegroups" for this operation.
+	s.register("/subscriptions/sub-1/resourcegroups/rg-1/resources", 200, `{
 		"value":[
 			{
 				"id":"/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-uami",
@@ -585,7 +586,7 @@ func TestResourcesAdapter_ListByResourceGroup_Success(t *testing.T) {
 // TestResourcesAdapter_ListByResourceGroup_Error propagates SDK errors.
 func TestResourcesAdapter_ListByResourceGroup_Error(t *testing.T) {
 	s := newAzTestServer(t)
-	s.register("/subscriptions/sub-1/resourceGroups/rg-1/resources", 401,
+	s.register("/subscriptions/sub-1/resourcegroups/rg-1/resources", 401,
 		`{"error":{"code":"Unauthorized","message":"access denied"}}`)
 
 	rc := s.resourcesClient(t)
