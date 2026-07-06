@@ -74,6 +74,19 @@
       automergeType: 'pr',
     },
     {
+      description: 'Skip major updates for indirect Go modules — a v2+ major changes the import path, so the bump cannot take effect until a direct dependent imports the new path; go mod tidy strips the requirement and the PR always fails the go-mod-tidy hook (see #1957)',
+      matchManagers: [
+        'gomod',
+      ],
+      matchDepTypes: [
+        'indirect',
+      ],
+      matchUpdateTypes: [
+        'major',
+      ],
+      enabled: false,
+    },
+    {
       description: 'Pin jinzhu/copier — go-proxmox v0.7.1 requires v0.3.4; v0.4.0 breaks Task deep-copy (nil-pointer panic in TestLiveRunner_StopAndTemplate)',
       matchPackageNames: [
         'github.com/jinzhu/copier',
