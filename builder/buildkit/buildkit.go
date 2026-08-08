@@ -289,6 +289,24 @@ func parseCacheAttrs(cacheSpec string) map[string]string {
 	return attrs
 }
 
+// parseCacheEntry builds a BuildKit cache entry from a spec like
+// "type=registry,ref=user/app:cache,mode=max". The type is taken from the spec
+// and defaults to "registry" when absent.
+func parseCacheEntry(cacheSpec string) client.CacheOptionsEntry {
+	attrs := parseCacheAttrs(cacheSpec)
+
+	cacheType := attrs["type"]
+	if cacheType == "" {
+		cacheType = "registry"
+	}
+	delete(attrs, "type")
+
+	return client.CacheOptionsEntry{
+		Type:  cacheType,
+		Attrs: attrs,
+	}
+}
+
 // detectBuildxBuilder detects the active buildx builder using Docker SDK.
 // It scans running containers for buildx builder instances (containers with
 // names prefixed "buildx_buildkit_") and returns the builder name and container name.
@@ -846,26 +864,21 @@ func (b *BuildKitBuilder) configureCacheOptions(solveOpt *client.SolveOpt, cfg b
 	// Determine if caching should be disabled
 	// For local templates, disable caching by default to ensure changes are reflected
 	// Can be overridden with explicit cache parameters (--cache-from, --cache-to)
-	noCache := cfg.NoCache || cfg.IsLocalTemplate
+	hasExplicitCache := len(b.cacheFrom) > 0 || len(b.cacheTo) > 0
+	noCache := cfg.NoCache || (cfg.IsLocalTemplate && !hasExplicitCache)
 
 	if !noCache {
 		if len(b.cacheFrom) > 0 {
 			logging.InfoContext(ctx, "Configuring cache import from %d source(s)", len(b.cacheFrom))
 			for _, cacheSource := range b.cacheFrom {
-				solveOpt.CacheImports = append(solveOpt.CacheImports, client.CacheOptionsEntry{
-					Type:  "registry",
-					Attrs: parseCacheAttrs(cacheSource),
-				})
+				solveOpt.CacheImports = append(solveOpt.CacheImports, parseCacheEntry(cacheSource))
 			}
 		}
 
 		if len(b.cacheTo) > 0 {
 			logging.InfoContext(ctx, "Configuring cache export to %d destination(s)", len(b.cacheTo))
 			for _, cacheDest := range b.cacheTo {
-				solveOpt.CacheExports = append(solveOpt.CacheExports, client.CacheOptionsEntry{
-					Type:  "registry",
-					Attrs: parseCacheAttrs(cacheDest),
-				})
+				solveOpt.CacheExports = append(solveOpt.CacheExports, parseCacheEntry(cacheDest))
 			}
 		}
 	} else {

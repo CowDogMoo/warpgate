@@ -3146,6 +3146,72 @@ func TestParseCacheAttrs(t *testing.T) {
 }
 
 // ============================================================
+// parseCacheEntry
+// ============================================================
+
+func TestParseCacheEntry(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		expectType   string
+		expectAttrs  map[string]string
+		expectNoAttr []string
+	}{
+		{
+			name:         "explicit registry type",
+			input:        "type=registry,ref=user/app:cache,mode=max",
+			expectType:   "registry",
+			expectAttrs:  map[string]string{"ref": "user/app:cache", "mode": "max"},
+			expectNoAttr: []string{"type"},
+		},
+		{
+			name:        "gha type is not coerced to registry",
+			input:       "type=gha,scope=build",
+			expectType:  "gha",
+			expectAttrs: map[string]string{"scope": "build"},
+		},
+		{
+			name:        "local type is not coerced to registry",
+			input:       "type=local,dest=/tmp/cache",
+			expectType:  "local",
+			expectAttrs: map[string]string{"dest": "/tmp/cache"},
+		},
+		{
+			name:        "missing type defaults to registry",
+			input:       "ref=user/app:cache",
+			expectType:  "registry",
+			expectAttrs: map[string]string{"ref": "user/app:cache"},
+		},
+		{
+			name:        "ignore-error survives as an attribute",
+			input:       "type=registry,ref=user/app:cache,mode=max,ignore-error=true",
+			expectType:  "registry",
+			expectAttrs: map[string]string{"ignore-error": "true"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry := parseCacheEntry(tt.input)
+
+			if entry.Type != tt.expectType {
+				t.Errorf("Type: expected %q, got %q", tt.expectType, entry.Type)
+			}
+			for k, v := range tt.expectAttrs {
+				if entry.Attrs[k] != v {
+					t.Errorf("attr %q: expected %q, got %q", k, v, entry.Attrs[k])
+				}
+			}
+			for _, k := range tt.expectNoAttr {
+				if _, ok := entry.Attrs[k]; ok {
+					t.Errorf("attr %q should not be forwarded to BuildKit", k)
+				}
+			}
+		})
+	}
+}
+
+// ============================================================
 // loadTLSConfig
 // ============================================================
 
@@ -3380,10 +3446,26 @@ func TestConfigureCacheOptions(t *testing.T) {
 			expectExportCount: 0,
 		},
 		{
-			name:              "IsLocalTemplate disables caching",
+			name:              "IsLocalTemplate disables caching without explicit cache options",
+			cacheFrom:         []string{},
+			cacheTo:           []string{},
+			cfg:               builder.Config{IsLocalTemplate: true},
+			expectImportCount: 0,
+			expectExportCount: 0,
+		},
+		{
+			name:              "explicit cache options override IsLocalTemplate",
 			cacheFrom:         []string{"type=registry,ref=user/app:cache"},
 			cacheTo:           []string{"type=registry,ref=user/app:cache"},
 			cfg:               builder.Config{IsLocalTemplate: true},
+			expectImportCount: 1,
+			expectExportCount: 1,
+		},
+		{
+			name:              "NoCache beats explicit cache options on a local template",
+			cacheFrom:         []string{"type=registry,ref=user/app:cache"},
+			cacheTo:           []string{"type=registry,ref=user/app:cache"},
+			cfg:               builder.Config{NoCache: true, IsLocalTemplate: true},
 			expectImportCount: 0,
 			expectExportCount: 0,
 		},
@@ -6217,10 +6299,7 @@ func TestLoadTLSConfig_InvalidCACertContent(t *testing.T) {
 
 func TestConfigureCacheOptions_LocalTemplateCacheDisabled(t *testing.T) {
 	t.Parallel()
-	b := &BuildKitBuilder{
-		cacheFrom: []string{"type=registry,ref=user/app:cache"},
-		cacheTo:   []string{"type=registry,ref=user/app:cache"},
-	}
+	b := &BuildKitBuilder{}
 
 	solveOpt := &client.SolveOpt{}
 	b.configureCacheOptions(solveOpt, builder.Config{IsLocalTemplate: true})
@@ -6230,6 +6309,27 @@ func TestConfigureCacheOptions_LocalTemplateCacheDisabled(t *testing.T) {
 	}
 	if len(solveOpt.CacheExports) != 0 {
 		t.Errorf("expected 0 cache exports for local template, got %d", len(solveOpt.CacheExports))
+	}
+}
+
+func TestConfigureCacheOptions_LocalTemplateExplicitCacheOverride(t *testing.T) {
+	t.Parallel()
+	b := &BuildKitBuilder{
+		cacheFrom: []string{"type=registry,ref=user/app:cache"},
+		cacheTo:   []string{"type=registry,ref=user/app:cache,mode=max"},
+	}
+
+	solveOpt := &client.SolveOpt{}
+	b.configureCacheOptions(solveOpt, builder.Config{IsLocalTemplate: true})
+
+	if len(solveOpt.CacheImports) != 1 {
+		t.Fatalf("expected explicit --cache-from to override local template default, got %d imports", len(solveOpt.CacheImports))
+	}
+	if len(solveOpt.CacheExports) != 1 {
+		t.Fatalf("expected explicit --cache-to to override local template default, got %d exports", len(solveOpt.CacheExports))
+	}
+	if got := solveOpt.CacheExports[0].Attrs["mode"]; got != "max" {
+		t.Errorf("mode attr: expected %q, got %q", "max", got)
 	}
 }
 
