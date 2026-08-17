@@ -1,11 +1,31 @@
-package main
+/*
+Copyright © 2025 Jayson Grace <jayson.e.grace@gmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+package templates
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/config"
@@ -42,7 +62,7 @@ func runTestMain(m *testing.M) int {
 	}
 
 	// Seed an empty global config so code paths that update it in place
-	// (e.g. templates.Manager.saveConfigValue) find a file to read.
+	// (e.g. Manager.saveConfigValue) find a file to read.
 	configDir := filepath.Join(home, ".config", "warpgate")
 	if err := os.MkdirAll(configDir, config.DirPermReadWriteExec); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create isolated config dir: %v\n", err)
@@ -54,66 +74,4 @@ func runTestMain(m *testing.M) int {
 	}
 
 	return m.Run()
-}
-
-func TestExecute(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tempDir)
-
-	originalCfgFile := cfgFile
-	cfgFile = ""
-	t.Cleanup(func() {
-		cfgFile = originalCfgFile
-	})
-
-	tests := []struct {
-		name            string
-		args            []string
-		wantErr         bool
-		wantErrContains string
-		wantContains    string
-	}{
-		{
-			name:         "help output",
-			args:         []string{"--help"},
-			wantContains: "Warpgate",
-		},
-		{
-			name:            "unknown flag",
-			args:            []string{"--unknown"},
-			wantErr:         true,
-			wantErrContains: "unknown flag",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			buf := new(bytes.Buffer)
-			rootCmd.SetOut(buf)
-			rootCmd.SetErr(buf)
-			rootCmd.SetArgs(tt.args)
-			t.Cleanup(func() {
-				rootCmd.SetOut(os.Stdout)
-				rootCmd.SetErr(os.Stderr)
-				rootCmd.SetArgs(nil)
-			})
-
-			err := Execute()
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if tt.wantErrContains != "" && !strings.Contains(err.Error(), tt.wantErrContains) {
-					t.Errorf("error %q missing %q", err.Error(), tt.wantErrContains)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Execute() error = %v", err)
-			}
-			if tt.wantContains != "" && !strings.Contains(buf.String(), tt.wantContains) {
-				t.Errorf("output missing %q", tt.wantContains)
-			}
-		})
-	}
 }
