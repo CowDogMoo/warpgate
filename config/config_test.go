@@ -32,6 +32,40 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestMain redirects HOME and the XDG base directories to a throwaway
+// directory so no test in this package can read or write the developer's
+// real warpgate config or cache. No config file is seeded: the baseline
+// for this package's tests is "no global config", matching CI.
+func TestMain(m *testing.M) {
+	os.Exit(runTestMain(m))
+}
+
+func runTestMain(m *testing.M) int {
+	home, err := os.MkdirTemp("", "warpgate-testhome")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create isolated test home: %v\n", err)
+		return 1
+	}
+	defer func() {
+		if err := os.RemoveAll(home); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to remove isolated test home: %v\n", err)
+		}
+	}()
+
+	for key, value := range map[string]string{
+		"HOME":            home,
+		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
+		"XDG_CACHE_HOME":  filepath.Join(home, ".cache"),
+	} {
+		if err := os.Setenv(key, value); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to set %s: %v\n", key, err)
+			return 1
+		}
+	}
+
+	return m.Run()
+}
+
 // TestLoad_Defaults tests that defaults work without a config file
 func TestLoad_Defaults(t *testing.T) {
 	// Change to a temp directory where no config file exists
