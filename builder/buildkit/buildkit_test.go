@@ -33,6 +33,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -52,6 +53,7 @@ import (
 	dockerclient "github.com/moby/moby/client"
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/tonistiigi/fsutil"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
 	"github.com/cowdogmoo/warpgate/v3/config"
@@ -8073,5 +8075,394 @@ func TestApplyPlatformFix_PropagatesError(t *testing.T) {
 	err := b.applyPlatformFix(context.Background(), "example.com/img:latest", cfg)
 	if err == nil {
 		t.Fatal("expected error to propagate")
+	}
+}
+
+// writeDockerfileTree lays out a Dockerfile at dir/rel and returns its absolute
+// path together with the content written to it.
+func writeDockerfileTree(t *testing.T, dir, rel string) (string, string) {
+	t.Helper()
+
+	path := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("failed to create %s: %v", filepath.Dir(path), err)
+	}
+
+	content := fmt.Sprintf("FROM scratch\n# marker %s\n", rel)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write %s: %v", path, err)
+	}
+
+	return path, content
+}
+
+// readMount opens name from the named local mount the way BuildKit's local
+// source does, joining it onto the mount root.
+func readMount(t *testing.T, mounts map[string]fsutil.FS, mount, name string) (string, error) {
+	t.Helper()
+
+	fs, ok := mounts[mount]
+	if !ok {
+		t.Fatalf("solve inputs are missing the %q local mount", mount)
+	}
+
+	rc, err := fs.Open(name)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err := rc.Close(); err != nil {
+			t.Errorf("failed to close %s in mount %q: %v", name, mount, err)
+		}
+	}()
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
+}
+
+// TestDockerfileFrontendMounts guards the contract between the "filename"
+// frontend attribute and the "dockerfile" local mount. BuildKit's dockerfile.v0
+// frontend joins filename onto that mount's root, so a context-relative
+// filename combined with a mount rooted at the Dockerfile's directory made
+// every Dockerfile below the context root fail to resolve.
+func TestDockerfileFrontendMounts(t *testing.T) {
+	tests := []struct {
+		name    string
+		rel     string
+		context func(root string) string
+	}{
+		{
+			name:    "dockerfile at context root",
+			rel:     "Dockerfile",
+			context: func(root string) string { return root },
+		},
+		{
+			name:    "dockerfile one level below context root",
+			rel:     filepath.Join("docker", "Dockerfile"),
+			context: func(root string) string { return root },
+		},
+		{
+			name:    "dockerfile several levels below context root",
+			rel:     filepath.Join("build", "images", "base", "Dockerfile"),
+			context: func(root string) string { return root },
+		},
+		{
+			name:    "dockerfile with a non-default name",
+			rel:     filepath.Join("docker", "Dockerfile.dev"),
+			context: func(root string) string { return root },
+		},
+		{
+			name:    "dockerfile outside the build context",
+			rel:     "Dockerfile",
+			context: func(root string) string { return filepath.Join(root, "app") },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dockerfilePath, want := writeDockerfileTree(t, root, tc.rel)
+
+			buildContext := tc.context(root)
+			if err := os.MkdirAll(buildContext, 0o755); err != nil {
+				t.Fatalf("failed to create build context %s: %v", buildContext, err)
+			}
+			marker := filepath.Join(buildContext, "context-marker")
+			if err := os.WriteFile(marker, []byte("in context\n"), 0o644); err != nil {
+				t.Fatalf("failed to write context marker: %v", err)
+			}
+
+			cfg := builder.Config{
+				Dockerfile: &builder.DockerfileConfig{
+					Path:    dockerfilePath,
+					Context: buildContext,
+				},
+			}
+
+			attrs, mounts, err := dockerfileSolveInputs(cfg)
+			if err != nil {
+				t.Fatalf("dockerfileSolveInputs returned an error: %v", err)
+			}
+
+			filename := attrs["filename"]
+			if filename != filepath.Base(dockerfilePath) {
+				t.Errorf("filename = %q, want %q", filename, filepath.Base(dockerfilePath))
+			}
+			if strings.ContainsAny(filename, `/\`) {
+				t.Errorf("filename %q contains a path separator; it must resolve inside the dockerfile mount", filename)
+			}
+
+			got, err := readMount(t, mounts, "dockerfile", filename)
+			if err != nil {
+				t.Fatalf("BuildKit would fail to read %q from the dockerfile mount: %v", filename, err)
+			}
+			if got != want {
+				t.Errorf("dockerfile mount served %q, want %q", got, want)
+			}
+
+			if _, err := readMount(t, mounts, "context", "context-marker"); err != nil {
+				t.Errorf("context mount is not rooted at the build context: %v", err)
+			}
+		})
+	}
+}
+
+// TestDockerfileFrontendMounts_ContextRelativePathIsRejected pins the failure
+// the fix removes: joining a context-relative path onto the dockerfile mount
+// looks docker/Dockerfile up as docker/docker/Dockerfile. It is the positive
+// control for the resolution assertions above.
+func TestDockerfileFrontendMounts_ContextRelativePathIsRejected(t *testing.T) {
+	root := t.TempDir()
+	rel := filepath.Join("docker", "Dockerfile")
+	dockerfilePath, _ := writeDockerfileTree(t, root, rel)
+
+	cfg := builder.Config{
+		Dockerfile: &builder.DockerfileConfig{
+			Path:    dockerfilePath,
+			Context: root,
+		},
+	}
+
+	_, mounts, err := dockerfileSolveInputs(cfg)
+	if err != nil {
+		t.Fatalf("dockerfileSolveInputs returned an error: %v", err)
+	}
+
+	if _, err := readMount(t, mounts, "dockerfile", rel); err == nil {
+		t.Fatalf("expected %q to be unresolvable in the dockerfile mount; the mount is not rooted at the dockerfile directory", rel)
+	}
+}
+
+// TestDockerfileFrontendAttrs checks that the optional frontend attributes are
+// forwarded exactly, with no extras that BuildKit would have to ignore.
+func TestDockerfileFrontendAttrs(t *testing.T) {
+	root := t.TempDir()
+	nested, _ := writeDockerfileTree(t, root, filepath.Join("docker", "Dockerfile"))
+	flat, _ := writeDockerfileTree(t, root, "Dockerfile")
+
+	tests := []struct {
+		name string
+		cfg  builder.Config
+		want map[string]string
+	}{
+		{
+			name: "optional attributes are forwarded",
+			cfg: builder.Config{
+				Architectures: []string{"arm64"},
+				NoCache:       true,
+				BuildArgs:     map[string]string{"TOP_LEVEL": "1"},
+				Dockerfile: &builder.DockerfileConfig{
+					Path:    nested,
+					Context: root,
+					Target:  "runtime",
+					Args:    map[string]string{"NESTED": "2"},
+				},
+			},
+			want: map[string]string{
+				"filename":            "Dockerfile",
+				"target":              "runtime",
+				"build-arg:NESTED":    "2",
+				"build-arg:TOP_LEVEL": "1",
+				"platform":            "linux/arm64",
+				"no-cache":            "",
+			},
+		},
+		{
+			name: "multiple architectures leave the platform unset",
+			cfg: builder.Config{
+				Architectures: []string{"amd64", "arm64"},
+				Dockerfile: &builder.DockerfileConfig{
+					Path:    flat,
+					Context: root,
+				},
+			},
+			want: map[string]string{"filename": "Dockerfile"},
+		},
+		{
+			name: "an empty config carries only the filename",
+			cfg: builder.Config{
+				Dockerfile: &builder.DockerfileConfig{
+					Path:    nested,
+					Context: root,
+				},
+			},
+			want: map[string]string{"filename": "Dockerfile"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			attrs, _, err := dockerfileSolveInputs(tc.cfg)
+			if err != nil {
+				t.Fatalf("dockerfileSolveInputs returned an error: %v", err)
+			}
+			if !maps.Equal(attrs, tc.want) {
+				t.Errorf("attrs = %v, want %v", attrs, tc.want)
+			}
+		})
+	}
+}
+
+// TestDockerfileFrontendAttrs_Defaults covers the path and context defaults that
+// apply when the template omits them.
+func TestDockerfileFrontendAttrs_Defaults(t *testing.T) {
+	root := t.TempDir()
+	writeDockerfileTree(t, root, "Dockerfile")
+	t.Chdir(root)
+
+	attrs, mounts, err := dockerfileSolveInputs(builder.Config{
+		Dockerfile: &builder.DockerfileConfig{},
+	})
+	if err != nil {
+		t.Fatalf("dockerfileSolveInputs returned an error: %v", err)
+	}
+	if attrs["filename"] != "Dockerfile" {
+		t.Errorf("filename = %q, want %q", attrs["filename"], "Dockerfile")
+	}
+	if _, err := readMount(t, mounts, "dockerfile", attrs["filename"]); err != nil {
+		t.Errorf("the default dockerfile is not readable from the mount: %v", err)
+	}
+}
+
+// TestDockerfileFrontendAttrs_Errors covers the inputs that cannot produce solve
+// inputs at all.
+func TestDockerfileFrontendAttrs_Errors(t *testing.T) {
+	root := t.TempDir()
+	dockerfilePath, _ := writeDockerfileTree(t, root, "Dockerfile")
+
+	tests := []struct {
+		name    string
+		cfg     builder.Config
+		wantErr string
+	}{
+		{
+			name: "the dockerfile directory does not exist",
+			cfg: builder.Config{
+				Dockerfile: &builder.DockerfileConfig{
+					Path:    filepath.Join(root, "absent", "Dockerfile"),
+					Context: root,
+				},
+			},
+			wantErr: "dockerfile fsutil.FS",
+		},
+		{
+			name: "the build context does not exist",
+			cfg: builder.Config{
+				Dockerfile: &builder.DockerfileConfig{
+					Path:    dockerfilePath,
+					Context: filepath.Join(root, "absent"),
+				},
+			},
+			wantErr: "context fsutil.FS",
+		},
+		{
+			name:    "the dockerfile configuration is nil",
+			cfg:     builder.Config{},
+			wantErr: "dockerfile configuration is nil",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := dockerfileSolveInputs(tc.cfg)
+			if err == nil {
+				t.Fatalf("expected an error mentioning %q", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestBuildDockerfile_SolveOpt asserts the wiring between dockerfileSolveInputs
+// and the SolveOpt handed to BuildKit: the frontend attributes and local mounts
+// must arrive together, so a Dockerfile below the context root is readable from
+// the "dockerfile" mount under the name the frontend will look up.
+func TestBuildDockerfile_SolveOpt(t *testing.T) {
+	origSolve := buildkitSolve
+	defer func() { buildkitSolve = origSolve }()
+
+	var got client.SolveOpt
+	buildkitSolve = func(_ context.Context, _ *client.Client, _ *llb.Definition, opt client.SolveOpt, ch chan *client.SolveStatus) (*client.SolveResponse, error) {
+		got = opt
+		close(ch)
+		return nil, fmt.Errorf("solve stopped by the test")
+	}
+
+	root := t.TempDir()
+	dockerfilePath, want := writeDockerfileTree(t, root, filepath.Join("docker", "Dockerfile"))
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Name:          "smoke",
+		Version:       "1.0",
+		Registry:      "ghcr.io/cowdogmoo",
+		Architectures: []string{"amd64"},
+		Dockerfile: &builder.DockerfileConfig{
+			Path:    dockerfilePath,
+			Context: root,
+		},
+	}
+
+	_, err := b.BuildDockerfile(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("expected the injected solve error to propagate")
+	}
+	if !strings.Contains(err.Error(), "dockerfile build failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got.Frontend != "dockerfile.v0" {
+		t.Errorf("Frontend = %q, want %q", got.Frontend, "dockerfile.v0")
+	}
+	if got.FrontendAttrs["filename"] != "Dockerfile" {
+		t.Errorf("filename = %q, want %q", got.FrontendAttrs["filename"], "Dockerfile")
+	}
+
+	content, err := readMount(t, got.LocalMounts, "dockerfile", got.FrontendAttrs["filename"])
+	if err != nil {
+		t.Fatalf("BuildKit would fail to read the Dockerfile from the solve options: %v", err)
+	}
+	if content != want {
+		t.Errorf("dockerfile mount served %q, want %q", content, want)
+	}
+	if _, ok := got.LocalMounts["context"]; !ok {
+		t.Error("solve options are missing the context local mount")
+	}
+}
+
+// TestBuildDockerfile_SolveInputsError checks that a build stops before creating
+// a temporary image tar when the Dockerfile inputs cannot be resolved.
+func TestBuildDockerfile_SolveInputsError(t *testing.T) {
+	origTemp := createTempImage
+	defer func() { createTempImage = origTemp }()
+
+	createTempImage = func() (string, error) {
+		t.Error("createTempImage was called after the inputs failed to resolve")
+		return "", fmt.Errorf("unreachable")
+	}
+
+	root := t.TempDir()
+	dockerfilePath, _ := writeDockerfileTree(t, root, "Dockerfile")
+
+	b := &BuildKitBuilder{}
+	_, err := b.BuildDockerfile(context.Background(), builder.Config{
+		Name:    "smoke",
+		Version: "1.0",
+		Dockerfile: &builder.DockerfileConfig{
+			Path:    dockerfilePath,
+			Context: filepath.Join(root, "absent"),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected an error for a build context that does not exist")
+	}
+	if !strings.Contains(err.Error(), "context fsutil.FS") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
