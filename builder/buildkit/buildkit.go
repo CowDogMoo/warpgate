@@ -1835,29 +1835,24 @@ func (b *BuildKitBuilder) InspectManifest(ctx context.Context, manifestName stri
 	return entries, nil
 }
 
-// BuildDockerfile builds a container image using a Dockerfile with BuildKit's native client.
-func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
-	startTime := time.Now()
-	logging.InfoContext(ctx, "Building image from Dockerfile: %s (native BuildKit)", cfg.Name)
-
-	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
-	if cfg.Registry != "" {
-		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
-	}
-
+// dockerfileSolveInputs assembles the frontend attributes and local mounts that
+// BuildKit's dockerfile.v0 frontend needs to build cfg.
+//
+// The frontend resolves the "filename" attribute against the "dockerfile" local
+// mount, not against the build context. Rooting that mount at the Dockerfile's
+// directory while passing a context-relative path would look docker/Dockerfile
+// up as docker/docker/Dockerfile, so filename carries only the base name. This
+// mirrors what the Docker CLI sends and keeps a sibling .dockerignore
+// resolvable.
+func dockerfileSolveInputs(cfg builder.Config) (map[string]string, map[string]fsutil.FS, error) {
 	dockerfileCfg := cfg.Dockerfile
-	dockerfilePath := dockerfileCfg.GetDockerfilePath()
-	buildContext := dockerfileCfg.GetBuildContext()
-
-	logging.DebugContext(ctx, "Dockerfile: %s, Context: %s", dockerfilePath, buildContext)
-
-	relDockerfilePath, err := filepath.Rel(buildContext, dockerfilePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate relative Dockerfile path: %w", err)
+	if dockerfileCfg == nil {
+		return nil, nil, fmt.Errorf("dockerfile configuration is nil")
 	}
+	dockerfilePath := dockerfileCfg.GetDockerfilePath()
 
 	frontendAttrs := map[string]string{
-		"filename": relDockerfilePath,
+		"filename": filepath.Base(dockerfilePath),
 	}
 
 	if dockerfileCfg.Target != "" {
@@ -1880,6 +1875,40 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		frontendAttrs["no-cache"] = ""
 	}
 
+	contextFS, err := fsutil.NewFS(dockerfileCfg.GetBuildContext())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create context fsutil.FS: %w", err)
+	}
+
+	dockerfileFS, err := fsutil.NewFS(filepath.Dir(dockerfilePath))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create dockerfile fsutil.FS: %w", err)
+	}
+
+	return frontendAttrs, map[string]fsutil.FS{
+		"context":    contextFS,
+		"dockerfile": dockerfileFS,
+	}, nil
+}
+
+// BuildDockerfile builds a container image using a Dockerfile with BuildKit's native client.
+func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Config) (*builder.BuildResult, error) {
+	startTime := time.Now()
+	logging.InfoContext(ctx, "Building image from Dockerfile: %s (native BuildKit)", cfg.Name)
+
+	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
+	if cfg.Registry != "" {
+		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
+	}
+
+	frontendAttrs, localMounts, err := dockerfileSolveInputs(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	logging.DebugContext(ctx, "Dockerfile: %s, Context: %s",
+		cfg.Dockerfile.GetDockerfilePath(), cfg.Dockerfile.GetBuildContext())
+
 	imageTarPath, err := createTempImage()
 	if err != nil {
 		return nil, err
@@ -1892,15 +1921,6 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 
 	exportAttrs := buildExportAttributes(imageName, cfg.Labels)
 
-	contextFS, err := fsutil.NewFS(buildContext)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create context fsutil.FS: %w", err)
-	}
-	dockerfileFS, err := fsutil.NewFS(filepath.Dir(dockerfilePath))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create dockerfile fsutil.FS: %w", err)
-	}
-
 	solveOpt := client.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
@@ -1911,11 +1931,8 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 				Attrs:  exportAttrs,
 			},
 		},
-		LocalMounts: map[string]fsutil.FS{
-			"context":    contextFS,
-			"dockerfile": dockerfileFS,
-		},
-		Session: createAuthProvider(),
+		LocalMounts: localMounts,
+		Session:     createAuthProvider(),
 	}
 
 	b.configureCacheOptions(&solveOpt, cfg)
