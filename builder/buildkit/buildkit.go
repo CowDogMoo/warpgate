@@ -75,6 +75,13 @@ var (
 	daemonLoad      = daemon.Image
 	daemonWrite     = daemon.Write
 	createTempImage = createTempImageTar
+
+	// buildkitSolve wraps the solve call in BuildDockerfile so tests can observe
+	// the SolveOpt it assembles without reaching a daemon. Implementations must
+	// close ch, as client.Solve does, or displayProgress never returns.
+	buildkitSolve = func(ctx context.Context, c *client.Client, def *llb.Definition, opt client.SolveOpt, ch chan *client.SolveStatus) (*client.SolveResponse, error) {
+		return c.Solve(ctx, def, opt, ch)
+	}
 )
 
 // BuildKitBuilder implements container image building using Docker BuildKit.
@@ -1942,7 +1949,7 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 
 	go b.displayProgress(ctx, ch, done)
 
-	_, err = b.client.Solve(ctx, nil, solveOpt, ch)
+	_, err = buildkitSolve(ctx, b.client, nil, solveOpt, ch)
 	<-done
 
 	if err != nil {

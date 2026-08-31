@@ -8378,3 +8378,91 @@ func TestDockerfileFrontendAttrs_Errors(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildDockerfile_SolveOpt asserts the wiring between dockerfileSolveInputs
+// and the SolveOpt handed to BuildKit: the frontend attributes and local mounts
+// must arrive together, so a Dockerfile below the context root is readable from
+// the "dockerfile" mount under the name the frontend will look up.
+func TestBuildDockerfile_SolveOpt(t *testing.T) {
+	origSolve := buildkitSolve
+	defer func() { buildkitSolve = origSolve }()
+
+	var got client.SolveOpt
+	buildkitSolve = func(_ context.Context, _ *client.Client, _ *llb.Definition, opt client.SolveOpt, ch chan *client.SolveStatus) (*client.SolveResponse, error) {
+		got = opt
+		close(ch)
+		return nil, fmt.Errorf("solve stopped by the test")
+	}
+
+	root := t.TempDir()
+	dockerfilePath, want := writeDockerfileTree(t, root, filepath.Join("docker", "Dockerfile"))
+
+	b := &BuildKitBuilder{}
+	cfg := builder.Config{
+		Name:          "smoke",
+		Version:       "1.0",
+		Registry:      "ghcr.io/cowdogmoo",
+		Architectures: []string{"amd64"},
+		Dockerfile: &builder.DockerfileConfig{
+			Path:    dockerfilePath,
+			Context: root,
+		},
+	}
+
+	_, err := b.BuildDockerfile(context.Background(), cfg)
+	if err == nil {
+		t.Fatal("expected the injected solve error to propagate")
+	}
+	if !strings.Contains(err.Error(), "dockerfile build failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got.Frontend != "dockerfile.v0" {
+		t.Errorf("Frontend = %q, want %q", got.Frontend, "dockerfile.v0")
+	}
+	if got.FrontendAttrs["filename"] != "Dockerfile" {
+		t.Errorf("filename = %q, want %q", got.FrontendAttrs["filename"], "Dockerfile")
+	}
+
+	content, err := readMount(t, got.LocalMounts, "dockerfile", got.FrontendAttrs["filename"])
+	if err != nil {
+		t.Fatalf("BuildKit would fail to read the Dockerfile from the solve options: %v", err)
+	}
+	if content != want {
+		t.Errorf("dockerfile mount served %q, want %q", content, want)
+	}
+	if _, ok := got.LocalMounts["context"]; !ok {
+		t.Error("solve options are missing the context local mount")
+	}
+}
+
+// TestBuildDockerfile_SolveInputsError checks that a build stops before creating
+// a temporary image tar when the Dockerfile inputs cannot be resolved.
+func TestBuildDockerfile_SolveInputsError(t *testing.T) {
+	origTemp := createTempImage
+	defer func() { createTempImage = origTemp }()
+
+	createTempImage = func() (string, error) {
+		t.Error("createTempImage was called after the inputs failed to resolve")
+		return "", fmt.Errorf("unreachable")
+	}
+
+	root := t.TempDir()
+	dockerfilePath, _ := writeDockerfileTree(t, root, "Dockerfile")
+
+	b := &BuildKitBuilder{}
+	_, err := b.BuildDockerfile(context.Background(), builder.Config{
+		Name:    "smoke",
+		Version: "1.0",
+		Dockerfile: &builder.DockerfileConfig{
+			Path:    dockerfilePath,
+			Context: filepath.Join(root, "absent"),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected an error for a build context that does not exist")
+	}
+	if !strings.Contains(err.Error(), "context fsutil.FS") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
