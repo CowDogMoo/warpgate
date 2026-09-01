@@ -23,10 +23,14 @@ THE SOFTWARE.
 package builder
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/config"
+	"github.com/cowdogmoo/warpgate/v3/logging"
 )
 
 func TestApplyOverrides(t *testing.T) {
@@ -811,6 +815,70 @@ func TestTemplatePublishDefaults(t *testing.T) {
 			}
 			if push != tt.wantPush {
 				t.Errorf("TemplatePublishDefaults() push = %v, want %v", push, tt.wantPush)
+			}
+		})
+	}
+}
+
+func TestWarnUnappliedTargetTags(t *testing.T) {
+	tests := []struct {
+		name       string
+		config     *Config
+		wantWarned []string
+		wantQuiet  []string
+	}{
+		{
+			name: "target tag matching the version is applied",
+			config: &Config{
+				Version: "latest",
+				Targets: []Target{{Type: "container", Tags: []string{"latest"}}},
+			},
+			wantQuiet: []string{"latest"},
+		},
+		{
+			name: "target tag naming something else is dropped",
+			config: &Config{
+				Version: "latest",
+				Targets: []Target{{Type: "container", Tags: []string{"latest", "v1.0.0"}}},
+			},
+			wantWarned: []string{"v1.0.0"},
+		},
+		{
+			name: "every dropped tag is named",
+			config: &Config{
+				Version: "v2.0.0",
+				Targets: []Target{{Type: "container", Tags: []string{"latest", "stable"}}},
+			},
+			wantWarned: []string{"latest", "stable"},
+		},
+		{
+			name: "ami target tags are not container tags",
+			config: &Config{
+				Version: "latest",
+				Targets: []Target{{Type: "ami", Tags: []string{"v1.0.0"}}},
+			},
+			wantQuiet: []string{"v1.0.0"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			logger := logging.NewCustomLogger(slog.LevelInfo)
+			logger.ConsoleWriter = buf
+
+			warnUnappliedTargetTags(logging.WithLogger(context.Background(), logger), tt.config)
+
+			out := buf.String()
+			for _, tag := range tt.wantWarned {
+				if !strings.Contains(out, tag) {
+					t.Errorf("expected a warning naming tag %q, got: %s", tag, out)
+				}
+			}
+			for _, tag := range tt.wantQuiet {
+				if strings.Contains(out, tag) {
+					t.Errorf("unexpected warning naming tag %q: %s", tag, out)
+				}
 			}
 		})
 	}
