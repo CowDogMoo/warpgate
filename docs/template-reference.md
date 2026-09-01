@@ -317,9 +317,8 @@ targets:
     platforms:
       - linux/amd64
       - linux/arm64
-    tags:
-      - latest
-      - ${VERSION}
+    registry: ghcr.io/myorg
+    push: true
 ```
 
 **Platform options:**
@@ -327,10 +326,21 @@ targets:
 - `linux/amd64` - x86_64 architecture
 - `linux/arm64` - ARM64/aarch64 architecture
 
+**Publishing:**
+
+- `registry` is the registry the image name is composed from and pushed to.
+  `--registry` overrides it; with neither set, `registry.default` from the
+  warpgate configuration applies.
+- `push: true` publishes the image after a successful build, as `--push` does.
+  It needs a registry from either `registry` here or `--registry`.
+- `--push-digest` is flag-only. A target `push` never becomes a digest push.
+
 **Tagging:**
 
-- Static tags: `latest`, `v1.0.0`
-- Variable tags: `${VERSION}`, `${BUILD_NUMBER}`
+The image tag comes from the template's top-level `version` field, or from
+`--tag` when that is passed. A `tags` list on the target is not applied to the
+built image, and warpgate warns for every entry naming something other than the
+resolved version.
 
 ### AMI Target
 
@@ -674,9 +684,6 @@ targets:
       - linux/amd64
       - linux/arm64
     registry: ghcr.io/myorg
-    tags:
-      - latest
-      - v1.0.0
     push: false
 ```
 

@@ -103,15 +103,6 @@ func TestValidateBuildOptions(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "push without registry",
-			opts: BuildCLIOptions{
-				ConfigFile: "warpgate.yaml",
-				Push:       true,
-			},
-			wantErr: true,
-			errMsg:  "--push/--push-digest requires --registry",
-		},
-		{
 			name: "push with registry - valid",
 			opts: BuildCLIOptions{
 				ConfigFile: "warpgate.yaml",
@@ -119,15 +110,6 @@ func TestValidateBuildOptions(t *testing.T) {
 				Registry:   "ghcr.io/myorg",
 			},
 			wantErr: false,
-		},
-		{
-			name: "push-digest without registry",
-			opts: BuildCLIOptions{
-				ConfigFile: "warpgate.yaml",
-				PushDigest: true,
-			},
-			wantErr: true,
-			errMsg:  "--push/--push-digest requires --registry",
 		},
 		{
 			name: "push-digest with registry - valid",
@@ -221,6 +203,60 @@ func TestValidateBuildOptions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestValidatePushDependencies(t *testing.T) {
+	validator := NewValidator()
+
+	tests := []struct {
+		name    string
+		opts    BuildCLIOptions
+		wantErr bool
+	}{
+		{
+			name:    "push without registry",
+			opts:    BuildCLIOptions{ConfigFile: "warpgate.yaml", Push: true},
+			wantErr: true,
+		},
+		{
+			name:    "push-digest without registry",
+			opts:    BuildCLIOptions{ConfigFile: "warpgate.yaml", PushDigest: true},
+			wantErr: true,
+		},
+		{
+			name: "push with registry resolved from flag or template",
+			opts: BuildCLIOptions{ConfigFile: "warpgate.yaml", Push: true, Registry: "ghcr.io/myorg"},
+		},
+		{
+			name: "push-digest with registry resolved from flag or template",
+			opts: BuildCLIOptions{ConfigFile: "warpgate.yaml", PushDigest: true, Registry: "ghcr.io/myorg"},
+		},
+		{
+			name: "no push requested",
+			opts: BuildCLIOptions{ConfigFile: "warpgate.yaml"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validator.ValidatePushDependencies(tt.opts)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidatePushDependencies() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestValidateBuildOptionsDefersPushRegistry documents that the flag-only pass
+// accepts a push without a registry: the template may still supply one through
+// targets[].registry, so the check belongs to ValidatePushDependencies.
+func TestValidateBuildOptionsDefersPushRegistry(t *testing.T) {
+	validator := NewValidator()
+
+	err := validator.ValidateBuildOptions(BuildCLIOptions{ConfigFile: "warpgate.yaml", Push: true})
+	if err != nil {
+		t.Errorf("ValidateBuildOptions() error = %v, want nil", err)
 	}
 }
 

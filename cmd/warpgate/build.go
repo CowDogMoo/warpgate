@@ -408,6 +408,14 @@ func loadAndValidateBuildConfig(ctx context.Context, args []string, opts *buildO
 	if err != nil {
 		return nil, fmt.Errorf("failed to load build configuration: %w", err)
 	}
+
+	// Push options are validated only now: the template can supply the registry
+	// through targets[].registry, and it is not loaded until this point.
+	applyTemplatePublishDefaults(ctx, buildConfig, opts)
+	if err := validator.ValidatePushDependencies(buildOptsToCliOpts(args, opts)); err != nil {
+		return nil, fmt.Errorf("invalid options: %w", err)
+	}
+
 	return buildConfig, nil
 }
 
