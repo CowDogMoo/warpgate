@@ -8466,3 +8466,66 @@ func TestBuildDockerfile_SolveInputsError(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+// TestBuildDockerfile_ExportNameKeepsTargetRegistry reproduces the reported
+// misdirected push end to end: a template declaring targets[].registry used to
+// have that value dropped, so the image name fell back to the bare global
+// default and resolved one path segment short of the intended repository.
+func TestBuildDockerfile_ExportNameKeepsTargetRegistry(t *testing.T) {
+	origSolve := buildkitSolve
+	defer func() { buildkitSolve = origSolve }()
+
+	var got client.SolveOpt
+	buildkitSolve = func(_ context.Context, _ *client.Client, _ *llb.Definition, opt client.SolveOpt, ch chan *client.SolveStatus) (*client.SolveResponse, error) {
+		got = opt
+		close(ch)
+		return nil, fmt.Errorf("solve stopped by the test")
+	}
+
+	origTemp := createTempImage
+	defer func() { createTempImage = origTemp }()
+	createTempImage = func() (string, error) {
+		path := filepath.Join(t.TempDir(), "image.tar")
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
+
+	root := t.TempDir()
+	dockerfilePath, _ := writeDockerfileTree(t, root, filepath.Join("docker", "Dockerfile"))
+
+	cfg := builder.Config{
+		Name:    "mealie",
+		Version: "v3.24.0-woe.smoke",
+		Dockerfile: &builder.DockerfileConfig{
+			Path:    dockerfilePath,
+			Context: root,
+		},
+		Targets: []builder.Target{{
+			Type:      "container",
+			Registry:  "ghcr.io/cowdogmoo",
+			Platforms: []string{"linux/amd64"},
+			Tags:      []string{"v3.24.0-woe.smoke"},
+		}},
+	}
+
+	globalCfg := &config.Config{Registry: config.RegistryConfig{Default: "ghcr.io"}}
+	if err := builder.ApplyOverrides(context.Background(), &cfg, builder.BuildOptions{}, globalCfg); err != nil {
+		t.Fatalf("ApplyOverrides returned an error: %v", err)
+	}
+
+	b := &BuildKitBuilder{}
+	if _, err := b.BuildDockerfile(context.Background(), cfg); err == nil {
+		t.Fatal("expected the injected solve error to propagate")
+	}
+
+	if len(got.Exports) != 1 {
+		t.Fatalf("got %d exports, want exactly 1", len(got.Exports))
+	}
+
+	const want = "ghcr.io/cowdogmoo/mealie:v3.24.0-woe.smoke"
+	if name := got.Exports[0].Attrs["name"]; name != want {
+		t.Errorf("exported image name = %q, want %q", name, want)
+	}
+}

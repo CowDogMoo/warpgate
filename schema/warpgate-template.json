@@ -883,7 +883,7 @@
             "linux/arm64"
           ],
           "push": false,
-          "registry": "ghcr.io/example/repo",
+          "registry": "ghcr.io/example",
           "tags": [
             "latest",
             "v1.0.0"
