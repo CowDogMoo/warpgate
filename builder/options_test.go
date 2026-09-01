@@ -360,6 +360,87 @@ func TestApplyRegistryOverride(t *testing.T) {
 			},
 			wantRegistry: "docker.io",
 		},
+		{
+			name: "target registry is used when no CLI override is given",
+			config: &Config{
+				Targets: []Target{{Type: "container", Registry: "ghcr.io/cowdogmoo"}},
+			},
+			opts: BuildOptions{},
+			globalCfg: &config.Config{
+				Registry: config.RegistryConfig{Default: "ghcr.io"},
+			},
+			wantRegistry: "ghcr.io/cowdogmoo",
+		},
+		{
+			name: "CLI override beats the target registry",
+			config: &Config{
+				Targets: []Target{{Type: "container", Registry: "ghcr.io/cowdogmoo"}},
+			},
+			opts: BuildOptions{Registry: "docker.io/other"},
+			globalCfg: &config.Config{
+				Registry: config.RegistryConfig{Default: "ghcr.io"},
+			},
+			wantRegistry: "docker.io/other",
+		},
+		{
+			name: "an explicit config registry beats the target registry",
+			config: &Config{
+				Registry: "quay.io/explicit",
+				Targets:  []Target{{Type: "container", Registry: "ghcr.io/cowdogmoo"}},
+			},
+			opts: BuildOptions{},
+			globalCfg: &config.Config{
+				Registry: config.RegistryConfig{Default: "ghcr.io"},
+			},
+			wantRegistry: "quay.io/explicit",
+		},
+		{
+			name: "a non-container target registry is ignored",
+			config: &Config{
+				Targets: []Target{{Type: "ami", Registry: "ghcr.io/cowdogmoo"}},
+			},
+			opts: BuildOptions{},
+			globalCfg: &config.Config{
+				Registry: config.RegistryConfig{Default: "ghcr.io"},
+			},
+			wantRegistry: "ghcr.io",
+		},
+		{
+			name: "a container target without a registry falls through to the default",
+			config: &Config{
+				Targets: []Target{{Type: "container"}},
+			},
+			opts: BuildOptions{},
+			globalCfg: &config.Config{
+				Registry: config.RegistryConfig{Default: "ghcr.io"},
+			},
+			wantRegistry: "ghcr.io",
+		},
+		{
+			name: "the first container target that sets a registry wins",
+			config: &Config{
+				Targets: []Target{
+					{Type: "ami", Registry: "ami.example.com"},
+					{Type: "container"},
+					{Type: "container", Registry: "ghcr.io/first"},
+					{Type: "container", Registry: "ghcr.io/second"},
+				},
+			},
+			opts: BuildOptions{},
+			globalCfg: &config.Config{
+				Registry: config.RegistryConfig{Default: "ghcr.io"},
+			},
+			wantRegistry: "ghcr.io/first",
+		},
+		{
+			name: "a target registry is honored when no global config is present",
+			config: &Config{
+				Targets: []Target{{Type: "container", Registry: "ghcr.io/cowdogmoo"}},
+			},
+			opts:         BuildOptions{},
+			globalCfg:    nil,
+			wantRegistry: "ghcr.io/cowdogmoo",
+		},
 	}
 
 	for _, tt := range tests {
@@ -619,6 +700,63 @@ func TestApplyTagOverride(t *testing.T) {
 			applyTagOverride(ctx, tt.config, tt.opts)
 			if tt.config.Version != tt.wantVersion {
 				t.Errorf("applyTagOverride() version = %s, want %s", tt.config.Version, tt.wantVersion)
+			}
+		})
+	}
+}
+
+// TestRegistryFromTargets pins the target-selection rule on its own, so a change
+// to which target supplies the registry fails here rather than only through the
+// precedence table.
+func TestRegistryFromTargets(t *testing.T) {
+	tests := []struct {
+		name    string
+		targets []Target
+		want    string
+	}{
+		{
+			name:    "no targets",
+			targets: nil,
+			want:    "",
+		},
+		{
+			name:    "container target without a registry",
+			targets: []Target{{Type: "container"}},
+			want:    "",
+		},
+		{
+			name:    "container target with a registry",
+			targets: []Target{{Type: "container", Registry: "ghcr.io/cowdogmoo"}},
+			want:    "ghcr.io/cowdogmoo",
+		},
+		{
+			name:    "ami target registry is not container registry",
+			targets: []Target{{Type: "ami", Registry: "ghcr.io/cowdogmoo"}},
+			want:    "",
+		},
+		{
+			name: "azure and proxmox targets never contribute",
+			targets: []Target{
+				{Type: "azure", Registry: "azure.example.com"},
+				{Type: "proxmox", Registry: "proxmox.example.com"},
+			},
+			want: "",
+		},
+		{
+			name: "the first container target that sets one wins",
+			targets: []Target{
+				{Type: "container"},
+				{Type: "container", Registry: "ghcr.io/first"},
+				{Type: "container", Registry: "ghcr.io/second"},
+			},
+			want: "ghcr.io/first",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := registryFromTargets(tt.targets); got != tt.want {
+				t.Errorf("registryFromTargets() = %q, want %q", got, tt.want)
 			}
 		})
 	}

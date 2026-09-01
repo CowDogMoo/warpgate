@@ -153,11 +153,37 @@ func applyArchitectureOverrides(config *Config, opts BuildOptions, globalCfg *co
 	}
 }
 
-// applyRegistryOverride applies registry override to the build config
+// registryFromTargets returns the registry declared by the first container
+// target that sets one. Registry is a container-specific target field, so other
+// target types never contribute: an AMI or Proxmox build must not inherit a
+// container registry.
+func registryFromTargets(targets []Target) string {
+	for i := range targets {
+		if targets[i].Type == "container" && targets[i].Registry != "" {
+			return targets[i].Registry
+		}
+	}
+	return ""
+}
+
+// applyRegistryOverride resolves the registry the image name is composed from.
+//
+// Precedence is --registry, then the template's targets[].registry, then
+// registry.default from the global config. Config.Registry carries no yaml tag,
+// so a template can only reach it through a target; before that path existed a
+// template declaring ghcr.io/org fell through to the bare global default and
+// pushed to a repository one path segment short of the intended one.
 func applyRegistryOverride(config *Config, opts BuildOptions, globalCfg *config.Config) {
 	if opts.Registry != "" {
 		config.Registry = opts.Registry
-	} else if config.Registry == "" && globalCfg != nil {
+		return
+	}
+
+	if config.Registry == "" {
+		config.Registry = registryFromTargets(config.Targets)
+	}
+
+	if config.Registry == "" && globalCfg != nil {
 		config.Registry = globalCfg.Registry.Default
 	}
 }

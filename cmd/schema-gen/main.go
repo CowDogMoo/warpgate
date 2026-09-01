@@ -114,7 +114,7 @@ func run() error {
 				map[string]interface{}{
 					"type":      "container",
 					"platforms": []string{"linux/amd64", "linux/arm64"},
-					"registry":  "ghcr.io/example/repo",
+					"registry":  "ghcr.io/example",
 					"tags":      []string{"latest", "v1.0.0"},
 					"push":      false,
 				},
