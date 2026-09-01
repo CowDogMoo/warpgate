@@ -1910,3 +1910,82 @@ func TestApplyProxmoxCLIOverrides_SkipsNonProxmoxTargets(t *testing.T) {
 		t.Errorf("CLI override leaked into non-proxmox target: got %q", cfg.Targets[0].Node)
 	}
 }
+
+func TestApplyTemplatePublishDefaults(t *testing.T) {
+	t.Parallel()
+
+	containerTargets := func(target builder.Target) []builder.Target {
+		return []builder.Target{target}
+	}
+
+	tests := []struct {
+		name         string
+		targets      []builder.Target
+		opts         buildOptions
+		wantRegistry string
+		wantPush     bool
+	}{
+		{
+			name:    "template declares nothing",
+			targets: containerTargets(builder.Target{Type: "container"}),
+		},
+		{
+			name:         "template registry fills an unset flag",
+			targets:      containerTargets(builder.Target{Type: "container", Registry: "ghcr.io/cowdogmoo"}),
+			wantRegistry: "ghcr.io/cowdogmoo",
+		},
+		{
+			name:         "registry flag wins over the template",
+			targets:      containerTargets(builder.Target{Type: "container", Registry: "ghcr.io/cowdogmoo"}),
+			opts:         buildOptions{registry: "ghcr.io/override"},
+			wantRegistry: "ghcr.io/override",
+		},
+		{
+			name:         "template push enables a push",
+			targets:      containerTargets(builder.Target{Type: "container", Registry: "ghcr.io/cowdogmoo", Push: true}),
+			wantRegistry: "ghcr.io/cowdogmoo",
+			wantPush:     true,
+		},
+		{
+			name:         "push-digest flag is not upgraded to push",
+			targets:      containerTargets(builder.Target{Type: "container", Registry: "ghcr.io/cowdogmoo", Push: true}),
+			opts:         buildOptions{pushDigest: true},
+			wantRegistry: "ghcr.io/cowdogmoo",
+			wantPush:     false,
+		},
+		{
+			name:    "ami target contributes neither",
+			targets: containerTargets(builder.Target{Type: "ami", Registry: "ghcr.io/cowdogmoo", Push: true}),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := tt.opts
+			cfg := &builder.Config{Targets: tt.targets}
+			applyTemplatePublishDefaults(context.Background(), cfg, &opts)
+
+			if opts.registry != tt.wantRegistry {
+				t.Errorf("registry = %q, want %q", opts.registry, tt.wantRegistry)
+			}
+			if opts.push != tt.wantPush {
+				t.Errorf("push = %v, want %v", opts.push, tt.wantPush)
+			}
+		})
+	}
+}
+
+// TestApplyTemplatePublishDefaultsNilConfig covers the dry-run path where no
+// configuration was loaded.
+func TestApplyTemplatePublishDefaultsNilConfig(t *testing.T) {
+	t.Parallel()
+
+	opts := buildOptions{}
+	applyTemplatePublishDefaults(context.Background(), nil, &opts)
+
+	if opts.registry != "" || opts.push {
+		t.Errorf("nil config changed options: registry=%q push=%v", opts.registry, opts.push)
+	}
+}

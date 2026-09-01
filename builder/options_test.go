@@ -761,3 +761,57 @@ func TestRegistryFromTargets(t *testing.T) {
 		})
 	}
 }
+
+func TestTemplatePublishDefaults(t *testing.T) {
+	tests := []struct {
+		name         string
+		targets      []Target
+		wantRegistry string
+		wantPush     bool
+	}{
+		{
+			name:    "no targets",
+			targets: nil,
+		},
+		{
+			name:    "container target declares neither",
+			targets: []Target{{Type: "container"}},
+		},
+		{
+			name:         "container target declares both",
+			targets:      []Target{{Type: "container", Registry: "ghcr.io/cowdogmoo", Push: true}},
+			wantRegistry: "ghcr.io/cowdogmoo",
+			wantPush:     true,
+		},
+		{
+			name:     "push without a registry is reported as declared",
+			targets:  []Target{{Type: "container", Push: true}},
+			wantPush: true,
+		},
+		{
+			name:    "ami target push is not a container push",
+			targets: []Target{{Type: "ami", Registry: "ghcr.io/cowdogmoo", Push: true}},
+		},
+		{
+			name: "any container target requesting a push is enough",
+			targets: []Target{
+				{Type: "container", Registry: "ghcr.io/first"},
+				{Type: "container", Push: true},
+			},
+			wantRegistry: "ghcr.io/first",
+			wantPush:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry, push := TemplatePublishDefaults(tt.targets)
+			if registry != tt.wantRegistry {
+				t.Errorf("TemplatePublishDefaults() registry = %q, want %q", registry, tt.wantRegistry)
+			}
+			if push != tt.wantPush {
+				t.Errorf("TemplatePublishDefaults() push = %v, want %v", push, tt.wantPush)
+			}
+		})
+	}
+}

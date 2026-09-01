@@ -87,15 +87,24 @@ func (v *Validator) validateKeyValueFormats(opts BuildCLIOptions) error {
 	return nil
 }
 
+// ValidatePushDependencies reports whether the options name a registry to push
+// to. It is separate from [Validator.ValidateBuildOptions] because a template's
+// targets[].registry can supply the registry, and the template is only loaded
+// after the flags have been validated. Callers run it once the template's
+// publishing defaults have been resolved into the options.
+func (v *Validator) ValidatePushDependencies(opts BuildCLIOptions) error {
+	if (opts.Push || opts.PushDigest) && opts.Registry == "" {
+		return fmt.Errorf("--push/--push-digest requires a registry: pass --registry or set targets[].registry in the template")
+	}
+
+	return nil
+}
+
 // validateOptionDependencies validates that dependent options are correctly specified.
 func (v *Validator) validateOptionDependencies(opts BuildCLIOptions) error {
 	// Validate that --push and --push-digest are mutually exclusive
 	if opts.Push && opts.PushDigest {
 		return fmt.Errorf("--push and --push-digest are mutually exclusive: use --push-digest for digest-only push, or --push for tagged push")
-	}
-
-	if (opts.Push || opts.PushDigest) && opts.Registry == "" {
-		return fmt.Errorf("--push/--push-digest requires --registry to be specified")
 	}
 
 	if opts.SaveDigests && !opts.Push && !opts.PushDigest {

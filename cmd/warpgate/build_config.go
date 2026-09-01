@@ -65,6 +65,28 @@ func buildOptsToCliOpts(args []string, opts *buildOptions) cli.BuildCLIOptions {
 	}
 }
 
+// applyTemplatePublishDefaults fills in publishing options that the template's
+// container targets declare and the command line left unset. Flags win: the
+// template only supplies what --registry and --push/--push-digest did not, so
+// resolution never changes the meaning of an explicit flag.
+func applyTemplatePublishDefaults(ctx context.Context, buildConfig *builder.Config, opts *buildOptions) {
+	if buildConfig == nil {
+		return
+	}
+
+	registry, push := builder.TemplatePublishDefaults(buildConfig.Targets)
+
+	if opts.registry == "" && registry != "" {
+		opts.registry = registry
+		logging.DebugContext(ctx, "Using registry declared by the template target: %s", registry)
+	}
+
+	if push && !opts.push && !opts.pushDigest {
+		opts.push = true
+		logging.InfoContext(ctx, "Push enabled by the template target (targets[].push)")
+	}
+}
+
 // loadBuildConfig loads configuration from template, git, or file
 func loadBuildConfig(ctx context.Context, args []string, opts *buildOptions) (*builder.Config, error) {
 	variables, err := templates.ParseVariables(opts.vars, opts.varFiles)
