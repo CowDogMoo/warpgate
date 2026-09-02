@@ -330,6 +330,30 @@ func (s *BuildService) executeMultiArchBuild(ctx context.Context, config *Config
 	return results, nil
 }
 
+// pushAdditionalTags publishes the extra references the template declared for an
+// image. A digest push publishes no tag at all, so the extra references are
+// skipped there instead of being pushed as tags the caller asked not to create.
+func pushAdditionalTags(ctx context.Context, refs []string, registry string, pushDigest bool, bldr ContainerBuilder) error {
+	if len(refs) == 0 {
+		return nil
+	}
+
+	if pushDigest {
+		logging.InfoContext(ctx, "Skipping %d additional tag(s): --push-digest publishes by digest, not by tag", len(refs))
+		return nil
+	}
+
+	for _, ref := range refs {
+		logging.InfoContext(ctx, "Pushing additional tag: %s", ref)
+
+		if _, err := bldr.Push(ctx, ref, registry); err != nil {
+			return fmt.Errorf("failed to push additional tag %q: %w", ref, err)
+		}
+	}
+
+	return nil
+}
+
 // pushSingleArch pushes a single architecture image
 func (s *BuildService) pushSingleArch(ctx context.Context, config *Config, result BuildResult, bldr ContainerBuilder, opts BuildOptions) error {
 	logging.InfoContext(ctx, "Pushing to registry: %s", opts.Registry)
@@ -342,6 +366,10 @@ func (s *BuildService) pushSingleArch(ctx context.Context, config *Config, resul
 	digest, err := pushFn(ctx, result.ImageRef, opts.Registry)
 	if err != nil {
 		return fmt.Errorf("failed to push image: %w", err)
+	}
+
+	if err := pushAdditionalTags(ctx, result.AdditionalRefs, opts.Registry, opts.PushDigest, bldr); err != nil {
+		return err
 	}
 
 	// Use the digest from Push if available, otherwise fall back to result.Digest

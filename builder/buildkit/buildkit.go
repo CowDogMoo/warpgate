@@ -1022,6 +1022,53 @@ func (b *BuildKitBuilder) applyPlatformFix(ctx context.Context, imageName string
 	return nil
 }
 
+// applyAdditionalTags tags the built image with every reference the template
+// declares beyond the version it was built as, and returns the references it
+// created. It runs after the platform fix so the extra tags point at the
+// corrected image rather than the one BuildKit exported.
+func (b *BuildKitBuilder) applyAdditionalTags(ctx context.Context, imageName string, cfg builder.Config) ([]string, error) {
+	refs := builder.AdditionalTagRefs(cfg)
+
+	for _, ref := range refs {
+		if err := b.Tag(ctx, imageName, ref); err != nil {
+			return nil, fmt.Errorf("failed to tag image as %q: %w", ref, err)
+		}
+
+		logging.InfoContext(ctx, "Tagged image as %s", ref)
+	}
+
+	return refs, nil
+}
+
+// finalizeImage turns a solved build into a result: it loads the exported image
+// into Docker, corrects its platform metadata, applies the tags the template
+// declares, and reads back the digest. The LLB and Dockerfile paths share every
+// step and differ only in the platform they built for and the notes they report.
+func (b *BuildKitBuilder) finalizeImage(ctx context.Context, imageTarPath, imageName string, cfg builder.Config, platform string, startTime time.Time, notes []string) (*builder.BuildResult, error) {
+	if err := b.loadAndTagImage(ctx, imageTarPath, imageName); err != nil {
+		return nil, err
+	}
+
+	if err := b.applyPlatformFix(ctx, imageName, cfg); err != nil {
+		return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
+	}
+
+	additionalRefs, err := b.applyAdditionalTags(ctx, imageName, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &builder.BuildResult{
+		ImageRef:       imageName,
+		AdditionalRefs: additionalRefs,
+		Digest:         b.getLocalImageDigest(ctx, imageName),
+		Architecture:   extractArchFromPlatform(platform),
+		Platform:       platform,
+		Duration:       time.Since(startTime).String(),
+		Notes:          notes,
+	}, nil
+}
+
 // getPlatformString extracts platform string from config
 func getPlatformString(cfg builder.Config) string {
 	switch {
@@ -1241,10 +1288,7 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 
 	logging.DebugContext(ctx, "LLB definition: %d bytes", len(def.Def))
 
-	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
-	if cfg.Registry != "" {
-		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
-	}
+	imageName := builder.PrimaryImageRef(cfg)
 
 	imageTarPath, err := createTempImage()
 	if err != nil {
@@ -1291,27 +1335,8 @@ func (b *BuildKitBuilder) Build(ctx context.Context, cfg builder.Config) (*build
 		return nil, fmt.Errorf("build failed: %w", err)
 	}
 
-	if err := b.loadAndTagImage(ctx, imageTarPath, imageName); err != nil {
-		return nil, err
-	}
-
-	if err := b.applyPlatformFix(ctx, imageName, cfg); err != nil {
-		return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
-	}
-
-	digest := b.getLocalImageDigest(ctx, imageName)
-
-	duration := time.Since(startTime)
-	platform := getPlatformString(cfg)
-
-	return &builder.BuildResult{
-		ImageRef:     imageName,
-		Digest:       digest,
-		Architecture: extractArchFromPlatform(platform),
-		Platform:     platform,
-		Duration:     duration.String(),
-		Notes:        []string{"Built with native BuildKit LLB", "Image loaded to Docker"},
-	}, nil
+	return b.finalizeImage(ctx, imageTarPath, imageName, cfg, getPlatformString(cfg), startTime,
+		[]string{"Built with native BuildKit LLB", "Image loaded to Docker"})
 }
 
 // fixedWriteCloser returns a factory function for creating file-based WriteClosers.
@@ -1903,10 +1928,7 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 	startTime := time.Now()
 	logging.InfoContext(ctx, "Building image from Dockerfile: %s (native BuildKit)", cfg.Name)
 
-	imageName := fmt.Sprintf("%s:%s", cfg.Name, cfg.Version)
-	if cfg.Registry != "" {
-		imageName = fmt.Sprintf("%s/%s", cfg.Registry, imageName)
-	}
+	imageName := builder.PrimaryImageRef(cfg)
 
 	frontendAttrs, localMounts, err := dockerfileSolveInputs(cfg)
 	if err != nil {
@@ -1956,26 +1978,8 @@ func (b *BuildKitBuilder) BuildDockerfile(ctx context.Context, cfg builder.Confi
 		return nil, fmt.Errorf("dockerfile build failed: %w", err)
 	}
 
-	if err := b.loadAndTagImage(ctx, imageTarPath, imageName); err != nil {
-		return nil, err
-	}
-
-	if err := b.applyPlatformFix(ctx, imageName, cfg); err != nil {
-		return nil, fmt.Errorf("failed to fix image platform metadata: %w", err)
-	}
-
-	digest := b.getLocalImageDigest(ctx, imageName)
-
-	duration := time.Since(startTime)
-
-	return &builder.BuildResult{
-		ImageRef:     imageName,
-		Digest:       digest,
-		Architecture: cfg.Architectures[0],
-		Platform:     fmt.Sprintf("linux/%s", cfg.Architectures[0]),
-		Duration:     duration.String(),
-		Notes:        []string{"Built from Dockerfile with native BuildKit", "Image loaded to Docker"},
-	}, nil
+	return b.finalizeImage(ctx, imageTarPath, imageName, cfg, fmt.Sprintf("linux/%s", cfg.Architectures[0]), startTime,
+		[]string{"Built from Dockerfile with native BuildKit", "Image loaded to Docker"})
 }
 
 // Close releases resources and closes connections to BuildKit and Docker daemons.

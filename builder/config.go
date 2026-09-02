@@ -643,6 +643,10 @@ type BuildResult struct {
 	// ImageRef is the image reference for container builds
 	ImageRef string `json:"image_ref,omitempty"`
 
+	// AdditionalRefs are the extra references the image was tagged with, one
+	// per tag the container targets declare beyond the version in ImageRef
+	AdditionalRefs []string `json:"additional_refs,omitempty"`
+
 	// Digest is the image digest for container builds (used for multi-arch manifests)
 	Digest string `json:"digest,omitempty"`
 

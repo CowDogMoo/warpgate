@@ -103,7 +103,6 @@ func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, glob
 	applyAMITargetOverrides(config, opts)
 	applyLabelsAndBuildArgs(ctx, config, opts)
 	applyCacheOptions(config, opts)
-	warnUnappliedTargetTags(ctx, config)
 
 	return nil
 }
@@ -115,24 +114,6 @@ func applyTagOverride(ctx context.Context, config *Config, opts BuildOptions) {
 	}
 	config.Version = opts.Tags[0]
 	logging.DebugContext(ctx, "Overriding version with tag: %s", config.Version)
-}
-
-// warnUnappliedTargetTags warns about tags a container target declares that the
-// build cannot apply. The image carries the single tag in config.Version, set by
-// the template's version field or overridden by --tag, so any target tag naming
-// something else is dropped. Warning keeps that loss visible instead of leaving
-// the template to look like it published tags it never did.
-func warnUnappliedTargetTags(ctx context.Context, config *Config) {
-	for i := range config.Targets {
-		if config.Targets[i].Type != "container" {
-			continue
-		}
-		for _, tag := range config.Targets[i].Tags {
-			if tag != config.Version {
-				logging.WarnContext(ctx, "Target tag %q is not applied: the image is tagged %q from the version field (override with --tag)", tag, config.Version)
-			}
-		}
-	}
 }
 
 // applyTargetTypeFilter filters targets based on the target type override

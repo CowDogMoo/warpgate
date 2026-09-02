@@ -56,6 +56,10 @@ func (f *OutputFormatter) DisplayBuildResult(ctx context.Context, result *builde
 		logging.InfoContext(ctx, "Image: %s", result.ImageRef)
 	}
 
+	for _, ref := range result.AdditionalRefs {
+		logging.InfoContext(ctx, "Also tagged: %s", ref)
+	}
+
 	if result.AMIID != "" {
 		logging.InfoContext(ctx, "AMI ID: %s", result.AMIID)
 		logging.InfoContext(ctx, "Region: %s", result.Region)
