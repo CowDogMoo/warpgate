@@ -28,6 +28,7 @@ import (
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/cowdogmoo/warpgate/v3/manifests"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -68,6 +69,10 @@ func (m *MockContainerBuilder) Close() error {
 func (m *MockContainerBuilder) Remove(ctx context.Context, imageRef string) error {
 	args := m.Called(ctx, imageRef)
 	return args.Error(0)
+}
+
+func (m *MockContainerBuilder) CreateAndPushManifest(_ context.Context, _ string, _ []manifests.ManifestEntry) error {
+	return nil
 }
 
 func (m *MockContainerBuilder) SetCacheOptions(ctx context.Context, cacheFrom, cacheTo []string) {

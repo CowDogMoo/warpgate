@@ -45,7 +45,15 @@ func PrimaryImageRef(cfg Config) string {
 // declare beyond the version the image already carries. Order follows the
 // template; the version itself and any repeat are dropped so no image is tagged
 // twice with the same reference.
+//
+// A configuration with SkipTargetTags set declares none: the per-architecture
+// images of a multi-arch build are components tagged by architecture, and the
+// template's tags name the manifest list that unites them.
 func AdditionalTagRefs(cfg Config) []string {
+	if cfg.SkipTargetTags {
+		return nil
+	}
+
 	var refs []string
 	seen := map[string]bool{cfg.Version: true}
 
