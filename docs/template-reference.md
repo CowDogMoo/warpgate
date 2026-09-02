@@ -318,6 +318,9 @@ targets:
       - linux/amd64
       - linux/arm64
     registry: ghcr.io/myorg
+    tags:
+      - latest
+      - v1.0.0
     push: true
 ```
 
@@ -337,10 +340,11 @@ targets:
 
 **Tagging:**
 
-The image tag comes from the template's top-level `version` field, or from
-`--tag` when that is passed. A `tags` list on the target is not applied to the
-built image, and warpgate warns for every entry naming something other than the
-resolved version.
+The image is built as the top-level `version` (or `--tag` when that is passed),
+then tagged with every entry in the target's `tags` list, so a single build can
+publish `v1.0.0` and `latest` together. Entries repeating the version are
+skipped, and a push publishes each tag in turn. `--push-digest` publishes by
+digest and applies no tags at all.
 
 ### AMI Target
 
@@ -684,6 +688,9 @@ targets:
       - linux/amd64
       - linux/arm64
     registry: ghcr.io/myorg
+    tags:
+      - latest
+      - v1.0.0
     push: false
 ```
 

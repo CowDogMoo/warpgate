@@ -27,11 +27,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/builder"
+	"github.com/cowdogmoo/warpgate/v3/logging"
 	"github.com/cowdogmoo/warpgate/v3/templates"
 )
 
@@ -837,5 +839,29 @@ func TestDisplayTemplateList_LongDescription(t *testing.T) {
 	// Verify description is truncated (should contain "...")
 	if !strings.Contains(output, "...") {
 		t.Errorf("DisplayTemplateList() long description not truncated")
+	}
+}
+
+func TestDisplayBuildResultAdditionalRefs(t *testing.T) {
+	t.Parallel()
+
+	buf := &bytes.Buffer{}
+	logger := logging.NewCustomLogger(slog.LevelInfo)
+	logger.ConsoleWriter = buf
+	ctx := logging.WithLogger(context.Background(), logger)
+
+	result := &builder.BuildResult{
+		ImageRef:       "ghcr.io/org/image:v1.0.0",
+		AdditionalRefs: []string{"ghcr.io/org/image:latest", "ghcr.io/org/image:stable"},
+		Duration:       "2m30s",
+	}
+
+	NewOutputFormatter("text").DisplayBuildResult(ctx, result)
+
+	out := buf.String()
+	for _, ref := range append([]string{result.ImageRef}, result.AdditionalRefs...) {
+		if !strings.Contains(out, ref) {
+			t.Errorf("expected the output to report %q, got: %s", ref, out)
+		}
 	}
 }

@@ -73,6 +73,9 @@ type ManifestBuild struct {
 	// ImageRef is the full image reference for container builds
 	ImageRef string `json:"image_ref,omitempty"`
 
+	// AdditionalRefs are the extra references the image was tagged with
+	AdditionalRefs []string `json:"additional_refs,omitempty"`
+
 	// Digest is the SHA256 digest for container builds
 	Digest string `json:"digest,omitempty"`
 
@@ -111,14 +114,15 @@ func NewBuildManifest(config *Config, results []BuildResult, duration time.Durat
 
 	for _, result := range results {
 		build := ManifestBuild{
-			Platform:     result.Platform,
-			Architecture: result.Architecture,
-			ImageRef:     result.ImageRef,
-			Digest:       result.Digest,
-			AMIID:        result.AMIID,
-			Region:       result.Region,
-			Duration:     result.Duration,
-			Notes:        result.Notes,
+			Platform:       result.Platform,
+			Architecture:   result.Architecture,
+			ImageRef:       result.ImageRef,
+			AdditionalRefs: result.AdditionalRefs,
+			Digest:         result.Digest,
+			AMIID:          result.AMIID,
+			Region:         result.Region,
+			Duration:       result.Duration,
+			Notes:          result.Notes,
 		}
 
 		// Determine build type from result fields

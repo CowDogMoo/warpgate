@@ -37,6 +37,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -8528,4 +8529,221 @@ func TestBuildDockerfile_ExportNameKeepsTargetRegistry(t *testing.T) {
 	if name := got.Exports[0].Attrs["name"]; name != want {
 		t.Errorf("exported image name = %q, want %q", name, want)
 	}
+}
+
+func TestApplyAdditionalTags(t *testing.T) {
+	type tagCall struct {
+		source string
+		target string
+	}
+
+	tests := []struct {
+		name      string
+		cfg       builder.Config
+		tagErr    error
+		wantCalls []tagCall
+		wantRefs  []string
+		wantErr   bool
+	}{
+		{
+			name: "no additional tags means no tagging",
+			cfg: builder.Config{
+				Name: "mealie", Version: "v3.24.0", Registry: "ghcr.io/cowdogmoo",
+				Targets: []builder.Target{{Type: "container", Tags: []string{"v3.24.0"}}},
+			},
+		},
+		{
+			name: "each declared tag is applied to the built image",
+			cfg: builder.Config{
+				Name: "mealie", Version: "v3.24.0", Registry: "ghcr.io/cowdogmoo",
+				Targets: []builder.Target{{Type: "container", Tags: []string{"latest", "stable"}}},
+			},
+			wantCalls: []tagCall{
+				{source: "ghcr.io/cowdogmoo/mealie:v3.24.0", target: "ghcr.io/cowdogmoo/mealie:latest"},
+				{source: "ghcr.io/cowdogmoo/mealie:v3.24.0", target: "ghcr.io/cowdogmoo/mealie:stable"},
+			},
+			wantRefs: []string{"ghcr.io/cowdogmoo/mealie:latest", "ghcr.io/cowdogmoo/mealie:stable"},
+		},
+		{
+			name: "a failed tag stops the build",
+			cfg: builder.Config{
+				Name: "mealie", Version: "v3.24.0",
+				Targets: []builder.Target{{Type: "container", Tags: []string{"latest"}}},
+			},
+			tagErr:  fmt.Errorf("no such image"),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls []tagCall
+			mockClient := &MockDockerClient{
+				ImageTagFunc: func(_ context.Context, source, target string) error {
+					calls = append(calls, tagCall{source: source, target: target})
+					return tt.tagErr
+				},
+			}
+			b := &BuildKitBuilder{dockerClient: mockClient}
+
+			refs, err := b.applyAdditionalTags(context.Background(), builder.PrimaryImageRef(tt.cfg), tt.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("applyAdditionalTags() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if !reflect.DeepEqual(refs, tt.wantRefs) {
+				t.Errorf("refs = %v, want %v", refs, tt.wantRefs)
+			}
+			if !reflect.DeepEqual(calls, tt.wantCalls) {
+				t.Errorf("tag calls = %v, want %v", calls, tt.wantCalls)
+			}
+		})
+	}
+}
+
+func TestFinalizeImage(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return mockImage(t, "linux", "amd64"), nil
+	}
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		return "", nil
+	}
+
+	imageTar := filepath.Join(t.TempDir(), "image.tar")
+	if err := os.WriteFile(imageTar, []byte("image"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := builder.Config{
+		Name:          "mealie",
+		Version:       "v3.24.0",
+		Registry:      "ghcr.io/cowdogmoo",
+		Architectures: []string{"amd64"},
+		Targets:       []builder.Target{{Type: "container", Tags: []string{"latest", "v3.24.0"}}},
+	}
+
+	var tagged []string
+	b := &BuildKitBuilder{dockerClient: &MockDockerClient{
+		ImageTagFunc: func(_ context.Context, _, target string) error {
+			tagged = append(tagged, target)
+			return nil
+		},
+	}}
+
+	result, err := b.finalizeImage(context.Background(), imageTar, builder.PrimaryImageRef(cfg), cfg,
+		"linux/amd64", time.Now(), []string{"a note"})
+	if err != nil {
+		t.Fatalf("finalizeImage() error = %v", err)
+	}
+
+	if result.ImageRef != "ghcr.io/cowdogmoo/mealie:v3.24.0" {
+		t.Errorf("ImageRef = %q, want %q", result.ImageRef, "ghcr.io/cowdogmoo/mealie:v3.24.0")
+	}
+	wantRefs := []string{"ghcr.io/cowdogmoo/mealie:latest"}
+	if !reflect.DeepEqual(result.AdditionalRefs, wantRefs) {
+		t.Errorf("AdditionalRefs = %v, want %v", result.AdditionalRefs, wantRefs)
+	}
+	if !reflect.DeepEqual(tagged, wantRefs) {
+		t.Errorf("tagged = %v, want %v", tagged, wantRefs)
+	}
+	if result.Architecture != "amd64" || result.Platform != "linux/amd64" {
+		t.Errorf("platform = %q/%q, want linux/amd64", result.Platform, result.Architecture)
+	}
+	if !reflect.DeepEqual(result.Notes, []string{"a note"}) {
+		t.Errorf("Notes = %v, want [a note]", result.Notes)
+	}
+}
+
+// TestFinalizeImageTagFailure checks a rejected tag fails the build instead of
+// returning a result that claims tags the image does not carry.
+func TestFinalizeImageTagFailure(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+		return mockImage(t, "linux", "amd64"), nil
+	}
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		return "", nil
+	}
+
+	imageTar := filepath.Join(t.TempDir(), "image.tar")
+	if err := os.WriteFile(imageTar, []byte("image"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := builder.Config{
+		Name: "mealie", Version: "v3.24.0", Architectures: []string{"amd64"},
+		Targets: []builder.Target{{Type: "container", Tags: []string{"latest"}}},
+	}
+
+	b := &BuildKitBuilder{dockerClient: &MockDockerClient{
+		ImageTagFunc: func(_ context.Context, _, _ string) error {
+			return fmt.Errorf("no such image")
+		},
+	}}
+
+	_, err := b.finalizeImage(context.Background(), imageTar, builder.PrimaryImageRef(cfg), cfg,
+		"linux/amd64", time.Now(), nil)
+	if err == nil {
+		t.Fatal("expected an error when tagging fails")
+	}
+	if !strings.Contains(err.Error(), "mealie:latest") {
+		t.Errorf("error = %v, want it to name the tag that failed", err)
+	}
+}
+
+// TestFinalizeImageLoadFailures checks the two failures that can happen before
+// tagging are reported rather than swallowed into a partial result.
+func TestFinalizeImageLoadFailures(t *testing.T) {
+	origLoad := daemonLoad
+	origWrite := daemonWrite
+	defer func() { daemonLoad = origLoad; daemonWrite = origWrite }()
+
+	daemonWrite = func(tag name.Tag, img v1.Image, opts ...daemon.Option) (string, error) {
+		return "", nil
+	}
+
+	cfg := builder.Config{Name: "mealie", Version: "v3.24.0", Architectures: []string{"amd64"}}
+
+	t.Run("the exported image cannot be read", func(t *testing.T) {
+		daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+			return mockImage(t, "linux", "amd64"), nil
+		}
+
+		b := &BuildKitBuilder{dockerClient: &MockDockerClient{}}
+		_, err := b.finalizeImage(context.Background(), filepath.Join(t.TempDir(), "missing.tar"),
+			builder.PrimaryImageRef(cfg), cfg, "linux/amd64", time.Now(), nil)
+		if err == nil {
+			t.Fatal("expected an error when the image tar is missing")
+		}
+	})
+
+	t.Run("the platform metadata cannot be corrected", func(t *testing.T) {
+		daemonLoad = func(ref name.Reference, opts ...daemon.Option) (v1.Image, error) {
+			return nil, fmt.Errorf("daemon unreachable")
+		}
+
+		imageTar := filepath.Join(t.TempDir(), "image.tar")
+		if err := os.WriteFile(imageTar, []byte("image"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		b := &BuildKitBuilder{dockerClient: &MockDockerClient{}}
+		_, err := b.finalizeImage(context.Background(), imageTar,
+			builder.PrimaryImageRef(cfg), cfg, "linux/amd64", time.Now(), nil)
+		if err == nil {
+			t.Fatal("expected an error when the platform fix fails")
+		}
+		if !strings.Contains(err.Error(), "platform metadata") {
+			t.Errorf("error = %v, want it to name the platform fix", err)
+		}
+	})
 }

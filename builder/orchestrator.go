@@ -135,7 +135,7 @@ func (bo *BuildOrchestrator) PushMultiArch(ctx context.Context, results []BuildR
 				logging.InfoContext(ctx, "Successfully pushed %s", result.ImageRef)
 			}
 
-			return nil
+			return pushAdditionalTags(ctx, result.AdditionalRefs, registry, pushDigest, builder)
 		})
 	}
 

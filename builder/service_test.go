@@ -1670,3 +1670,111 @@ func TestFindProxmoxTarget(t *testing.T) {
 		t.Fatalf("expected nil when no proxmox target, got %+v", got)
 	}
 }
+
+func TestPushAdditionalTags(t *testing.T) {
+	tests := []struct {
+		name       string
+		refs       []string
+		pushDigest bool
+		wantPushed []string
+		wantErr    bool
+	}{
+		{
+			name: "nothing to push",
+		},
+		{
+			name:       "every additional reference is pushed",
+			refs:       []string{"ghcr.io/cowdogmoo/mealie:stable", "ghcr.io/cowdogmoo/mealie:edge"},
+			wantPushed: []string{"ghcr.io/cowdogmoo/mealie:stable", "ghcr.io/cowdogmoo/mealie:edge"},
+		},
+		{
+			name:       "a digest push publishes no tags",
+			refs:       []string{"ghcr.io/cowdogmoo/mealie:stable"},
+			pushDigest: true,
+		},
+		{
+			name:    "a failed tag push is reported",
+			refs:    []string{"ghcr.io/cowdogmoo/mealie:stable"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var pushed []string
+			bldr := &mockContainerBuilder{
+				pushFunc: func(_ context.Context, imageRef, _ string) (string, error) {
+					pushed = append(pushed, imageRef)
+					if tt.wantErr {
+						return "", fmt.Errorf("registry rejected the push")
+					}
+					return "", nil
+				},
+			}
+
+			err := pushAdditionalTags(context.Background(), tt.refs, "ghcr.io/cowdogmoo", tt.pushDigest, bldr)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("pushAdditionalTags() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && !reflect.DeepEqual(pushed, tt.wantPushed) {
+				t.Errorf("pushed = %v, want %v", pushed, tt.wantPushed)
+			}
+		})
+	}
+}
+
+// TestPushSingleArchPushesAdditionalTags checks the extra references travel with
+// the image through the push path, not just through the builder.
+func TestPushSingleArchPushesAdditionalTags(t *testing.T) {
+	var pushed []string
+	bldr := &mockContainerBuilder{
+		pushFunc: func(_ context.Context, imageRef, _ string) (string, error) {
+			pushed = append(pushed, imageRef)
+			return "sha256:abc", nil
+		},
+	}
+
+	service := NewBuildService(nil, nil)
+	result := BuildResult{
+		ImageRef:       "ghcr.io/cowdogmoo/mealie:v3.24.0",
+		AdditionalRefs: []string{"ghcr.io/cowdogmoo/mealie:latest"},
+		Architecture:   "amd64",
+	}
+
+	err := service.pushSingleArch(context.Background(), &Config{Name: "mealie"}, result, bldr, BuildOptions{Registry: "ghcr.io/cowdogmoo"})
+	if err != nil {
+		t.Fatalf("pushSingleArch() error = %v", err)
+	}
+
+	want := []string{"ghcr.io/cowdogmoo/mealie:v3.24.0", "ghcr.io/cowdogmoo/mealie:latest"}
+	if !reflect.DeepEqual(pushed, want) {
+		t.Errorf("pushed = %v, want %v", pushed, want)
+	}
+}
+
+// TestPushSingleArchAdditionalTagFailure checks a rejected extra tag fails the
+// push rather than being reported as a success on the strength of the first one.
+func TestPushSingleArchAdditionalTagFailure(t *testing.T) {
+	bldr := &mockContainerBuilder{
+		pushFunc: func(_ context.Context, imageRef, _ string) (string, error) {
+			if strings.HasSuffix(imageRef, ":latest") {
+				return "", fmt.Errorf("registry rejected the push")
+			}
+			return "sha256:abc", nil
+		},
+	}
+
+	service := NewBuildService(nil, nil)
+	result := BuildResult{
+		ImageRef:       "ghcr.io/cowdogmoo/mealie:v3.24.0",
+		AdditionalRefs: []string{"ghcr.io/cowdogmoo/mealie:latest"},
+	}
+
+	err := service.pushSingleArch(context.Background(), &Config{Name: "mealie"}, result, bldr, BuildOptions{Registry: "ghcr.io/cowdogmoo"})
+	if err == nil {
+		t.Fatal("expected an error when an additional tag fails to push")
+	}
+	if !strings.Contains(err.Error(), "ghcr.io/cowdogmoo/mealie:latest") {
+		t.Errorf("error = %v, want it to name the tag that failed", err)
+	}
+}
