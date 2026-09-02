@@ -2009,3 +2009,31 @@ func TestPushMultiArchRefusesPartialManifest(t *testing.T) {
 		t.Errorf("published %v, want no manifest at all", got)
 	}
 }
+
+// TestPushMultiArchReportsManifestFailure checks a registry rejecting the
+// manifest fails the push and names the tag that could not be published,
+// instead of reporting a successful build whose release tag does not exist.
+func TestPushMultiArchReportsManifestFailure(t *testing.T) {
+	bldr := &mockContainerBuilder{
+		pushFunc: func(_ context.Context, _, _ string) (string, error) {
+			return "sha256:" + strings.Repeat("e", 64), nil
+		},
+		createManifestFunc: func(manifestName string, _ []manifests.ManifestEntry) error {
+			return fmt.Errorf("registry rejected %s", manifestName)
+		},
+	}
+	svc := NewBuildService(nil, func(_ context.Context) (ContainerBuilder, error) { return bldr, nil })
+
+	results := []BuildResult{
+		{ImageRef: "ghcr.io/cowdogmoo/mealie:amd64", Platform: "linux/amd64"},
+		{ImageRef: "ghcr.io/cowdogmoo/mealie:arm64", Platform: "linux/arm64"},
+	}
+
+	err := svc.Push(context.Background(), multiArchConfig(), results, BuildOptions{Registry: "ghcr.io/cowdogmoo", Push: true})
+	if err == nil {
+		t.Fatal("expected an error when the manifest cannot be published")
+	}
+	if !strings.Contains(err.Error(), "ghcr.io/cowdogmoo/mealie:v3.24.0") {
+		t.Errorf("error = %v, want it to name the tag that failed", err)
+	}
+}
