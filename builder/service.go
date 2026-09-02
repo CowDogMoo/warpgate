@@ -418,11 +418,55 @@ func (s *BuildService) pushMultiArch(ctx context.Context, config *Config, result
 		s.saveDigests(ctx, config.Name, results, opts.DigestDir)
 	}
 
-	// Note: Multi-arch manifest creation and push should be done in the command layer
-	// since it requires platform-specific handling for BuildKit
+	if err := s.publishManifestTags(ctx, config, results, bldr, opts); err != nil {
+		return err
+	}
 
 	logging.InfoContext(ctx, "Successfully pushed multi-arch images to %s", opts.Registry)
-	logging.InfoContext(ctx, "Note: Manifest creation must be done separately in the command layer")
+	return nil
+}
+
+// publishManifestTags publishes the template's version and additional tags as
+// manifest lists spanning the architecture images just pushed. A multi-arch
+// build produces one image per architecture, each tagged with its architecture,
+// so a release tag can only name the list that unites them; tagging one
+// architecture with it would publish a release that resolves to whichever
+// architecture happened to finish last.
+func (s *BuildService) publishManifestTags(ctx context.Context, config *Config, results []BuildResult, bldr ContainerBuilder, opts BuildOptions) error {
+	if opts.PushDigest {
+		logging.InfoContext(ctx, "Skipping manifest tags: --push-digest publishes by digest, not by tag")
+		return nil
+	}
+
+	tagged := *config
+	if tagged.Registry == "" {
+		tagged.Registry = opts.Registry
+	}
+
+	entries, err := CreateManifestEntries(ctx, results)
+	if err != nil {
+		return fmt.Errorf("failed to describe architectures for the manifest: %w", err)
+	}
+
+	// Every architecture has to be describable. A short list would publish a
+	// release tag that silently omits an architecture, and an empty one would
+	// point the tag at an index naming nothing at all: both are worse than
+	// leaving the previous tag in place. The images themselves are pushed by
+	// now, so report what is missing and name the command that finishes the job.
+	if len(entries) != len(results) {
+		return fmt.Errorf("only %d of %d architectures could be described for the manifest: publish the tags with 'warpgate manifests create'",
+			len(entries), len(results))
+	}
+
+	refs := append([]string{PrimaryImageRef(tagged)}, AdditionalTagRefs(tagged)...)
+	for _, ref := range refs {
+		logging.InfoContext(ctx, "Publishing multi-arch manifest: %s", ref)
+
+		if err := bldr.CreateAndPushManifest(ctx, ref, entries); err != nil {
+			return fmt.Errorf("failed to publish manifest %q: %w", ref, err)
+		}
+	}
+
 	return nil
 }
 

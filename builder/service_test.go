@@ -27,11 +27,14 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/cowdogmoo/warpgate/v3/config"
+	"github.com/cowdogmoo/warpgate/v3/manifests"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -44,6 +47,10 @@ type mockContainerBuilder struct {
 	removeFunc          func(ctx context.Context, imageRef string) error
 	closeFunc           func() error
 	setCacheOptionsFunc func(ctx context.Context, cacheFrom, cacheTo []string)
+	createManifestFunc  func(manifestName string, entries []manifests.ManifestEntry) error
+
+	manifestMu sync.Mutex
+	manifests  map[string][]manifests.ManifestEntry
 }
 
 func (m *mockContainerBuilder) Build(ctx context.Context, cfg Config) (*BuildResult, error) {
@@ -92,6 +99,35 @@ func (m *mockContainerBuilder) Close() error {
 		return m.closeFunc()
 	}
 	return nil
+}
+
+func (m *mockContainerBuilder) CreateAndPushManifest(_ context.Context, manifestName string, entries []manifests.ManifestEntry) error {
+	if m.createManifestFunc != nil {
+		return m.createManifestFunc(manifestName, entries)
+	}
+
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+	if m.manifests == nil {
+		m.manifests = map[string][]manifests.ManifestEntry{}
+	}
+	m.manifests[manifestName] = entries
+
+	return nil
+}
+
+// manifestNames returns the manifest list names published so far, sorted.
+func (m *mockContainerBuilder) manifestNames() []string {
+	m.manifestMu.Lock()
+	defer m.manifestMu.Unlock()
+
+	names := make([]string, 0, len(m.manifests))
+	for name := range m.manifests {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	return names
 }
 
 func (m *mockContainerBuilder) SetCacheOptions(ctx context.Context, cacheFrom, cacheTo []string) {
@@ -831,7 +867,7 @@ func TestPush_SingleResult(t *testing.T) {
 		return &mockContainerBuilder{
 			pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
 				pushCalled = true
-				return "sha256:abcdef", nil
+				return "sha256:" + strings.Repeat("c", 64), nil
 			},
 		}, nil
 	}
@@ -862,7 +898,7 @@ func TestPush_MultipleResults(t *testing.T) {
 		return &mockContainerBuilder{
 			pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
 				pushCount.Add(1)
-				return "sha256:abcdef", nil
+				return "sha256:" + strings.Repeat("c", 64), nil
 			},
 		}, nil
 	}
@@ -1110,7 +1146,7 @@ func TestPushSingleArch_SaveDigestDisabled(t *testing.T) {
 
 	err := service.pushSingleArch(context.Background(), buildConfig, result, &mockContainerBuilder{
 		pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
-			return "sha256:abcdef", nil
+			return "sha256:" + strings.Repeat("c", 64), nil
 		},
 	}, buildOpts)
 
@@ -1184,7 +1220,7 @@ func TestPushMultiArch_SaveDigests(t *testing.T) {
 	buildKitCreator := func(ctx context.Context) (ContainerBuilder, error) {
 		return &mockContainerBuilder{
 			pushFunc: func(ctx context.Context, imageRef, registry string) (string, error) {
-				return "sha256:abcdef", nil
+				return "sha256:" + strings.Repeat("c", 64), nil
 			},
 		}, nil
 	}
@@ -1776,5 +1812,200 @@ func TestPushSingleArchAdditionalTagFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ghcr.io/cowdogmoo/mealie:latest") {
 		t.Errorf("error = %v, want it to name the tag that failed", err)
+	}
+}
+
+// recordingBuilder mirrors what the BuildKit builder derives from the config it
+// is handed, so the orchestration under test is exercised rather than stubbed.
+func recordingBuilder(built *[]string, pushed *[]string, mu *sync.Mutex) *mockContainerBuilder {
+	return &mockContainerBuilder{
+		buildFunc: func(_ context.Context, cfg Config) (*BuildResult, error) {
+			result := &BuildResult{
+				ImageRef:       PrimaryImageRef(cfg),
+				AdditionalRefs: AdditionalTagRefs(cfg),
+				Architecture:   cfg.Version,
+				Platform:       cfg.Base.Platform,
+				Digest:         "sha256:" + strings.Repeat("a", 64),
+			}
+
+			mu.Lock()
+			*built = append(*built, result.ImageRef)
+			*built = append(*built, result.AdditionalRefs...)
+			mu.Unlock()
+
+			return result, nil
+		},
+		pushFunc: func(_ context.Context, ref, _ string) (string, error) {
+			mu.Lock()
+			*pushed = append(*pushed, ref)
+			mu.Unlock()
+
+			return "sha256:" + strings.Repeat("b", 64), nil
+		},
+	}
+}
+
+func multiArchConfig() Config {
+	return Config{
+		Name:          "mealie",
+		Version:       "v3.24.0",
+		Registry:      "ghcr.io/cowdogmoo",
+		Architectures: []string{"amd64", "arm64"},
+		Targets:       []Target{{Type: "container", Registry: "ghcr.io/cowdogmoo", Tags: []string{"latest", "v3.24.0"}}},
+	}
+}
+
+// TestMultiArchComponentBuildsSkipTargetTags pins the rule that a per-architecture
+// image is a build component, not a release: it is tagged by architecture, and the
+// template's tags belong on the manifest list that unites the architectures. Tagging
+// them per architecture makes each architecture overwrite the other's :latest, and
+// publishes a release tag that resolves to whichever architecture finished last.
+func TestMultiArchComponentBuildsSkipTargetTags(t *testing.T) {
+	var mu sync.Mutex
+	var built, pushed []string
+
+	bldr := recordingBuilder(&built, &pushed, &mu)
+	svc := NewBuildService(nil, func(_ context.Context) (ContainerBuilder, error) { return bldr, nil })
+
+	results, err := svc.ExecuteContainerBuild(context.Background(), multiArchConfig(), BuildOptions{Registry: "ghcr.io/cowdogmoo"})
+	if err != nil {
+		t.Fatalf("ExecuteContainerBuild() error = %v", err)
+	}
+
+	for _, result := range results {
+		if len(result.AdditionalRefs) != 0 {
+			t.Errorf("architecture %q carries additional refs %v, want none", result.Architecture, result.AdditionalRefs)
+		}
+	}
+
+	sort.Strings(built)
+	want := []string{"ghcr.io/cowdogmoo/mealie:amd64", "ghcr.io/cowdogmoo/mealie:arm64"}
+	if !reflect.DeepEqual(built, want) {
+		t.Errorf("tagged %v, want only the per-architecture references %v", built, want)
+	}
+}
+
+// TestPushMultiArchPublishesManifestTags checks the release tags reach the registry
+// as manifest lists spanning every architecture built.
+func TestPushMultiArchPublishesManifestTags(t *testing.T) {
+	var mu sync.Mutex
+	var built, pushed []string
+
+	bldr := recordingBuilder(&built, &pushed, &mu)
+	svc := NewBuildService(nil, func(_ context.Context) (ContainerBuilder, error) { return bldr, nil })
+	cfg := multiArchConfig()
+	opts := BuildOptions{Registry: "ghcr.io/cowdogmoo", Push: true}
+
+	results, err := svc.ExecuteContainerBuild(context.Background(), cfg, opts)
+	if err != nil {
+		t.Fatalf("ExecuteContainerBuild() error = %v", err)
+	}
+	if err := svc.Push(context.Background(), cfg, results, opts); err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+
+	wantManifests := []string{"ghcr.io/cowdogmoo/mealie:latest", "ghcr.io/cowdogmoo/mealie:v3.24.0"}
+	if got := bldr.manifestNames(); !reflect.DeepEqual(got, wantManifests) {
+		t.Errorf("manifest lists = %v, want %v", got, wantManifests)
+	}
+
+	for name, entries := range bldr.manifests {
+		if len(entries) != 2 {
+			t.Errorf("manifest %s has %d entries, want one per architecture", name, len(entries))
+		}
+	}
+
+	sort.Strings(pushed)
+	wantPushed := []string{"ghcr.io/cowdogmoo/mealie:amd64", "ghcr.io/cowdogmoo/mealie:arm64"}
+	if !reflect.DeepEqual(pushed, wantPushed) {
+		t.Errorf("pushed %v, want only the per-architecture images %v", pushed, wantPushed)
+	}
+}
+
+// TestPushMultiArchDigestPublishesNoTags checks --push-digest stays tagless: it
+// publishes neither an extra tag nor a manifest list naming one.
+func TestPushMultiArchDigestPublishesNoTags(t *testing.T) {
+	var mu sync.Mutex
+	var built, pushed []string
+
+	bldr := recordingBuilder(&built, &pushed, &mu)
+	svc := NewBuildService(nil, func(_ context.Context) (ContainerBuilder, error) { return bldr, nil })
+	cfg := multiArchConfig()
+	opts := BuildOptions{Registry: "ghcr.io/cowdogmoo", PushDigest: true}
+
+	results, err := svc.ExecuteContainerBuild(context.Background(), cfg, opts)
+	if err != nil {
+		t.Fatalf("ExecuteContainerBuild() error = %v", err)
+	}
+	if err := svc.Push(context.Background(), cfg, results, opts); err != nil {
+		t.Fatalf("Push() error = %v", err)
+	}
+
+	if got := bldr.manifestNames(); len(got) != 0 {
+		t.Errorf("manifest lists = %v, want none for a digest push", got)
+	}
+}
+
+// TestPushMultiArchRefusesEmptyManifest checks a tag is never published as an
+// index naming no architecture: leaving the old tag in place beats replacing it
+// with an empty one.
+func TestPushMultiArchRefusesEmptyManifest(t *testing.T) {
+	// A registry answering with something the manifest layer cannot parse leaves
+	// no architecture describable.
+	bldr := &mockContainerBuilder{
+		pushFunc: func(_ context.Context, _, _ string) (string, error) {
+			return "not-a-digest", nil
+		},
+	}
+	svc := NewBuildService(nil, func(_ context.Context) (ContainerBuilder, error) { return bldr, nil })
+
+	results := []BuildResult{
+		{ImageRef: "ghcr.io/cowdogmoo/mealie:amd64", Platform: "linux/amd64"},
+		{ImageRef: "ghcr.io/cowdogmoo/mealie:arm64", Platform: "linux/arm64"},
+	}
+
+	err := svc.Push(context.Background(), multiArchConfig(), results, BuildOptions{Registry: "ghcr.io/cowdogmoo", Push: true})
+	if err == nil {
+		t.Fatal("expected an error rather than an empty manifest list")
+	}
+	if !strings.Contains(err.Error(), "manifests create") {
+		t.Errorf("error = %v, want it to point at the recovery command", err)
+	}
+	if got := bldr.manifestNames(); len(got) != 0 {
+		t.Errorf("published %v, want no manifest at all", got)
+	}
+}
+
+// TestPushMultiArchRefusesPartialManifest checks a manifest is never published
+// while missing an architecture: a release tag that silently covers one of two
+// architectures is as wrong as one covering none.
+func TestPushMultiArchRefusesPartialManifest(t *testing.T) {
+	var describable atomic.Bool
+	bldr := &mockContainerBuilder{
+		pushFunc: func(_ context.Context, _, _ string) (string, error) {
+			// Only the first architecture pushed comes back describable.
+			if describable.CompareAndSwap(false, true) {
+				return "sha256:" + strings.Repeat("d", 64), nil
+			}
+
+			return "not-a-digest", nil
+		},
+	}
+	svc := NewBuildService(nil, func(_ context.Context) (ContainerBuilder, error) { return bldr, nil })
+
+	results := []BuildResult{
+		{ImageRef: "ghcr.io/cowdogmoo/mealie:amd64", Platform: "linux/amd64"},
+		{ImageRef: "ghcr.io/cowdogmoo/mealie:arm64", Platform: "linux/arm64"},
+	}
+
+	err := svc.Push(context.Background(), multiArchConfig(), results, BuildOptions{Registry: "ghcr.io/cowdogmoo", Push: true})
+	if err == nil {
+		t.Fatal("expected an error rather than a manifest missing an architecture")
+	}
+	if !strings.Contains(err.Error(), "1 of 2 architectures") {
+		t.Errorf("error = %v, want it to report how many architectures were describable", err)
+	}
+	if got := bldr.manifestNames(); len(got) != 0 {
+		t.Errorf("published %v, want no manifest at all", got)
 	}
 }

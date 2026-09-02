@@ -343,8 +343,15 @@ targets:
 The image is built as the top-level `version` (or `--tag` when that is passed),
 then tagged with every entry in the target's `tags` list, so a single build can
 publish `v1.0.0` and `latest` together. Entries repeating the version are
-skipped, and a push publishes each tag in turn. `--push-digest` publishes by
-digest and applies no tags at all.
+skipped.
+
+A multi-architecture build tags differently, because there is no single image to
+tag. Each architecture is built and pushed under its own tag (`:amd64`,
+`:arm64`), and a push then publishes `version` and each entry in `tags` as
+manifest lists spanning those architectures. The tags therefore resolve to every
+architecture built rather than to whichever one finished last.
+
+`--push-digest` publishes by digest and applies no tags at all, in either mode.
 
 ### AMI Target
 

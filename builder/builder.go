@@ -97,6 +97,8 @@ package builder
 
 import (
 	"context"
+
+	"github.com/cowdogmoo/warpgate/v3/manifests"
 )
 
 // BuilderCreatorFunc creates a ContainerBuilder instance.
@@ -205,6 +207,18 @@ type ContainerBuilder interface {
 
 	// SetCacheOptions configures external cache sources and destinations.
 	SetCacheOptions(ctx context.Context, cacheFrom, cacheTo []string)
+
+	// CreateAndPushManifest publishes a manifest list uniting per-architecture
+	// images under a single name.
+	//
+	// manifestName is a fully qualified reference (e.g. "ghcr.io/org/img:v1.0.0").
+	// entries describe the architecture images the list spans.
+	//
+	// A multi-architecture build tags each architecture with its own name, so a
+	// release tag can only be published this way.
+	//
+	// Returns an error if the manifest cannot be created or pushed.
+	CreateAndPushManifest(ctx context.Context, manifestName string, entries []manifests.ManifestEntry) error
 }
 
 // AMIBuilder extends Builder with AWS AMI-specific operations.
