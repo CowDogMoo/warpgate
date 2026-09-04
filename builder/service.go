@@ -55,10 +55,7 @@ func NewBuildService(cfg *config.Config, buildKitCreator BuilderCreatorFunc) *Bu
 func (s *BuildService) ExecuteContainerBuild(ctx context.Context, config Config, opts BuildOptions) ([]BuildResult, error) {
 	logging.InfoContext(ctx, "Executing container build")
 
-	// Apply configuration overrides
-	if err := ApplyOverrides(ctx, &config, opts, s.globalConfig); err != nil {
-		return nil, fmt.Errorf("failed to apply overrides: %w", err)
-	}
+	ApplyOverrides(ctx, &config, opts, s.globalConfig)
 
 	bldr, err := s.buildKitCreator(ctx)
 	if err != nil {
@@ -259,6 +256,13 @@ func (s *BuildService) Push(ctx context.Context, config Config, results []BuildR
 		return fmt.Errorf("registry must be specified for push")
 	}
 
+	// Resolve the same overrides the build resolved. ExecuteContainerBuild takes
+	// its Config by value, so --tag, --registry and the resolved architectures
+	// never reach the caller's copy, and the caller passes that unresolved copy
+	// here. Composing manifest names from it published a release under the
+	// template's own version instead of the tag the operator asked for.
+	ApplyOverrides(ctx, &config, opts, s.globalConfig)
+
 	bldr, err := s.buildKitCreator(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create builder for push: %w", err)
@@ -438,11 +442,6 @@ func (s *BuildService) publishManifestTags(ctx context.Context, config *Config, 
 		return nil
 	}
 
-	tagged := *config
-	if tagged.Registry == "" {
-		tagged.Registry = opts.Registry
-	}
-
 	entries, err := CreateManifestEntries(ctx, results)
 	if err != nil {
 		return fmt.Errorf("failed to describe architectures for the manifest: %w", err)
@@ -458,7 +457,7 @@ func (s *BuildService) publishManifestTags(ctx context.Context, config *Config, 
 			len(entries), len(results))
 	}
 
-	refs := append([]string{PrimaryImageRef(tagged)}, AdditionalTagRefs(tagged)...)
+	refs := append([]string{PrimaryImageRef(*config)}, AdditionalTagRefs(*config)...)
 	for _, ref := range refs {
 		logging.InfoContext(ctx, "Publishing multi-arch manifest: %s", ref)
 

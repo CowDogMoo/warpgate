@@ -91,7 +91,13 @@ type BuildOptions struct {
 
 // ApplyOverrides applies CLI/API overrides to a build configuration.
 // Precedence: BuildOptions > Config > Global Config Defaults
-func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, globalCfg *config.Config) error {
+//
+// Every step is an assignment from options already parsed by the caller, so
+// resolution cannot fail and returns nothing. It is also idempotent: each step
+// either assigns the same value again or leaves a field it already resolved
+// alone, which is what lets the push path resolve the same configuration the
+// build resolved rather than trusting the caller to hand over a resolved copy.
+func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, globalCfg *config.Config) {
 	if globalCfg == nil {
 		logging.WarnContext(ctx, "No global configuration provided, some defaults may not be applied")
 	}
@@ -103,8 +109,6 @@ func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, glob
 	applyAMITargetOverrides(config, opts)
 	applyLabelsAndBuildArgs(ctx, config, opts)
 	applyCacheOptions(config, opts)
-
-	return nil
 }
 
 // applyTagOverride applies tag override to set the image version from CLI --tag flag

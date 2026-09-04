@@ -37,7 +37,6 @@ func TestApplyOverrides(t *testing.T) {
 		config    *Config
 		opts      BuildOptions
 		globalCfg *config.Config
-		wantErr   bool
 		checkFunc func(*testing.T, *Config)
 	}{
 		{
@@ -52,7 +51,6 @@ func TestApplyOverrides(t *testing.T) {
 				TargetType: "container",
 			},
 			globalCfg: &config.Config{},
-			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if len(cfg.Targets) != 1 {
 					t.Errorf("Expected 1 target after filter, got %d", len(cfg.Targets))
@@ -71,7 +69,6 @@ func TestApplyOverrides(t *testing.T) {
 				Architectures: []string{"amd64", "arm64"},
 			},
 			globalCfg: &config.Config{},
-			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if len(cfg.Architectures) != 2 {
 					t.Errorf("Expected 2 architectures, got %d", len(cfg.Architectures))
@@ -87,7 +84,6 @@ func TestApplyOverrides(t *testing.T) {
 				Registry: "ghcr.io/myorg",
 			},
 			globalCfg: &config.Config{},
-			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if cfg.Registry != "ghcr.io/myorg" {
 					t.Errorf("Expected registry 'ghcr.io/myorg', got %s", cfg.Registry)
@@ -110,7 +106,6 @@ func TestApplyOverrides(t *testing.T) {
 				},
 			},
 			globalCfg: &config.Config{},
-			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if len(cfg.Labels) != 2 {
 					t.Errorf("Expected 2 labels, got %d", len(cfg.Labels))
@@ -129,7 +124,6 @@ func TestApplyOverrides(t *testing.T) {
 				NoCache: true,
 			},
 			globalCfg: &config.Config{},
-			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if !cfg.NoCache {
 					t.Error("Expected NoCache to be true")
@@ -148,7 +142,6 @@ func TestApplyOverrides(t *testing.T) {
 				InstanceType: "t3.large",
 			},
 			globalCfg: &config.Config{},
-			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if cfg.Targets[0].Region != "us-west-2" {
 					t.Errorf("Expected region 'us-west-2', got %s", cfg.Targets[0].Region)
@@ -163,7 +156,6 @@ func TestApplyOverrides(t *testing.T) {
 			config:    &Config{},
 			opts:      BuildOptions{},
 			globalCfg: nil,
-			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				// Should not error with nil global config
 			},
@@ -177,7 +169,6 @@ func TestApplyOverrides(t *testing.T) {
 				Tags: []string{"v1.2.3"},
 			},
 			globalCfg: &config.Config{},
-			wantErr:   false,
 			checkFunc: func(t *testing.T, cfg *Config) {
 				if cfg.Version != "v1.2.3" {
 					t.Errorf("Expected version 'v1.2.3', got %s", cfg.Version)
@@ -188,11 +179,7 @@ func TestApplyOverrides(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ApplyOverrides(ctx, tt.config, tt.opts, tt.globalCfg)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ApplyOverrides() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+			ApplyOverrides(ctx, tt.config, tt.opts, tt.globalCfg)
 			if tt.checkFunc != nil {
 				tt.checkFunc(t, tt.config)
 			}
