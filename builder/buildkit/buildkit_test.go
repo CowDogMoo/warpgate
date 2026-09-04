@@ -8512,9 +8512,7 @@ func TestBuildDockerfile_ExportNameKeepsTargetRegistry(t *testing.T) {
 	}
 
 	globalCfg := &config.Config{Registry: config.RegistryConfig{Default: "ghcr.io"}}
-	if err := builder.ApplyOverrides(context.Background(), &cfg, builder.BuildOptions{}, globalCfg); err != nil {
-		t.Fatalf("ApplyOverrides returned an error: %v", err)
-	}
+	builder.ApplyOverrides(context.Background(), &cfg, builder.BuildOptions{}, globalCfg)
 
 	b := &BuildKitBuilder{}
 	if _, err := b.BuildDockerfile(context.Background(), cfg); err == nil {

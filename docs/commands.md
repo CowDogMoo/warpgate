@@ -162,7 +162,7 @@ warpgate build myimage --save-digests --digest-dir ./digests
 | `--var-file`               | string   | Load variables from YAML file     |
 | `--push`                   | bool     | Push image to registry            |
 | `--registry`               | string   | Container registry URL            |
-| `--tag`                    | string[] | Additional tags for the image     |
+| `--tag`                    | string[] | Release tag; sets image version   |
 | `--label`                  | string[] | Set image labels (`key=value`)    |
 | `--build-arg`              | string[] | Dockerfile build args             |
 | `--save-digests`           | bool     | Save image digests to files       |
