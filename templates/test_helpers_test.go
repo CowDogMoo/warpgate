@@ -38,6 +38,35 @@ func TestMain(m *testing.M) {
 	os.Exit(runTestMain(m))
 }
 
+// isolateConfigHome gives one test its own config home, seeded with an empty
+// config file, and returns the directory holding it.
+//
+// The package-wide home from TestMain is a single file. Manager.saveConfigValue
+// and Manager.saveTemplatesConfig read it, edit it and write it back, so two
+// tests persisting a source at the same time can read what the other left
+// half-written. That surfaces as "failed to read config: While parsing config:
+// yaml: ... could not find expected ':'".
+//
+// This mutates process-global environment, so a test that calls it must not call
+// t.Parallel(); t.Setenv panics if it does. Serialising these few tests is the
+// price of each having a config file nothing else touches.
+func isolateConfigHome(t *testing.T) string {
+	t.Helper()
+
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	configDir := filepath.Join(configHome, "warpgate")
+	if err := os.MkdirAll(configDir, config.DirPermReadWriteExec); err != nil {
+		t.Fatalf("failed to create isolated config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), nil, config.FilePermReadWrite); err != nil {
+		t.Fatalf("failed to seed isolated config file: %v", err)
+	}
+
+	return configDir
+}
+
 func runTestMain(m *testing.M) int {
 	home, err := os.MkdirTemp("", "warpgate-testhome")
 	if err != nil {
@@ -68,10 +97,32 @@ func runTestMain(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "failed to create isolated config dir: %v\n", err)
 		return 1
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), nil, config.FilePermReadWrite); err != nil {
+	sharedConfig := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(sharedConfig, nil, config.FilePermReadWrite); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to seed isolated config file: %v\n", err)
 		return 1
 	}
 
-	return m.Run()
+	code := m.Run()
+	if code != 0 {
+		return code
+	}
+
+	// This one file is shared by every test in the package, so anything that
+	// writes it is racing every other writer. A test that persists a template
+	// source has to call isolateConfigHome first; the seeded file staying empty
+	// is what proves none of them skipped it.
+	info, err := os.Stat(sharedConfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to stat the shared config file: %v\n", err)
+		return 1
+	}
+	if info.Size() != 0 {
+		fmt.Fprintf(os.Stderr,
+			"a test wrote the package-wide config file %s (%d bytes); call isolateConfigHome(t) in every test that persists a template source\n",
+			sharedConfig, info.Size())
+		return 1
+	}
+
+	return code
 }

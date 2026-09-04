@@ -2724,7 +2724,7 @@ func TestPathValidatorExpandPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestManagerRemoveSourceNotFound(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
 
 	cfg := &config.Config{}
 	cfg.Templates.LocalPaths = []string{"/path/one"}
@@ -3146,7 +3146,8 @@ func TestCreateReadmeInvalidDir(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAddGitRepositoryValidation(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
+
 	ctx := context.Background()
 
 	// Create a temporary config file for viper
@@ -3191,7 +3192,8 @@ func TestAddGitRepositoryValidation(t *testing.T) {
 }
 
 func TestAddLocalPathValidation(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
+
 	ctx := context.Background()
 
 	cfg := &config.Config{}
@@ -3459,6 +3461,8 @@ func TestAddGitRepositoryAutoName(t *testing.T) {
 }
 
 func TestAddGitRepositorySameURLNoError(t *testing.T) {
+	isolateConfigHome(t)
+
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
 			Repositories: map[string]string{
@@ -4398,6 +4402,8 @@ func TestAddLocalPathDuplicate(t *testing.T) {
 }
 
 func TestAddLocalPathNonExistent(t *testing.T) {
+	isolateConfigHome(t)
+
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
 			LocalPaths: []string{},
