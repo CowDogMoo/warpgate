@@ -55,7 +55,6 @@ type BuildRequest struct {
 	Config       Config
 	Architecture string // Target CPU architecture (e.g., "amd64", "arm64")
 	Platform     string // Full platform specification (e.g., "linux/amd64", "linux/arm64/v8")
-	Tag          string // Image tag for this specific build
 }
 
 // BuildMultiArch builds images for multiple architectures in parallel with controlled concurrency.

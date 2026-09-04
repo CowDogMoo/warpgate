@@ -211,7 +211,7 @@ Examples:
 	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.healthCheck, "health-check", false, "Perform registry health check before operations")
 
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsCreateOpts.requireArch, "require-arch", nil, "Required architectures (comma-separated)")
-	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.bestEffort, "best-effort", false, "Create manifest with available architectures")
+	manifestsCreateCmd.Flags().BoolVar(&manifestsCreateOpts.bestEffort, "best-effort", false, "Create manifest from the architectures available, skipping any missing or unreadable")
 
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsCreateOpts.annotations, "annotation", nil, "OCI annotations (key=value, can specify multiple)")
 	manifestsCreateCmd.Flags().StringSliceVar(&manifestsCreateOpts.labels, "label", nil, "OCI labels (key=value, can specify multiple)")

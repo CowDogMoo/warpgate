@@ -79,8 +79,9 @@ func runManifestsCreate(cmd *cobra.Command, _ []string) error {
 func discoverAndValidateDigests(ctx context.Context) ([]manifests.DigestFile, error) {
 	// Discover digest files
 	digestFiles, err := manifests.DiscoverDigestFiles(ctx, manifests.DiscoveryOptions{
-		ImageName: manifestsCreateOpts.name,
-		Directory: manifestsCreateOpts.digestDir,
+		ImageName:  manifestsCreateOpts.name,
+		Directory:  manifestsCreateOpts.digestDir,
+		BestEffort: manifestsCreateOpts.bestEffort,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover digest files: %w", err)

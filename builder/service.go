@@ -25,6 +25,7 @@ package builder
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cowdogmoo/warpgate/v3/config"
 	"github.com/cowdogmoo/warpgate/v3/logging"
@@ -442,19 +443,12 @@ func (s *BuildService) publishManifestTags(ctx context.Context, config *Config, 
 		return nil
 	}
 
+	// The architecture images are pushed by now, so a manifest that cannot be
+	// described leaves the release half-published: name the command that
+	// finishes the job rather than failing silently.
 	entries, err := CreateManifestEntries(ctx, results)
 	if err != nil {
-		return fmt.Errorf("failed to describe architectures for the manifest: %w", err)
-	}
-
-	// Every architecture has to be describable. A short list would publish a
-	// release tag that silently omits an architecture, and an empty one would
-	// point the tag at an index naming nothing at all: both are worse than
-	// leaving the previous tag in place. The images themselves are pushed by
-	// now, so report what is missing and name the command that finishes the job.
-	if len(entries) != len(results) {
-		return fmt.Errorf("only %d of %d architectures could be described for the manifest: publish the tags with 'warpgate manifests create'",
-			len(entries), len(results))
+		return fmt.Errorf("%w; publish the tags with 'warpgate manifests create'", err)
 	}
 
 	refs := append([]string{PrimaryImageRef(*config)}, AdditionalTagRefs(*config)...)
@@ -481,20 +475,29 @@ func (s *BuildService) saveDigests(ctx context.Context, imageName string, result
 	}
 }
 
-// CreateManifestEntries creates manifest entries from build results.
-// The actual manifest creation and push should be done in the command layer
-// since it requires platform-specific handling.
+// CreateManifestEntries describes every build result as a manifest entry. The
+// actual manifest creation and push should be done in the command layer since it
+// requires platform-specific handling.
+//
+// Every result has to be describable. Dropping the one whose digest will not
+// parse would publish a manifest list silently missing an architecture, which is
+// worse than leaving the previous list in place, so an undescribable result
+// fails the whole set instead of shrinking it.
 func CreateManifestEntries(ctx context.Context, results []BuildResult) ([]manifests.ManifestEntry, error) {
 	entries := make([]manifests.ManifestEntry, 0, len(results))
+	var undescribable []string
+
 	for _, result := range results {
 		var imageDigest digest.Digest
 		if result.Digest != "" {
-			var err error
-			imageDigest, err = digest.Parse(result.Digest)
+			parsed, err := digest.Parse(result.Digest)
 			if err != nil {
-				logging.WarnContext(ctx, "Failed to parse digest for %s: %v", result.Architecture, err)
+				name := describeResult(result)
+				logging.WarnContext(ctx, "Failed to parse digest for %s: %v", name, err)
+				undescribable = append(undescribable, name)
 				continue
 			}
+			imageDigest = parsed
 		}
 
 		platformInfo := manifests.ParsePlatform(result.Platform)
@@ -509,5 +512,23 @@ func CreateManifestEntries(ctx context.Context, results []BuildResult) ([]manife
 		})
 	}
 
+	if len(undescribable) > 0 {
+		return nil, fmt.Errorf("only %d of %d architectures could be described for the manifest: %s",
+			len(entries), len(results), strings.Join(undescribable, ", "))
+	}
+
 	return entries, nil
+}
+
+// describeResult names a build result for an error message, preferring the
+// architecture and falling back through the fields that are still set when a
+// push returned nothing usable.
+func describeResult(result BuildResult) string {
+	for _, name := range []string{result.Architecture, result.Platform, result.ImageRef} {
+		if name != "" {
+			return name
+		}
+	}
+
+	return "unknown architecture"
 }

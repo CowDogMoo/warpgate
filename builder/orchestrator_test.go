@@ -132,7 +132,6 @@ func TestBuildMultiArch(t *testing.T) {
 					},
 					Architecture: "amd64",
 					Platform:     "linux/amd64",
-					Tag:          "test-image:1.0.0",
 				},
 				{
 					Config: builder.Config{
@@ -141,7 +140,6 @@ func TestBuildMultiArch(t *testing.T) {
 					},
 					Architecture: "arm64",
 					Platform:     "linux/arm64",
-					Tag:          "test-image:1.0.0",
 				},
 			},
 			mockBuildSetup: func(m *MockContainerBuilder, requests []builder.BuildRequest) {
@@ -169,7 +167,6 @@ func TestBuildMultiArch(t *testing.T) {
 					},
 					Architecture: "amd64",
 					Platform:     "linux/amd64",
-					Tag:          "test-image:1.0.0",
 				},
 				{
 					Config: builder.Config{
@@ -178,7 +175,6 @@ func TestBuildMultiArch(t *testing.T) {
 					},
 					Architecture: "arm64",
 					Platform:     "linux/arm64",
-					Tag:          "test-image:1.0.0",
 				},
 			},
 			mockBuildSetup: func(m *MockContainerBuilder, requests []builder.BuildRequest) {

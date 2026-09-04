@@ -269,7 +269,7 @@ func TestSaveDigestToFile_ThenParse(t *testing.T) {
 	assert.Equal(t, digestStr, df.Digest.String())
 }
 
-func TestDiscoverDigestFiles_WithInvalidFile(t *testing.T) {
+func TestDiscoverDigestFilesBestEffortSkipsUnparseableFile(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
@@ -288,12 +288,14 @@ func TestDiscoverDigestFiles_WithInvalidFile(t *testing.T) {
 	))
 
 	digestFiles, err := DiscoverDigestFiles(context.Background(), DiscoveryOptions{
-		ImageName: "myimage",
-		Directory: tmpDir,
+		ImageName:  "myimage",
+		Directory:  tmpDir,
+		BestEffort: true,
 	})
 
+	// --best-effort is the operator saying a partial manifest is what they want,
+	// so the unreadable architecture is skipped instead of failing the run.
 	require.NoError(t, err)
-	// The invalid file should be skipped, only the valid one returned
 	assert.Len(t, digestFiles, 1)
 	assert.Equal(t, "amd64", digestFiles[0].Architecture)
 }

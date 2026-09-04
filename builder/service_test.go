@@ -240,7 +240,7 @@ func TestCreateManifestEntries(t *testing.T) {
 				},
 			},
 			wantLen: 0,
-			wantErr: false, // Invalid digests are skipped, not errored
+			wantErr: true, // An architecture that cannot be described fails the set
 		},
 		{
 			name:    "empty results",

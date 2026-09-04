@@ -48,6 +48,11 @@ type DigestFile struct {
 type DiscoveryOptions struct {
 	ImageName string
 	Directory string
+
+	// BestEffort keeps discovery going past a digest file that cannot be read.
+	// Skipping one drops that architecture from every manifest built from the
+	// result, so it happens only when the operator asked for a partial manifest.
+	BestEffort bool
 }
 
 // CreationOptions contains options for creating manifests
@@ -70,7 +75,13 @@ type ManifestEntry struct {
 	Variant      string
 }
 
-// DiscoverDigestFiles discovers and parses digest files in the specified directory
+// DiscoverDigestFiles discovers and parses digest files in the specified
+// directory.
+//
+// A digest file that will not parse is an architecture the caller has on disk
+// and cannot publish. Skipping it quietly produces a manifest list missing that
+// architecture, so discovery fails unless BestEffort says a partial manifest was
+// asked for.
 func DiscoverDigestFiles(ctx context.Context, opts DiscoveryOptions) ([]DigestFile, error) {
 	logging.InfoContext(ctx, "Discovering digest files in %s", opts.Directory)
 
@@ -86,13 +97,22 @@ func DiscoverDigestFiles(ctx context.Context, opts DiscoveryOptions) ([]DigestFi
 	}
 
 	digestFiles := make([]DigestFile, 0, len(matches))
+	var unreadable []string
 	for _, path := range matches {
 		df, err := ParseDigestFile(path)
 		if err != nil {
-			logging.WarnContext(ctx, "Skipping invalid digest file %s: %v", path, err)
+			logging.WarnContext(ctx, "Failed to parse digest file %s: %v", path, err)
+			if !opts.BestEffort {
+				unreadable = append(unreadable, filepath.Base(path))
+			}
 			continue
 		}
 		digestFiles = append(digestFiles, df)
+	}
+
+	if len(unreadable) > 0 {
+		return nil, fmt.Errorf("only %d of %d digest files for %s could be read, so a manifest built from them would omit an architecture: %s (use --best-effort to publish a partial manifest)",
+			len(digestFiles), len(matches), opts.ImageName, strings.Join(unreadable, ", "))
 	}
 
 	return digestFiles, nil
