@@ -81,10 +81,11 @@ func (bo *BuildOrchestrator) BuildMultiArch(ctx context.Context, requests []Buil
 			// Use architecture as tag to prevent local image overwrites
 			configCopy.Version = req.Architecture
 
-			// The template's tags name the manifest list that unites the
-			// architectures, so applying them here would have each architecture
-			// overwrite the other's tags locally and race them to the registry.
-			configCopy.SkipTargetTags = true
+			// Every release tag, requested or declared, names the manifest list
+			// that unites the architectures, so applying one here would have each
+			// architecture overwrite the other's tags locally and race them to
+			// the registry.
+			configCopy.SkipReleaseTags = true
 
 			result, err := builder.Build(ctx, configCopy)
 			if err != nil {

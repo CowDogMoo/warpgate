@@ -345,7 +345,13 @@ declares still publish alongside it. Building a template whose `version` is
 `v1.0.0` and whose target declares `tags: [latest]` with `--tag v1.0.1`
 publishes `v1.0.1` and `latest`, and does not publish `v1.0.0`. The declared tags
 are floating aliases meant to point at whatever was built last, while `--tag`
-names this particular release. Repeating the flag applies only its first value.
+names this particular release.
+
+The flag may be repeated. The first value sets the version; every additional
+`--tag` publishes beside it exactly as a declared tag does, so
+`--tag v1.0.1 --tag v1.0` on that same template publishes `v1.0.1`, `v1.0` and
+`latest`. Requested tags are applied before declared ones, and a value repeating
+the version or another tag is published once.
 
 The image is built as the resolved version, then tagged with every entry in the
 target's `tags` list, so a single build can publish `v1.0.1` and `latest`

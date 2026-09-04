@@ -111,13 +111,22 @@ func ApplyOverrides(ctx context.Context, config *Config, opts BuildOptions, glob
 	applyCacheOptions(config, opts)
 }
 
-// applyTagOverride applies tag override to set the image version from CLI --tag flag
+// applyTagOverride resolves the --tag flag. The first value sets the version the
+// release is named after; the rest are published alongside it the way a
+// container target's declared tags are. The flag is a string slice, so dropping
+// everything after the first value silently published fewer tags than asked for.
 func applyTagOverride(ctx context.Context, config *Config, opts BuildOptions) {
 	if len(opts.Tags) == 0 {
 		return
 	}
+
 	config.Version = opts.Tags[0]
+	config.ExtraTags = opts.Tags[1:]
+
 	logging.DebugContext(ctx, "Overriding version with tag: %s", config.Version)
+	if len(config.ExtraTags) > 0 {
+		logging.DebugContext(ctx, "Publishing %d additional requested tag(s): %v", len(config.ExtraTags), config.ExtraTags)
+	}
 }
 
 // applyTargetTypeFilter filters targets based on the target type override

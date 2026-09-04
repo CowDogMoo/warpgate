@@ -41,21 +41,36 @@ func PrimaryImageRef(cfg Config) string {
 	return ImageRef(cfg, cfg.Version)
 }
 
-// AdditionalTagRefs returns a reference for every tag the container targets
-// declare beyond the version the image already carries. Order follows the
-// template; the version itself and any repeat are dropped so no image is tagged
-// twice with the same reference.
+// AdditionalTagRefs returns a reference for every tag the image carries beyond
+// the version: first the extra tags asked for on the command line, then the ones
+// the container targets declare. The version itself and any repeat are dropped
+// so no image is tagged twice with the same reference.
 //
-// A configuration with SkipTargetTags set declares none: the per-architecture
-// images of a multi-arch build are components tagged by architecture, and the
-// template's tags name the manifest list that unites them.
+// A configuration with SkipReleaseTags set carries none of them: the
+// per-architecture images of a multi-arch build are components tagged by
+// architecture, and every release tag names the manifest list that unites them.
 func AdditionalTagRefs(cfg Config) []string {
-	if cfg.SkipTargetTags {
+	if cfg.SkipReleaseTags {
 		return nil
 	}
 
 	var refs []string
 	seen := map[string]bool{cfg.Version: true}
+
+	add := func(tag string) {
+		if tag == "" || seen[tag] {
+			return
+		}
+
+		seen[tag] = true
+		refs = append(refs, ImageRef(cfg, tag))
+	}
+
+	// Requested tags come first: they name this particular run, while the
+	// template's tags are aliases that ride along with it.
+	for _, tag := range cfg.ExtraTags {
+		add(tag)
+	}
 
 	for i := range cfg.Targets {
 		if cfg.Targets[i].Type != "container" {
@@ -63,12 +78,7 @@ func AdditionalTagRefs(cfg Config) []string {
 		}
 
 		for _, tag := range cfg.Targets[i].Tags {
-			if tag == "" || seen[tag] {
-				continue
-			}
-
-			seen[tag] = true
-			refs = append(refs, ImageRef(cfg, tag))
+			add(tag)
 		}
 	}
 

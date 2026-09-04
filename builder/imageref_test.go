@@ -134,3 +134,49 @@ func TestAdditionalTagRefs(t *testing.T) {
 		})
 	}
 }
+
+// TestAdditionalTagRefsDedupesRequestedTags checks the two tag sources merge into
+// one list of distinct references: a requested tag repeating the version, an
+// empty value, a repeat of itself, or a tag the target already declares must not
+// produce a second reference to the same image.
+func TestAdditionalTagRefsDedupesRequestedTags(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Name:      "mealie",
+		Version:   "v9.9.9",
+		Registry:  "ghcr.io/cowdogmoo",
+		ExtraTags: []string{"stable", "v9.9.9", "", "v9.9", "v9.9"},
+		Targets:   []Target{{Type: "container", Tags: []string{"stable", "latest"}}},
+	}
+
+	// Requested tags come first, then the declared ones the request did not
+	// already cover.
+	want := []string{
+		"ghcr.io/cowdogmoo/mealie:stable",
+		"ghcr.io/cowdogmoo/mealie:v9.9",
+		"ghcr.io/cowdogmoo/mealie:latest",
+	}
+	if got := AdditionalTagRefs(cfg); !reflect.DeepEqual(got, want) {
+		t.Errorf("AdditionalTagRefs() = %v, want %v", got, want)
+	}
+}
+
+// TestAdditionalTagRefsSkipsReleaseTagsForComponents checks a per-architecture
+// component build carries neither the declared tags nor the requested ones.
+func TestAdditionalTagRefsSkipsReleaseTagsForComponents(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Name:            "mealie",
+		Version:         "amd64",
+		Registry:        "ghcr.io/cowdogmoo",
+		ExtraTags:       []string{"v9.9.9"},
+		Targets:         []Target{{Type: "container", Tags: []string{"stable"}}},
+		SkipReleaseTags: true,
+	}
+
+	if got := AdditionalTagRefs(cfg); got != nil {
+		t.Errorf("AdditionalTagRefs() = %v, want none for a component build", got)
+	}
+}

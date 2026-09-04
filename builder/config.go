@@ -76,7 +76,8 @@ type Config struct {
 	BuildArgs       map[string]string `yaml:"-" json:"-"` // Build arguments (set by CLI --build-arg flags)
 	NoCache         bool              `yaml:"-" json:"-"` // Disable all caching (set by CLI --no-cache flag)
 	IsLocalTemplate bool              `yaml:"-" json:"-"` // Indicates if loaded from local path (disables caching by default)
-	SkipTargetTags  bool              `yaml:"-" json:"-"` // Suppresses the targets' tag list (set on per-architecture component builds)
+	ExtraTags       []string          `yaml:"-" json:"-"` // Tags requested on the command line beyond the one that set Version
+	SkipReleaseTags bool              `yaml:"-" json:"-"` // Suppresses every release tag, requested or declared (set on per-architecture component builds)
 }
 
 // DockerfileConfig specifies Dockerfile-based build configuration
