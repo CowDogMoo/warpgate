@@ -50,12 +50,9 @@ func TestNewManager(t *testing.T) {
 }
 
 func TestAddGitRepository(t *testing.T) {
+	isolateConfigHome(t)
+
 	// Skip this test if config file doesn't exist (e.g., in CI)
-	// This test requires filesystem persistence which should be an integration test
-	configPath, err := config.ConfigFile("config.yaml")
-	if err != nil || !fileExists(configPath) {
-		t.Skip("Skipping test that requires config file persistence - should be an integration test")
-	}
 
 	tests := []struct {
 		name     string
@@ -121,12 +118,9 @@ func TestAddGitRepository(t *testing.T) {
 }
 
 func TestAddLocalPath(t *testing.T) {
+	isolateConfigHome(t)
+
 	// Skip this test if config file doesn't exist (e.g., in CI)
-	// This test requires filesystem persistence which should be an integration test
-	configPath, err := config.ConfigFile("config.yaml")
-	if err != nil || !fileExists(configPath) {
-		t.Skip("Skipping test that requires config file persistence - should be an integration test")
-	}
 
 	// Create temporary directory for testing
 	tmpDir := t.TempDir()
@@ -179,12 +173,9 @@ func TestAddLocalPath(t *testing.T) {
 }
 
 func TestAddLocalPath_HomePath(t *testing.T) {
+	isolateConfigHome(t)
+
 	// Skip this test if config file doesn't exist (e.g., in CI)
-	// This test requires filesystem persistence which should be an integration test
-	configPath, err := config.ConfigFile("config.yaml")
-	if err != nil || !fileExists(configPath) {
-		t.Skip("Skipping test that requires config file persistence - should be an integration test")
-	}
 
 	// Create a temporary directory
 	tmpDir := t.TempDir()
@@ -201,19 +192,16 @@ func TestAddLocalPath_HomePath(t *testing.T) {
 	ctx := context.Background()
 
 	// Test with existing directory
-	err = manager.AddLocalPath(ctx, tmpDir)
+	err := manager.AddLocalPath(ctx, tmpDir)
 	if err != nil {
 		t.Errorf("AddLocalPath() with valid path error = %v", err)
 	}
 }
 
 func TestRemoveSource_LocalPath(t *testing.T) {
+	isolateConfigHome(t)
+
 	// Skip this test if config file doesn't exist (e.g., in CI)
-	// This test requires filesystem persistence which should be an integration test
-	configPath, err := config.ConfigFile("config.yaml")
-	if err != nil || !fileExists(configPath) {
-		t.Skip("Skipping test that requires config file persistence - should be an integration test")
-	}
 
 	tmpDir := t.TempDir()
 	anotherPath := filepath.Join(tmpDir, "another")
@@ -232,7 +220,7 @@ func TestRemoveSource_LocalPath(t *testing.T) {
 	ctx := context.Background()
 
 	// Remove existing local path
-	err = manager.RemoveSource(ctx, tmpDir)
+	err := manager.RemoveSource(ctx, tmpDir)
 	if err != nil {
 		t.Errorf("RemoveSource() error = %v", err)
 	}
@@ -244,12 +232,9 @@ func TestRemoveSource_LocalPath(t *testing.T) {
 }
 
 func TestRemoveSource_Repository(t *testing.T) {
+	isolateConfigHome(t)
+
 	// Skip this test if config file doesn't exist (e.g., in CI)
-	// This test requires filesystem persistence which should be an integration test
-	configPath, err := config.ConfigFile("config.yaml")
-	if err != nil || !fileExists(configPath) {
-		t.Skip("Skipping test that requires config file persistence - should be an integration test")
-	}
 
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
@@ -265,7 +250,7 @@ func TestRemoveSource_Repository(t *testing.T) {
 	ctx := context.Background()
 
 	// Remove existing repository
-	err = manager.RemoveSource(ctx, "official")
+	err := manager.RemoveSource(ctx, "official")
 	if err != nil {
 		t.Errorf("RemoveSource() error = %v", err)
 	}
@@ -281,6 +266,8 @@ func TestRemoveSource_Repository(t *testing.T) {
 }
 
 func TestRemoveSource_NotFound(t *testing.T) {
+	isolateConfigHome(t)
+
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
 			LocalPaths:   []string{},
@@ -375,7 +362,7 @@ func TestRemoveFromRepositories_NotFound(t *testing.T) {
 }
 
 func TestAddGitRepository_InvalidURL(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
 
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
@@ -395,7 +382,7 @@ func TestAddGitRepository_InvalidURL(t *testing.T) {
 }
 
 func TestAddGitRepository_PlaceholderURL(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
 
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
@@ -415,7 +402,7 @@ func TestAddGitRepository_PlaceholderURL(t *testing.T) {
 }
 
 func TestAddGitRepository_DuplicateName(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
 
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
@@ -438,7 +425,7 @@ func TestAddGitRepository_DuplicateName(t *testing.T) {
 }
 
 func TestAddGitRepository_NilRepositories(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
 
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
@@ -457,7 +444,7 @@ func TestAddGitRepository_NilRepositories(t *testing.T) {
 }
 
 func TestAddLocalPath_Expansion(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
 
 	tmpDir := t.TempDir()
 
@@ -477,13 +464,7 @@ func TestAddLocalPath_Expansion(t *testing.T) {
 }
 
 func TestAddLocalPath_AlreadyExists(t *testing.T) {
-	t.Parallel()
-
-	// Skip if config file doesn't exist
-	configPath, err := config.ConfigFile("config.yaml")
-	if err != nil || !fileExists(configPath) {
-		t.Skip("Skipping test that requires config file persistence")
-	}
+	isolateConfigHome(t)
 
 	tmpDir := t.TempDir()
 
@@ -496,7 +477,7 @@ func TestAddLocalPath_AlreadyExists(t *testing.T) {
 	ctx := context.Background()
 
 	// Adding same path again should not error (warn only)
-	err = manager.AddLocalPath(ctx, tmpDir)
+	err := manager.AddLocalPath(ctx, tmpDir)
 	if err != nil {
 		t.Errorf("AddLocalPath() with duplicate path error = %v, want nil (warn only)", err)
 	}
@@ -508,13 +489,7 @@ func TestAddLocalPath_AlreadyExists(t *testing.T) {
 }
 
 func TestRemoveSource_FromLocalPaths(t *testing.T) {
-	t.Parallel()
-
-	// Skip if config file doesn't exist
-	configPath, err := config.ConfigFile("config.yaml")
-	if err != nil || !fileExists(configPath) {
-		t.Skip("Skipping test that requires config file persistence")
-	}
+	isolateConfigHome(t)
 
 	tmpDir := t.TempDir()
 	keepPath := filepath.Join(tmpDir, "keep")
@@ -531,7 +506,7 @@ func TestRemoveSource_FromLocalPaths(t *testing.T) {
 	manager := NewManager(cfg)
 	ctx := context.Background()
 
-	err = manager.RemoveSource(ctx, removePath)
+	err := manager.RemoveSource(ctx, removePath)
 	if err != nil {
 		t.Errorf("RemoveSource() error = %v", err)
 	}
@@ -545,13 +520,7 @@ func TestRemoveSource_FromLocalPaths(t *testing.T) {
 }
 
 func TestRemoveSource_FromRepos(t *testing.T) {
-	t.Parallel()
-
-	// Skip if config file doesn't exist
-	configPath, err := config.ConfigFile("config.yaml")
-	if err != nil || !fileExists(configPath) {
-		t.Skip("Skipping test that requires config file persistence")
-	}
+	isolateConfigHome(t)
 
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
@@ -565,7 +534,7 @@ func TestRemoveSource_FromRepos(t *testing.T) {
 	manager := NewManager(cfg)
 	ctx := context.Background()
 
-	err = manager.RemoveSource(ctx, "remove")
+	err := manager.RemoveSource(ctx, "remove")
 	if err != nil {
 		t.Errorf("RemoveSource() error = %v", err)
 	}
@@ -579,7 +548,7 @@ func TestRemoveSource_FromRepos(t *testing.T) {
 }
 
 func TestRemoveSource_NotFoundEmpty(t *testing.T) {
-	t.Parallel()
+	isolateConfigHome(t)
 
 	cfg := &config.Config{
 		Templates: config.TemplatesConfig{
