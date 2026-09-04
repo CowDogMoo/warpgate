@@ -48,11 +48,9 @@ func TestCreateBuildRequests(t *testing.T) {
 		require.Len(t, requests, 2)
 		assert.Equal(t, "amd64", requests[0].Architecture)
 		assert.Equal(t, "linux/amd64", requests[0].Platform)
-		assert.Equal(t, "myimage:1.0.0", requests[0].Tag)
 
 		assert.Equal(t, "arm64", requests[1].Architecture)
 		assert.Equal(t, "linux/arm64", requests[1].Platform)
-		assert.Equal(t, "myimage:1.0.0", requests[1].Tag)
 	})
 
 	t.Run("single architecture", func(t *testing.T) {
@@ -65,7 +63,8 @@ func TestCreateBuildRequests(t *testing.T) {
 
 		requests := CreateBuildRequests(ctx, config)
 		require.Len(t, requests, 1)
-		assert.Equal(t, "single:2.0.0", requests[0].Tag)
+		assert.Equal(t, "amd64", requests[0].Architecture)
+		assert.Equal(t, "linux/amd64", requests[0].Platform)
 	})
 
 	t.Run("empty architectures returns no requests", func(t *testing.T) {

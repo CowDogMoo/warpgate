@@ -36,7 +36,6 @@ func CreateBuildRequests(ctx context.Context, buildConfig *Config) []BuildReques
 
 	for _, arch := range buildConfig.Architectures {
 		platform := fmt.Sprintf("linux/%s", arch)
-		tag := fmt.Sprintf("%s:%s", buildConfig.Name, buildConfig.Version)
 
 		archConfig := *buildConfig
 
@@ -48,7 +47,6 @@ func CreateBuildRequests(ctx context.Context, buildConfig *Config) []BuildReques
 			Config:       archConfig,
 			Architecture: arch,
 			Platform:     platform,
-			Tag:          tag,
 		})
 	}
 
