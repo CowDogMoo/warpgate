@@ -1855,19 +1855,21 @@ func multiArchConfig() Config {
 	}
 }
 
-// TestMultiArchComponentBuildsSkipTargetTags pins the rule that a per-architecture
-// image is a build component, not a release: it is tagged by architecture, and the
-// template's tags belong on the manifest list that unites the architectures. Tagging
-// them per architecture makes each architecture overwrite the other's :latest, and
+// TestMultiArchComponentBuildsSkipEveryReleaseTag pins the rule that a
+// per-architecture image is a build component, not a release: it is tagged by
+// architecture, and every release tag — declared by the template or requested with
+// --tag — belongs on the manifest list that unites the architectures. Tagging them
+// per architecture makes each architecture overwrite the other's :latest, and
 // publishes a release tag that resolves to whichever architecture finished last.
-func TestMultiArchComponentBuildsSkipTargetTags(t *testing.T) {
+func TestMultiArchComponentBuildsSkipEveryReleaseTag(t *testing.T) {
 	var mu sync.Mutex
 	var built, pushed []string
 
 	bldr := recordingBuilder(&built, &pushed, &mu)
 	svc := NewBuildService(nil, func(_ context.Context) (ContainerBuilder, error) { return bldr, nil })
 
-	results, err := svc.ExecuteContainerBuild(context.Background(), multiArchConfig(), BuildOptions{Registry: "ghcr.io/cowdogmoo"})
+	opts := BuildOptions{Registry: "ghcr.io/cowdogmoo", Tags: []string{"v9.9.9", "v9.9"}}
+	results, err := svc.ExecuteContainerBuild(context.Background(), multiArchConfig(), opts)
 	if err != nil {
 		t.Fatalf("ExecuteContainerBuild() error = %v", err)
 	}
