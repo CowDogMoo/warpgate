@@ -319,7 +319,7 @@ on:
 **Workflow:**
 
 1. Tag push triggers the workflow
-2. Fetches all tags and sets up Go 1.25.7
+2. Fetches all tags and sets up Go from the version in `go.mod`
 3. Runs goreleaser with `.goreleaser.yaml` config
 4. Builds binaries for:
    - **OS**: linux, darwin
