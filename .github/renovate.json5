@@ -74,22 +74,6 @@
       automergeType: 'pr',
     },
     {
-      description: 'Collapse every Go toolchain version bump (go.mod go/toolchain directives, golang container images, setup-go versions) into a single auto-merging PR. A split bump leaves go.mod and CI on different Go versions, so each partial PR fails govulncheck on its own. Must follow the go modules group so it wins for the go.mod directive.',
-      matchDatasources: [
-        'golang-version',
-        'docker',
-        'github-releases',
-      ],
-      matchPackageNames: [
-        'go',
-        'golang',
-        'actions/go-versions',
-      ],
-      groupName: 'go version',
-      automerge: true,
-      automergeType: 'pr',
-    },
-    {
       description: 'Skip major updates for indirect Go modules — a v2+ major changes the import path, so the bump cannot take effect until a direct dependent imports the new path; go mod tidy strips the requirement and the PR always fails the go-mod-tidy hook (see #1957)',
       matchManagers: [
         'gomod',
