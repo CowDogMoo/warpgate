@@ -1,66 +1,12 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
-    'config:recommended',
-    ':disableRateLimiting',
-    ':dependencyDashboard',
-    ':semanticCommits',
-    ':enablePreCommit',
-    ':automergeDigest',
-    ':automergeBranch',
-    'helpers:pinGitHubActionDigests',
+    'github>CowDogMoo/renovate-config',
+    'github>CowDogMoo/renovate-config:go',
   ],
-  dependencyDashboardLabels: [
-    'renovate-dashboard',
-  ],
-  dependencyDashboardTitle: 'Renovate Dashboard 🤖',
-  suppressNotifications: [
-    'prIgnoreNotification',
-  ],
-  rebaseWhen: 'behind-base-branch',
-  commitBodyTable: true,
-  labels: [
-    'renovate',
-  ],
-  platformAutomerge: true,
-  postUpdateOptions: [
-    'gomodTidy',
-  ],
-  'pre-commit': {
-    enabled: true,
-  },
-  'github-actions': {
-    enabled: true,
-  },
-  gomod: {
-    enabled: true,
-  },
   packageRules: [
     {
-      matchCategories: [
-        'golang',
-      ],
-      enabled: true,
-    },
-    {
-      description: 'Auto merge GitHub Actions updates',
-      matchManagers: [
-        'github-actions',
-      ],
-      matchDatasources: [
-        'github-tags',
-      ],
-      matchUpdateTypes: [
-        'major',
-        'minor',
-        'patch',
-        'digest',
-      ],
-      automerge: true,
-      automergeType: 'pr',
-    },
-    {
-      description: 'Collapse all non-major Go module updates (direct + indirect, including 0.x minors) into a single auto-merging PR. One branch touching go.mod means Renovate PRs cannot conflict with each other; majors are intentionally excluded so they get individual review.',
+      description: 'Collapse all non-major Go module updates (direct + indirect, including 0.x minors) into a single PR. One branch touching go.mod means Renovate PRs cannot conflict with each other; majors are intentionally excluded so they get individual review.',
       matchManagers: [
         'gomod',
       ],
@@ -70,21 +16,6 @@
         'digest',
       ],
       groupName: 'go modules',
-      automerge: true,
-      automergeType: 'pr',
-    },
-    {
-      description: 'Skip major updates for indirect Go modules — a v2+ major changes the import path, so the bump cannot take effect until a direct dependent imports the new path; go mod tidy strips the requirement and the PR always fails the go-mod-tidy hook (see #1957)',
-      matchManagers: [
-        'gomod',
-      ],
-      matchDepTypes: [
-        'indirect',
-      ],
-      matchUpdateTypes: [
-        'major',
-      ],
-      enabled: false,
     },
     {
       description: 'Pin jinzhu/copier — go-proxmox v0.7.1 requires v0.3.4; v0.4.0 breaks Task deep-copy (nil-pointer panic in TestLiveRunner_StopAndTemplate)',
@@ -94,9 +25,4 @@
       enabled: false,
     },
   ],
-  lockFileMaintenance: {
-    enabled: true,
-    automerge: true,
-    automergeType: 'pr',
-  },
 }
