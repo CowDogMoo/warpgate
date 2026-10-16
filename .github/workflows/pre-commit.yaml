@@ -21,95 +21,15 @@ concurrency:
   cancel-in-progress: true
   group: ${{ github.workflow }}-${{ github.ref }}
 
-env:
-  DEBIAN_FRONTEND: noninteractive
-  PYTHON_VERSION: 3.14.8
-  TASK_VERSION: 3.45.5
-  TASK_X_REMOTE_TASKFILES: 1
-
-permissions:
-  actions: read
-  checks: write
-  contents: read
-  pull-requests: write # Allows merge queue updates
-  security-events: write # Required for GitHub Security tab
+permissions: {}
 
 jobs:
-  pre-commit:
-    name: Update pre-commit hooks and run pre-commit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout git repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          check-latest: true
-
-      - name: Install Go tools
-        run: |
-          # Install shfmt
-          go install mvdan.cc/sh/v3/cmd/shfmt@latest
-
-          # Install goimports
-          go install golang.org/x/tools/cmd/goimports@latest
-
-          # Install gocyclo
-          go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
-
-          # Install gocritic, building it against the latest golang.org/x/tools.
-          # The x/tools version pinned by go-critic v0.15.0 cannot type-check
-          # Go 1.27 code, which makes gocritic report false sloppyTypeAssert
-          # and caseOrder findings.
-          gocritic_mod="$(mktemp -d)"
-          (
-            cd "$gocritic_mod"
-            go mod init gocritic-install
-            go get github.com/go-critic/go-critic/cmd/gocritic@latest golang.org/x/tools@latest
-            go install github.com/go-critic/go-critic/cmd/gocritic
-          )
-          rm -rf "$gocritic_mod"
-
-          # Add Go bin directory to PATH
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: latest
-          install-only: true
-
-      - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
-        with:
-          distribution: goreleaser
-          version: latest
-          install-only: true
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential \
-                                  btrfs-progs \
-                                  libgpgme-dev \
-                                  libbtrfs-dev \
-                                  pkg-config
-
-      - name: Install pre-commit
-        run: python3 -m pip install pre-commit
-
-      - name: Setup go-task
-        run: |
-          sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin v${{ env.TASK_VERSION }}
-          task --version
-
-      - name: Run pre-commit
-        run: |
-          task -y pre-commit:run-hooks
+  go-ci:
+    name: Go CI
+    uses: CowDogMoo/renovate-config/.github/workflows/go-ci.yaml@main
+    permissions:
+      contents: read
+    with:
+      tests: false
+      apt-packages: build-essential btrfs-progs libgpgme-dev libbtrfs-dev pkg-config
+      go-installs: github.com/goreleaser/goreleaser/v2@latest

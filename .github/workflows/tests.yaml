@@ -24,39 +24,18 @@ env:
   TASK_X_REMOTE_TASKFILES: 1
 
 permissions:
-  actions: read
-  checks: write
   contents: read
-  pull-requests: write
 
 jobs:
-  tests:
-    name: Run tests and determine code coverage %
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout git repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: go.mod
-          check-latest: true
-
-      - name: Setup git config
-        run: |
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
-
-      - name: Generate the coverage output
-        run: |
-          bash .hooks/run-go-tests.sh coverage
-
-      - name: Send the coverage output
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
-        with:
-          files: coverage-all.out
-          token: ${{ secrets.CODECOV_TOKEN }}
+  go-ci:
+    name: Go CI
+    uses: CowDogMoo/renovate-config/.github/workflows/go-ci.yaml@main
+    permissions:
+      contents: read
+    with:
+      pre-commit: false
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   schema-validation:
     name: Validate JSON schema is up to date
