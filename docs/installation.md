@@ -15,7 +15,7 @@ Comprehensive installation instructions for Warpgate on all platforms.
 
 ### Required
 
-- **Go 1.25+** - For building from source ([install Go](https://go.dev/doc/install))
+- **Go 1.27+** - For building from source ([install Go](https://go.dev/doc/install))
 - **Docker** - Docker daemon with BuildKit support (required for all platforms)
   - [Docker Desktop](https://www.docker.com/products/docker-desktop/) for macOS/Windows
   - [Docker Engine](https://docs.docker.com/engine/install/) for Linux
@@ -230,7 +230,7 @@ containerized version.
 
 - [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
 - WSL2 enabled (recommended)
-- [Go 1.25+](https://go.dev/doc/install) for native installation
+- [Go 1.27+](https://go.dev/doc/install) for native installation
 
 #### Windows: Native Installation
 

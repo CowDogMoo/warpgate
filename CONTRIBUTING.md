@@ -115,7 +115,7 @@ Created a useful Warpgate template? Share it:
 
 ### Prerequisites
 
-- **Go 1.25+** - [Install Go](https://go.dev/doc/install)
+- **Go 1.27+** - [Install Go](https://go.dev/doc/install)
 - **Git** - For version control
 - **GitHub CLI (optional)** - `gh` tool for easier workflows
 - **Task (optional)** - [Install Task](https://taskfile.dev/installation/)
