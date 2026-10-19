@@ -29,7 +29,7 @@ permissions:
 jobs:
   go-ci:
     name: Tests
-    uses: CowDogMoo/renovate-config/.github/workflows/go-ci.yaml@main
+    uses: CowDogMoo/renovate-config/.github/workflows/go-ci.yaml@f5190ad1188e33e5c1ed9f2cebc5de3391f8be93 # main
     permissions:
       contents: read
     with:
