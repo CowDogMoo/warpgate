@@ -14,10 +14,10 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.9
-	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.89.3
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.90.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.339.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.64.4
-	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.67.0
+	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.67.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.79.3
 	github.com/cowdogmoo/bcp v1.1.0
