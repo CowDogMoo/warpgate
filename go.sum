@@ -99,8 +99,8 @@ github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3 h1:NyeuyXkZL476uoAowNActm4XJO1Q
 github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3/go.mod h1:GfoBeKMDJecgRUsGf/0RGdx0NJAh81ObTd922h8pQys=
 github.com/aws/aws-sdk-go-v2/service/signin v1.10.4 h1:tvpDjuUvgKURf3Yk4hOaGbZ4QdY+070OWcA5d6LUv2A=
 github.com/aws/aws-sdk-go-v2/service/signin v1.10.4/go.mod h1:3ibVKg5Ng82Zby8++jELTD2nHxiPk2DJRLEeW/LKp8M=
-github.com/aws/aws-sdk-go-v2/service/ssm v1.79.3 h1:Bv1HWl9obpgDdhmmxts1qMXdfBysJ/Hz2yO1/cdjfNM=
-github.com/aws/aws-sdk-go-v2/service/ssm v1.79.3/go.mod h1:7xwj5dm/jrylbyOAmvBU3YY0CZdY1XgUQDiNwVKyssw=
+github.com/aws/aws-sdk-go-v2/service/ssm v1.80.0 h1:SLexIoImWjXxRUUUEYQSiRmDzOXBpPTEleQz1zCjcdw=
+github.com/aws/aws-sdk-go-v2/service/ssm v1.80.0/go.mod h1:7xwj5dm/jrylbyOAmvBU3YY0CZdY1XgUQDiNwVKyssw=
 github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 h1:ChCtagixSFOxltv0o6E3NT8F7ksvZtZGPwUBynO5Nmk=
 github.com/aws/aws-sdk-go-v2/service/sso v1.38.4/go.mod h1:+FEO9jrVMpc9oN3CdAxJbtlQEu3z8UddDPSedpeM3PY=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 h1:j6c+HA4AoS0EBEjArPjavFEBrucJEryfrQU0TffmACk=
@@ -169,8 +169,8 @@ github.com/distribution/reference v0.6.0 h1:0IXCQ5g4/QMHHkarYzh5l+u8T3t73zM5Qvfr
 github.com/distribution/reference v0.6.0/go.mod h1:BbU0aIcezP1/5jX/8MP0YiH4SdvB5Y4f/wlDRiLyi3E=
 github.com/djherbis/times v1.6.0 h1:w2ctJ92J8fBvWPxugmXIv7Nz7Q3iDMKNx9v5ocVH20c=
 github.com/djherbis/times v1.6.0/go.mod h1:gOHeRAz2h+VJNZ5Gmc/o7iD9k4wW7NMVqieYCY99oc0=
-github.com/docker/cli v29.9.1+incompatible h1:E4YGy7TMkPk7mFsXTVUyjHxVeJdjTDfIS0X4Q0+ioQ0=
-github.com/docker/cli v29.9.1+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
+github.com/docker/cli v29.9.2+incompatible h1:trup/vUxx5uUo2t+87Cd9AmITR+DvKUe4H2tTtZN8FY=
+github.com/docker/cli v29.9.2+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/docker-credential-helpers v0.9.10 h1:LCWwv7UmS7fQVmdKDWeMuureOeY5kkbC5kZfkzxkS6k=
 github.com/docker/docker-credential-helpers v0.9.10/go.mod h1:v1S+hepowrQXITkEfw6o4+BMbGot02wiKpzWhGUZK6c=
 github.com/docker/go-connections v0.8.2 h1:9d9DEokx5W7qlr0shkFXIxEA7+TTD+llwzcykSlxMNc=
