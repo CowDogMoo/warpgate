@@ -56,7 +56,7 @@ run_tests() {
         local modified_files=()
         while IFS= read -r file; do
             [[ -n "$file" ]] && modified_files+=("$file")
-        done < <(git diff --name-only --cached | grep '\.go$' || true)
+        done < <(git diff --name-only --cached --diff-filter=d | grep '\.go$' || true)
 
         if [[ ${#modified_files[@]} -eq 0 ]]; then
             echo "No modified Go files found to test" | tee -a "$LOGFILE"
