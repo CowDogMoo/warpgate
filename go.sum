@@ -81,8 +81,8 @@ github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 h1:WOp5De9iWdEHDPh2Kb0tBP3vGBm/
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8/go.mod h1:z8W8YgfhbWl62XqcTtK+CxPrE+iHGRVUOtrrbIOp7ZY=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.90.3 h1:0sd8LckycT/5D1EouK4AobxTRom33zf9hUfepxmxa2s=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.90.3/go.mod h1:rjX/2ubRFOWZEUMUIK1FA2ppl8FrX9laHyQ7LDJU/Kg=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.342.0 h1:qoBHo3Hq6NgjwML9WBKojdNumHnLxKXP52q9iFyZ/9A=
-github.com/aws/aws-sdk-go-v2/service/ec2 v1.342.0/go.mod h1:khWfxrzSgMjGMAZIaYAHu3IobEo7KRRNwPYaHb1zpng=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.343.0 h1:pOxNUJbUOy779gx205gEpySpT5fu3B0ifPD8jBxujZI=
+github.com/aws/aws-sdk-go-v2/service/ec2 v1.343.0/go.mod h1:khWfxrzSgMjGMAZIaYAHu3IobEo7KRRNwPYaHb1zpng=
 github.com/aws/aws-sdk-go-v2/service/iam v1.64.6 h1:6tqE3gHbHFEvARPvlLHgRK1dXoD96ecolfPEurpYXyc=
 github.com/aws/aws-sdk-go-v2/service/iam v1.64.6/go.mod h1:lV0r+RVSkXRA6WhiaxW55qn8n60ObMwQShxaqrs9UeY=
 github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.67.3 h1:JeVI37ualjVDzVEljatSm/gvUUe1esaAdQOwKi2VO98=
