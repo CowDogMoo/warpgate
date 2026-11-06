@@ -30,7 +30,7 @@ require (
 	github.com/invopop/jsonschema v0.14.0
 	github.com/lithammer/fuzzysearch v1.1.8
 	github.com/luthermonson/go-proxmox v0.8.2
-	github.com/moby/buildkit v0.34.1
+	github.com/moby/buildkit v0.34.2
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
 	github.com/opencontainers/go-digest v1.0.0
@@ -39,7 +39,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
-	github.com/tonistiigi/fsutil v0.0.0-20261027232937-ca65610c2295
+	github.com/tonistiigi/fsutil v0.0.0-20261103125000-e075fd9305eb
 	github.com/zclconf/go-cty v1.19.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/sync v0.24.0
