@@ -26,7 +26,7 @@ permissions: {}
 jobs:
   go-ci:
     name: Pre-commit
-    uses: CowDogMoo/renovate-config/.github/workflows/go-ci.yaml@67e843ed540fc5307da997f8b59ea5378bb68b12 # main
+    uses: CowDogMoo/renovate-config/.github/workflows/go-ci.yaml@dc13cd28a10ff39009e1fd4ac201f9602ba444ad # main
     permissions:
       contents: read
     with:
