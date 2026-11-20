@@ -29,7 +29,7 @@ require (
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/invopop/jsonschema v0.14.0
 	github.com/lithammer/fuzzysearch v1.1.8
-	github.com/luthermonson/go-proxmox v0.9.0
+	github.com/luthermonson/go-proxmox v0.10.0
 	github.com/moby/buildkit v0.35.0
 	github.com/moby/moby/api v1.57.0
 	github.com/moby/moby/client v0.6.3
